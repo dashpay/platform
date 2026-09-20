@@ -1,11 +1,16 @@
 //! Drive-level tests of the contract fee pots.
 
 use crate::drive::contract::fee_pots::types::{ContractFeePotState, ContractFeePots};
+use crate::drive::contract::paths::contract_fee_pots_key;
+use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_path;
 use crate::drive::Drive;
 use crate::util::batch::drive_op_batch::ContractFeePotOperationType;
-use crate::util::batch::DriveOperation;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::data_contract::DataContract;
@@ -345,11 +350,6 @@ fn should_estimate_a_pot_write_without_writing() {
 
 #[test]
 fn should_read_the_epoch_fee_multiplier_and_fall_back_in_the_first_block_of_an_epoch() {
-    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
-    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-    use crate::util::batch::GroveDbOpBatch;
-    use dpp::block::epoch::Epoch;
-
     let (drive, _) = drive_with_contract();
     let platform_version = PlatformVersion::latest();
     let epoch = Epoch::new(5).expect("expected an epoch");
@@ -376,4 +376,56 @@ fn should_read_the_epoch_fee_multiplier_and_fall_back_in_the_first_block_of_an_e
         .fetch_action_fee_multiplier_with_fee(&epoch, None, platform_version)
         .expect("expected to read the multiplier");
     assert_eq!(multiplier, 1_500);
+}
+
+#[test]
+fn should_create_the_pots_tree_of_a_chain_that_reached_version_14_without_it() {
+    // A chain that upgraded to protocol version 14, or was born at it, on a build from before
+    // the fee pots has neither tree: the upgrade step that creates them already ran.
+    let (drive, contract) = drive_with_contract();
+    let platform_version = PlatformVersion::latest();
+    let prefunded_path = prefunded_specialized_balances_path();
+    for pot in BOTH {
+        drive
+            .grove
+            .delete(
+                &prefunded_path,
+                contract_fee_pots_key(pot),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to delete the empty pots tree");
+    }
+
+    // Reading a pot of a chain without the trees finds nothing, as on any other chain.
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators),
+        ContractFeePotState::default()
+    );
+
+    // The first fee of each pot creates its tree, and later ones find it there.
+    add(&drive, contract.id(), ContractFeePot::Moderators, 100);
+    add(&drive, contract.id(), ContractFeePot::Moderators, 11);
+    add(&drive, contract.id(), ContractFeePot::Owner, 5);
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).credits,
+        111
+    );
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Owner).credits,
+        5
+    );
+    assert_proved(&drive, contract.id(), &BOTH);
+
+    // The credits are inside the sum the platform checks, as on a chain born with the trees.
+    drive
+        .add_to_system_credits(116, None, platform_version)
+        .expect("expected to add to the system credits");
+    assert!(drive
+        .calculate_total_credits_balance(None, &platform_version.drive)
+        .expect("expected to sum the credits")
+        .ok()
+        .expect("expected the sum to be judged"));
 }

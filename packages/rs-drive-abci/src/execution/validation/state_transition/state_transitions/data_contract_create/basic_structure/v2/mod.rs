@@ -287,7 +287,7 @@ mod tests {
     use dpp::balances::credits::TokenAmount;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
@@ -297,8 +297,9 @@ mod tests {
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-    use dpp::platform_value::platform_value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -437,15 +438,10 @@ mod tests {
     /// A create transition whose `niceDocument` document type charges `action_fees`, on a
     /// contract that declares moderation or not
     fn create_transition_with_action_fees(
-        action_fees: dpp::platform_value::Value,
+        action_fees: Value,
         moderated: bool,
         platform_version: &PlatformVersion,
     ) -> DataContractCreateTransition {
-        use dpp::data_contract::accessors::v0::DataContractV0Setters;
-        use dpp::data_contract::config::moderation::{
-            ContractModerationConfig, ContractModerators,
-        };
-
         let identity_nonce = IdentityNonce::default();
         let mut data_contract =
             get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)

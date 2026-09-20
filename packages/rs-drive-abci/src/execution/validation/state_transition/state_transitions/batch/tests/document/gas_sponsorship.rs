@@ -408,6 +408,16 @@ pub(crate) mod gas_sponsorship_tests {
             transition: &StateTransition,
             tx: &drive::grovedb::Transaction,
         ) -> StateTransitionExecutionResult {
+            self.process_in(transition, &BlockInfo::default(), tx)
+        }
+
+        /// `process` in the block `block_info` describes
+        pub(crate) fn process_in(
+            &self,
+            transition: &StateTransition,
+            block_info: &BlockInfo,
+            tx: &drive::grovedb::Transaction,
+        ) -> StateTransitionExecutionResult {
             let platform_version = self.platform_version;
             let state = self.platform.state.load();
             let result = self
@@ -418,7 +428,7 @@ pub(crate) mod gas_sponsorship_tests {
                         .serialize_to_bytes()
                         .expect("expected to serialize")],
                     &state,
-                    &BlockInfo::default(),
+                    block_info,
                     tx,
                     platform_version,
                     false,

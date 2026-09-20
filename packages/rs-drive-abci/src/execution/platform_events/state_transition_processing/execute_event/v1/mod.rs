@@ -160,6 +160,13 @@ where
             // Whoever pays the gas pays the document action fees: they leave the payer's
             // balance for the contract's fee pots in the same batch as the documents. They are
             // no part of the fee below, which goes to the fee pools.
+            //
+            // They are a price the contract set, like the price of a purchase, and move as that
+            // principal does: with the operations, before the gas is metered and debited. Fee
+            // validation admitted the batch only with a balance covering them and the estimated
+            // gas, so should the metered gas ever exceed its estimate, what falls short is the
+            // gas, by the rule that already governs a principal, and never the pots against
+            // credits that were not there.
             let mut operations = operations;
             operations.extend(action_fee_operations(payer_id, &action_fees)?);
             let action_fees_owed_by_identity = if paying_sponsor.is_some() {

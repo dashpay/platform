@@ -6,6 +6,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::drive::contract_groups::types::ContractGroupMembershipsForContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::consensus::ConsensusError;
+use dpp::balances::credits::MAX_CREDITS;
 use dpp::fee::Credits;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
@@ -101,13 +102,17 @@ pub fn action_fees_total(
     payer_id: &Identifier,
     action_fees: &[ResolvedDocumentActionFee],
 ) -> Result<Credits, ProtocolError> {
-    action_fees.iter().try_fold(0 as Credits, |total, fee| {
-        total
-            .checked_add(fee.owed_by(payer_id).total()?)
-            .ok_or(ProtocolError::Overflow(
-                "document action fees of a batch overflow credits",
-            ))
-    })
+    Ok(action_fees.iter().fold(0 as Credits, |total, fee| {
+        saturating_credits(total, fee.owed_by(payer_id).saturating_total())
+    }))
+}
+
+/// The sum of two amounts of credits, held at `MAX_CREDITS`. Action fees that add up to more
+/// than any balance can hold are owed in full and paid by nobody: fee validation refuses the
+/// batch for an insufficient balance, a consensus error, where an overflow would have been an
+/// internal one that no client can act on.
+fn saturating_credits(a: Credits, b: Credits) -> Credits {
+    a.saturating_add(b).min(MAX_CREDITS)
 }
 
 /// The operations that charge `action_fees` to `payer_id`: one removal from the payer's
@@ -134,14 +139,13 @@ pub fn action_fee_operations(
                 continue;
             }
             let pot_total = per_pot.entry((action_fee.contract_id, pot)).or_default();
-            *pot_total = pot_total
-                .checked_add(amount)
-                .ok_or(ProtocolError::Overflow(
-                    "document action fees of a batch overflow credits",
-                ))?;
+            *pot_total = saturating_credits(*pot_total, amount);
         }
     }
-    let total = action_fees_total(&payer_id, action_fees)?;
+    // What leaves the payer is what reaches the pots, by construction.
+    let total = per_pot.values().fold(0 as Credits, |total, amount| {
+        saturating_credits(total, *amount)
+    });
     if total == 0 {
         return Ok(vec![]);
     }

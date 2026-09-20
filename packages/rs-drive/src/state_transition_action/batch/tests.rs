@@ -3235,6 +3235,7 @@ mod action_fees {
     };
     use crate::util::batch::drive_op_batch::{ContractFeePotOperationType, IdentityOperationType};
     use crate::util::batch::DriveOperation;
+    use dpp::balances::credits::MAX_CREDITS;
     use dpp::data_contract::document_type::action_fees::{ContractFeePot, DocumentActionFee};
     use dpp::platform_value::Identifier;
 
@@ -3349,9 +3350,15 @@ mod action_fees {
     }
 
     #[test]
-    fn should_refuse_fees_that_overflow_credits() {
+    fn should_hold_fees_that_add_up_past_the_maximum_credits_at_the_maximum() {
+        // Nobody can pay it, so fee validation refuses the batch for an insufficient balance:
+        // a consensus error, where an overflow would have been an internal one.
         let fees = [fee(1, 9, u64::MAX / 2, 0), fee(1, 9, u64::MAX / 2, 5)];
-        assert!(action_fees_total(&id(5), &fees).is_err());
-        assert!(action_fee_operations(id(5), &fees).is_err());
+        assert_eq!(
+            action_fees_total(&id(5), &fees).expect("total"),
+            MAX_CREDITS
+        );
+        let (removed, _) = summarize(action_fee_operations(id(5), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(5), MAX_CREDITS)));
     }
 }

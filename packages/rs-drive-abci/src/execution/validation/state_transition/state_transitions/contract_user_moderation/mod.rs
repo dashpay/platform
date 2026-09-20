@@ -2,7 +2,7 @@ mod basic_structure;
 mod identity_contract_nonce;
 mod state;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;

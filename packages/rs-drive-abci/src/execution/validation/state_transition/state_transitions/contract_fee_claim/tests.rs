@@ -2,7 +2,9 @@
 //! pot is paid out, the once-per-epoch rule of each pot, and the proof of a claim's execution.
 
 use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
-use crate::execution::validation::state_transition::tests::setup_identity;
+use crate::execution::validation::state_transition::state_transitions::contract_user_moderation::tests::{
+    assert_paid_with_code, assert_success, assert_unpaid_with_code, Actor, CRITICAL_KEY_ID,
+};
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -14,17 +16,23 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::random_document::{
+    CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+};
+use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::{Identity, KeyID};
-use dpp::platform_value::Identifier;
-use dpp::prelude::IdentityNonce;
+use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
 use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::contract_fee_claim_transition::methods::ContractFeeClaimTransitionMethodsV0;
 use dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
 use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::proof_result::{
     StateTransitionProofOutcome, StateTransitionProofResult,
 };
@@ -36,46 +44,21 @@ use drive::drive::Drive;
 use drive::grovedb::Transaction;
 use drive::util::batch::drive_op_batch::ContractFeePotOperationType;
 use drive::util::batch::DriveOperation;
-use simple_signer::signer::SimpleSigner;
-use std::cell::Cell;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use std::collections::BTreeMap;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_FEES_ALREADY_CLAIMED_THIS_EPOCH: u32 = 41111;
 const CONTRACT_FEES_NOTHING_TO_CLAIM: u32 = 41112;
 const CONTRACT_FEE_CLAIM_NOT_ALLOWED: u32 = 41113;
+const DOCUMENT_ACTION_FEES_WITHOUT_MODERATION: u32 = 10902;
 
-const CRITICAL_KEY_ID: KeyID = 1;
-/// 10 Dash
+/// The document type a contract update adds in these tests
+const PAID_NOTE: &str = "paidNote";
+
+/// What the shared `Actor` is funded with: 10 Dash
 const STARTING_CREDITS: Credits = 1_000_000_000_000;
-
-/// A registered identity with its signer, plus the contract nonces the tests hand out.
-struct Actor {
-    identity: Identity,
-    signer: SimpleSigner,
-    next_contract_nonce: Cell<IdentityNonce>,
-}
-
-impl Actor {
-    fn new(platform: &mut TempPlatform<MockCoreRPCLike>, seed: u64) -> Self {
-        let (identity, signer, _) = setup_identity(platform, seed, STARTING_CREDITS);
-        Self {
-            identity,
-            signer,
-            next_contract_nonce: Cell::new(1),
-        }
-    }
-
-    fn id(&self) -> Identifier {
-        self.identity.id()
-    }
-
-    fn contract_nonce(&self) -> IdentityNonce {
-        let nonce = self.next_contract_nonce.get();
-        self.next_contract_nonce.set(nonce + 1);
-        nonce
-    }
-}
 
 /// Which identities the contract appoints as its moderators
 #[derive(Clone, Copy)]
@@ -190,6 +173,53 @@ impl Setup {
             .expect("expected to fill the pot");
     }
 
+    /// The contract at version 2, with a `paidNote` document type that charges `action_fees`,
+    /// and the update that carries it, signed by the owner
+    async fn add_paid_note(&self, action_fees: Value) -> (DataContract, StateTransition) {
+        let platform_version = PlatformVersion::latest();
+        let mut updated = self.contract.clone();
+        updated.set_version(2);
+        let paid_note = DocumentType::try_from_schema(
+            updated.id(),
+            1,
+            updated.config().version(),
+            PAID_NOTE,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "position": 0, "maxLength": 60_u32},
+                },
+                "required": ["text"],
+                "actionFees": action_fees,
+                "additionalProperties": false,
+            }),
+            None,
+            &BTreeMap::new(),
+            updated.config(),
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("expected the paid note document type to parse");
+        updated
+            .document_types_mut()
+            .insert(PAID_NOTE.to_string(), paid_note);
+
+        let update = DataContractUpdateTransition::new_from_data_contract(
+            updated.clone(),
+            &self.owner.identity.clone().into_partial_identity_info(),
+            CRITICAL_KEY_ID,
+            self.owner.contract_nonce(),
+            0,
+            &self.owner.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the contract update");
+        (updated, update)
+    }
+
     /// A claim of `pot` by `actor`, signed with its CRITICAL key
     async fn claim(&self, actor: &Actor, pot: ContractFeePot) -> StateTransition {
         claim_of(actor, self.contract.id(), pot).await
@@ -302,23 +332,6 @@ async fn claim_of(actor: &Actor, contract_id: Identifier, pot: ContractFeePot) -
     )
     .await
     .expect("expected to build the claim")
-}
-
-fn assert_success(execution: &StateTransitionExecutionResult) {
-    assert!(
-        matches!(
-            execution,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
-        ),
-        "expected a successful execution, got {execution:?}"
-    );
-}
-
-fn assert_paid_with_code(execution: &StateTransitionExecutionResult, code: u32) {
-    assert!(
-        matches!(execution, StateTransitionExecutionResult::PaidConsensusError { error, .. } if error.code() == code),
-        "expected a paid error {code}, got {execution:?}"
-    );
 }
 
 fn gas(execution: &StateTransitionExecutionResult) -> Credits {
@@ -610,10 +623,9 @@ async fn should_refuse_a_claim_on_an_unknown_contract_unpaid() {
         vec![DATA_CONTRACT_NOT_PRESENT]
     );
     let transaction = setup.platform.drive.grove.start_transaction();
-    let result = setup.process(&claim, 0, &transaction);
-    assert!(
-        matches!(&result, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == DATA_CONTRACT_NOT_PRESENT),
-        "expected an unpaid error, got {result:?}"
+    assert_unpaid_with_code(
+        &setup.process(&claim, 0, &transaction),
+        DATA_CONTRACT_NOT_PRESENT,
     );
 }
 
@@ -724,4 +736,91 @@ async fn should_not_be_active_before_protocol_version_14() {
         ),
         "expected the transition to be inactive before protocol version 14, got {execution:?}"
     );
+}
+
+#[tokio::test]
+async fn should_let_a_live_contract_gain_fees_through_a_new_document_type() {
+    // The fees of a document type never change, so this is how a contract that is already
+    // published starts to charge: an update adds a document type that declares them.
+    let setup = Setup::new(Team::TwoModerators).await;
+    let (updated, update) = setup
+        .add_paid_note(platform_value!({
+            "pricing": "fixed",
+            "create": {"owner": 700_u64, "moderators": 300_u64},
+        }))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&update, 0, &transaction));
+
+    // A stranger writes a paid note and fills both pots.
+    let platform_version = PlatformVersion::latest();
+    let paid_note = updated
+        .document_type_for_name(PAID_NOTE)
+        .expect("expected the paid note document type");
+    let mut rng = StdRng::seed_from_u64(7);
+    let entropy = Bytes32::random_with_rng(&mut rng);
+    let document = paid_note
+        .random_document_with_identifier_and_entropy(
+            &mut rng,
+            setup.stranger.id(),
+            entropy,
+            DocumentFieldFillType::FillIfNotRequired,
+            DocumentFieldFillSize::MinDocumentFillSize,
+            platform_version,
+        )
+        .expect("expected a random paid note");
+    let creation = BatchTransition::new_document_creation_transition_from_document(
+        document,
+        paid_note,
+        entropy.0,
+        &setup.stranger.key,
+        setup.stranger.contract_nonce(),
+        0,
+        None,
+        &setup.stranger.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected to build the paid note creation");
+    assert_success(&setup.process(&creation, 0, &transaction));
+    assert_eq!(
+        setup.pot(ContractFeePot::Owner, Some(&transaction)).credits,
+        700
+    );
+    assert_eq!(
+        setup
+            .pot(ContractFeePot::Moderators, Some(&transaction))
+            .credits,
+        300
+    );
+
+    // And the team is paid out of what the new document type collected.
+    let claim = setup
+        .claim(&setup.moderator_b, ContractFeePot::Moderators)
+        .await;
+    assert_success(&setup.process(&claim, 0, &transaction));
+    assert_eq!(
+        setup.credits(&setup.moderator_a, Some(&transaction)),
+        STARTING_CREDITS + 150
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_moderators_fee_to_an_unmoderated_contract() {
+    let setup = Setup::new(Team::NoModeration).await;
+    let (_, update) = setup
+        .add_paid_note(platform_value!({"create": {"owner": 700_u64, "moderators": 300_u64}}))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_unpaid_with_code(
+        &setup.process(&update, 0, &transaction),
+        DOCUMENT_ACTION_FEES_WITHOUT_MODERATION,
+    );
+
+    // An owner fee needs no team, and the same update without the moderators part goes through.
+    let (_, update) = setup
+        .add_paid_note(platform_value!({"create": {"owner": 700_u64}}))
+        .await;
+    assert_success(&setup.process(&update, 0, &transaction));
 }

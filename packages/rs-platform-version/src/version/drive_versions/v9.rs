@@ -138,7 +138,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             add_prefunded_specialized_balance_operations: 1,
             deduct_from_prefunded_specialized_balance: 1,
             deduct_from_prefunded_specialized_balance_operations: 0,
-            estimated_cost_for_prefunded_specialized_balance_update: 0,
+            estimated_cost_for_prefunded_specialized_balance_update: 1, // changed: the prefunded balances layer holds three trees, the voting balances and the two contract fee pot trees
             empty_prefunded_specialized_balance: 0,
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,

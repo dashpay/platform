@@ -1,4 +1,9 @@
-use crate::drive::contract::paths::{contract_fee_pots_path, contract_fee_pots_path_vec};
+use crate::drive::contract::paths::{
+    contract_fee_pots_key, contract_fee_pots_path, contract_fee_pots_path_vec,
+};
+use crate::drive::prefunded_specialized_balances::{
+    prefunded_specialized_balances_path, prefunded_specialized_balances_path_vec,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -55,6 +60,29 @@ impl Drive {
             return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
                 "trying to set a contract fee pot to over max credits amount (i64::MAX)",
             )));
+        }
+        // A chain that reached protocol version 14 on a build from before the fee pots never
+        // ran the upgrade step that creates their trees, and was not born with them either.
+        // The first fee a pot receives therefore checks that its tree is there, a billed read,
+        // and creates it in the same batch when it is not. A pot that already holds credits
+        // proves its tree, so no later fee pays for the check.
+        if previous_credits.is_none() {
+            let prefunded_path = prefunded_specialized_balances_path();
+            let pots_tree_exists = self.grove_has_raw(
+                (&prefunded_path).into(),
+                contract_fee_pots_key(pot),
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+            if !pots_tree_exists {
+                drive_operations.push(GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
+                    prefunded_specialized_balances_path_vec(),
+                    contract_fee_pots_key(pot).to_vec(),
+                    Element::empty_sum_tree(),
+                )));
+            }
         }
         let op = if previous_credits.is_some() {
             QualifiedGroveDbOp::replace_op(

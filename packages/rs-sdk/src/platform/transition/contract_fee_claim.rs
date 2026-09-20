@@ -13,11 +13,8 @@
 //!     .await?;
 //! ```
 
-use crate::platform::Fetch;
-use dash_context_provider::ContextProvider;
 use dpp::block::epoch::EpochIndex;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
-use dpp::data_contract::DataContract;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -28,10 +25,11 @@ use dpp::state_transition::contract_fee_claim_transition::methods::ContractFeeCl
 use dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::contract_user_moderation::signing_key_for_moderation;
+use crate::platform::transition::contract_user_moderation::{
+    ensure_provider_resolves_contract, signing_key_for_moderation,
+};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
@@ -118,26 +116,12 @@ impl ClaimContractFees for Identity {
         };
 
         // The proof of a claim covers the balance of every identity the pot pays, and the
-        // verifier reads who they are from the contract through the context provider. A
-        // provider that can not resolve the contract would refuse a result the network already
-        // accepted, so before the nonce is taken and anything is signed or paid for, the
-        // provider is asked, and the contract is fetched and registered with it when it does
-        // not have it.
-        if let Some(provider) = sdk.context_provider() {
-            let resolved = provider
-                .get_data_contract(&contract_id, sdk.version())
-                .ok()
-                .flatten()
-                .is_some();
-            if !resolved {
-                let contract = DataContract::fetch(sdk, contract_id)
-                    .await?
-                    .ok_or_else(|| {
-                        Error::Generic(format!("data contract {contract_id} does not exist"))
-                    })?;
-                provider.register_data_contract(Arc::new(contract));
-            }
-        }
+        // verifier reads who they are from the contract through the context provider. The
+        // moderation team can change by a contract update, and a verifier working from a copy
+        // that names the old team would ask for other balances than the node proved and refuse
+        // a claim that executed and was paid for. So the contract is fetched again, whatever
+        // copy the provider holds.
+        ensure_provider_resolves_contract(sdk, contract_id, true).await?;
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(self.id(), contract_id, true, settings)

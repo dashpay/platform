@@ -15,6 +15,7 @@ mod action_fee_tests {
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
         PaidConsensusError, SuccessfulExecution, UnpaidConsensusError,
     };
+    use dpp::block::epoch::Epoch;
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
@@ -23,10 +24,19 @@ mod action_fee_tests {
     use dpp::data_contract::document_type::action_fees::ContractFeePot;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::data_contract::DataContract;
+    use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::{platform_value, Value};
+    use dpp::state_transition::StateTransition;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use drive::drive::contract::fee_pots::types::ContractFeePotState;
+    use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use drive::grovedb::Transaction;
+    use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use drive::util::batch::GroveDbOpBatch;
+    use drive::util::storage_flags::StorageFlags;
+    use simple_signer::signer::SimpleSigner;
 
     const IDENTITY_PUBLIC_KEY_BUDGET_EXCEEDED: u32 = 40218;
 
@@ -42,17 +52,19 @@ mod action_fee_tests {
         })
     }
 
-    /// Declares `action_fees` on the `card` document type of a contract that keeps a banlist,
-    /// and parses the document type again so that it carries them.
-    fn declare_action_fees(contract: &mut DataContract, action_fees: Value) {
+    /// Declares `action_fees` on the `card` document type, on a contract that keeps a banlist
+    /// when `moderated`, and parses the document type again so that it carries them.
+    fn declare_action_fees(contract: &mut DataContract, action_fees: Value, moderated: bool) {
         let platform_version = PlatformVersion::latest();
-        contract.set_config(contract.config().clone().with_moderation(Some(
-            ContractModerationConfig {
-                banlist: true,
-                suspensions: false,
-                moderators: ContractModerators::ContractOwner,
-            },
-        )));
+        if moderated {
+            contract.set_config(contract.config().clone().with_moderation(Some(
+                ContractModerationConfig {
+                    banlist: true,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                },
+            )));
+        }
         let contract_id = contract.id();
         let config = contract.config().clone();
         let tokens = contract.tokens().clone();
@@ -116,7 +128,7 @@ mod action_fee_tests {
             user_credits,
             user_gold,
             user_key_budget,
-            move |contract| declare_action_fees(contract, card_action_fees(pricing)),
+            move |contract| declare_action_fees(contract, card_action_fees(pricing), true),
         )
     }
 
@@ -188,11 +200,6 @@ mod action_fee_tests {
 
     #[tokio::test]
     async fn should_scale_a_fee_priced_by_the_fee_multiplier_with_the_epoch_multiplier() {
-        use dpp::block::epoch::Epoch;
-        use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
-        use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use drive::util::batch::GroveDbOpBatch;
-
         for (pricing, scaled) in [("feeMultiplier", true), ("fixed", false)] {
             let setup = game(
                 GasFeesPaidBy::DocumentOwner,
@@ -214,6 +221,9 @@ mod action_fee_tests {
                 .expect("expected to set the multiplier of epoch 0");
 
             let transition = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
+            // The mempool prices the fee as a block does: a fee priced by the multiplier must
+            // reach the execution event with the multiplier read, on this route too.
+            assert_eq!(setup.check_tx(&transition), Vec::<u32>::new(), "{pricing}");
             let tx = setup.platform.drive.grove.start_transaction();
             let result = setup.process(&transition, &tx);
 
@@ -256,7 +266,7 @@ mod action_fee_tests {
 
     /// Gold for the contract owner, who holds none and pays for a card like anybody else
     fn add_tokens_to_identity_in(setup: &Sponsorship, amount: u64) {
-        let token_id = dpp::tokens::calculate_token_id(setup.contract.id().as_bytes(), 0);
+        let token_id = calculate_token_id(setup.contract.id().as_bytes(), 0);
         add_tokens_to_identity(
             &setup.platform,
             token_id.into(),
@@ -416,5 +426,263 @@ mod action_fee_tests {
             vec![IDENTITY_PUBLIC_KEY_BUDGET_EXCEEDED]
         );
         assert_eq!(pots(&setup, &tx), (0, 0));
+    }
+    #[tokio::test]
+    async fn should_price_by_the_fee_schedule_in_the_first_block_of_an_epoch() {
+        // State transitions execute before the end of the block, where an epoch is initialized,
+        // so in the first block of an epoch its tree holds no fee multiplier yet. The fee is
+        // then priced by the multiplier the epoch is about to be initialized with.
+        let setup = game(
+            GasFeesPaidBy::DocumentOwner,
+            "feeMultiplier",
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            None,
+        );
+        let schedule_multiplier = setup
+            .platform_version
+            .fee_version
+            .uses_version_fee_multiplier_permille
+            .expect("expected the fee schedule to set a multiplier");
+        let transition = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
+        let tx = setup.platform.drive.grove.start_transaction();
+
+        let result = setup.process_in(
+            &transition,
+            &BlockInfo {
+                epoch: Epoch::new(7).expect("expected epoch 7"),
+                ..Default::default()
+            },
+            &tx,
+        );
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        assert_eq!(
+            pots(&setup, &tx),
+            (
+                OWNER_PART * schedule_multiplier / 1_000,
+                MODERATORS_PART * schedule_multiplier / 1_000
+            )
+        );
+    }
+
+    /// What each action on a card costs on top of the gas, all to the contract owner: every
+    /// amount is different, so a fee charged for the wrong action shows.
+    const CREATE_FEE: Credits = 1_000;
+    const REPLACE_FEE: Credits = 2_000;
+    const DELETE_FEE: Credits = 3_000;
+    const TRANSFER_FEE: Credits = 4_000;
+    const UPDATE_PRICE_FEE: Credits = 5_000;
+    const PURCHASE_FEE: Credits = 6_000;
+
+    #[tokio::test]
+    async fn should_charge_each_action_its_own_fee() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A card that can be replaced, priced, purchased, transferred and deleted.
+        let mut contract = json_document_to_contract(
+            "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-documents-mutable.json",
+            true,
+            platform_version,
+        )
+        .expect("expected the card game contract");
+        declare_action_fees(
+            &mut contract,
+            platform_value!({
+                "pricing": "fixed",
+                "create": {"owner": CREATE_FEE},
+                "replace": {"owner": REPLACE_FEE},
+                "delete": {"owner": DELETE_FEE},
+                "transfer": {"owner": TRANSFER_FEE},
+                "update_price": {"owner": UPDATE_PRICE_FEE},
+                "purchase": {"owner": PURCHASE_FEE},
+            }),
+            false,
+        );
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        let card = contract
+            .document_type_for_name("card")
+            .expect("expected the card document type");
+
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1));
+        let (buyer, buyer_signer, buyer_key) =
+            setup_identity(&mut platform, 450, dash_to_credits!(1));
+
+        let mut rng = StdRng::seed_from_u64(433);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = card
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                seller.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let tx = platform.drive.grove.start_transaction();
+        let state = platform.state.load();
+        let owner_pot = |tx: &Transaction| {
+            platform
+                .drive
+                .fetch_contract_fee_pot(
+                    contract.id(),
+                    ContractFeePot::Owner,
+                    Some(tx),
+                    platform_version,
+                )
+                .expect("expected to fetch the owner pot")
+                .credits
+        };
+        // Processes `transition` and returns what it added to the owner pot.
+        let charged = |transition: StateTransition, action: &str| {
+            let before = owner_pot(&tx);
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process the state transition");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [SuccessfulExecution { .. }],
+                "{action}"
+            );
+            owner_pot(&tx) - before
+        };
+        let by = |identity: &Identity| identity.id();
+        let signed_by_the_seller: (&IdentityPublicKey, &SimpleSigner) =
+            (&seller_key, &seller_signer);
+        let signed_by_the_buyer: (&IdentityPublicKey, &SimpleSigner) = (&buyer_key, &buyer_signer);
+
+        let creation = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            card,
+            entropy.0,
+            signed_by_the_seller.0,
+            1,
+            0,
+            None,
+            signed_by_the_seller.1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the creation");
+        assert_eq!(charged(creation, "create"), CREATE_FEE);
+
+        document.set("attack", 5.into());
+        document.bump_revision();
+        let replacement = BatchTransition::new_document_replacement_transition_from_document(
+            document.clone(),
+            card,
+            signed_by_the_seller.0,
+            2,
+            0,
+            None,
+            signed_by_the_seller.1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the replacement");
+        assert_eq!(charged(replacement, "replace"), REPLACE_FEE);
+
+        document.bump_revision();
+        let price = dash_to_credits!(0.1);
+        let price_update = BatchTransition::new_document_update_price_transition_from_document(
+            document.clone(),
+            card,
+            price,
+            signed_by_the_seller.0,
+            3,
+            0,
+            None,
+            signed_by_the_seller.1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the price update");
+        assert_eq!(charged(price_update, "update_price"), UPDATE_PRICE_FEE);
+
+        document.bump_revision();
+        let purchase = BatchTransition::new_document_purchase_transition_from_document(
+            document.clone(),
+            card,
+            by(&buyer),
+            price,
+            signed_by_the_buyer.0,
+            1,
+            0,
+            None,
+            signed_by_the_buyer.1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the purchase");
+        assert_eq!(charged(purchase, "purchase"), PURCHASE_FEE);
+
+        document.set_owner_id(by(&buyer));
+        document.bump_revision();
+        let transfer = BatchTransition::new_document_transfer_transition_from_document(
+            document.clone(),
+            card,
+            by(&seller),
+            signed_by_the_buyer.0,
+            2,
+            0,
+            None,
+            signed_by_the_buyer.1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the transfer");
+        assert_eq!(charged(transfer, "transfer"), TRANSFER_FEE);
+
+        document.set_owner_id(by(&seller));
+        document.bump_revision();
+        let deletion = BatchTransition::new_document_deletion_transition_from_document(
+            document,
+            card,
+            signed_by_the_seller.0,
+            4,
+            0,
+            None,
+            signed_by_the_seller.1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the deletion");
+        assert_eq!(charged(deletion, "delete"), DELETE_FEE);
     }
 }

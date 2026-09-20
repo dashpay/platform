@@ -268,7 +268,11 @@ records, read once per batch and billed to it
 item is not there yet, because state transitions execute before the end of the
 block, where the epoch is initialized; the multiplier the epoch is about to be
 initialized with, the fee schedule's, is used then. Nothing else reads the
-epoch multiplier today: the metered fees do not scale with it.
+epoch multiplier today: the metered fees do not scale with it. A scaled
+amount is held at the maximum number of credits rather than overflowing: a fee
+nobody can pay refuses the action for an insufficient balance, a consensus
+error, where an overflow would have failed every transition on the action with
+an internal one.
 
 **The amounts never change.** Nobody signs the fee on a transition, so what a
 contract showed when it was published is the only thing its users agreed to.

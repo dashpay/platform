@@ -34,6 +34,11 @@ pub fn prefunded_specialized_balances_path() -> [&'static [u8]; 1] {
     )]
 }
 
+/// prefunded specialized balances vector
+pub fn prefunded_specialized_balances_path_vec() -> Vec<Vec<u8>> {
+    vec![Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec()]
+}
+
 /// prefunded specialized balances for voting
 pub fn prefunded_specialized_balances_for_voting_path() -> [&'static [u8]; 2] {
     [

@@ -250,7 +250,8 @@ fn try_from_schema_generation_3(
     // consumes `schema`.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
-    let action_fees = common::parse_action_fees_keyword(&schema, name, full_validation)?;
+    let action_fees =
+        common::parse_action_fees_keyword(&schema, name, data_contact_config, full_validation)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
     let immutable_fields_allow_setting = common::parse_property_name_list_keyword(

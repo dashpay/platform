@@ -149,6 +149,11 @@ impl DocumentActionFee {
             ))
     }
 
+    /// The sum of both parts, held at `MAX_CREDITS`
+    pub fn saturating_total(&self) -> Credits {
+        self.owner.saturating_add(self.moderators).min(MAX_CREDITS)
+    }
+
     /// The part that goes to `pot`
     pub fn part(&self, pot: ContractFeePot) -> Credits {
         match pot {
@@ -176,19 +181,17 @@ impl DocumentActionFee {
     }
 }
 
+/// `amount` scaled by the multiplier, held at `MAX_CREDITS`. The multiplier is the network's and
+/// has no upper bound, so a declared amount that fits today may not tomorrow. A fee held at the
+/// maximum is one nobody can pay: the action is refused for an insufficient balance, a consensus
+/// error a client can read, where an overflow would have failed every transition on the action
+/// with an internal one.
 fn scale(amount: Credits, fee_multiplier_permille: u64) -> Result<Credits, ProtocolError> {
-    let scaled = (amount as u128)
-        .checked_mul(fee_multiplier_permille as u128)
-        .map(|product| product / FEE_MULTIPLIER_PERMILLE_BASE as u128)
-        .ok_or(ProtocolError::Overflow(
-            "document action fee overflows when scaled by the fee multiplier",
-        ))?;
-    Credits::try_from(scaled)
-        .ok()
-        .filter(|scaled| *scaled <= MAX_CREDITS)
-        .ok_or(ProtocolError::Overflow(
-            "document action fee scaled by the fee multiplier overflows the maximum credits",
-        ))
+    let scaled = (amount as u128).saturating_mul(fee_multiplier_permille as u128)
+        / FEE_MULTIPLIER_PERMILLE_BASE as u128;
+    Ok(Credits::try_from(scaled)
+        .unwrap_or(MAX_CREDITS)
+        .min(MAX_CREDITS))
 }
 
 /// The action fees of a document type
@@ -521,6 +524,31 @@ mod tests {
     }
 
     #[test]
+    fn should_read_a_stored_moderators_fee_without_moderation_as_none() {
+        // No validated contract is in this state: a contract entering the chain is refused for
+        // it and moderation is never turned off. It can only be a stray key of a contract from
+        // before the keyword, and honouring it would fill a pot that has no team.
+        let action_fees = platform_value!({"create": {"owner": 5_u64, "moderators": 10_u64}});
+        let stored = parse_with_action_fees(action_fees.clone(), false, PlatformVersion::latest())
+            .expect("expected a stored contract to stay loadable");
+        assert!(stored.action_fees().is_none());
+
+        // An owner-only fee can be paid out whatever the contract declares, and stands.
+        let stored = parse_with_action_fees(
+            platform_value!({"create": {"owner": 5_u64}}),
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected a stored contract to stay loadable");
+        assert!(stored.action_fees().is_some());
+
+        // Entering the chain, the declaration parses: the contract is what refuses it (10902).
+        let entering = parse_with_action_fees(action_fees, true, PlatformVersion::latest())
+            .expect("expected the document type to parse");
+        assert!(entering.action_fees().is_some());
+    }
+
+    #[test]
     fn should_read_action_fees_from_protocol_version_14_only() {
         let action_fees = platform_value!({"create": {"owner": 1_u64}});
         // The frozen v0 meta-schema (protocol versions 1 to 11) does not forbid unknown
@@ -587,13 +615,23 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_a_scaled_amount_over_the_maximum_credits() {
+    fn should_hold_a_scaled_amount_at_the_maximum_credits() {
         let fee = DocumentActionFee {
             owner: MAX_CREDITS,
-            moderators: 0,
+            moderators: 7,
         };
-        assert!(fee.charged(ActionFeePricing::FeeMultiplier, 1_001).is_err());
-        assert!(fee.charged(ActionFeePricing::FeeMultiplier, 1_000).is_ok());
+        let charged = fee
+            .charged(ActionFeePricing::FeeMultiplier, u64::MAX)
+            .expect("charged");
+        assert_eq!(charged.owner, MAX_CREDITS);
+        // 7 credits at that multiplier still fit, and are scaled as usual.
+        assert_eq!(charged.moderators, 129_127_208_515_966_861);
+        assert_eq!(charged.saturating_total(), MAX_CREDITS);
+        assert_eq!(
+            fee.charged(ActionFeePricing::FeeMultiplier, 1_000)
+                .expect("charged"),
+            fee
+        );
     }
 
     #[test]
