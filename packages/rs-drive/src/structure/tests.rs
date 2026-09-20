@@ -243,34 +243,17 @@ mod fixtures {
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use std::collections::{BTreeMap, BTreeSet};
 
-    /// Nodes no fixture below reaches yet. The coverage test fails when a
-    /// listed node does get reached, so this list can only shrink.
-    const UNVERIFIED: &[&str] = &[
-        // Token distributions: need a token configured with each rule
-        "tokens.distributions.once_per_identity.token",
-        "tokens.distributions.once_per_identity.token.identity",
+    /// Nodes no fixture below reaches, but the drive-abci strategy tests do:
+    /// they check the state of every chain they run against the description
+    /// (`assert_state_conforms_to_structure` in their `execution.rs`), and
+    /// between them they write these.
+    const REACHED_BY_STRATEGY_TESTS: &[&str] = &[
         "tokens.distributions.perpetual.token",
         "tokens.distributions.perpetual.token.info",
         "tokens.distributions.perpetual.token.last_claim",
         "tokens.distributions.perpetual.token.last_claim.identity",
-        "tokens.distributions.timed.ms.time",
-        "tokens.distributions.timed.ms.time.release",
-        "tokens.distributions.pre_programmed.token",
-        "tokens.distributions.pre_programmed.token.last_claim",
-        "tokens.distributions.pre_programmed.token.last_claim.identity",
-        "tokens.distributions.pre_programmed.token.time",
-        "tokens.distributions.pre_programmed.token.time.recipient",
-        // Identity keys bound to a contract, masternode keys, key budgets
-        "identities.identity.contract_info.bound.keys",
-        "identities.identity.contract_info.bound.keys.latest",
-        "identities.identity.contract_info.bound.keys.purpose",
-        "identities.identity.contract_info.bound.keys.purpose.unique",
-        "identities.identity.contract_info.bound.keys.purpose.key",
         "identities.identity.key_references.transfer.key",
         "identities.identity.key_references.voting.key",
-        "identities.identity.key_budgets",
-        "identities.identity.key_budgets.key",
-        // Written by block execution in drive-abci
         "saved_block_transactions.compacted.range",
         "saved_block_transactions.compacted_expiration.expiration",
         "saved_block_transactions.address_balances.block",
@@ -284,17 +267,36 @@ mod fixtures {
         "withdrawals.broadcasted.transaction",
         "withdrawals.total_credits_history.snapshot",
         "withdrawals.credit_inflows.inflow",
-        // Shielded pool contents
-        "shielded_balances.main_pool.nullifiers.nullifier",
         "shielded_balances.main_pool.anchors_by_height.height",
         "shielded_balances.main_pool.anchors_in_pool.anchor",
-        // Votes cast on a contested resource: rs-drive has no fixture that runs a vote
         "votes.contested_resource.identity_votes.voter",
         "votes.contested_resource.identity_votes.voter.vote",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.abstain.votes.voter",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.lock.votes.voter",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.votes.voter",
-        // Contract groups
+    ];
+
+    /// Nodes nothing reaches yet, so their description has not been checked
+    /// against a real GroveDB. The coverage test fails when a listed node does
+    /// get reached, so this list can only shrink.
+    const UNVERIFIED: &[&str] = &[
+        "tokens.distributions.once_per_identity.token",
+        "tokens.distributions.once_per_identity.token.identity",
+        "tokens.distributions.timed.ms.time",
+        "tokens.distributions.timed.ms.time.release",
+        "tokens.distributions.pre_programmed.token",
+        "tokens.distributions.pre_programmed.token.last_claim",
+        "tokens.distributions.pre_programmed.token.last_claim.identity",
+        "tokens.distributions.pre_programmed.token.time",
+        "tokens.distributions.pre_programmed.token.time.recipient",
+        "identities.identity.contract_info.bound.keys",
+        "identities.identity.contract_info.bound.keys.latest",
+        "identities.identity.contract_info.bound.keys.purpose",
+        "identities.identity.contract_info.bound.keys.purpose.unique",
+        "identities.identity.contract_info.bound.keys.purpose.key",
+        "identities.identity.key_budgets",
+        "identities.identity.key_budgets.key",
+        "shielded_balances.main_pool.nullifiers.nullifier",
         "contract_groups.groups.group",
         "contract_groups.groups.group.info",
         "contract_groups.groups.group.contracts",
@@ -711,7 +713,8 @@ mod fixtures {
         let mut wrongly_listed = vec![];
         drive_structure().walk(&mut |node| {
             let reached = visited.contains(&node.id);
-            let listed = UNVERIFIED.contains(&node.id.as_str());
+            let listed = UNVERIFIED.contains(&node.id.as_str())
+                || REACHED_BY_STRATEGY_TESTS.contains(&node.id.as_str());
             if !reached && !listed {
                 unreached.push(node.id.clone());
             }

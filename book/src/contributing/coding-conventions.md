@@ -514,8 +514,9 @@ now does.
    constant, with `since` set to the protocol version that introduces it.
 4. Regenerate the exported file and commit it:
    `UPDATE_GROVEDB_STRUCTURE=1 cargo test -p drive --lib structure::tests`.
-5. If no fixture in `structure/tests.rs` writes to the new nodes, add one, or
-   list them in `UNVERIFIED` with the reason.
+5. Make sure something writes to the new nodes under test: a strategy test
+   (every chain they run is checked against the description), or a fixture in
+   `structure/tests.rs`. Otherwise list them in `UNVERIFIED`.
 6. The pull request gets a comment with a link to the structure viewer
    showing the new nodes. Check that it shows what you meant to add.
 
