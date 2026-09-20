@@ -105,7 +105,9 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "json-conversion",
   "data-contract-cbor-conversion",
 ] }
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
+# `structure`: the strategy tests check every state they build against the
+# GroveDB structure description
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks", "structure"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
 grovedb-commitment-tree = { workspace = true, features = ["client"] }
