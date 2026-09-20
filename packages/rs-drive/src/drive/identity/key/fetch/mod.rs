@@ -1768,6 +1768,122 @@ mod tests {
         assert!(issues.is_empty(), "grovedb issues: {issues:?}");
     }
 
+    /// A contract-level bound ENCRYPTION or DECRYPTION key stored under `Unique` is the only
+    /// element of its purpose subtree, at the empty key. It has no key id entry, so listing the
+    /// keys of that kind returns nothing and the key is read as the current one.
+    #[test]
+    fn test_fetch_contract_bound_encryption_and_decryption_keys_with_unique() {
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+        use dpp::identity::contract_bounds::ContractBounds;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dpp::tests::fixtures::get_dashpay_contract_fixture;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let transaction = drive.grove.start_transaction();
+
+        let identity = Identity::random_identity(2, Some(4244), platform_version)
+            .expect("expected a random identity");
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let mut contract =
+            get_dashpay_contract_fixture(Some(identity.id()), 1, platform_version.protocol_version)
+                .data_contract_owned();
+        contract
+            .config_mut()
+            .set_requires_identity_encryption_bounded_key(Some(StorageKeyRequirements::Unique));
+        contract
+            .config_mut()
+            .set_requires_identity_decryption_bounded_key(Some(StorageKeyRequirements::Unique));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to apply contract");
+
+        let bounds = ContractBounds::SingleContract { id: contract.id() };
+        let mut rng = rand::rngs::StdRng::seed_from_u64(4245);
+        for (id, purpose) in [(2u32, Purpose::ENCRYPTION), (3, Purpose::DECRYPTION)] {
+            let key = IdentityPublicKey::random_key_with_known_attributes(
+                id,
+                &mut rng,
+                purpose,
+                SecurityLevel::MEDIUM,
+                KeyType::ECDSA_SECP256K1,
+                Some(bounds.clone()),
+                platform_version,
+            )
+            .expect("expected a bound key")
+            .0;
+            drive
+                .add_new_unique_keys_to_identity(
+                    identity.id().to_buffer(),
+                    vec![key],
+                    &BlockInfo::default(),
+                    true,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected to add a bound key");
+        }
+
+        let key_ids = |purpose: Purpose, kind: KeyKindRequestType| -> KeyIDVec {
+            drive
+                .fetch_identity_keys(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: ContractBoundKey(contract.id().to_buffer(), purpose, kind),
+                        limit: Some(16),
+                        offset: None,
+                    },
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected to fetch bound key ids")
+        };
+        for (purpose, key_id) in [(Purpose::ENCRYPTION, 2), (Purpose::DECRYPTION, 3)] {
+            assert_eq!(
+                key_ids(purpose, CurrentKeyOfKindRequest),
+                vec![key_id],
+                "the unique {purpose} key is current"
+            );
+            assert_eq!(
+                key_ids(purpose, AllKeysOfKindRequest),
+                KeyIDVec::new(),
+                "a unique {purpose} key has no key id entry to list"
+            );
+        }
+
+        let issues = drive
+            .grove
+            .visualize_verify_grovedb(
+                Some(&transaction),
+                true,
+                false,
+                &platform_version.drive.grove_version,
+            )
+            .expect("expected to verify grovedb");
+        assert!(issues.is_empty(), "grovedb issues: {issues:?}");
+    }
+
     #[test]
     fn test_into_path_query_contract_document_type_bound_key_all_keys() {
         let identity_id: [u8; 32] = [20u8; 32];
