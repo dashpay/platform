@@ -42,16 +42,16 @@ impl ContractUserModerationTransitionAction {
     }
 
     /// What is done, to whom
-    pub fn action(&self) -> ContractUserModerationAction {
+    pub fn action(&self) -> &ContractUserModerationAction {
         match self {
-            ContractUserModerationTransitionAction::V0(action) => action.action,
+            ContractUserModerationTransitionAction::V0(action) => &action.action,
         }
     }
 
     /// The target's status as read when the transition was validated
-    pub fn current_status(&self) -> ContractModerationStatus {
+    pub fn current_status(&self) -> &ContractModerationStatus {
         match self {
-            ContractUserModerationTransitionAction::V0(action) => action.current_status,
+            ContractUserModerationTransitionAction::V0(action) => &action.current_status,
         }
     }
 

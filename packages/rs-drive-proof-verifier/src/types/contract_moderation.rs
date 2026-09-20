@@ -6,9 +6,11 @@
 use crate::Error;
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
+use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
 pub use dpp::data_contract::config::moderation::{
-    ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
-    ContractModerationStatus,
+    ContractBan, ContractModerationList, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
+    ContractSuspension,
 };
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -131,6 +133,25 @@ pub fn entries_query_from_request(
     })
 }
 
+/// The reason of an unproved response. Every ban and every suspension carries one, so a
+/// response without it is refused, and so is a code that is not a u16.
+pub fn reason_from_response(
+    reason: Option<ContractModerationReasonProto>,
+) -> Result<ContractModerationReason, Error> {
+    let ContractModerationReasonProto { code, text } =
+        reason.ok_or(Error::ResponseDecodeError {
+            error: "contract moderation entry holds no reason".to_string(),
+        })?;
+    let code = code
+        .map(|code| {
+            u16::try_from(code).map_err(|_| Error::ResponseDecodeError {
+                error: format!("contract moderation reason code {code} is not a u16"),
+            })
+        })
+        .transpose()?;
+    Ok(ContractModerationReason { code, text })
+}
+
 /// The entries of an unproved response.
 pub fn entries_from_response(
     entries: Vec<ContractModerationEntryProto>,
@@ -148,6 +169,7 @@ pub fn entries_from_response(
                     }
                 })?,
                 until: entry.until,
+                reason: reason_from_response(entry.reason)?,
             })
         })
         .collect::<Result<Vec<_>, Error>>()
@@ -167,8 +189,10 @@ mod tests {
         // A banned identity, read on the suspension list alone: not suspended, and nothing
         // said about the banlist.
         let banned = ContractModerationStatus {
-            banned: true,
-            suspended_until: None,
+            ban: Some(ContractBan {
+                reason: ContractModerationReason::from_text("spam"),
+            }),
+            suspension: None,
         };
         let suspensions_only = ContractModerationListStatuses::from_status(
             &[ContractModerationList::Suspensions],
@@ -191,8 +215,11 @@ mod tests {
         let suspended = ContractModerationListStatuses::from_status(
             &[ContractModerationList::Suspensions],
             &ContractModerationStatus {
-                banned: false,
-                suspended_until: Some(10),
+                ban: None,
+                suspension: Some(ContractSuspension {
+                    until: 10,
+                    reason: ContractModerationReason::from_text("flooding"),
+                }),
             },
         );
         assert!(suspended.is_barred_on_queried_lists_at(9));
@@ -283,10 +310,18 @@ mod tests {
             ContractModerationEntryProto {
                 identity_id: id(1).to_vec(),
                 until: None,
+                reason: Some(ContractModerationReasonProto {
+                    code: None,
+                    text: "spam".to_string(),
+                }),
             },
             ContractModerationEntryProto {
                 identity_id: id(2).to_vec(),
                 until: Some(99),
+                reason: Some(ContractModerationReasonProto {
+                    code: Some(3),
+                    text: String::new(),
+                }),
             },
         ])
         .expect("expected entries");
@@ -295,11 +330,16 @@ mod tests {
             &[
                 ContractModerationEntry {
                     identity_id: id(1),
-                    until: None
+                    until: None,
+                    reason: ContractModerationReason::from_text("spam"),
                 },
                 ContractModerationEntry {
                     identity_id: id(2),
-                    until: Some(99)
+                    until: Some(99),
+                    reason: ContractModerationReason {
+                        code: Some(3),
+                        text: String::new(),
+                    },
                 }
             ]
         );
@@ -307,9 +347,22 @@ mod tests {
         let err = entries_from_response(vec![ContractModerationEntryProto {
             identity_id: vec![1; 5],
             until: None,
+            reason: Some(ContractModerationReasonProto::default()),
         }])
         .unwrap_err();
         assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+
+        // Every entry carries a reason
+        let err = entries_from_response(vec![ContractModerationEntryProto {
+            identity_id: id(1).to_vec(),
+            until: None,
+            reason: None,
+        }])
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
     }
 
     #[test]
@@ -323,10 +376,12 @@ mod tests {
             ContractModerationEntry {
                 identity_id: id(1),
                 until: Some(5),
+                reason: ContractModerationReason::default(),
             },
             ContractModerationEntry {
                 identity_id: id(2),
                 until: Some(6),
+                reason: ContractModerationReason::default(),
             },
         ]);
         assert_eq!(
@@ -345,6 +400,7 @@ mod tests {
         let short = ContractModerationEntries(vec![ContractModerationEntry {
             identity_id: id(1),
             until: Some(5),
+            reason: ContractModerationReason::default(),
         }]);
         assert_eq!(short.next_query(&query), None);
     }

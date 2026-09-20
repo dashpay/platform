@@ -5,6 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
@@ -42,9 +43,10 @@ impl Drive {
         contract_id: [u8; 32],
         list: ContractModerationList,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .contract
             .moderation
@@ -54,7 +56,7 @@ impl Drive {
                 contract_id,
                 list,
                 estimated_costs_only_with_layer_info,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_contract_moderation_entry".to_string(),

@@ -221,13 +221,17 @@ describe('ContractsFacade', () => {
       {
         facade: 'banUser',
         wasm: 'contractBanUser',
-        result: { lists: ['banlist', 'suspensions'], banned: true },
+        result: { lists: ['banlist', 'suspensions'], banned: true, banReason: { text: 'spam' } },
       },
       { facade: 'unbanUser', wasm: 'contractUnbanUser', result: { lists: ['banlist'], banned: false } },
       {
         facade: 'suspendUser',
         wasm: 'contractSuspendUser',
-        result: { lists: ['suspensions'], suspendedUntil: BigInt(1800000000000) },
+        result: {
+          lists: ['suspensions'],
+          suspendedUntil: BigInt(1800000000000),
+          suspensionReason: { code: 7, text: 'flooding' },
+        },
       },
       { facade: 'unsuspendUser', wasm: 'contractUnsuspendUser', result: { lists: ['suspensions'] } },
     ] as const;
@@ -240,6 +244,7 @@ describe('ContractsFacade', () => {
           contractId,
           identityId,
           until: BigInt(1800000000000),
+          reason: { text: 'spam' },
           signer,
         };
 
@@ -247,6 +252,7 @@ describe('ContractsFacade', () => {
 
         expect(stub).to.be.calledOnceWithExactly(options);
         expect(moderated.lists).to.deep.equal(result.lists);
+        expect(moderated.banReason).to.deep.equal('banReason' in result ? result.banReason : undefined);
         if (!result.lists.includes('banlist')) {
           expect(moderated.banned).to.equal(undefined);
         }

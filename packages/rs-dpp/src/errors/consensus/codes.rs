@@ -268,6 +268,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidContractModerationConfigError(_) => 10900,
             Self::ContractModerationSelfTargetError(_) => 10901,
             // 10902 is reserved for the moderation earnings follow-up.
+            Self::ContractModerationReasonTooLongError(_) => 10903,
         }
     }
 }

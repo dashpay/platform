@@ -8,8 +8,9 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
+use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::data_contract::config::moderation::{ContractModerationList, ContractModerationReason};
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -46,6 +47,16 @@ pub(super) fn list_to_request(list: ContractModerationList) -> i32 {
     match list {
         ContractModerationList::Banlist => ContractModerationListProto::Banlist as i32,
         ContractModerationList::Suspensions => ContractModerationListProto::Suspensions as i32,
+    }
+}
+
+/// A reason as the wire carries it.
+pub(super) fn reason_to_response(
+    reason: ContractModerationReason,
+) -> ContractModerationReasonProto {
+    ContractModerationReasonProto {
+        code: reason.code.map(u32::from),
+        text: reason.text,
     }
 }
 
@@ -87,7 +98,9 @@ pub(super) mod tests {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::config::moderation::{
+        ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
     use dpp::data_contract::DataContract;
     use dpp::identifier::Identifier;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -95,6 +108,11 @@ pub(super) mod tests {
 
     pub const BANLIST: i32 = 1;
     pub const SUSPENSIONS: i32 = 2;
+    /// The reason [`ban`] gives.
+    pub const BAN_REASON: &str = "spam";
+    /// The reason [`suspend`] gives, with a code.
+    pub const SUSPENSION_REASON: &str = "flooding";
+    pub const SUSPENSION_REASON_CODE: u16 = 7;
 
     /// Stores a contract that keeps the lists asked for (none: an unmoderated contract).
     pub fn store_contract(
@@ -126,6 +144,7 @@ pub(super) mod tests {
             .add_contract_ban(
                 contract.id(),
                 target,
+                &ContractModerationReason::from_text(BAN_REASON),
                 contract.owner_id(),
                 &BlockInfo::default(),
                 true,
@@ -148,6 +167,10 @@ pub(super) mod tests {
                 contract.id(),
                 target,
                 until,
+                &ContractModerationReason {
+                    code: Some(SUSPENSION_REASON_CODE),
+                    text: SUSPENSION_REASON.to_string(),
+                },
                 false,
                 contract.owner_id(),
                 &BlockInfo::default(),

@@ -237,7 +237,9 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
-    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::config::moderation::{
+        ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -435,6 +437,7 @@ mod fixtures {
             .add_contract_ban(
                 contract.id(),
                 Identifier::from([0x21; 32]),
+                &ContractModerationReason::from_text("spam"),
                 contract.owner_id(),
                 &BlockInfo::default(),
                 true,
@@ -447,6 +450,7 @@ mod fixtures {
                 contract.id(),
                 Identifier::from([0x22; 32]),
                 1_000,
+                &ContractModerationReason::from_text("flooding"),
                 false,
                 contract.owner_id(),
                 &BlockInfo::default(),

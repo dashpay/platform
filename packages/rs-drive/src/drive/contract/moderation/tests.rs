@@ -12,14 +12,37 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractModerationConfig, ContractModerationList, ContractModerationListStatuses,
-    ContractModerationStatus, ContractModerators,
+    ContractBan, ContractModerationConfig, ContractModerationList, ContractModerationListStatuses,
+    ContractModerationReason, ContractModerationStatus, ContractModerators, ContractSuspension,
 };
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
+
+fn reason(text: &str) -> ContractModerationReason {
+    ContractModerationReason::from_text(text)
+}
+
+fn banned_for(text: &str) -> ContractModerationStatus {
+    ContractModerationStatus {
+        ban: Some(ContractBan {
+            reason: reason(text),
+        }),
+        suspension: None,
+    }
+}
+
+fn suspended_until(until: u64, text: &str) -> ContractModerationStatus {
+    ContractModerationStatus {
+        ban: None,
+        suspension: Some(ContractSuspension {
+            until,
+            reason: reason(text),
+        }),
+    }
+}
 
 fn identity(seed: u8) -> Identifier {
     Identifier::from([seed; 32])
@@ -178,6 +201,7 @@ fn should_keep_the_list_trees_and_their_entries_across_a_contract_update() {
         .add_contract_ban(
             contract.id(),
             target,
+            &reason("spam"),
             contract.owner_id(),
             &BlockInfo::default(),
             true,
@@ -224,10 +248,7 @@ fn should_keep_the_list_trees_and_their_entries_across_a_contract_update() {
         contract.id(),
         target,
         &[ContractModerationList::Banlist],
-        ContractModerationStatus {
-            banned: true,
-            suspended_until: None,
-        },
+        banned_for("spam"),
     );
 }
 
@@ -253,6 +274,7 @@ fn should_ban_and_unban_and_prove_the_status_and_the_entries() {
         .add_contract_ban(
             contract_id,
             target,
+            &reason("spam"),
             moderator,
             &BlockInfo::default(),
             true,
@@ -262,16 +284,7 @@ fn should_ban_and_unban_and_prove_the_status_and_the_entries() {
         .expect("expected to ban");
     assert!(fee.storage_fee > 0, "a ban stores an entry");
 
-    assert_status(
-        &drive,
-        contract_id,
-        target,
-        &BOTH,
-        ContractModerationStatus {
-            banned: true,
-            suspended_until: None,
-        },
-    );
+    assert_status(&drive, contract_id, target, &BOTH, banned_for("spam"));
     assert_entries(
         &drive,
         contract_id,
@@ -283,6 +296,7 @@ fn should_ban_and_unban_and_prove_the_status_and_the_entries() {
         &[ContractModerationEntry {
             identity_id: target,
             until: None,
+            reason: reason("spam"),
         }],
     );
 
@@ -338,6 +352,7 @@ fn should_suspend_replace_and_unsuspend() {
             contract_id,
             target,
             10,
+            &reason("flooding"),
             false,
             moderator,
             &BlockInfo::default(),
@@ -351,10 +366,7 @@ fn should_suspend_replace_and_unsuspend() {
         contract_id,
         target,
         &lists,
-        ContractModerationStatus {
-            banned: false,
-            suspended_until: Some(10),
-        },
+        suspended_until(10, "flooding"),
     );
 
     drive
@@ -362,6 +374,7 @@ fn should_suspend_replace_and_unsuspend() {
             contract_id,
             target,
             20,
+            &reason("flooding again, after a warning"),
             true,
             moderator,
             &BlockInfo::default(),
@@ -370,15 +383,13 @@ fn should_suspend_replace_and_unsuspend() {
             platform_version,
         )
         .expect("expected to replace the suspension");
+    // The replacement brings its own reason, of another length.
     assert_status(
         &drive,
         contract_id,
         target,
         &lists,
-        ContractModerationStatus {
-            banned: false,
-            suspended_until: Some(20),
-        },
+        suspended_until(20, "flooding again, after a warning"),
     );
     assert_entries(
         &drive,
@@ -391,6 +402,7 @@ fn should_suspend_replace_and_unsuspend() {
         &[ContractModerationEntry {
             identity_id: target,
             until: Some(20),
+            reason: reason("flooding again, after a warning"),
         }],
     );
 
@@ -428,6 +440,7 @@ fn should_estimate_before_applying_every_writer() {
         .add_contract_ban(
             contract_id,
             target,
+            &reason("spam"),
             moderator,
             &block_info,
             false,
@@ -439,6 +452,7 @@ fn should_estimate_before_applying_every_writer() {
         .add_contract_ban(
             contract_id,
             target,
+            &reason("spam"),
             moderator,
             &block_info,
             true,
@@ -454,6 +468,7 @@ fn should_estimate_before_applying_every_writer() {
             contract_id,
             target,
             7,
+            &reason("flooding"),
             false,
             moderator,
             &block_info,
@@ -467,6 +482,7 @@ fn should_estimate_before_applying_every_writer() {
             contract_id,
             target,
             7,
+            &reason("flooding"),
             false,
             moderator,
             &block_info,
@@ -545,6 +561,7 @@ fn should_page_entries_with_a_cursor_and_bound_the_limit() {
             .add_contract_ban(
                 contract_id,
                 target,
+                &reason("spam"),
                 moderator,
                 &BlockInfo::default(),
                 true,
@@ -556,6 +573,7 @@ fn should_page_entries_with_a_cursor_and_bound_the_limit() {
     let entry = |identity_id| ContractModerationEntry {
         identity_id,
         until: None,
+        reason: reason("spam"),
     };
 
     let first_page = ContractModerationEntriesQuery {
@@ -618,6 +636,7 @@ fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
             contract_id,
             target,
             10,
+            &reason("flooding"),
             false,
             first_moderator,
             &BlockInfo::default_with_epoch(Epoch::new(0).expect("epoch 0")),
@@ -628,14 +647,15 @@ fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
         .expect("expected to suspend");
     assert!(fee.storage_fee > 0, "a suspension stores an entry");
 
-    // Another moderator, a later epoch. The entry keeps its size, so the replacement stores
-    // nothing new, and the storage stays the first moderator's.
+    // Another moderator, a later epoch, a reason of the same length. The entry keeps its size,
+    // so the replacement stores nothing new, and the storage stays the first moderator's.
     let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
     let fee = drive
         .add_contract_suspension(
             contract_id,
             target,
             20,
+            &reason("flooding"),
             true,
             second_moderator,
             &later,
@@ -646,7 +666,7 @@ fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
         .expect("expected to replace the suspension");
     assert_eq!(
         fee.storage_fee, 0,
-        "a fixed-size replacement stores nothing"
+        "a same-size replacement stores nothing"
     );
 
     let fee = drive
@@ -667,6 +687,152 @@ fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
 }
 
 #[test]
+fn should_bill_the_replacing_moderator_for_a_longer_reason() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract(false, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let first_moderator = identity(0x51);
+    let second_moderator = identity(0x52);
+    let target = identity(0x53);
+
+    let first_fee = drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            10,
+            &reason("flooding"),
+            false,
+            first_moderator,
+            &BlockInfo::default_with_epoch(Epoch::new(0).expect("epoch 0")),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to suspend");
+
+    // Another moderator, a later epoch, a longer reason: the added bytes are the second
+    // moderator's to pay, and the flags merge as they do when a document changes hands, so
+    // the replacement does not fail on the two owners.
+    let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
+    let longer = reason(&"flooding ".repeat(40));
+    let second_fee = drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            20,
+            &longer,
+            true,
+            second_moderator,
+            &later,
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to replace the suspension with a longer reason");
+    assert!(second_fee.storage_fee > 0, "the added bytes are stored");
+    assert!(
+        second_fee.storage_fee > first_fee.storage_fee,
+        "the longer reason costs more than the whole first entry"
+    );
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &[ContractModerationList::Suspensions],
+        ContractModerationStatus {
+            ban: None,
+            suspension: Some(ContractSuspension {
+                until: 20,
+                reason: longer,
+            }),
+        },
+    );
+
+    // The entry, and the refund of its removal, passed to the moderator that replaced it.
+    let fee = drive
+        .remove_contract_suspension(contract_id, target, &later, true, None, platform_version)
+        .expect("expected to unsuspend");
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(second_moderator)
+            .is_some(),
+        "the replacing moderator owns the entry"
+    );
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(first_moderator)
+            .is_none(),
+        "the first moderator's bytes passed on with the entry"
+    );
+}
+
+#[test]
+fn should_charge_a_ban_by_the_length_of_its_reason() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract(true, false);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let moderator = contract.owner_id();
+    let max_length = platform_version
+        .system_limits
+        .max_contract_moderation_reason_length as usize;
+
+    let ban = |seed: u8, reason: &ContractModerationReason, apply: bool| {
+        drive
+            .add_contract_ban(
+                contract_id,
+                identity(seed),
+                reason,
+                moderator,
+                &BlockInfo::default(),
+                apply,
+                None,
+                platform_version,
+            )
+            .expect("expected to ban")
+    };
+
+    let empty = ban(0x61, &ContractModerationReason::default(), true);
+    let longest = ContractModerationReason {
+        code: Some(u16::MAX),
+        text: "x".repeat(max_length),
+    };
+    let estimated = ban(0x62, &longest, false);
+    let full = ban(0x62, &longest, true);
+
+    // Two bytes of code and the text, at the storage price of a byte, and the few bytes the
+    // length prefixes of a longer value grow by.
+    let per_byte = platform_version
+        .fee_version
+        .storage
+        .storage_disk_usage_credit_per_byte;
+    let added_bytes = (full.storage_fee - empty.storage_fee) / per_byte;
+    let reason_bytes = max_length as u64 + 2;
+    assert!(
+        (reason_bytes..=reason_bytes + 8).contains(&added_bytes),
+        "{} bytes added for a reason of {}",
+        added_bytes,
+        reason_bytes
+    );
+    assert_eq!(estimated.storage_fee, full.storage_fee, "estimated storage");
+
+    // The longest entry reads back whole.
+    assert_status(
+        &drive,
+        contract_id,
+        identity(0x62),
+        &[ContractModerationList::Banlist],
+        ContractModerationStatus {
+            ban: Some(ContractBan { reason: longest }),
+            suspension: None,
+        },
+    );
+}
+
+#[test]
 fn should_say_nothing_about_a_list_the_status_proof_does_not_cover() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -677,6 +843,7 @@ fn should_say_nothing_about_a_list_the_status_proof_does_not_cover() {
         .add_contract_ban(
             contract.id(),
             target,
+            &reason("spam"),
             contract.owner_id(),
             &BlockInfo::default(),
             true,

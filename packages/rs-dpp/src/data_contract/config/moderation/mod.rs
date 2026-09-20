@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 
+mod reason;
+pub use reason::ContractModerationReason;
+
 /// Who may send a `ContractUserModeration` transition for the contract.
 ///
 /// The contract owner always may, named or not. A moderator set is fixed in the config and
@@ -303,42 +306,64 @@ impl JsonSafeFields for ContractModerationConfig {}
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractModerationList {}
 
+/// A banlist entry.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractBan {
+    /// Why the moderator banned the identity.
+    pub reason: ContractModerationReason,
+}
+
+/// A suspension list entry.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractSuspension {
+    /// The block time, in milliseconds, at which the suspension lapses.
+    pub until: TimestampMillis,
+    /// Why the moderator suspended the identity.
+    pub reason: ContractModerationReason,
+}
+
 /// What a contract's moderation lists say about one identity.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Default,
-    Encode,
-    Decode,
-    DecodeUntrusted,
-    Serialize,
-    Deserialize,
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ContractModerationStatus {
-    /// The identity is on the banlist.
-    pub banned: bool,
-    /// The identity is on the suspension list, until this block time in milliseconds. A
-    /// lapsed suspension (at or before the block time) still appears here until it is swept.
-    pub suspended_until: Option<TimestampMillis>,
+    /// The identity's banlist entry, `None` when it is not banned.
+    pub ban: Option<ContractBan>,
+    /// The identity's suspension list entry, `None` when it is not suspended. A lapsed
+    /// suspension (at or before the block time) still appears here until it is swept.
+    pub suspension: Option<ContractSuspension>,
 }
 
 impl ContractModerationStatus {
+    /// Whether the identity is on the banlist.
+    pub fn banned(&self) -> bool {
+        self.ban.is_some()
+    }
+
+    /// The block time, in milliseconds, until which the identity is suspended, lapsed or not.
+    pub fn suspended_until(&self) -> Option<TimestampMillis> {
+        self.suspension.as_ref().map(|suspension| suspension.until)
+    }
+
     /// Whether the identity is barred from acting on the contract at the document level at
     /// `block_time_ms`: it is banned, or under a suspension that has not lapsed.
     pub fn is_barred_at(&self, block_time_ms: TimestampMillis) -> bool {
-        self.banned
+        self.banned()
             || self
-                .suspended_until
+                .suspended_until()
                 .is_some_and(|until| until > block_time_ms)
     }
 
     /// Whether the identity carries a suspension that has lapsed at `block_time_ms`.
     pub fn has_lapsed_suspension_at(&self, block_time_ms: TimestampMillis) -> bool {
-        self.suspended_until
+        self.suspended_until()
             .is_some_and(|until| until <= block_time_ms)
     }
 }
@@ -347,21 +372,21 @@ impl ContractModerationStatus {
 /// other list. It is what the proof of a moderation transition's execution shows: that proof
 /// holds the edited entry only, so the other list stays unknown rather than being reported as
 /// empty (an identity unsuspended a moment ago may well be banned).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 #[serde(tag = "list", rename_all = "camelCase")]
 pub enum ContractModerationListStatus {
     /// The banlist entry
     #[serde(rename_all = "camelCase")]
     Banlist {
-        /// The identity is on the banlist.
-        banned: bool,
+        /// The identity's banlist entry, `None` when it is not banned.
+        ban: Option<ContractBan>,
     },
     /// The suspension list entry
     #[serde(rename_all = "camelCase")]
     Suspensions {
-        /// The identity is on the suspension list, until this block time in milliseconds. A
-        /// lapsed suspension still appears here until it is swept.
-        suspended_until: Option<TimestampMillis>,
+        /// The identity's suspension list entry, `None` when it is not suspended. A lapsed
+        /// suspension still appears here until it is swept.
+        suspension: Option<ContractSuspension>,
     },
 }
 
@@ -370,10 +395,10 @@ impl ContractModerationListStatus {
     pub fn from_status(list: ContractModerationList, status: &ContractModerationStatus) -> Self {
         match list {
             ContractModerationList::Banlist => Self::Banlist {
-                banned: status.banned,
+                ban: status.ban.clone(),
             },
             ContractModerationList::Suspensions => Self::Suspensions {
-                suspended_until: status.suspended_until,
+                suspension: status.suspension.clone(),
             },
         }
     }
@@ -409,21 +434,34 @@ impl ContractModerationListStatuses {
         )
     }
 
-    /// Whether the identity is banned, `None` when the banlist was not queried.
-    pub fn banned(&self) -> Option<bool> {
+    /// The identity's banlist entry (`Some(None)`: not banned), `None` when the banlist was
+    /// not queried.
+    pub fn ban(&self) -> Option<Option<&ContractBan>> {
         self.0.iter().find_map(|status| match status {
-            ContractModerationListStatus::Banlist { banned } => Some(*banned),
+            ContractModerationListStatus::Banlist { ban } => Some(ban.as_ref()),
             ContractModerationListStatus::Suspensions { .. } => None,
         })
+    }
+
+    /// The identity's suspension list entry (`Some(None)`: not suspended), `None` when the
+    /// suspension list was not queried.
+    pub fn suspension(&self) -> Option<Option<&ContractSuspension>> {
+        self.0.iter().find_map(|status| match status {
+            ContractModerationListStatus::Banlist { .. } => None,
+            ContractModerationListStatus::Suspensions { suspension } => Some(suspension.as_ref()),
+        })
+    }
+
+    /// Whether the identity is banned, `None` when the banlist was not queried.
+    pub fn banned(&self) -> Option<bool> {
+        self.ban().map(|ban| ban.is_some())
     }
 
     /// Until when the identity is suspended (`Some(None)`: not suspended), `None` when the
     /// suspension list was not queried.
     pub fn suspended_until(&self) -> Option<Option<TimestampMillis>> {
-        self.0.iter().find_map(|status| match status {
-            ContractModerationListStatus::Banlist { .. } => None,
-            ContractModerationListStatus::Suspensions { suspended_until } => Some(*suspended_until),
-        })
+        self.suspension()
+            .map(|suspension| suspension.map(|suspension| suspension.until))
     }
 
     /// Whether one of the lists queried bars the identity at `block_time_ms`. `false` says
@@ -583,17 +621,65 @@ mod tests {
     #[test]
     fn should_tell_barred_from_lapsed() {
         let banned = ContractModerationStatus {
-            banned: true,
-            suspended_until: None,
+            ban: Some(ContractBan::default()),
+            suspension: None,
         };
+        assert!(banned.banned());
         assert!(banned.is_barred_at(0));
         let suspended = ContractModerationStatus {
-            banned: false,
-            suspended_until: Some(100),
+            ban: None,
+            suspension: Some(ContractSuspension {
+                until: 100,
+                reason: ContractModerationReason::from_text("flooding"),
+            }),
         };
+        assert!(!suspended.banned());
+        assert_eq!(suspended.suspended_until(), Some(100));
         assert!(suspended.is_barred_at(99));
         assert!(!suspended.is_barred_at(100));
         assert!(suspended.has_lapsed_suspension_at(100));
         assert!(!suspended.has_lapsed_suspension_at(99));
+    }
+
+    #[test]
+    fn should_report_only_the_lists_read() {
+        let status = ContractModerationStatus {
+            ban: Some(ContractBan {
+                reason: ContractModerationReason::from_text("spam"),
+            }),
+            suspension: None,
+        };
+
+        let banlist_only = ContractModerationListStatuses::from_status(
+            &[ContractModerationList::Banlist],
+            &status,
+        );
+        assert_eq!(banlist_only.banned(), Some(true));
+        assert_eq!(
+            banlist_only
+                .ban()
+                .flatten()
+                .map(|ban| ban.reason.text.as_str()),
+            Some("spam")
+        );
+        assert_eq!(banlist_only.suspension(), None);
+        assert_eq!(banlist_only.suspended_until(), None);
+
+        let both = ContractModerationListStatuses::from_status(
+            &[
+                ContractModerationList::Banlist,
+                ContractModerationList::Suspensions,
+            ],
+            &status,
+        );
+        assert_eq!(both.suspension(), Some(None));
+        assert_eq!(both.suspended_until(), Some(None));
+        assert_eq!(
+            serde_json::to_value(&both).expect("to json"),
+            serde_json::json!([
+                {"list": "banlist", "ban": {"reason": {"code": null, "text": "spam"}}},
+                {"list": "suspensions", "suspension": null},
+            ])
+        );
     }
 }

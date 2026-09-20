@@ -1,4 +1,4 @@
-use crate::drive::contract::moderation::types::encode_until;
+use crate::drive::contract::moderation::types::encode_suspension;
 use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -6,7 +6,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::data_contract::config::moderation::{ContractModerationList, ContractModerationReason};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
@@ -24,6 +24,7 @@ impl Drive {
         contract_id: Identifier,
         identity_id: Identifier,
         until: TimestampMillis,
+        reason: &ContractModerationReason,
         replaces_existing: bool,
         moderator_id: Identifier,
         block_info: &BlockInfo,
@@ -41,6 +42,7 @@ impl Drive {
             contract_id,
             identity_id,
             until,
+            reason,
             replaces_existing,
             moderator_id,
             block_info,
@@ -68,9 +70,11 @@ impl Drive {
         )
     }
 
-    /// A suspension is `until` as eight big-endian bytes under the identity's id, flagged with
-    /// the moderator's identity so the storage refund on removal goes back to whoever paid. An
-    /// existing entry is replaced in place; two operations on one key would fail the batch.
+    /// A suspension is `until` as eight big-endian bytes, then its reason, under the identity's
+    /// id, flagged with the moderator's identity so the storage refund on removal goes back to
+    /// whoever paid. An existing entry is replaced in place; two operations on one key would
+    /// fail the batch. A replacement of another size merges the flags as a document transfer
+    /// does: the entry, and the refund of its removal, pass to the moderator that replaced it.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contract_suspension_operations_v0(
@@ -78,6 +82,7 @@ impl Drive {
         contract_id: Identifier,
         identity_id: Identifier,
         until: TimestampMillis,
+        reason: &ContractModerationReason,
         replaces_existing: bool,
         moderator_id: Identifier,
         block_info: &BlockInfo,
@@ -92,7 +97,7 @@ impl Drive {
                 contract_id.to_buffer(),
                 ContractModerationList::Suspensions,
                 estimated_costs_only_with_layer_info,
-                &platform_version.drive,
+                platform_version,
             )?;
         }
 
@@ -106,7 +111,7 @@ impl Drive {
             ),
             identity_id.as_slice(),
             Element::new_item_with_flags(
-                encode_until(until),
+                encode_suspension(until, reason),
                 storage_flags.to_some_element_flags(),
             ),
         ));

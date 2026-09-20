@@ -5,6 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::config::moderation::ContractModerationReason;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
@@ -25,6 +26,8 @@ impl Drive {
     /// * `contract_id`: The moderated contract.
     /// * `identity_id`: The identity to suspend.
     /// * `until`: The block time, in milliseconds, at which the suspension lapses.
+    /// * `reason`: Why, stored after `until` in the entry's value. Its length is the caller's
+    ///   to check.
     /// * `replaces_existing`: Whether an entry for the identity exists and is replaced.
     /// * `moderator_id`: The identity that pays for the entry.
     /// * `block_info`: The current block.
@@ -42,6 +45,7 @@ impl Drive {
         contract_id: Identifier,
         identity_id: Identifier,
         until: TimestampMillis,
+        reason: &ContractModerationReason,
         replaces_existing: bool,
         moderator_id: Identifier,
         block_info: &BlockInfo,
@@ -60,6 +64,7 @@ impl Drive {
                 contract_id,
                 identity_id,
                 until,
+                reason,
                 replaces_existing,
                 moderator_id,
                 block_info,
@@ -83,6 +88,8 @@ impl Drive {
     /// * `contract_id`: The moderated contract.
     /// * `identity_id`: The identity to suspend.
     /// * `until`: The block time, in milliseconds, at which the suspension lapses.
+    /// * `reason`: Why, stored after `until` in the entry's value. Its length is the caller's
+    ///   to check.
     /// * `replaces_existing`: Whether an entry for the identity exists and is replaced.
     /// * `moderator_id`: The identity that pays for the entry.
     /// * `block_info`: The current block.
@@ -100,6 +107,7 @@ impl Drive {
         contract_id: Identifier,
         identity_id: Identifier,
         until: TimestampMillis,
+        reason: &ContractModerationReason,
         replaces_existing: bool,
         moderator_id: Identifier,
         block_info: &BlockInfo,
@@ -120,6 +128,7 @@ impl Drive {
                 contract_id,
                 identity_id,
                 until,
+                reason,
                 replaces_existing,
                 moderator_id,
                 block_info,

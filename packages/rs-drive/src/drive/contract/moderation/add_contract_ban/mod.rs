@@ -5,6 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::config::moderation::ContractModerationReason;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -13,8 +14,8 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Puts `identity_id` on the banlist of `contract_id`, paid by `moderator_id`, whose
-    /// identity the entry's storage flags name for the refund on removal.
+    /// Puts `identity_id` on the banlist of `contract_id` for `reason`, paid by `moderator_id`,
+    /// whose identity the entry's storage flags name for the refund on removal.
     ///
     /// The caller must have checked that the contract keeps a banlist and that the identity is
     /// not on it. Applies the operations when `apply` is true, otherwise only estimates.
@@ -23,6 +24,7 @@ impl Drive {
     ///
     /// * `contract_id`: The moderated contract.
     /// * `identity_id`: The identity to ban.
+    /// * `reason`: Why, stored as the entry's value. Its length is the caller's to check.
     /// * `moderator_id`: The identity that pays for the entry.
     /// * `block_info`: The current block.
     /// * `apply`: Whether to apply or only estimate.
@@ -38,6 +40,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         identity_id: Identifier,
+        reason: &ContractModerationReason,
         moderator_id: Identifier,
         block_info: &BlockInfo,
         apply: bool,
@@ -54,6 +57,7 @@ impl Drive {
             0 => self.add_contract_ban_v0(
                 contract_id,
                 identity_id,
+                reason,
                 moderator_id,
                 block_info,
                 apply,
@@ -75,6 +79,7 @@ impl Drive {
     ///
     /// * `contract_id`: The moderated contract.
     /// * `identity_id`: The identity to ban.
+    /// * `reason`: Why, stored as the entry's value. Its length is the caller's to check.
     /// * `moderator_id`: The identity that pays for the entry.
     /// * `block_info`: The current block.
     /// * `estimated_costs_only_with_layer_info`: The estimation map for a dry run.
@@ -90,6 +95,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         identity_id: Identifier,
+        reason: &ContractModerationReason,
         moderator_id: Identifier,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -108,6 +114,7 @@ impl Drive {
             0 => self.add_contract_ban_operations_v0(
                 contract_id,
                 identity_id,
+                reason,
                 moderator_id,
                 block_info,
                 estimated_costs_only_with_layer_info,

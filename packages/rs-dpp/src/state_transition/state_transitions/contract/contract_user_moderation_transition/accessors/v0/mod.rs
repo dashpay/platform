@@ -11,7 +11,7 @@ pub trait ContractUserModerationTransitionAccessorsV0 {
     fn identity_contract_nonce(&self) -> IdentityNonce;
     fn set_action(&mut self, action: ContractUserModerationAction);
     /// What is done, to whom
-    fn action(&self) -> ContractUserModerationAction;
+    fn action(&self) -> &ContractUserModerationAction;
     /// The identity the action targets
     fn target_identity_id(&self) -> Identifier {
         self.action().identity_id()

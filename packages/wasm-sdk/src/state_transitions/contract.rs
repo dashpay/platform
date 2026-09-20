@@ -7,6 +7,7 @@ use crate::queries::contract_moderation::set_status_fields;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -261,6 +262,11 @@ export interface ContractModerationOptions {
   identityId: IdentifierLike;
   /** For a suspension: the block time, in milliseconds, at which it lapses */
   until?: bigint;
+  /**
+   * For a ban and a suspension, which both need one: why. Stored with the entry, so anyone
+   * reading the list reads it. Refused beside an unban or an unsuspend.
+   */
+  reason?: ContractModerationReason;
   /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
   signer: IdentitySigner;
   /** Optional broadcast settings */
@@ -281,11 +287,15 @@ export interface ContractModerationResult {
   lists: ContractModerationListKind[];
   /** Set when `lists` includes `banlist`: the identity is on the banlist */
   banned?: boolean;
+  /** When the identity is banned: why */
+  banReason?: ContractModerationReason;
   /**
    * When `lists` includes `suspensions`: the block time, in milliseconds, until which the
    * identity is suspended; undefined when it is not suspended
    */
   suspendedUntil?: bigint;
+  /** When the identity is suspended: why */
+  suspensionReason?: ContractModerationReason;
 }
 "#;
 
@@ -303,6 +313,8 @@ extern "C" {
 struct ContractModerationOptionsInput {
     #[serde(default)]
     until: Option<u64>,
+    #[serde(default)]
+    reason: Option<ContractModerationReason>,
 }
 
 impl WasmSdk {
@@ -336,7 +348,7 @@ impl WasmSdk {
                 "contract moderation options",
             )?;
 
-        let action = moderation_action_from_parts(action, identity_id, parsed.until)
+        let action = moderation_action_from_parts(action, identity_id, parsed.until, parsed.reason)
             .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
 
         // The proof of a ban covers every list the contract keeps, which the verifier reads
@@ -383,7 +395,7 @@ impl WasmSdk {
     /// Puts an identity on a moderated contract's banlist. A banned identity cannot act on the
     /// contract at the document level until it is unbanned.
     ///
-    /// @param options - The moderating identity, the contract, the target and the signer
+    /// @param options - The moderating identity, the contract, the target, the `reason` and the signer
     /// @returns The target's status on the contract, proved
     #[wasm_bindgen(js_name = "contractBanUser")]
     pub async fn contract_ban_user(
@@ -409,7 +421,7 @@ impl WasmSdk {
     /// milliseconds, replacing a suspension it already carries. The first document transition
     /// of the identity after the suspension lapses sweeps it.
     ///
-    /// @param options - The moderating identity, the contract, the target, `until` and the signer
+    /// @param options - The moderating identity, the contract, the target, `until`, the `reason` and the signer
     /// @returns The target's status on the contract, proved
     #[wasm_bindgen(js_name = "contractSuspendUser")]
     pub async fn contract_suspend_user(

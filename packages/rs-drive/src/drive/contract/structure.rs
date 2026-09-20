@@ -109,8 +109,13 @@ pub(crate) fn structure() -> StructureNode {
                             "The banned identity's id",
                         )
                         .kind(ElementKind::Item)
-                        .value("empty; the flags name the moderator that pays for the entry")
-                        .describe("One ban, until an unban."),
+                        .value(
+                            "the moderator's reason: a tag byte (0 no code, 1 a \
+                                 code), the code as a u16 big endian when tagged, \
+                                 then the text as UTF-8 to the end of the value; the \
+                                 flags name the moderator that pays for the entry",
+                        )
+                        .describe("One ban and why, until an unban."),
                     ),
                     StructureNode::fixed(
                         "suspensions",
@@ -134,10 +139,11 @@ pub(crate) fn structure() -> StructureNode {
                         .kind(ElementKind::Item)
                         .value(
                             "the block time in milliseconds the suspension \
-                                 runs until, u64 big endian",
+                                 runs until, u64 big endian, then the moderator's \
+                                 reason as in a banlist entry",
                         )
                         .describe(
-                            "One suspension. A lapsed one stays until the \
+                            "One suspension and why. A lapsed one stays until the \
                                  identity's next document transition sweeps it.",
                         ),
                     ),

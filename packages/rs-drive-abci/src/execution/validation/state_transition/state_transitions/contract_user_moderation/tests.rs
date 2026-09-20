@@ -15,8 +15,9 @@ use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractModerationConfig, ContractModerationList, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationStatus, ContractModerators,
+    ContractBan, ContractModerationConfig, ContractModerationList, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
+    ContractModerators, ContractSuspension,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::random_document::{
@@ -58,6 +59,7 @@ use std::collections::BTreeMap;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
+const CONTRACT_MODERATION_REASON_TOO_LONG: u32 = 10903;
 const OVERFLOW: u32 = 10700;
 const CONTRACT_MODERATION_NOT_ENABLED: u32 = 41100;
 const IDENTITY_NOT_CONTRACT_MODERATOR: u32 = 41101;
@@ -486,8 +488,39 @@ async fn moderation_by(
     .expect("expected to build the moderation transition")
 }
 
+/// The reason `ban_action` gives: a text, no code.
+fn ban_reason() -> ContractModerationReason {
+    ContractModerationReason::from_text("spam")
+}
+
+/// The reason `suspend_action` gives: a text and a code, which nothing checks.
+fn suspension_reason() -> ContractModerationReason {
+    ContractModerationReason {
+        code: Some(7),
+        text: "flooding".to_string(),
+    }
+}
+
+/// The banlist entry `ban_action` leaves.
+fn banned() -> Option<ContractBan> {
+    Some(ContractBan {
+        reason: ban_reason(),
+    })
+}
+
+/// The suspension list entry `suspend_action` leaves.
+fn suspended(until: TimestampMillis) -> Option<ContractSuspension> {
+    Some(ContractSuspension {
+        until,
+        reason: suspension_reason(),
+    })
+}
+
 fn ban_action(identity_id: Identifier) -> ContractUserModerationAction {
-    ContractUserModerationAction::Ban { identity_id }
+    ContractUserModerationAction::Ban {
+        identity_id,
+        reason: ban_reason(),
+    }
 }
 
 fn unban_action(identity_id: Identifier) -> ContractUserModerationAction {
@@ -495,7 +528,11 @@ fn unban_action(identity_id: Identifier) -> ContractUserModerationAction {
 }
 
 fn suspend_action(identity_id: Identifier, until: TimestampMillis) -> ContractUserModerationAction {
-    ContractUserModerationAction::Suspend { identity_id, until }
+    ContractUserModerationAction::Suspend {
+        identity_id,
+        until,
+        reason: suspension_reason(),
+    }
 }
 
 fn unsuspend_action(identity_id: Identifier) -> ContractUserModerationAction {
@@ -518,10 +555,8 @@ async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after
     assert_eq!(
         setup.assert_execution_proved(&ban),
         ContractModerationListStatuses(vec![
-            ContractModerationListStatus::Banlist { banned: true },
-            ContractModerationListStatus::Suspensions {
-                suspended_until: None
-            },
+            ContractModerationListStatus::Banlist { ban: banned() },
+            ContractModerationListStatus::Suspensions { suspension: None },
         ])
     );
 
@@ -545,9 +580,7 @@ async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after
     setup.commit(transaction);
     assert_eq!(
         setup.assert_execution_proved(&unban),
-        ContractModerationListStatuses(vec![ContractModerationListStatus::Banlist {
-            banned: false
-        }])
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Banlist { ban: None }])
     );
 }
 
@@ -566,7 +599,7 @@ async fn should_suspend_until_a_block_time_and_sweep_the_suspension_once_it_laps
     assert_eq!(
         setup.assert_execution_proved(&suspend),
         ContractModerationListStatuses(vec![ContractModerationListStatus::Suspensions {
-            suspended_until: Some(until)
+            suspension: suspended(until)
         }])
     );
 
@@ -614,7 +647,7 @@ async fn should_let_a_named_moderator_moderate_and_refuse_everyone_else() {
 
     let by_moderator = setup.moderate(&setup.moderator, ban_action(user_id)).await;
     assert_success(&setup.process(&by_moderator, &transaction));
-    assert!(setup.status(user_id, Some(&transaction)).banned);
+    assert!(setup.status(user_id, Some(&transaction)).banned());
 
     let owner_bans_moderator = setup.moderate(&setup.owner, ban_action(moderator_id)).await;
     assert_paid_with_code(
@@ -701,7 +734,7 @@ async fn should_refuse_actions_that_do_not_fit_the_targets_status() {
         .await;
     assert_success(&setup.process(&suspend_again, &transaction));
     assert_eq!(
-        setup.status(user_id, Some(&transaction)).suspended_until,
+        setup.status(user_id, Some(&transaction)).suspended_until(),
         Some(BLOCK_TIME_MS + 50)
     );
 
@@ -711,8 +744,8 @@ async fn should_refuse_actions_that_do_not_fit_the_targets_status() {
     assert_eq!(
         setup.status(user_id, Some(&transaction)),
         ContractModerationStatus {
-            banned: true,
-            suspended_until: None,
+            ban: banned(),
+            suspension: None,
         }
     );
     let ban_again = setup.moderate(&setup.owner, ban_action(user_id)).await;
@@ -894,10 +927,10 @@ async fn should_prove_only_the_edited_list_and_leave_the_other_unknown() {
     assert_eq!(
         setup.assert_execution_proved(&unsuspend),
         ContractModerationListStatuses(vec![ContractModerationListStatus::Suspensions {
-            suspended_until: None
+            suspension: None
         }])
     );
-    assert!(setup.status(user_id, None).banned);
+    assert!(setup.status(user_id, None).banned());
 }
 
 #[tokio::test]
@@ -1084,6 +1117,122 @@ async fn should_refuse_a_suspension_ending_past_the_json_safe_range() {
 }
 
 #[tokio::test]
+async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let user_id = setup.user.id();
+    let until = BLOCK_TIME_MS + 10_000;
+
+    // No contract declares ban codes, so nothing checks the code a moderator writes.
+    let suspension_reason = ContractModerationReason {
+        code: Some(u16::MAX),
+        text: "flooding the feed".to_string(),
+    };
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let suspend = setup
+        .moderate(
+            &setup.moderator,
+            ContractUserModerationAction::Suspend {
+                identity_id: user_id,
+                until,
+                reason: suspension_reason.clone(),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&suspend, &transaction));
+    assert_eq!(
+        setup.status(user_id, Some(&transaction)),
+        ContractModerationStatus {
+            ban: None,
+            suspension: Some(ContractSuspension {
+                until,
+                reason: suspension_reason,
+            }),
+        }
+    );
+
+    // An empty reason is a reason.
+    let ban = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Ban {
+                identity_id: user_id,
+                reason: ContractModerationReason::default(),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    assert_eq!(
+        setup.status(user_id, Some(&transaction)),
+        ContractModerationStatus {
+            ban: Some(ContractBan::default()),
+            suspension: None,
+        }
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_reason_longer_than_the_limit() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let user_id = setup.user.id();
+    let max_length = PlatformVersion::latest()
+        .system_limits
+        .max_contract_moderation_reason_length as usize;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let too_long = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Ban {
+                identity_id: user_id,
+                reason: ContractModerationReason::from_text("x".repeat(max_length + 1)),
+            },
+        )
+        .await;
+    assert_unpaid_with_code(
+        &setup.process(&too_long, &transaction),
+        CONTRACT_MODERATION_REASON_TOO_LONG,
+    );
+    let too_long_suspension = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Suspend {
+                identity_id: user_id,
+                until: BLOCK_TIME_MS + 10_000,
+                reason: ContractModerationReason::from_text("x".repeat(max_length + 1)),
+            },
+        )
+        .await;
+    assert_unpaid_with_code(
+        &setup.process(&too_long_suspension, &transaction),
+        CONTRACT_MODERATION_REASON_TOO_LONG,
+    );
+
+    // The limit itself is fine, and the moderator pays for every byte of it.
+    let storage_fee_of = |execution: StateTransitionExecutionResult| match execution {
+        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
+            fee_result.storage_fee
+        }
+        other => panic!("expected a successful execution, got {other:?}"),
+    };
+    let short = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    let short_fee = storage_fee_of(setup.process(&short, &transaction));
+    let longest = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Ban {
+                identity_id: setup.stranger.id(),
+                reason: ContractModerationReason::from_text("x".repeat(max_length)),
+            },
+        )
+        .await;
+    let longest_fee = storage_fee_of(setup.process(&longest, &transaction));
+    assert!(
+        longest_fee > short_fee,
+        "{longest_fee} for the longest reason, {short_fee} for a short one"
+    );
+}
+
+#[tokio::test]
 async fn should_charge_the_same_fee_whether_or_not_the_contract_is_cached() {
     let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
     let ban = setup
@@ -1193,10 +1342,8 @@ async fn should_prove_that_a_ban_removed_the_suspension() {
     assert_eq!(
         setup.assert_execution_proved(&ban),
         ContractModerationListStatuses(vec![
-            ContractModerationListStatus::Banlist { banned: true },
-            ContractModerationListStatus::Suspensions {
-                suspended_until: None
-            },
+            ContractModerationListStatus::Banlist { ban: banned() },
+            ContractModerationListStatus::Suspensions { suspension: None },
         ])
     );
 }

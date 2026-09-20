@@ -6,10 +6,15 @@
 //! └── <contract id>
 //!     ├── [0] the contract (or its history subtree)
 //!     ├── [1] documents
-//!     ├── [2] contract version item
-//!     ├── [3] banlist       -> <identity id> -> Item([])                      (when declared)
-//!     └── [4] suspensions   -> <identity id> -> Item(until, u64 BE millis)     (when declared)
+//!     └── [2] other
+//!         ├── [64]  contract version item
+//!         ├── [128] banlist     -> <identity id> -> Item(reason)               (when declared)
+//!         └── [192] suspensions -> <identity id> -> Item(until ‖ reason)       (when declared)
 //! ```
+//!
+//! `until` is a u64 of block time in milliseconds, big-endian. A reason is a tag byte (`0`: no
+//! code, `1`: a code), the code as a big-endian u16 when tagged, and the text as UTF-8 up to
+//! the end of the value: see [`types::encode_ban`] and [`types::encode_suspension`].
 //!
 //! An entry's storage flags name the moderator that wrote it, so the storage refund of its
 //! deletion goes to that moderator whichever transition deletes it: an explicit unban or
@@ -43,6 +48,3 @@ pub mod types;
 #[cfg(test)]
 #[cfg(feature = "server")]
 mod tests;
-
-/// The stored size of a suspension entry: `until` as a u64.
-pub const CONTRACT_SUSPENSION_VALUE_SIZE: u32 = 8;

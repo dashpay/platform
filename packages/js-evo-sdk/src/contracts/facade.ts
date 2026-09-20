@@ -111,7 +111,9 @@ export class ContractsFacade {
   /**
    * Puts an identity on a moderated contract's banlist (protocol version 14). Signed by the
    * contract owner or a moderator the contract's config names, with a CRITICAL authentication
-   * key. A banned identity cannot act on the contract at the document level.
+   * key. A banned identity cannot act on the contract at the document level. `options.reason`
+   * is required and stored with the entry: a free text of at most 1024 bytes, and an optional
+   * `code` nothing checks, reserved for ban codes contracts may declare later.
    */
   async banUser(options: wasm.ContractModerationOptions): Promise<wasm.ContractModerationResult> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -127,7 +129,7 @@ export class ContractsFacade {
   /**
    * Suspends an identity on a moderated contract until the block time `until` (milliseconds),
    * replacing a suspension it already carries. The suspension is swept by the identity's first
-   * document transition after it lapses.
+   * document transition after it lapses. `options.reason` is required, as for a ban.
    */
   async suspendUser(options: wasm.ContractModerationOptions): Promise<wasm.ContractModerationResult> {
     const w = await this.sdk.getWasmSdkConnected();

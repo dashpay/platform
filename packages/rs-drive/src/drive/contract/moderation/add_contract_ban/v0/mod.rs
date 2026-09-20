@@ -1,3 +1,4 @@
+use crate::drive::contract::moderation::types::encode_ban;
 use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -5,7 +6,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::data_contract::config::moderation::{ContractModerationList, ContractModerationReason};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -21,6 +22,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         identity_id: Identifier,
+        reason: &ContractModerationReason,
         moderator_id: Identifier,
         block_info: &BlockInfo,
         apply: bool,
@@ -36,6 +38,7 @@ impl Drive {
         let batch_operations = self.add_contract_ban_operations_v0(
             contract_id,
             identity_id,
+            reason,
             moderator_id,
             block_info,
             &mut estimated_costs_only_with_layer_info,
@@ -62,14 +65,15 @@ impl Drive {
         )
     }
 
-    /// A ban is an empty item under the identity's id, flagged with the moderator's identity
-    /// so the storage refund on removal goes back to whoever paid.
+    /// A ban is its reason under the identity's id, flagged with the moderator's identity so
+    /// the storage refund on removal goes back to whoever paid.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contract_ban_operations_v0(
         &self,
         contract_id: Identifier,
         identity_id: Identifier,
+        reason: &ContractModerationReason,
         moderator_id: Identifier,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -83,7 +87,7 @@ impl Drive {
                 contract_id.to_buffer(),
                 ContractModerationList::Banlist,
                 estimated_costs_only_with_layer_info,
-                &platform_version.drive,
+                platform_version,
             )?;
         }
 
@@ -98,7 +102,10 @@ impl Drive {
                     ContractModerationList::Banlist,
                 ),
                 identity_id.as_slice(),
-                Element::new_item_with_flags(vec![], storage_flags.to_some_element_flags()),
+                Element::new_item_with_flags(
+                    encode_ban(reason),
+                    storage_flags.to_some_element_flags(),
+                ),
             )),
             &mut batch_operations,
             &platform_version.drive,

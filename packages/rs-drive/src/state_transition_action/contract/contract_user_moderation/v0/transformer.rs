@@ -20,7 +20,7 @@ impl ContractUserModerationTransitionActionV0 {
             moderator_id: *owner_id,
             data_contract_id: *data_contract_id,
             identity_contract_nonce: *identity_contract_nonce,
-            action: *action,
+            action: action.clone(),
             current_status,
             user_fee_increase: *user_fee_increase,
         }
