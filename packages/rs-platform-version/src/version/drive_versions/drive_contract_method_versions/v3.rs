@@ -74,7 +74,7 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V3: DriveContractMethodVersions =
             deduct_from_contract_fee_pot: 0,
             fetch_contract_fee_pot: 0,
             fetch_action_fee_multiplier: 0,
-            set_contract_last_fee_claim_epoch: 0,
+            set_contract_last_fee_claim: 0,
             prove_contract_fee_pots: 0,
             add_estimation_costs_for_contract_fee_pot_update: 0,
         },

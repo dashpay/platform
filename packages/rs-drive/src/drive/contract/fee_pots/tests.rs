@@ -12,7 +12,7 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -21,7 +21,16 @@ use dpp::version::PlatformVersion;
 
 const BOTH: [ContractFeePot; 2] = [ContractFeePot::Owner, ContractFeePot::Moderators];
 
-/// A drive holding one contract, whose other tree the last claim epochs live in.
+/// A claim in `epoch_index`, at a block time and by a claimant that differ from epoch to epoch.
+fn claim_in(epoch_index: u16) -> ContractFeePotLastClaim {
+    ContractFeePotLastClaim {
+        epoch_index,
+        time_ms: 1_700_000_000_000 + u64::from(epoch_index),
+        claimant_id: Identifier::from([epoch_index.to_be_bytes()[1].wrapping_add(1); 32]),
+    }
+}
+
+/// A drive holding one contract, whose other tree the last claims live in.
 fn drive_with_contract() -> (Drive, DataContract) {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -176,15 +185,15 @@ fn should_deduct_from_a_pot_and_refuse_more_than_it_holds() {
 }
 
 #[test]
-fn should_record_the_last_claim_epoch_of_each_pot_on_its_own() {
+fn should_record_the_last_claim_of_each_pot_on_its_own() {
     let (drive, contract) = drive_with_contract();
     let set = |pot, epoch_index| {
         apply(
             &drive,
-            vec![ContractFeePotOperationType::SetLastClaimEpoch {
+            vec![ContractFeePotOperationType::SetLastClaim {
                 contract_id: contract.id(),
                 pot,
-                epoch_index,
+                last_claim: claim_in(epoch_index),
             }],
             true,
         );
@@ -192,25 +201,25 @@ fn should_record_the_last_claim_epoch_of_each_pot_on_its_own() {
 
     set(ContractFeePot::Moderators, 7);
     assert_eq!(
-        fetch(&drive, contract.id(), ContractFeePot::Moderators).last_claim_epoch,
-        Some(7)
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).last_claim,
+        Some(claim_in(7))
     );
     assert_eq!(
-        fetch(&drive, contract.id(), ContractFeePot::Owner).last_claim_epoch,
+        fetch(&drive, contract.id(), ContractFeePot::Owner).last_claim,
         None
     );
 
-    // A later claim replaces the epoch; epoch 0 is an epoch like any other.
+    // A later claim replaces the whole record, its time and its claimant with its epoch;
+    // epoch 0 is an epoch like any other.
     set(ContractFeePot::Moderators, 300);
     set(ContractFeePot::Owner, 0);
     assert_eq!(
-        fetch(&drive, contract.id(), ContractFeePot::Moderators).last_claim_epoch,
-        Some(300)
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).last_claim,
+        Some(claim_in(300))
     );
-    assert_eq!(
-        fetch(&drive, contract.id(), ContractFeePot::Owner).last_claim_epoch,
-        Some(0)
-    );
+    let owner_pot = fetch(&drive, contract.id(), ContractFeePot::Owner);
+    assert_eq!(owner_pot.last_claim, Some(claim_in(0)));
+    assert_eq!(owner_pot.last_claim_epoch(), Some(0));
 }
 
 #[test]
@@ -220,10 +229,10 @@ fn should_prove_the_pots_asked_for_and_nothing_about_the_other() {
     add(&drive, contract.id(), ContractFeePot::Moderators, 100);
     apply(
         &drive,
-        vec![ContractFeePotOperationType::SetLastClaimEpoch {
+        vec![ContractFeePotOperationType::SetLastClaim {
             contract_id: contract.id(),
             pot: ContractFeePot::Moderators,
-            epoch_index: 4,
+            last_claim: claim_in(4),
         }],
         true,
     );
@@ -255,7 +264,7 @@ fn should_prove_the_pots_asked_for_and_nothing_about_the_other() {
         ContractFeePots {
             owner: ContractFeePotState {
                 credits: 10,
-                last_claim_epoch: None,
+                last_claim: None,
             },
             moderators: ContractFeePotState::default(),
         }
@@ -309,10 +318,10 @@ fn should_estimate_a_pot_write_without_writing() {
                 pot: ContractFeePot::Moderators,
                 amount: 100,
             },
-            ContractFeePotOperationType::SetLastClaimEpoch {
+            ContractFeePotOperationType::SetLastClaim {
                 contract_id: contract.id(),
                 pot: ContractFeePot::Moderators,
-                epoch_index: 1,
+                last_claim: claim_in(1),
             },
         ],
         false,
@@ -332,10 +341,10 @@ fn should_estimate_a_pot_write_without_writing() {
                 pot: ContractFeePot::Moderators,
                 amount: 100,
             },
-            ContractFeePotOperationType::SetLastClaimEpoch {
+            ContractFeePotOperationType::SetLastClaim {
                 contract_id: contract.id(),
                 pot: ContractFeePot::Moderators,
-                epoch_index: 1,
+                last_claim: claim_in(1),
             },
         ],
         true,

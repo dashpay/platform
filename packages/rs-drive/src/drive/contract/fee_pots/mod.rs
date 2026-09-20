@@ -1,5 +1,5 @@
-//! The two fee pots a data contract's document action fees accumulate in, and the epoch each
-//! pot was last claimed in (protocol version 14).
+//! The two fee pots a data contract's document action fees accumulate in, and the last claim of
+//! each pot: its epoch, its block time and who claimed it (protocol version 14).
 //!
 //! ```text
 //! [40] PreFundedSpecializedBalances (sum tree)
@@ -8,8 +8,8 @@
 //! └── [192] moderators fee pots (sum tree) -> <contract id> -> SumItem(credits)
 //!
 //! [64] DataContractDocuments -> <contract id> -> [2] the contract's other tree
-//!     ├── [32] epoch the owner pot was last claimed in       Item(u16 BE)   (after a claim)
-//!     └── [96] epoch the moderators pot was last claimed in  Item(u16 BE)   (after a claim)
+//!     ├── [32] last claim of the owner pot       Item(epoch u16 BE | time u64 BE | claimant id)
+//!     └── [96] last claim of the moderators pot  Item(epoch u16 BE | time u64 BE | claimant id)
 //! ```
 //!
 //! The pots sit under a root sum tree on purpose: the credits they hold left an identity's
@@ -32,13 +32,10 @@ mod insert_contract_fee_pot_trees;
 mod prove_contract_fee_pots;
 mod queries;
 #[cfg(feature = "server")]
-mod set_contract_last_fee_claim_epoch;
+mod set_contract_last_fee_claim;
 /// Result types shared by the fetch and verify sides.
 pub mod types;
 
 #[cfg(test)]
 #[cfg(feature = "server")]
 mod tests;
-
-/// The stored size of a last claim epoch item: the epoch index as a u16.
-pub const CONTRACT_LAST_FEE_CLAIM_EPOCH_VALUE_SIZE: u32 = 2;

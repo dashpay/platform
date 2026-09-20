@@ -324,7 +324,7 @@ mod fixtures {
     };
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
-    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
@@ -705,8 +705,8 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to suspend");
-        // Both fee pots hold credits and were claimed once: the pots and the last claim
-        // epochs are created on first use.
+        // Both fee pots hold credits and were claimed once: the pots and the last claims
+        // are created on first use.
         let fee_pot_operations = [ContractFeePot::Owner, ContractFeePot::Moderators]
             .into_iter()
             .flat_map(|pot| {
@@ -716,10 +716,14 @@ mod fixtures {
                         pot,
                         amount: 1_000,
                     },
-                    ContractFeePotOperationType::SetLastClaimEpoch {
+                    ContractFeePotOperationType::SetLastClaim {
                         contract_id: contract.id(),
                         pot,
-                        epoch_index: 3,
+                        last_claim: ContractFeePotLastClaim {
+                            epoch_index: 3,
+                            time_ms: 1_700_000_000_000,
+                            claimant_id: contract.owner_id(),
+                        },
                     },
                 ]
             })

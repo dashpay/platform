@@ -1,6 +1,6 @@
 use crate::drive::contract::paths::{
-    CONTRACT_BANLIST_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY,
-    CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
+    CONTRACT_BANLIST_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY,
+    CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
     CONTRACT_VERSION_KEY,
 };
 use crate::drive::document::structure::document_type;
@@ -106,32 +106,44 @@ pub(crate) fn structure() -> StructureNode {
                              update.",
                     ),
                     StructureNode::fixed(
-                        "last_owner_fee_claim_epoch",
-                        &[CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY],
-                        "LastOwnerFeeClaimEpoch",
-                        "CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY",
+                        "last_owner_fee_claim",
+                        &[CONTRACT_LAST_OWNER_FEE_CLAIM_KEY],
+                        "LastOwnerFeeClaim",
+                        "CONTRACT_LAST_OWNER_FEE_CLAIM_KEY",
                     )
                     .kind(ElementKind::Item)
                     .lazy()
-                    .value("epoch index, u16 big endian")
+                    .value(
+                        "42 bytes: epoch index, u16 big endian; block time in \
+                             milliseconds, u64 big endian; claimant identity id",
+                    )
                     .describe(
-                        "The epoch the contract's owner fee pot was last \
-                             claimed in. Written by the first claim; a pot is \
-                             claimed at most once per epoch.",
+                        "The last claim of the contract's owner fee pot: the \
+                             epoch and the block time it was paid out in, and \
+                             the identity that claimed, which is the contract \
+                             owner. Written by the first claim and replaced by \
+                             every later one; a pot is claimed at most once per \
+                             epoch.",
                     ),
                     StructureNode::fixed(
-                        "last_moderators_fee_claim_epoch",
-                        &[CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY],
-                        "LastModeratorsFeeClaimEpoch",
-                        "CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY",
+                        "last_moderators_fee_claim",
+                        &[CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY],
+                        "LastModeratorsFeeClaim",
+                        "CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY",
                     )
                     .kind(ElementKind::Item)
                     .lazy()
-                    .value("epoch index, u16 big endian")
+                    .value(
+                        "42 bytes: epoch index, u16 big endian; block time in \
+                             milliseconds, u64 big endian; claimant identity id",
+                    )
                     .describe(
-                        "The epoch the contract's moderators fee pot was \
-                             last claimed in. Written by the first claim; a \
-                             pot is claimed at most once per epoch.",
+                        "The last claim of the contract's moderators fee \
+                             pot: the epoch and the block time it was paid out \
+                             in, and the member of the moderation team that \
+                             claimed it for the team. Written by the first \
+                             claim and replaced by every later one; a pot is \
+                             claimed at most once per epoch.",
                     ),
                     StructureNode::fixed(
                         "banlist",

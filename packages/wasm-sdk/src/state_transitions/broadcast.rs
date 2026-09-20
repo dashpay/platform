@@ -8,6 +8,7 @@ use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -41,6 +42,17 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
     }
 }
 
+/// The contract whose copy must be fetched again before the proof of `state_transition` is
+/// verified. The proof of a fee claim covers the balance of every identity the pot pays, and
+/// the verifier reads who they are from the contract. The moderation team can change by a
+/// contract update, so a copy the provider holds may name another team than the node proved.
+fn contract_id_to_refresh(state_transition: &StateTransition) -> Option<Identifier> {
+    match state_transition {
+        StateTransition::ContractFeeClaim(claim) => Some(claim.data_contract_id()),
+        _ => None,
+    }
+}
+
 impl WasmSdk {
     /// Whether the context provider can already supply this contract, either
     /// from its cache or from a definition compiled into the SDK.
@@ -68,6 +80,21 @@ impl WasmSdk {
                 tracing::warn!(
                     error = %error,
                     "Failed to refresh trusted quorum cache before proof verification; using cached keys"
+                );
+            }
+        }
+
+        if let Some(contract_id) = contract_id_to_refresh(state_transition) {
+            // This runs after the transition is broadcast, so a fetch that fails must not
+            // discard a result the network may already have accepted: a copy the provider
+            // holds is what is left to verify against, and it is right unless the team changed.
+            if let Err(error) = self.refresh_contract(contract_id).await {
+                if !self.can_resolve_contract(contract_id) {
+                    return Err(error);
+                }
+                tracing::warn!(
+                    contract_id = %contract_id,
+                    "Failed to fetch the contract of a fee claim again; verifying against the cached copy"
                 );
             }
         }
@@ -413,6 +440,34 @@ mod tests {
             },
         ));
         assert!(referenced_contract_ids(&unban).is_empty());
+    }
+
+    #[test]
+    fn should_refresh_the_contract_of_a_fee_claim_only() {
+        use dash_sdk::dpp::state_transition::contract_fee_claim_transition::v0::ContractFeeClaimTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+
+        let contract_id = Identifier::new([0x44; 32]);
+        let claim = StateTransition::ContractFeeClaim(ContractFeeClaimTransition::V0(
+            ContractFeeClaimTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            },
+        ));
+        assert_eq!(contract_id_to_refresh(&claim), Some(contract_id));
+        // The refresh resolves the contract, so it is not fetched a second time.
+        assert!(referenced_contract_ids(&claim).is_empty());
+
+        // The lists a ban's proof covers never change, so a cached copy of its contract will do.
+        let ban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+            ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            },
+        ));
+        assert_eq!(contract_id_to_refresh(&ban), None);
     }
 
     #[test]

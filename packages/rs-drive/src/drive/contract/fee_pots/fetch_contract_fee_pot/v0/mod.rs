@@ -1,6 +1,6 @@
-use crate::drive::contract::fee_pots::types::{decode_epoch_index, ContractFeePotState};
+use crate::drive::contract::fee_pots::types::{decode_last_claim, ContractFeePotState};
 use crate::drive::contract::paths::{
-    contract_fee_pots_path, contract_last_fee_claim_epoch_key, contract_other_path,
+    contract_fee_pots_path, contract_last_fee_claim_key, contract_other_path,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -35,19 +35,19 @@ impl Drive {
             .unwrap_or_default();
 
         let other_path = contract_other_path(contract_id.as_slice());
-        let last_claim_epoch = self
+        let last_claim = self
             .grove_get_raw_optional_item(
                 (&other_path).into(),
-                contract_last_fee_claim_epoch_key(pot),
+                contract_last_fee_claim_key(pot),
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
                 drive_operations,
                 &platform_version.drive,
             )?
             .map(|value| {
-                decode_epoch_index(&value).map_err(|description| {
+                decode_last_claim(&value).map_err(|description| {
                     Error::Drive(DriveError::CorruptedDriveState(format!(
-                        "last claim epoch of the {} fee pot of contract {} is malformed: {}",
+                        "last claim of the {} fee pot of contract {} is malformed: {}",
                         pot, contract_id, description
                     )))
                 })
@@ -56,7 +56,7 @@ impl Drive {
 
         Ok(ContractFeePotState {
             credits,
-            last_claim_epoch,
+            last_claim,
         })
     }
 }

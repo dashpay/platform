@@ -13,8 +13,7 @@
 //!     .await?;
 //! ```
 
-use dpp::block::epoch::EpochIndex;
-use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -43,9 +42,9 @@ pub struct ClaimedContractFees {
     pub contract_id: Identifier,
     /// The pot that was paid out
     pub pot: ContractFeePot,
-    /// The epoch the pot was last claimed in: the epoch of this claim, unless the pot was
-    /// claimed again since
-    pub last_claim_epoch: EpochIndex,
+    /// The last claim of the pot, which is this claim unless the pot was claimed again since:
+    /// its epoch, the time of its block and the identity that signed it
+    pub last_claim: ContractFeePotLastClaim,
     /// The credits left in the pot: what an equal split left over, and any fee collected
     /// since the claim
     pub remaining_credits: Credits,
@@ -61,13 +60,13 @@ impl TryFrom<StateTransitionProofResult> for ClaimedContractFees {
             StateTransitionProofResult::VerifiedContractFeeClaim(
                 contract_id,
                 pot,
-                last_claim_epoch,
+                last_claim,
                 remaining_credits,
                 balances,
             ) => Ok(Self {
                 contract_id,
                 pot,
-                last_claim_epoch,
+                last_claim,
                 remaining_credits,
                 balances,
             }),

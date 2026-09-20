@@ -111,7 +111,7 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         let epoch_index = block_info.epoch.index;
-        if fee_pot.last_claim_epoch == Some(epoch_index) {
+        if fee_pot.last_claim_epoch() == Some(epoch_index) {
             return refuse(
                 ContractFeesAlreadyClaimedThisEpochError::new(contract_id, pot, epoch_index).into(),
             );
@@ -125,6 +125,7 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
             ContractFeeClaimTransitionAction::from_borrowed_transition_with_payouts(
                 self,
                 epoch_index,
+                block_info.time_ms,
                 payouts,
             )
             .into(),

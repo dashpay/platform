@@ -1,5 +1,5 @@
 use crate::drive::contract::paths::{
-    contract_fee_pots_path_vec, contract_last_fee_claim_epoch_key, contract_other_path_vec,
+    contract_fee_pots_path_vec, contract_last_fee_claim_key, contract_other_path_vec,
 };
 use crate::drive::Drive;
 use crate::error::Error;
@@ -18,15 +18,15 @@ impl Drive {
         )
     }
 
-    /// The query for the epochs the given pots of a contract were last claimed in:
+    /// The query for the last claims of the given pots of a contract:
     /// `[64, contract id, 2] -> 32 | 96`.
-    pub fn contract_last_fee_claim_epochs_query(
+    pub fn contract_last_fee_claims_query(
         contract_id: [u8; 32],
         pots: &[ContractFeePot],
     ) -> PathQuery {
         let mut query = Query::new();
         for pot in pots {
-            query.insert_key(contract_last_fee_claim_epoch_key(*pot).to_vec());
+            query.insert_key(contract_last_fee_claim_key(*pot).to_vec());
         }
         PathQuery::new(
             contract_other_path_vec(&contract_id),
@@ -45,10 +45,7 @@ impl Drive {
             .iter()
             .map(|pot| Self::contract_fee_pot_query(contract_id, *pot))
             .collect();
-        queries.push(Self::contract_last_fee_claim_epochs_query(
-            contract_id,
-            pots,
-        ));
+        queries.push(Self::contract_last_fee_claims_query(contract_id, pots));
         Ok(PathQuery::merge(queries.iter().collect(), grove_version)?)
     }
 }

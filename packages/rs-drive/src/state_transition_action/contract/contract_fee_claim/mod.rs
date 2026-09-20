@@ -6,7 +6,7 @@ pub mod v0;
 use crate::state_transition_action::contract::contract_fee_claim::v0::ContractFeeClaimTransitionActionV0;
 use derive_more::From;
 use dpp::block::epoch::EpochIndex;
-use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
@@ -53,6 +53,18 @@ impl ContractFeeClaimTransitionAction {
     pub fn epoch_index(&self) -> EpochIndex {
         match self {
             ContractFeeClaimTransitionAction::V0(action) => action.epoch_index,
+        }
+    }
+
+    /// What the claim records as the pot's last claim: its epoch, the time of its block and
+    /// the claimant
+    pub fn last_claim(&self) -> ContractFeePotLastClaim {
+        match self {
+            ContractFeeClaimTransitionAction::V0(action) => ContractFeePotLastClaim {
+                epoch_index: action.epoch_index,
+                time_ms: action.time_ms,
+                claimant_id: action.claimant_id,
+            },
         }
     }
 

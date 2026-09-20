@@ -1,6 +1,7 @@
 pub mod address;
 pub mod chained_document;
 pub mod composite_document;
+pub mod contract_fee_pots;
 pub mod contract_group;
 pub mod contract_moderation;
 pub mod data_contract;
