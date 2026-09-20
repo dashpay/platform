@@ -15,48 +15,64 @@ const EPOCH_KEYS: &str = "packages/rs-drive/src/drive/credit_pools/epochs/epoch_
 
 /// The credit pools: the storage fee pool and one tree per epoch
 pub(crate) fn structure() -> StructureNode {
-    StructureNode::fixed("pools", &[RootTree::Pools as u8], "Pools", "RootTree::Pools")
-        .kind(ElementKind::SumTree)
-        .source("packages/rs-drive/src/drive/mod.rs")
-        .book("fees/overview.md")
+    StructureNode::fixed(
+        "pools",
+        &[RootTree::Pools as u8],
+        "Pools",
+        "RootTree::Pools",
+    )
+    .kind(ElementKind::SumTree)
+    .source("packages/rs-drive/src/drive/mod.rs")
+    .book("fees/overview.md")
+    .describe(
+        "Credits collected as fees and not yet paid out. A sum tree, so its total is every \
+         credit held by the pools.",
+    )
+    .child(
+        StructureNode::fixed(
+            "storage_fee_pool",
+            KEY_STORAGE_FEE_POOL,
+            "StorageFeePool",
+            "KEY_STORAGE_FEE_POOL",
+        )
+        .ascii()
+        .kind(ElementKind::SumItem)
+        .source(ROOT_KEYS)
+        .value("credits")
         .describe(
-            "Credits collected as fees and not yet paid out. A sum tree, so its total is every \
-             credit held by the pools.",
+            "Storage fees waiting to be spread over the \
+             coming epochs.",
+        ),
+    )
+    .child(
+        StructureNode::fixed(
+            "unpaid_epoch_index",
+            KEY_UNPAID_EPOCH_INDEX,
+            "UnpaidEpochIndex",
+            "KEY_UNPAID_EPOCH_INDEX",
         )
-        .child(
-            StructureNode::fixed("storage_fee_pool", KEY_STORAGE_FEE_POOL, "StorageFeePool", "KEY_STORAGE_FEE_POOL")
-.ascii()
-                .kind(ElementKind::SumItem)
-                .source(ROOT_KEYS)
-                .value("credits")
-                .describe("Storage fees waiting to be spread over the coming epochs."),
+        .ascii()
+        .kind(ElementKind::Item)
+        .source(ROOT_KEYS)
+        .value("epoch index, u16 big endian")
+        .describe(
+            "The oldest epoch whose proposers have not been \
+             paid yet.",
+        ),
+    )
+    .child(
+        StructureNode::fixed(
+            "pending_epoch_refunds",
+            KEY_PENDING_EPOCH_REFUNDS,
+            "PendingEpochRefunds",
+            "KEY_PENDING_EPOCH_REFUNDS",
         )
-        .child(
-            StructureNode::fixed("unpaid_epoch_index", KEY_UNPAID_EPOCH_INDEX, "UnpaidEpochIndex", "KEY_UNPAID_EPOCH_INDEX")
-.ascii()
-                .kind(ElementKind::Item)
-                .source(ROOT_KEYS)
-                .value("epoch index, u16 big endian")
-                .describe("The oldest epoch whose proposers have not been paid yet."),
-        )
-        .child(
-            StructureNode::fixed("pending_epoch_refunds", KEY_PENDING_EPOCH_REFUNDS, "PendingEpochRefunds", "KEY_PENDING_EPOCH_REFUNDS")
-.ascii()
-                .kind(ElementKind::SumTree)
-                .source(ROOT_KEYS)
-                .describe("Refunds owed out of future epochs' storage fees, taken when each epoch starts.")
-                .child(
-                    StructureNode::dynamic(
-                        "epoch",
-                        "epoch_index",
-                        KeyMatcher::Len(2),
-                        KeyEncoding::U16Be,
-                        "The epoch the refund comes out of, offset by 256",
-                    )
-                    .kind(ElementKind::SumItem)
-                    .value("credits, negative")
-                    .describe("The credits to take out of this epoch's storage fees."),
-                ),
+        .ascii()
+        .kind(ElementKind::SumTree)
+        .source(ROOT_KEYS)
+        .describe(
+            "Refunds owed out of future epochs' storage fees, \
+             taken when each epoch starts.",
         )
         .child(
             StructureNode::dynamic(
@@ -64,73 +80,145 @@ pub(crate) fn structure() -> StructureNode {
                 "epoch_index",
                 KeyMatcher::Len(2),
                 KeyEncoding::U16Be,
-                "The epoch index offset by 256, so epoch keys sort after the one byte keys",
+                "The epoch the refund comes out of, offset by 256",
             )
-            .kind(ElementKind::SumTree)
-            .source(EPOCH_KEYS)
+            .kind(ElementKind::SumItem)
+            .value("credits, negative")
             .describe(
-                "One epoch. Trees for 50 eras of epochs are created at genesis so storage fees can \
-                 be spread forward.",
-            )
-            .children(vec![
-                StructureNode::fixed("start_block_core_height", KEY_START_BLOCK_CORE_HEIGHT, "StartBlockCoreHeight", "KEY_START_BLOCK_CORE_HEIGHT")
-.ascii()
-                    .kind(ElementKind::Item)
-                    .lazy()
-                    .value("u32 big endian")
-                    .describe("The core chain height at the first block of the epoch."),
-                StructureNode::fixed("finished_epoch_info", KEY_FINISHED_EPOCH_INFO, "FinishedEpochInfo", "KEY_FINISHED_EPOCH_INFO")
-.ascii()
-                    .kind(ElementKind::Item)
-                    .lazy()
-                    .value("serialized FinalizedEpochInfo")
-                    .describe("A summary written when the epoch is paid out."),
-                StructureNode::fixed("start_block_height", KEY_START_BLOCK_HEIGHT, "StartBlockHeight", "KEY_START_BLOCK_HEIGHT")
-.ascii()
-                    .kind(ElementKind::Item)
-                    .lazy()
-                    .value("u64 big endian")
-                    .describe("The height of the first block of the epoch."),
-                StructureNode::fixed("proposers", KEY_PROPOSERS, "Proposers", "KEY_PROPOSERS")
-.ascii()
-                    .kind(ElementKind::Tree)
-                    .lazy()
-                    .describe("How many blocks each masternode proposed in the epoch. Deleted once the epoch is paid.")
-                    .child(
-                        StructureNode::identifier("proposer", "pro_tx_hash", "The proposer's pro tx hash")
-                            .kind(ElementKind::Item)
-                            .value("block count, u64 big endian")
-                            .describe("Blocks proposed by this masternode."),
-                    ),
-                StructureNode::fixed("processing_fees", KEY_POOL_PROCESSING_FEES, "ProcessingFees", "KEY_POOL_PROCESSING_FEES")
-.ascii()
-                    .kind(ElementKind::SumItem)
-                    .lazy()
-                    .value("credits")
-                    .describe("Processing fees collected in the epoch."),
-                StructureNode::fixed("storage_fees", KEY_POOL_STORAGE_FEES, "StorageFees", "KEY_POOL_STORAGE_FEES")
-.ascii()
-                    .kind(ElementKind::SumItem)
-                    .value("credits")
-                    .describe("Storage fees distributed to the epoch."),
-                StructureNode::fixed("start_time", KEY_START_TIME, "StartTime", "KEY_START_TIME")
-.ascii()
-                    .kind(ElementKind::Item)
-                    .lazy()
-                    .value("milliseconds, u64 big endian")
-                    .describe("The time of the first block of the epoch. Epoch 0's is the genesis time."),
-                StructureNode::fixed("protocol_version", KEY_PROTOCOL_VERSION, "ProtocolVersion", "KEY_PROTOCOL_VERSION")
-.ascii()
-                    .kind(ElementKind::Item)
-                    .lazy()
-                    .value("u32 big endian")
-                    .describe("The protocol version the epoch runs."),
-                StructureNode::fixed("fee_multiplier", KEY_FEE_MULTIPLIER, "FeeMultiplier", "KEY_FEE_MULTIPLIER")
-.ascii()
-                    .kind(ElementKind::Item)
-                    .lazy()
-                    .value("permille, u64 big endian")
-                    .describe("The fee multiplier of the epoch."),
-            ]),
+                "The credits to take out of this epoch's storage \
+                 fees.",
+            ),
+        ),
+    )
+    .child(
+        StructureNode::dynamic(
+            "epoch",
+            "epoch_index",
+            KeyMatcher::Len(2),
+            KeyEncoding::U16Be,
+            "The epoch index offset by 256, so epoch keys \
+             sort after the one byte keys",
         )
+        .kind(ElementKind::SumTree)
+        .source(EPOCH_KEYS)
+        .describe(
+            "One epoch. Trees for 50 eras of epochs are created at genesis so storage fees can \
+             be spread forward.",
+        )
+        .children(vec![
+            StructureNode::fixed(
+                "start_block_core_height",
+                KEY_START_BLOCK_CORE_HEIGHT,
+                "StartBlockCoreHeight",
+                "KEY_START_BLOCK_CORE_HEIGHT",
+            )
+            .ascii()
+            .kind(ElementKind::Item)
+            .lazy()
+            .value("u32 big endian")
+            .describe(
+                "The core chain height at the first block of the \
+                 epoch.",
+            ),
+            StructureNode::fixed(
+                "finished_epoch_info",
+                KEY_FINISHED_EPOCH_INFO,
+                "FinishedEpochInfo",
+                "KEY_FINISHED_EPOCH_INFO",
+            )
+            .ascii()
+            .kind(ElementKind::Item)
+            .lazy()
+            .value("serialized FinalizedEpochInfo")
+            .describe("A summary written when the epoch is paid out."),
+            StructureNode::fixed(
+                "start_block_height",
+                KEY_START_BLOCK_HEIGHT,
+                "StartBlockHeight",
+                "KEY_START_BLOCK_HEIGHT",
+            )
+            .ascii()
+            .kind(ElementKind::Item)
+            .lazy()
+            .value("u64 big endian")
+            .describe("The height of the first block of the epoch."),
+            StructureNode::fixed("proposers", KEY_PROPOSERS, "Proposers", "KEY_PROPOSERS")
+                .ascii()
+                .kind(ElementKind::Tree)
+                .lazy()
+                .describe(
+                    "How many blocks each masternode proposed in the \
+                     epoch. Deleted when the epoch is paid out.",
+                )
+                .child(
+                    StructureNode::identifier(
+                        "proposer",
+                        "pro_tx_hash",
+                        "The proposer's pro tx hash",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("block count, u64 big endian")
+                    .describe("Blocks proposed by this masternode."),
+                ),
+            StructureNode::fixed(
+                "processing_fees",
+                KEY_POOL_PROCESSING_FEES,
+                "ProcessingFees",
+                "KEY_POOL_PROCESSING_FEES",
+            )
+            .ascii()
+            .kind(ElementKind::SumItem)
+            .lazy()
+            .value("credits")
+            .describe(
+                "Processing fees collected in the epoch. Deleted \
+                 when the epoch is paid out.",
+            ),
+            StructureNode::fixed(
+                "storage_fees",
+                KEY_POOL_STORAGE_FEES,
+                "StorageFees",
+                "KEY_POOL_STORAGE_FEES",
+            )
+            .ascii()
+            .kind(ElementKind::SumItem)
+            .until_deleted()
+            .value("credits")
+            .describe(
+                "Storage fees distributed to the epoch. Deleted \
+                 when the epoch is paid out.",
+            ),
+            StructureNode::fixed("start_time", KEY_START_TIME, "StartTime", "KEY_START_TIME")
+                .ascii()
+                .kind(ElementKind::Item)
+                .lazy()
+                .value("milliseconds, u64 big endian")
+                .describe(
+                    "The time of the first block of the epoch. Epoch \
+                     0's is the genesis time.",
+                ),
+            StructureNode::fixed(
+                "protocol_version",
+                KEY_PROTOCOL_VERSION,
+                "ProtocolVersion",
+                "KEY_PROTOCOL_VERSION",
+            )
+            .ascii()
+            .kind(ElementKind::Item)
+            .lazy()
+            .value("u32 big endian")
+            .describe("The protocol version the epoch runs."),
+            StructureNode::fixed(
+                "fee_multiplier",
+                KEY_FEE_MULTIPLIER,
+                "FeeMultiplier",
+                "KEY_FEE_MULTIPLIER",
+            )
+            .ascii()
+            .kind(ElementKind::Item)
+            .lazy()
+            .value("permille, u64 big endian")
+            .describe("The fee multiplier of the epoch."),
+        ]),
+    )
 }

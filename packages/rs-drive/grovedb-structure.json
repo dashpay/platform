@@ -1942,7 +1942,7 @@
                 "since": 1,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/credit_pools/epochs/epoch_key_constants.rs",
-                "description": "How many blocks each masternode proposed in the epoch. Deleted once the epoch is paid.",
+                "description": "How many blocks each masternode proposed in the epoch. Deleted when the epoch is paid out.",
                 "children": [
                   {
                     "id": "pools.epoch.proposers.proposer",
@@ -1984,7 +1984,7 @@
                 "since": 1,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/credit_pools/epochs/epoch_key_constants.rs",
-                "description": "Processing fees collected in the epoch.",
+                "description": "Processing fees collected in the epoch. Deleted when the epoch is paid out.",
                 "children": []
               },
               {
@@ -2001,9 +2001,9 @@
                 ],
                 "value": "credits",
                 "since": 1,
-                "presence": "always",
+                "presence": "until_deleted",
                 "source": "packages/rs-drive/src/drive/credit_pools/epochs/epoch_key_constants.rs",
-                "description": "Storage fees distributed to the epoch.",
+                "description": "Storage fees distributed to the epoch. Deleted when the epoch is paid out.",
                 "children": []
               },
               {
@@ -3794,7 +3794,7 @@
                                     "since": 1,
                                     "presence": "always",
                                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                                    "description": "One contender. Only below the last index value; a 32 byte value higher up is read as a contender by the conformance walker.",
+                                    "description": "One contender, below the last value of the index. A 32 byte key is an index value at the levels before that, so what is below the key tells the two apart.",
                                     "children": [
                                       {
                                         "id": "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.document",

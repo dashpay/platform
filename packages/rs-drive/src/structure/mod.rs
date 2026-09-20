@@ -154,6 +154,9 @@ pub enum Presence {
     Always,
     /// Created on first use
     Lazy,
+    /// Created together with its parent and deleted later, while the parent
+    /// stays
+    UntilDeleted,
 }
 
 /// One level of the GroveDB structure.

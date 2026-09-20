@@ -201,14 +201,23 @@ mod walker {
 
 mod fixtures {
     use super::*;
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::structure::conformance::ConformanceReport;
     use crate::util::batch::drive_op_batch::AddressFundsOperationType;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::DriveOperation;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{
+        DataContractOwnedResolvedInfo, DocumentAndContractInfo, OwnedDocumentInfo,
+    };
     use crate::util::test_helpers::setup::setup_document;
     use crate::util::test_helpers::setup_contract;
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
@@ -220,15 +229,18 @@ mod fixtures {
     use dpp::data_contract::group::Group;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::data_contract::DataContract;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::group::action_event::GroupActionEvent;
     use dpp::group::group_action::v0::GroupActionV0;
     use dpp::group::group_action::GroupAction;
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
+    use dpp::platform_value::Value;
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use std::collections::{BTreeMap, BTreeSet};
 
     /// Nodes no fixture below reaches yet. The coverage test fails when a
@@ -263,14 +275,8 @@ mod fixtures {
         "saved_block_transactions.compacted_expiration.expiration",
         "saved_block_transactions.address_balances.block",
         "pools.pending_epoch_refunds.epoch",
-        "pools.epoch.start_block_core_height",
         "pools.epoch.finished_epoch_info",
-        "pools.epoch.start_block_height",
-        "pools.epoch.proposers",
-        "pools.epoch.proposers.proposer",
         "pools.epoch.processing_fees",
-        "pools.epoch.start_time",
-        "pools.epoch.fee_multiplier",
         "misc.genesis_core_height",
         "spent_asset_locks.outpoint",
         "withdrawals.queue.transaction",
@@ -282,29 +288,12 @@ mod fixtures {
         "shielded_balances.main_pool.nullifiers.nullifier",
         "shielded_balances.main_pool.anchors_by_height.height",
         "shielded_balances.main_pool.anchors_in_pool.anchor",
-        // Contested resources: rs-drive has no fixture that runs a vote
+        // Votes cast on a contested resource: rs-drive has no fixture that runs a vote
         "votes.contested_resource.identity_votes.voter",
         "votes.contested_resource.identity_votes.voter.vote",
-        "votes.contested_resource.active_polls.contract",
-        "votes.contested_resource.active_polls.contract.document_type",
-        "votes.contested_resource.active_polls.contract.document_type.storage",
-        "votes.contested_resource.active_polls.contract.document_type.storage.document",
-        "votes.contested_resource.active_polls.contract.document_type.indexes",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.stored_info",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.abstain",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.abstain.votes",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.abstain.votes.voter",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.lock",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.lock.votes",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.lock.votes.voter",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.document",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.votes",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.votes.voter",
-        "votes.contested_resource.active_polls.contract.document_type.indexes.value.next_value",
-        "votes.end_date_queries.end_date",
-        "votes.end_date_queries.end_date.poll",
         // Contract groups
         "contract_groups.groups.group",
         "contract_groups.groups.group.info",
@@ -597,6 +586,113 @@ mod fixtures {
         conformance_of(&drive, "address_balances")
     }
 
+    /// An epoch while it runs, then after it was paid out: payout deletes the
+    /// proposers and both fee items and keeps the epoch tree.
+    fn current_then_paid_epoch() -> ConformanceReport {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let epoch = Epoch::new(0).expect("expected the genesis epoch");
+
+        let mut batch = GroveDbOpBatch::new();
+        epoch.add_init_current_operations(
+            1000,
+            2,
+            5,
+            3,
+            platform_version.protocol_version,
+            &mut batch,
+        );
+        batch.push(epoch.update_proposer_block_count_operation(&[7; 32], 3));
+        drive
+            .grove_apply_batch(batch, false, None, &platform_version.drive)
+            .expect("expected to start the epoch");
+        let mut report = conformance_of(&drive, "current_epoch");
+
+        let mut batch = GroveDbOpBatch::new();
+        epoch.add_mark_as_paid_operations(&mut batch);
+        drive
+            .grove_apply_batch(batch, false, None, &platform_version.drive)
+            .expect("expected to mark the epoch as paid");
+        report
+            .visited
+            .extend(conformance_of(&drive, "paid_epoch").visited);
+        report
+    }
+
+    /// Two contests on the DPNS index of parent domain name and label. In the
+    /// second the label is 32 bytes long: as long as the identity id of a
+    /// contender, one level above where contenders are, so only what is below
+    /// the key tells the two apart. (DPNS only contests shorter labels, but
+    /// that rule lives in dpp, and any contested index over identifiers has
+    /// 32 byte values.)
+    fn contested_documents() -> ConformanceReport {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        let thirty_two_bytes = "b".repeat(32);
+        for (seed, parent, label) in [
+            (1, "dash", "quantum"),
+            (2, "dash", thirty_two_bytes.as_str()),
+        ] {
+            let mut document = document_type
+                .random_document(Some(seed), platform_version)
+                .expect("expected a random document");
+            document.set(
+                "normalizedParentDomainName",
+                Value::Text(parent.to_string()),
+            );
+            document.set("normalizedLabel", Value::Text(label.to_string()));
+            drive
+                .add_contested_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: Some(document.owner_id().to_buffer()),
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    ContestedDocumentResourceVotePollWithContractInfo {
+                        contract: DataContractOwnedResolvedInfo::OwnedDataContract(
+                            contract.clone(),
+                        ),
+                        document_type_name: "domain".to_string(),
+                        index_name: "parentNameAndLabel".to_string(),
+                        index_values: vec![
+                            Value::Text(parent.to_string()),
+                            Value::Text(label.to_string()),
+                        ],
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    Some(
+                        ContestedDocumentVotePollStoredInfo::new(
+                            BlockInfo::default(),
+                            platform_version,
+                        )
+                        .expect("expected the stored info of a new poll"),
+                    ),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the contested document");
+        }
+        conformance_of(&drive, "contested_documents")
+    }
+
     #[test]
     fn should_match_populated_state_and_reach_every_described_node() {
         let mut visited = BTreeSet::new();
@@ -605,6 +701,8 @@ mod fixtures {
             contracts_with_documents(),
             tokens_and_group_actions(),
             address_balances(),
+            current_then_paid_epoch(),
+            contested_documents(),
         ] {
             visited.extend(report.visited);
         }

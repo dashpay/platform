@@ -126,6 +126,13 @@ impl StructureNode {
         self
     }
 
+    /// The node is created with its parent and deleted later, while the
+    /// parent stays
+    pub fn until_deleted(mut self) -> Self {
+        self.presence = Presence::UntilDeleted;
+        self
+    }
+
     /// The repository relative file holding the canonical definition.
     /// Children inherit it unless they name their own.
     pub fn source(mut self, source: &str) -> Self {
