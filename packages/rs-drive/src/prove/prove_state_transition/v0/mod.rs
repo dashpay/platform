@@ -8,7 +8,9 @@ use crate::query::{
 };
 use crate::verify::state_transition::state_transition_execution_path_queries::TryTransitionIntoPathQuery;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
@@ -22,6 +24,8 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
@@ -244,6 +248,47 @@ impl Drive {
                 &st.identity_id().to_buffer(),
                 &platform_version.drive.grove_version,
             )?,
+            // The lists the moderation touched: a ban also removes a suspension, so it proves
+            // every list the contract keeps (the banlist entry present, the suspension absent);
+            // an unban, a suspend and an unsuspend prove the one entry they edit.
+            StateTransition::ContractUserModeration(st) => {
+                let contract_id = st.data_contract_id();
+                let lists = match st.action() {
+                    ContractUserModerationAction::Ban { .. } => {
+                        let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                            contract_id.to_buffer(),
+                            false,
+                            None,
+                            platform_version,
+                        )?
+                        else {
+                            return Err(Error::Proof(ProofError::UnknownContract(format!(
+                                "unknown contract with id {} in contract moderation proving",
+                                contract_id
+                            ))));
+                        };
+                        contract_fetch_info
+                            .contract
+                            .config()
+                            .moderation()
+                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                            .unwrap_or_else(|| vec![ContractModerationList::Banlist])
+                    }
+                    ContractUserModerationAction::Unban { .. } => {
+                        vec![ContractModerationList::Banlist]
+                    }
+                    ContractUserModerationAction::Suspend { .. }
+                    | ContractUserModerationAction::Unsuspend { .. } => {
+                        vec![ContractModerationList::Suspensions]
+                    }
+                };
+                Drive::contract_moderation_status_query(
+                    contract_id.to_buffer(),
+                    st.target_identity_id().to_buffer(),
+                    &lists,
+                    &platform_version.drive.grove_version,
+                )?
+            }
             // Only the rewritten key: the verifier compares that one key.
             StateTransition::IdentityKeyLimitsUpdate(st) => {
                 IdentityKeysRequest::new_specific_key_query_without_limit(

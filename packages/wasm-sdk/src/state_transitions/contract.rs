@@ -3,6 +3,7 @@
 //! This module provides WASM bindings for contract operations like create and update.
 
 use crate::error::WasmSdkError;
+use crate::queries::contract_moderation::set_status_fields;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -236,5 +237,197 @@ impl WasmSdk {
             .await?;
 
         Ok(())
+    }
+}
+
+// ============================================================================
+// Contract User Moderation
+// ============================================================================
+
+#[wasm_bindgen(typescript_custom_section)]
+const CONTRACT_MODERATION_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for banning, unbanning, suspending or unsuspending one identity on a moderated data
+ * contract (protocol version 14). The signer must hold a CRITICAL authentication key without
+ * contract bounds of the moderating identity: the contract owner, or a moderator the contract's
+ * config names.
+ */
+export interface ContractModerationOptions {
+  /** The moderating identity: the contract owner or a named moderator */
+  identity: Identity;
+  /** The moderated contract */
+  contractId: IdentifierLike;
+  /** The identity to moderate */
+  identityId: IdentifierLike;
+  /** For a suspension: the block time, in milliseconds, at which it lapses */
+  until?: bigint;
+  /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
+}
+
+/**
+ * The moderated identity's status on the lists the moderation touched, as its proof shows it.
+ * A ban proves every list the contract keeps (it removes a suspension too); an unban, a
+ * suspend and an unsuspend prove the one list they edit and say nothing about the other, so
+ * after an unsuspend `banned` is undefined (unknown), not false. Use
+ * `getContractModerationStatus` for the identity's whole status.
+ */
+export interface ContractModerationResult {
+  contractId: Identifier;
+  identityId: Identifier;
+  /** The lists the proof covers, the only ones this result describes */
+  lists: ContractModerationListKind[];
+  /** Set when `lists` includes `banlist`: the identity is on the banlist */
+  banned?: boolean;
+  /**
+   * When `lists` includes `suspensions`: the block time, in milliseconds, until which the
+   * identity is suspended; undefined when it is not suspended
+   */
+  suspendedUntil?: bigint;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContractModerationOptions")]
+    pub type ContractModerationOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractModerationResult")]
+    pub type ContractModerationResultJs;
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractModerationOptionsInput {
+    #[serde(default)]
+    until: Option<u64>,
+}
+
+impl WasmSdk {
+    async fn moderate_contract_user(
+        &self,
+        options: ContractModerationOptionsJs,
+        action: &str,
+    ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
+        use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUser;
+        use wasm_dpp2::data_contract::moderation_action_from_parts;
+        use wasm_dpp2::identity::IdentityWasm;
+        use wasm_dpp2::IdentifierWasm;
+
+        // Extract complex types first (borrows &options)
+        let identity: dash_sdk::dpp::identity::Identity =
+            IdentityWasm::try_from_options(&options, "identity")?.into();
+        let contract_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "contractId")?.into();
+        let identity_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "identityId")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed: ContractModerationOptionsInput =
+            crate::queries::utils::deserialize_required_query(
+                options,
+                "Options object is required",
+                "contract moderation options",
+            )?;
+
+        let action = moderation_action_from_parts(action, identity_id, parsed.until)
+            .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
+
+        // The proof of a ban covers every list the contract keeps, which the verifier reads
+        // from the contract, so the contract is resolved and cached before anything is paid
+        // for; a cold cache would otherwise refuse a result the network already accepted. The
+        // other actions prove the one entry they edit and need no contract.
+        if matches!(action, ContractUserModerationAction::Ban { .. }) {
+            self.get_or_fetch_contract(contract_id).await?;
+        }
+
+        let status = identity
+            .moderate_contract_user(
+                self.inner_sdk(),
+                contract_id,
+                action,
+                None,
+                signer,
+                settings,
+            )
+            .await?;
+
+        let result = js_sys::Object::new();
+        let set = |key: &str, value: JsValue| {
+            js_sys::Reflect::set(&result, &key.into(), &value).map_err(|_| {
+                WasmSdkError::generic(format!("failed to set `{key}` on the moderation result"))
+            })
+        };
+        set(
+            "contractId",
+            IdentifierWasm::from(status.contract_id).into(),
+        )?;
+        set(
+            "identityId",
+            IdentifierWasm::from(status.identity_id).into(),
+        )?;
+        // The status fields, in the shape `getContractModerationStatus` answers with.
+        set_status_fields(&result, &status.status)?;
+        Ok(JsValue::from(result).into())
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Puts an identity on a moderated contract's banlist. A banned identity cannot act on the
+    /// contract at the document level until it is unbanned.
+    ///
+    /// @param options - The moderating identity, the contract, the target and the signer
+    /// @returns The target's status on the contract, proved
+    #[wasm_bindgen(js_name = "contractBanUser")]
+    pub async fn contract_ban_user(
+        &self,
+        options: ContractModerationOptionsJs,
+    ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        self.moderate_contract_user(options, "ban").await
+    }
+
+    /// Takes an identity off a moderated contract's banlist.
+    ///
+    /// @param options - The moderating identity, the contract, the target and the signer
+    /// @returns The target's status on the contract, proved
+    #[wasm_bindgen(js_name = "contractUnbanUser")]
+    pub async fn contract_unban_user(
+        &self,
+        options: ContractModerationOptionsJs,
+    ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        self.moderate_contract_user(options, "unban").await
+    }
+
+    /// Suspends an identity on a moderated contract until the block time `until`, in
+    /// milliseconds, replacing a suspension it already carries. The first document transition
+    /// of the identity after the suspension lapses sweeps it.
+    ///
+    /// @param options - The moderating identity, the contract, the target, `until` and the signer
+    /// @returns The target's status on the contract, proved
+    #[wasm_bindgen(js_name = "contractSuspendUser")]
+    pub async fn contract_suspend_user(
+        &self,
+        options: ContractModerationOptionsJs,
+    ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        self.moderate_contract_user(options, "suspend").await
+    }
+
+    /// Takes an identity off a moderated contract's suspension list, lapsed or not.
+    ///
+    /// @param options - The moderating identity, the contract, the target and the signer
+    /// @returns The target's status on the contract, proved
+    #[wasm_bindgen(js_name = "contractUnsuspendUser")]
+    pub async fn contract_unsuspend_user(
+        &self,
+        options: ContractModerationOptionsJs,
+    ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        self.moderate_contract_user(options, "unsuspend").await
     }
 }

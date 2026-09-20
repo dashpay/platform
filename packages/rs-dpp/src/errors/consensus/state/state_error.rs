@@ -11,6 +11,14 @@ use crate::consensus::state::shielded::insufficient_shielded_fee_error::Insuffic
 use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use crate::consensus::state::contract_moderation::{
+    ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
+    ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
+    ContractModeratorIdentityNotFoundError,
+    ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
+    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
+    IdentityNotContractModeratorError,
+};
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
     ContractGroupAdminNotFoundError, IdentityNotContractGroupOwnerOrAdminError,
@@ -465,6 +473,43 @@ pub enum StateError {
 
     #[error(transparent)]
     GasSponsorInsufficientBalanceError(GasSponsorInsufficientBalanceError),
+
+    // Contract moderation (protocol version 14).
+    #[error(transparent)]
+    ContractModerationNotEnabledError(ContractModerationNotEnabledError),
+
+    #[error(transparent)]
+    IdentityNotContractModeratorError(IdentityNotContractModeratorError),
+
+    #[error(transparent)]
+    ContractModerationTargetNotAllowedError(ContractModerationTargetNotAllowedError),
+
+    #[error(transparent)]
+    ContractUserAlreadyBannedError(ContractUserAlreadyBannedError),
+
+    #[error(transparent)]
+    ContractUserNotBannedError(ContractUserNotBannedError),
+
+    #[error(transparent)]
+    ContractUserNotSuspendedError(ContractUserNotSuspendedError),
+
+    #[error(transparent)]
+    ContractSuspensionNotInFutureError(ContractSuspensionNotInFutureError),
+
+    #[error(transparent)]
+    ContractUserBannedError(ContractUserBannedError),
+
+    #[error(transparent)]
+    ContractUserSuspendedError(ContractUserSuspendedError),
+
+    #[error(transparent)]
+    ContractModerationTargetNotFoundError(ContractModerationTargetNotFoundError),
+
+    #[error(transparent)]
+    ContractModeratorIdentityNotFoundError(ContractModeratorIdentityNotFoundError),
+
+    #[error(transparent)]
+    ContractModerationCounterpartyBarredError(ContractModerationCounterpartyBarredError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -476,7 +521,9 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
+    use crate::data_contract::config::moderation::ContractModerationList;
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use platform_value::Identifier;
 
@@ -714,6 +761,83 @@ mod tests {
                 GasSponsorInsufficientBalanceError::new(identity_id, 1, 2)
             )),
             113
+        );
+        // Contract moderation (protocol version 14): every variant, the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationNotEnabledError(
+                ContractModerationNotEnabledError::new(group_id, ContractModerationList::Banlist,)
+            )),
+            114
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityNotContractModeratorError(
+                IdentityNotContractModeratorError::new(group_id, identity_id)
+            )),
+            115
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTargetNotAllowedError(
+                ContractModerationTargetNotAllowedError::new(group_id, identity_id)
+            )),
+            116
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserAlreadyBannedError(
+                ContractUserAlreadyBannedError::new(group_id, identity_id)
+            )),
+            117
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotBannedError(
+                ContractUserNotBannedError::new(group_id, identity_id)
+            )),
+            118
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotSuspendedError(
+                ContractUserNotSuspendedError::new(group_id, identity_id)
+            )),
+            119
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractSuspensionNotInFutureError(
+                ContractSuspensionNotInFutureError::new(group_id, identity_id, 1, 2)
+            )),
+            120
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserBannedError(
+                ContractUserBannedError::new(group_id, identity_id)
+            )),
+            121
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserSuspendedError(
+                ContractUserSuspendedError::new(group_id, identity_id, 1)
+            )),
+            122
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTargetNotFoundError(
+                ContractModerationTargetNotFoundError::new(group_id, identity_id)
+            )),
+            123
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModeratorIdentityNotFoundError(
+                ContractModeratorIdentityNotFoundError::new(group_id, identity_id)
+            )),
+            124
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationCounterpartyBarredError(
+                ContractModerationCounterpartyBarredError::new(
+                    group_id,
+                    identity_id,
+                    ContractModerationCounterpartyRole::Recipient,
+                )
+            )),
+            125
         );
     }
 }

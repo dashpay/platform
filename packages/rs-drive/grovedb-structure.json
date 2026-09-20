@@ -2679,22 +2679,121 @@
                 ]
               },
               {
-                "id": "contracts.contract.version",
+                "id": "contracts.contract.other",
                 "key": {
                   "type": "fixed",
                   "hex": "02",
-                  "label": "ContractVersion",
-                  "constant": "CONTRACT_VERSION_KEY"
+                  "label": "Other",
+                  "constant": "CONTRACT_OTHER_KEY"
                 },
                 "kinds": [
-                  "Item"
+                  "Tree"
                 ],
-                "value": "u32 big endian",
                 "since": 14,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                "description": "The contract's version, readable without deserializing the contract. Rewritten on every update.",
-                "children": []
+                "book": "data-model/contract-moderation.md",
+                "description": "Everything a contract keeps beside itself and its documents. One key, so that the contract's layer holds three and its Merk keeps the documents on top. Inside, the keys are spread like the root layer's, with the most read one, the banlist, in the middle.",
+                "children": [
+                  {
+                    "id": "contracts.contract.other.version",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "40",
+                      "label": "ContractVersion",
+                      "constant": "CONTRACT_VERSION_KEY"
+                    },
+                    "kinds": [
+                      "Item"
+                    ],
+                    "value": "u32 big endian",
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The contract's version, readable without deserializing the contract. Rewritten on every update.",
+                    "children": []
+                  },
+                  {
+                    "id": "contracts.contract.other.banlist",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "80",
+                      "label": "Banlist",
+                      "constant": "CONTRACT_BANLIST_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The identities banned from the contract's documents. Created with the contract, and only when its config declares a banlist.",
+                    "children": [
+                      {
+                        "id": "contracts.contract.other.banlist.identity",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "identity_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "identifier32",
+                          "description": "The banned identity's id"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "empty; the flags name the moderator that pays for the entry",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "One ban, until an unban.",
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "contracts.contract.other.suspensions",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "c0",
+                      "label": "Suspensions",
+                      "constant": "CONTRACT_SUSPENSIONS_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The identities suspended from the contract's documents. Created with the contract, and only when its config declares a suspension list.",
+                    "children": [
+                      {
+                        "id": "contracts.contract.other.suspensions.identity",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "identity_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "identifier32",
+                          "description": "The suspended identity's id"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "the block time in milliseconds the suspension runs until, u64 big endian",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "One suspension. A lapsed one stays until the identity's next document transition sweeps it.",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
               }
             ]
           }

@@ -60,6 +60,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10700-10700 | General | `OverflowError` (10700) |
 | 10800-10818 | Address | `TransitionOverMaxInputsError` (10800), `WithdrawalBelowMinAmountError` (10818) |
 | 10819-10827 | Shielded | `ShieldedNoActionsError` (10819), `ShieldedTooManyActionsError` (10825), `ShieldedImplicitFeeCapExceededError` (10826), `ShieldedInvalidDenominationError` (10827 — `IdentityCreateFromShieldedPool` exit amount not a member of the versioned denomination set) |
+| 10900-10949 | Contract Moderation | `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901); 10902 reserved |
 
 ### SignatureError codes (20000-20012)
 
@@ -116,6 +117,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | 40800-40804 | Groups | `IdentityNotMemberOfGroupError` (40800), `GroupActionAlreadyCompletedError` (40802) |
 | 40900-40904 | Shielded | `InvalidAnchorError` (40900), `NullifierAlreadySpentError` (40901), `InsufficientShieldedFeeError` (40904) |
 | 41000-41003 | Contract Groups | `ContractGroupAlreadyExistsError` (41000), `ContractGroupNotFoundError` (41001), `IdentityNotContractGroupOwnerOrAdminError` (41002), `ContractGroupAdminNotFoundError` (41003) |
+| 41100-41114 | Contract Moderation | `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110), `ContractModerationCounterpartyBarredError` (41114; 41111-41113 reserved) |
 
 Notice how the `DataTriggerError` sub-enum has its own `ErrorWithCode` implementation that the `StateError` delegates to:
 

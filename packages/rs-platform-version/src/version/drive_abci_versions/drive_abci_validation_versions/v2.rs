@@ -110,6 +110,14 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V2: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
             data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
@@ -118,6 +126,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V2: DriveAbciValidationVersions =
                 revision: 0,
                 transform_into_action: 0,
                 failed_per_transition_action: 0,
+                contract_moderation_gate: None,
                 fetch_documents_for_transitions_knowing_contract_and_document_type: 0,
                 fetch_document_with_id: 0,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {

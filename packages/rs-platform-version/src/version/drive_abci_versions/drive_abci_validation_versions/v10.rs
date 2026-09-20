@@ -116,11 +116,19 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: Some(1),
+                basic_structure: Some(2), // changed: validates the contract moderation declaration of a config V2
                 advanced_structure: None,
                 identity_signatures: None,
                 nonce: Some(0),
                 state: 1, // changed: runs data_contract_reference_validation on the updated contract's refersTo declarations
+                transform_into_action: 0,
+            },
+            contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(0),
+                advanced_structure: None,
+                identity_signatures: Some(0),
+                nonce: Some(0),
+                state: 0,
                 transform_into_action: 0,
             },
             data_contract_reference_validation: 0,
@@ -164,6 +172,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // ownership/revision check). v0 stays for chain
                 // reproducibility on PROTOCOL_VERSION_11 and below.
                 failed_per_transition_action: 1,
+                // Contract moderation (protocol version 14): the batch transformer gates the
+                // document transitions of a moderated contract on the signer's status.
+                contract_moderation_gate: Some(0),
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): fetch_documents
                 // helpers bumped to v1 which bill the grovedb cost of
                 // their query_documents calls. v0 stays for PV11 chain

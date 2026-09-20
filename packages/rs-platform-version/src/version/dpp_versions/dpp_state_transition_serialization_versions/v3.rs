@@ -77,6 +77,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        contract_user_moderation_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         batch_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 1,

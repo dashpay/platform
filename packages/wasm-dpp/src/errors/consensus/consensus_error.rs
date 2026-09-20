@@ -90,6 +90,17 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
     InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
+use dpp::consensus::basic::contract_moderation::{
+    ContractModerationSelfTargetError, InvalidContractModerationConfigError,
+};
+use dpp::consensus::state::contract_moderation::{
+    ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
+    ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
+    ContractModeratorIdentityNotFoundError,
+    ContractSuspensionNotInFutureError,
+    ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
+    ContractUserNotSuspendedError, ContractUserSuspendedError, IdentityNotContractModeratorError,
+};
 use dpp::consensus::state::contract_group::{
     ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
     IdentityNotContractGroupOwnerOrAdminError,
@@ -571,6 +582,42 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::GasSponsorInsufficientBalanceError(e) => {
             generic_consensus_error!(GasSponsorInsufficientBalanceError, e).into()
+        }
+        StateError::ContractModerationNotEnabledError(e) => {
+            generic_consensus_error!(ContractModerationNotEnabledError, e).into()
+        }
+        StateError::IdentityNotContractModeratorError(e) => {
+            generic_consensus_error!(IdentityNotContractModeratorError, e).into()
+        }
+        StateError::ContractModerationTargetNotAllowedError(e) => {
+            generic_consensus_error!(ContractModerationTargetNotAllowedError, e).into()
+        }
+        StateError::ContractUserAlreadyBannedError(e) => {
+            generic_consensus_error!(ContractUserAlreadyBannedError, e).into()
+        }
+        StateError::ContractUserNotBannedError(e) => {
+            generic_consensus_error!(ContractUserNotBannedError, e).into()
+        }
+        StateError::ContractUserNotSuspendedError(e) => {
+            generic_consensus_error!(ContractUserNotSuspendedError, e).into()
+        }
+        StateError::ContractSuspensionNotInFutureError(e) => {
+            generic_consensus_error!(ContractSuspensionNotInFutureError, e).into()
+        }
+        StateError::ContractUserBannedError(e) => {
+            generic_consensus_error!(ContractUserBannedError, e).into()
+        }
+        StateError::ContractUserSuspendedError(e) => {
+            generic_consensus_error!(ContractUserSuspendedError, e).into()
+        }
+        StateError::ContractModerationTargetNotFoundError(e) => {
+            generic_consensus_error!(ContractModerationTargetNotFoundError, e).into()
+        }
+        StateError::ContractModeratorIdentityNotFoundError(e) => {
+            generic_consensus_error!(ContractModeratorIdentityNotFoundError, e).into()
+        }
+        StateError::ContractModerationCounterpartyBarredError(e) => {
+            generic_consensus_error!(ContractModerationCounterpartyBarredError, e).into()
         }
     }
 }
@@ -1133,6 +1180,12 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::PreProgrammedDistributionAmountOverLimitError(e) => {
             generic_consensus_error!(PreProgrammedDistributionAmountOverLimitError, e).into()
+        }
+        BasicError::InvalidContractModerationConfigError(e) => {
+            generic_consensus_error!(InvalidContractModerationConfigError, e).into()
+        }
+        BasicError::ContractModerationSelfTargetError(e) => {
+            generic_consensus_error!(ContractModerationSelfTargetError, e).into()
         }
     }
 }

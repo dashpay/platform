@@ -11,6 +11,7 @@ use dpp::contract_group::ContractGroupMember;
 use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::identifier::Identifier;
 use dpp::state_transition::data_contract_create_transition::accessors::{
     DataContractCreateTransitionAccessorsV0, DataContractCreateTransitionAccessorsV1,
@@ -121,6 +122,16 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
                 distribution.validate_amounts(*token_contract_position, platform_version)?;
             if !validation_result.is_valid() {
                 return Ok(validation_result);
+            }
+        }
+
+        // Contract moderation: a config that declares it must be well formed (at least one
+        // list, a non-empty moderator set within the limit). That the named moderators exist
+        // is checked against the state.
+        if let Some(moderation) = self.data_contract().config().moderation() {
+            let result = moderation.validate(platform_version)?;
+            if !result.is_valid() {
+                return Ok(result);
             }
         }
 

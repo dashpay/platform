@@ -34,6 +34,7 @@ pub struct DriveAbciQueryVersions {
     pub system: DriveAbciQuerySystemVersions,
     pub group_queries: DriveAbciQueryGroupVersions,
     pub contract_group_queries: DriveAbciQueryContractGroupVersions,
+    pub contract_moderation_queries: DriveAbciQueryContractModerationVersions,
     pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
     pub shielded_queries: DriveAbciQueryShieldedVersions,
 }
@@ -55,7 +56,7 @@ pub struct DriveAbciDataContractQueryHelperVersions {
     /// * `0`: state holds no contract version items (before protocol
     ///   version 14); the answer is read from the serialized contracts and
     ///   the proof is the multi-contract proof, so it carries the contracts.
-    /// * `1`: every contract has a version item beside it (`[64, id] / 2`,
+    /// * `1`: every contract has a version item beside it (`[64, id, 2] / 64`,
     ///   written from protocol version 14 and backfilled on its first block);
     ///   the answer is read from the item and the proof carries the items,
     ///   four bytes per contract, instead of the contracts.
@@ -87,6 +88,14 @@ pub struct DriveAbciQueryGroupVersions {
     pub group_infos: FeatureVersionBounds,
     pub group_actions: FeatureVersionBounds,
     pub group_action_signers: FeatureVersionBounds,
+}
+
+/// The contract moderation queries: one identity's status on a moderated contract, and one page
+/// of a contract's banlist or suspension list.
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryContractModerationVersions {
+    pub contract_moderation_status: FeatureVersionBounds,
+    pub contract_moderation_entries: FeatureVersionBounds,
 }
 
 /// The contract group queries: a group's stored information, one page of its members of one

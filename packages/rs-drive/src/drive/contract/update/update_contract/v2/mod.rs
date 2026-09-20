@@ -216,6 +216,10 @@ impl Drive {
     /// It also mints the base supply of a token the update adds, to the same
     /// identity `insert_contract` credits at registration. v1 left such a
     /// token at a total supply of zero with nobody holding any of it.
+    ///
+    /// The moderation list trees need nothing here: which lists a contract keeps is fixed when
+    /// it is created (`DataContractConfig::validate_update` v2), so `insert_contract` made
+    /// them and an update leaves them, and their entries, alone.
     #[allow(clippy::too_many_arguments)]
     fn update_contract_operations_v2(
         &self,

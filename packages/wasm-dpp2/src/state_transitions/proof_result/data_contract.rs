@@ -2,6 +2,7 @@
 
 use super::helpers::js_obj;
 use crate::DataContractWasm;
+use crate::IdentifierWasm;
 use crate::PlatformVersionLikeJs;
 use crate::data_contract::{DataContractJSONJs, DataContractObjectJs};
 use crate::error::{WasmDppError, WasmDppResult};
@@ -69,3 +70,95 @@ impl VerifiedDataContractWasm {
 }
 
 impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
+
+/// `VerifiedContractModerationListStatuses` proof-result wrapper: the target identity's status
+/// on the lists a moderation transition touched (both for a ban, the edited one otherwise).
+/// A list the proof does not cover is unknown: `banned` is undefined unless `lists` includes
+/// `banlist`.
+#[wasm_bindgen(js_name = "VerifiedContractModerationListStatuses")]
+#[derive(Clone)]
+pub struct VerifiedContractModerationListStatusesWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
+    pub contract_id: IdentifierWasm,
+    #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
+    pub identity_id: IdentifierWasm,
+    /// The lists the proof covers: `banlist`, `suspensions`, or both
+    #[wasm_bindgen(getter_with_clone)]
+    pub lists: Vec<String>,
+    /// When `lists` includes `banlist`: the identity is on the banlist
+    pub banned: Option<bool>,
+    /// When `lists` includes `suspensions`: the block time, in milliseconds, until which the
+    /// identity is suspended
+    #[wasm_bindgen(js_name = "suspendedUntil")]
+    pub suspended_until: Option<u64>,
+}
+
+#[wasm_bindgen(js_class = VerifiedContractModerationListStatuses)]
+impl VerifiedContractModerationListStatusesWasm {
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            ("contractId", self.contract_id.into()),
+            ("identityId", self.identity_id.into()),
+            (
+                "lists",
+                self.lists
+                    .iter()
+                    .map(|list| JsValue::from_str(list))
+                    .collect::<js_sys::Array>()
+                    .into(),
+            ),
+            (
+                "banned",
+                self.banned
+                    .map(JsValue::from_bool)
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
+            (
+                "suspendedUntil",
+                self.suspended_until
+                    .map(|until| JsValue::from(js_sys::BigInt::from(until)))
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
+        ]))
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            (
+                "contractId",
+                JsValue::from_str(&self.contract_id.to_base58()),
+            ),
+            (
+                "identityId",
+                JsValue::from_str(&self.identity_id.to_base58()),
+            ),
+            (
+                "lists",
+                self.lists
+                    .iter()
+                    .map(|list| JsValue::from_str(list))
+                    .collect::<js_sys::Array>()
+                    .into(),
+            ),
+            (
+                "banned",
+                self.banned
+                    .map(JsValue::from_bool)
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
+            (
+                "suspendedUntil",
+                self.suspended_until
+                    .map(|until| JsValue::from_f64(until as f64))
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
+        ]))
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedContractModerationListStatusesWasm,
+    VerifiedContractModerationListStatuses
+);

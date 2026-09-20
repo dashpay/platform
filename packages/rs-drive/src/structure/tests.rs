@@ -225,6 +225,7 @@ mod fixtures {
         ContractGroupRegistration,
     };
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -236,6 +237,7 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -406,6 +408,54 @@ mod fixtures {
             }
         }
         conformance_of(&drive, "contracts_with_documents")
+    }
+
+    /// A contract that keeps both moderation lists, with one ban and one suspension
+    fn moderated_contract() -> ConformanceReport {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            Some([9; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: true,
+                        suspensions: true,
+                        moderators: ContractModerators::ContractOwner,
+                    },
+                )))
+            }),
+            None,
+            Some(platform_version),
+        );
+        drive
+            .add_contract_ban(
+                contract.id(),
+                Identifier::from([0x21; 32]),
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to ban");
+        drive
+            .add_contract_suspension(
+                contract.id(),
+                Identifier::from([0x22; 32]),
+                1_000,
+                false,
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to suspend");
+        conformance_of(&drive, "moderated_contract")
     }
 
     fn tokens_and_group_actions() -> ConformanceReport {
@@ -953,6 +1003,7 @@ mod fixtures {
         for report in [
             identities(),
             contracts_with_documents(),
+            moderated_contract(),
             tokens_and_group_actions(),
             address_balances(),
             current_then_paid_epoch(),

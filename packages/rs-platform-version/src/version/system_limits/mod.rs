@@ -104,6 +104,17 @@ pub struct SystemLimits {
     pub max_contract_group_name_length: u16,
     /// Maximum length, in characters, of a contract group description.
     pub max_contract_group_description_length: u16,
+    /// Maximum number of moderator identities a moderated data contract may name
+    /// (`DataContractConfigV2::moderation`); the owner counts when it is named, and moderates
+    /// without being named. Contract moderation exists from protocol
+    /// version 14; read by the contract's `validate_moderation_config` v0 and never reached
+    /// before.
+    pub max_contract_moderators: u16,
+    /// Latest block time, in milliseconds, a contract suspension may run until: 2^53 - 1, the
+    /// largest integer JSON and JavaScript numbers hold exactly, which is how `until` travels
+    /// to clients. Read by the `ContractUserModeration` basic structure validation v0
+    /// (protocol version 14) and never reached before.
+    pub max_contract_suspension_until: u64,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

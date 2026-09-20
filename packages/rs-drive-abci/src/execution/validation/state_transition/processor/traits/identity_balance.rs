@@ -110,6 +110,9 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             StateTransition::IdentityKeyLimitsUpdate(st) => st
                 .validate_estimated_fee(balance, platform_version)
                 .map_err(Error::Protocol),
+            StateTransition::ContractUserModeration(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
             StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
@@ -172,6 +175,7 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
                 | StateTransition::Batch(_)
                 | StateTransition::IdentityUpdate(_)
                 | StateTransition::IdentityKeyLimitsUpdate(_)
+                | StateTransition::ContractUserModeration(_)
                 | StateTransition::ShieldFromIdentity(_)
                 | StateTransition::IdentityCreditTransferToAddresses(_)
         )

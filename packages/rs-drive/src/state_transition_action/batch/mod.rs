@@ -11,6 +11,7 @@ use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
+use std::collections::BTreeSet;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
 /// batched transition
@@ -150,6 +151,13 @@ impl BatchTransitionAction {
             BatchTransitionAction::V0(v0) => {
                 v0.contract_group_memberships.insert(contract_id, resolved);
             }
+        }
+    }
+
+    /// The contracts on which the batch sweeps its owner's lapsed suspension when it executes
+    pub fn lapsed_suspensions(&self) -> &BTreeSet<Identifier> {
+        match self {
+            BatchTransitionAction::V0(v0) => &v0.lapsed_suspensions,
         }
     }
 }

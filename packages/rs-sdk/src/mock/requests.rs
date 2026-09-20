@@ -26,6 +26,10 @@ use dpp::{
 };
 use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use drive_proof_verifier::types::contract_moderation::{
+    ContractModerationEntries, ContractModerationEntry, ContractModerationListStatus,
+    ContractModerationListStatuses,
+};
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
 };
@@ -388,6 +392,49 @@ impl MockResponse for ContractGroupInfo {
 
 /// One byte for the kind (0 contracts, 1 document types, 2 tokens) followed by the bincode
 /// entries of that kind.
+impl MockResponse for ContractModerationListStatuses {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(&self.0, BINCODE_CONFIG)
+            .expect("encode ContractModerationListStatuses")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (statuses, _): (Vec<ContractModerationListStatus>, usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractModerationListStatuses");
+        ContractModerationListStatuses(statuses)
+    }
+}
+
+impl MockResponse for ContractModerationEntries {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let entries: Vec<(Identifier, Option<u64>)> = self
+            .entries()
+            .iter()
+            .map(|entry| (entry.identity_id, entry.until))
+            .collect();
+        bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode ContractModerationEntries")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (entries, _): (Vec<(Identifier, Option<u64>)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractModerationEntries");
+        ContractModerationEntries(
+            entries
+                .into_iter()
+                .map(|(identity_id, until)| ContractModerationEntry { identity_id, until })
+                .collect(),
+        )
+    }
+}
+
 impl MockResponse for ContractGroupMembersPage {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         let (kind, entries) = match self {

@@ -8,6 +8,7 @@ pub mod drive_op_batch;
 pub mod grovedb_op_batch;
 
 pub use drive_op_batch::ContractGroupOperationType;
+pub use drive_op_batch::ContractModerationOperationType;
 pub use drive_op_batch::DataContractOperationType;
 pub use drive_op_batch::DocumentOperationType;
 pub use drive_op_batch::DriveOperation;

@@ -263,6 +263,11 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedInvalidDenominationError(_) => 10827,
             Self::InvalidTokenDistributionEpochIntervalTooShortError(_) => 10828,
             Self::InvalidTokenOncePerIdentityDistributionAmountError(_) => 10829,
+
+            // Contract Moderation Errors: 10900-10949
+            Self::InvalidContractModerationConfigError(_) => 10900,
+            Self::ContractModerationSelfTargetError(_) => 10901,
+            // 10902 is reserved for the moderation earnings follow-up.
         }
     }
 }
@@ -438,6 +443,21 @@ impl ErrorWithCode for StateError {
             Self::ContractGroupNotFoundError(_) => 41001,
             Self::IdentityNotContractGroupOwnerOrAdminError(_) => 41002,
             Self::ContractGroupAdminNotFoundError(_) => 41003,
+
+            // Contract moderation errors: 41100-41199
+            Self::ContractModerationNotEnabledError(_) => 41100,
+            Self::IdentityNotContractModeratorError(_) => 41101,
+            Self::ContractModerationTargetNotAllowedError(_) => 41102,
+            Self::ContractUserAlreadyBannedError(_) => 41103,
+            Self::ContractUserNotBannedError(_) => 41104,
+            Self::ContractUserNotSuspendedError(_) => 41105,
+            Self::ContractSuspensionNotInFutureError(_) => 41106,
+            Self::ContractUserBannedError(_) => 41107,
+            Self::ContractUserSuspendedError(_) => 41108,
+            Self::ContractModerationTargetNotFoundError(_) => 41109,
+            Self::ContractModeratorIdentityNotFoundError(_) => 41110,
+            // 41111 to 41113 are reserved for the moderation earnings follow-up.
+            Self::ContractModerationCounterpartyBarredError(_) => 41114,
         }
     }
 }

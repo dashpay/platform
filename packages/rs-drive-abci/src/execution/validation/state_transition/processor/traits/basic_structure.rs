@@ -67,6 +67,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             StateTransition::IdentityKeyLimitsUpdate(st) => {
                 st.validate_basic_structure(network_type, platform_version)
             }
+            StateTransition::ContractUserModeration(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
             StateTransition::IdentityTopUp(st) => {
                 st.validate_basic_structure(network_type, platform_version)
             }
@@ -494,6 +497,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
@@ -909,6 +913,7 @@ mod tests {
                 | StateTransition::IdentityCreditWithdrawal(_)
                 | StateTransition::IdentityUpdate(_)
                 | StateTransition::IdentityKeyLimitsUpdate(_)
+                | StateTransition::ContractUserModeration(_)
                 | StateTransition::IdentityCreditTransfer(_)
                 | StateTransition::MasternodeVote(_)
                 | StateTransition::ShieldFromIdentity(_)

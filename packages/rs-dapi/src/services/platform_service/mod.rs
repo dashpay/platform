@@ -417,6 +417,19 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetContractGroupInfoResponse
     );
 
+    // Contract moderation methods
+    drive_method!(
+        get_contract_moderation_status,
+        dapi_grpc::platform::v0::GetContractModerationStatusRequest,
+        dapi_grpc::platform::v0::GetContractModerationStatusResponse
+    );
+
+    drive_method!(
+        get_contract_moderation_entries,
+        dapi_grpc::platform::v0::GetContractModerationEntriesRequest,
+        dapi_grpc::platform::v0::GetContractModerationEntriesResponse
+    );
+
     drive_method!(
         get_contract_group_members,
         dapi_grpc::platform::v0::GetContractGroupMembersRequest,

@@ -1,4 +1,6 @@
-use crate::drive::contract::paths::CONTRACT_VERSION_KEY;
+use crate::drive::contract::paths::{
+    CONTRACT_BANLIST_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY,
+};
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
@@ -58,19 +60,88 @@ pub(crate) fn structure() -> StructureNode {
                     .describe("The documents of the contract, by document type.")
                     .child(document_type()),
                 StructureNode::fixed(
-                    "version",
-                    &[CONTRACT_VERSION_KEY],
-                    "ContractVersion",
-                    "CONTRACT_VERSION_KEY",
+                    "other",
+                    &[CONTRACT_OTHER_KEY],
+                    "Other",
+                    "CONTRACT_OTHER_KEY",
                 )
-                .kind(ElementKind::Item)
+                .kind(ElementKind::Tree)
                 .since(14)
-                .value("u32 big endian")
+                .book("data-model/contract-moderation.md")
                 .describe(
-                    "The contract's version, readable without \
-                     deserializing the contract. Rewritten on every \
-                     update.",
-                ),
+                    "Everything a contract keeps beside itself and its \
+                         documents. One key, so that the contract's layer \
+                         holds three and its Merk keeps the documents on top. \
+                         Inside, the keys are spread like the root layer's, \
+                         with the most read one, the banlist, in the middle.",
+                )
+                .children(vec![
+                    StructureNode::fixed(
+                        "version",
+                        &[CONTRACT_VERSION_KEY],
+                        "ContractVersion",
+                        "CONTRACT_VERSION_KEY",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("u32 big endian")
+                    .describe(
+                        "The contract's version, readable without \
+                             deserializing the contract. Rewritten on every \
+                             update.",
+                    ),
+                    StructureNode::fixed(
+                        "banlist",
+                        &[CONTRACT_BANLIST_KEY],
+                        "Banlist",
+                        "CONTRACT_BANLIST_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .describe(
+                        "The identities banned from the contract's \
+                             documents. Created with the contract, and only \
+                             when its config declares a banlist.",
+                    )
+                    .child(
+                        StructureNode::identifier(
+                            "identity",
+                            "identity_id",
+                            "The banned identity's id",
+                        )
+                        .kind(ElementKind::Item)
+                        .value("empty; the flags name the moderator that pays for the entry")
+                        .describe("One ban, until an unban."),
+                    ),
+                    StructureNode::fixed(
+                        "suspensions",
+                        &[CONTRACT_SUSPENSIONS_KEY],
+                        "Suspensions",
+                        "CONTRACT_SUSPENSIONS_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .describe(
+                        "The identities suspended from the contract's \
+                             documents. Created with the contract, and only \
+                             when its config declares a suspension list.",
+                    )
+                    .child(
+                        StructureNode::identifier(
+                            "identity",
+                            "identity_id",
+                            "The suspended identity's id",
+                        )
+                        .kind(ElementKind::Item)
+                        .value(
+                            "the block time in milliseconds the suspension \
+                                 runs until, u64 big endian",
+                        )
+                        .describe(
+                            "One suspension. A lapsed one stays until the \
+                                 identity's next document transition sweeps it.",
+                        ),
+                    ),
+                ]),
             ]),
     )
 }

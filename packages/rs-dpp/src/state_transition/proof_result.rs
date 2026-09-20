@@ -1,6 +1,7 @@
 use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::config::moderation::ContractModerationListStatuses;
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
@@ -128,6 +129,12 @@ pub enum StateTransitionProofResult {
     /// STRICT merged multi-root GroveDB proof. A light/SDK client can cryptographically confirm both
     /// that the identity was created and that the funding nullifiers were consumed.
     VerifiedIdentityWithShieldedNullifiers(Identity, Vec<(Vec<u8>, bool)>),
+    /// Returned by `ContractUserModeration`: the target identity's status on the lists the
+    /// moderation touched (contract id, identity id, one status per list proved) after the
+    /// moderation. A ban proves both lists the contract keeps, since it also removes a
+    /// suspension; an unban, a suspend and an unsuspend prove the one list they edit, and say
+    /// nothing about the other.
+    VerifiedContractModerationListStatuses(Identifier, Identifier, ContractModerationListStatuses),
 }
 
 /// A verified state-transition proof result, tagged with the guarantee the
