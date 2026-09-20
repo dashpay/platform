@@ -1,4 +1,6 @@
-use crate::drive::contract::paths::{contract_other_path, CONTRACT_VERSION_KEY};
+use crate::drive::contract::paths::{
+    contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
+};
 use crate::drive::contract::version_item::decode_contract_version;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -45,6 +47,23 @@ impl Drive {
                 ) =>
             {
                 Ok(None)
+            }
+            // The 4.2 betas kept the version item itself at key `2`, where the other tree is
+            // now, so the path above runs through an item. A contract one of them stored holds
+            // it there until its next update gives it the tree; it is read from there so that
+            // the latest-versions query keeps answering for such a contract.
+            Err(Error::GroveDB(error)) if matches!(*error, grovedb::Error::CorruptedPath(_)) => {
+                match self.grove_get_raw_optional(
+                    (&contract_root_path(&contract_id)).into(),
+                    &[CONTRACT_OTHER_KEY],
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )? {
+                    Some(Item(encoded_version, _)) => Ok(decode_contract_version(&encoded_version)),
+                    _ => Err(Error::GroveDB(error)),
+                }
             }
             Err(e) => Err(e),
         }

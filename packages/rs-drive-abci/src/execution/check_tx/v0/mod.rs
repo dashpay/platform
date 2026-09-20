@@ -1924,10 +1924,10 @@ mod tests {
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
             // from protocol version 14 the contract's version item is stored in the contract's
-            // other tree (an update checks that the tree is there before writing under it),
+            // other tree (an update reads what key `2` holds, billed, before writing under it),
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
             // contract bytes
-            27003109420
+            27003119120
         );
 
         let check_result = platform

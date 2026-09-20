@@ -5,12 +5,11 @@ use crate::drive::contract::version_item::encode_contract_version;
 use crate::drive::Drive;
 use crate::drive::LowLevelDriveOperation;
 use crate::error::Error;
-use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
+use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
-use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -18,7 +17,7 @@ use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -64,8 +63,8 @@ impl Drive {
         // contract's root subtree is (re)created in the same batch, so whatever state holds
         // under it is gone anyway. An update finds the tree, from the insertion or from the
         // migration on the first block of protocol version 14, so its estimate writes none;
-        // applied, it still inserts the tree `if not exists` rather than trusting that: it must
-        // never be replaced, it may hold the moderation lists.
+        // applied, it looks rather than trusting that. A tree that is there must never be
+        // replaced, it may hold the moderation lists.
         let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
         if is_first_insert {
             self.batch_insert_empty_tree(
@@ -76,31 +75,19 @@ impl Drive {
                 drive_version,
             )?;
         } else if estimated_costs_only_with_layer_info.is_none() {
-            let inserted = self.batch_insert_empty_tree_if_not_exists(
-                PathFixedSizeKeyRef((
-                    contract_root_path(contract.id_ref().as_bytes()),
-                    &[CONTRACT_OTHER_KEY],
-                )),
-                TreeType::NormalTree,
-                storage_flags.as_ref(),
-                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+            // One billed read says what key `2` holds. The other tree: nothing to write. Nothing:
+            // the tree is written rather than the update failing inside a block. An item: the
+            // 4.2 betas kept the version item itself at this key, before the other tree existed,
+            // and the write below needs a tree there, so the tree takes the item's place.
+            let held = self.grove_get_raw_optional(
+                (&contract_root_path(contract.id_ref().as_bytes())).into(),
+                &[CONTRACT_OTHER_KEY],
+                DirectQueryType::StatefulDirectQuery,
                 transaction,
-                &mut None,
                 insert_operations,
                 drive_version,
             )?;
-            // The 4.2 betas wrote the version item itself at this key (`[64, id] / 2`), before
-            // the other tree existed. A contract stored by one of them still holds that item,
-            // and the write below needs a tree there, so the tree takes the item's place. The
-            // look is not billed: no contract stored by a release has the item, and an update
-            // must cost the same whether or not a beta ever ran on the network.
-            if !inserted
-                && self.contract_other_key_holds_the_beta_version_item(
-                    contract.id_ref().as_bytes(),
-                    transaction,
-                    drive_version,
-                )?
-            {
+            if !matches!(held, Some(Element::Tree(..))) {
                 self.batch_insert_empty_tree(
                     contract_root_path(contract.id_ref().as_bytes()),
                     DriveKeyInfo::Key(vec![CONTRACT_OTHER_KEY]),
@@ -137,29 +124,14 @@ impl Drive {
 
         self.batch_insert(path_key_element_info, insert_operations, drive_version)
     }
-
-    /// Whether key `2` of the contract's root subtree holds an item rather than the other tree:
-    /// the layout of the 4.2 betas, which kept the version item there.
-    fn contract_other_key_holds_the_beta_version_item(
-        &self,
-        contract_id: &[u8; 32],
-        transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<bool, Error> {
-        let element = self.grove_get_raw_optional(
-            (&contract_root_path(contract_id)).into(),
-            &[CONTRACT_OTHER_KEY],
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )?;
-        Ok(matches!(element, Some(Element::Item(..))))
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::contract::paths::{
+        contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
+    };
+    use crate::drive::contract::version_item::encode_contract_version;
     use crate::drive::Drive;
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -169,6 +141,7 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::version::PlatformVersion;
+    use grovedb::Element;
 
     fn dashpay_contract(keeps_history: bool, platform_version: &PlatformVersion) -> DataContract {
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
@@ -258,22 +231,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn should_give_a_contract_stored_by_a_beta_its_other_tree_on_update() {
-        use crate::drive::contract::paths::{
-            contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
-        };
-        use crate::drive::contract::version_item::encode_contract_version;
-        use grovedb::Element;
-
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+    /// Puts a stored contract back into the layout the 4.2 betas wrote: the version item itself
+    /// at `[64, id] / 2`, where the other tree is now.
+    fn into_the_beta_layout(
+        drive: &Drive,
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) {
         let grove_version = &platform_version.drive.grove_version;
-
-        let mut contract = dashpay_contract(false, platform_version);
-        apply(&drive, &contract, 1000, platform_version);
-
-        // Back to the layout the 4.2 betas wrote: the version item itself at `[64, id] / 2`.
         let contract_id = contract.id().to_buffer();
         drive
             .grove
@@ -309,12 +274,31 @@ mod tests {
             )
             .unwrap()
             .expect("expected to write the beta version item");
+    }
 
-        // Until the contract is updated, a read of its version item goes through a key that is
-        // not a tree, and fails. Only `getDataContractsLatestVersions` reads it, not consensus.
-        assert!(drive
-            .fetch_contract_version(contract_id, None, platform_version)
-            .is_err());
+    #[test]
+    fn should_give_a_contract_stored_by_a_beta_its_other_tree_on_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = dashpay_contract(false, platform_version);
+        apply(&drive, &contract, 1000, platform_version);
+        into_the_beta_layout(&drive, &contract, platform_version);
+
+        // Until the contract is updated its version is read from the beta item. A proof has no
+        // version item to show for it, and says so rather than failing.
+        assert_eq!(
+            stored_version(&drive, &contract, platform_version),
+            Some(contract.version())
+        );
+        let contract_id = contract.id().to_buffer();
+        let proof = drive
+            .prove_contracts_versions(&[contract_id], None, platform_version)
+            .expect("expected to prove the version");
+        let (_, versions) =
+            Drive::verify_contracts_versions(&proof, &[contract_id], platform_version)
+                .expect("expected to verify the version proof");
+        assert_eq!(versions.get(&contract_id), Some(&None));
 
         contract.increment_version();
         apply(&drive, &contract, 2000, platform_version);
@@ -324,6 +308,36 @@ mod tests {
             Some(contract.version()),
             "the update put the other tree in the item's place and the item under it"
         );
+    }
+
+    #[test]
+    fn should_not_estimate_an_update_below_what_it_costs() {
+        let platform_version = PlatformVersion::latest();
+
+        // An ordinary update, and the one that gives a contract stored by a beta its other tree.
+        for stored_by_a_beta in [false, true] {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let mut contract = dashpay_contract(false, platform_version);
+            apply(&drive, &contract, 1000, platform_version);
+            if stored_by_a_beta {
+                into_the_beta_layout(&drive, &contract, platform_version);
+            }
+
+            contract.increment_version();
+            let estimated_fee = drive
+                .update_contract(&contract, block(2000), false, None, platform_version, None)
+                .expect("expected the stateless update estimate to succeed");
+            let actual_fee = drive
+                .update_contract(&contract, block(2000), true, None, platform_version, None)
+                .expect("expected the update to succeed");
+
+            assert!(
+                estimated_fee.storage_fee >= actual_fee.storage_fee
+                    && estimated_fee.processing_fee >= actual_fee.processing_fee,
+                "stored_by_a_beta={stored_by_a_beta}: the estimate ({estimated_fee:?}) must not \
+                 undershoot the actual fee ({actual_fee:?})"
+            );
+        }
     }
 
     #[test]
