@@ -26,7 +26,7 @@ use thiserror::Error;
     "Document {} on contract {} was last modified at {} and could be deleted by moderators for {} seconds after that, which block time {} is past",
     document_id,
     contract_id,
-    updated_at,
+    last_modified_at,
     window_seconds,
     block_time
 )]
@@ -39,7 +39,7 @@ pub struct DocumentModerationWindowElapsedError {
     */
     contract_id: Identifier,
     document_id: Identifier,
-    updated_at: TimestampMillis,
+    last_modified_at: TimestampMillis,
     window_seconds: u32,
     block_time: TimestampMillis,
 }
@@ -48,14 +48,14 @@ impl DocumentModerationWindowElapsedError {
     pub fn new(
         contract_id: Identifier,
         document_id: Identifier,
-        updated_at: TimestampMillis,
+        last_modified_at: TimestampMillis,
         window_seconds: u32,
         block_time: TimestampMillis,
     ) -> Self {
         Self {
             contract_id,
             document_id,
-            updated_at,
+            last_modified_at,
             window_seconds,
             block_time,
         }
@@ -69,9 +69,10 @@ impl DocumentModerationWindowElapsedError {
         self.document_id
     }
 
-    /// The document's last modification, in milliseconds
-    pub fn updated_at(&self) -> TimestampMillis {
-        self.updated_at
+    /// The document's last modification, in milliseconds: its `$updatedAt`, or its
+    /// `$createdAt` on a document type that carries no `$updatedAt`
+    pub fn last_modified_at(&self) -> TimestampMillis {
+        self.last_modified_at
     }
 
     /// For how long after it moderators could delete the document

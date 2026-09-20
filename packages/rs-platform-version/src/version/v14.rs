@@ -428,8 +428,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
 ///     `canBeDeletedByModeratorsFor` bounds the deletion in time: so many
-///     seconds after a document's last modification (`$updatedAt`, which the
-///     type must then require), past which no moderator deletes it, the
+///     seconds after a document's last modification (`$updatedAt`, or
+///     `$createdAt` on a type whose documents never change; the type must
+///     require its clock), past which no moderator deletes it, the
 ///     contract owner included (`DocumentModerationWindowElapsedError`); a
 ///     document's own owner still deletes it as `canBeDeleted` allows. A
 ///     replace opens the window again. Fixed with the type, like the flag.

@@ -40,7 +40,8 @@ pub trait DocumentTypeV2Getters {
     /// own owner may do. False on document types that predate the keyword.
     fn documents_can_be_deleted_by_moderators(&self) -> bool;
 
-    /// For how many seconds after a document's last modification (`$updatedAt`)
+    /// For how many seconds after a document's last modification (`$updatedAt`,
+    /// or `$createdAt` on a type that carries no `$updatedAt`)
     /// the moderators may still delete it (the `canBeDeletedByModeratorsFor`
     /// keyword, protocol version 14). `None` means no limit, and is what every
     /// document type that predates the keyword answers.

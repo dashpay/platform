@@ -42,7 +42,7 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::UPDATED_AT;
+use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -2085,9 +2085,13 @@ pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
 /// moderators may delete it, so:
 /// - the type must let moderators delete its documents at all, or the window
 ///   would limit nothing;
-/// - the type must require `$updatedAt`, the clock the window is measured on:
-///   every document then carries it, set at creation and moved by every
-///   replace;
+/// - the type must require the clock the window is measured on. That is
+///   `$updatedAt`, set at creation and moved by every replace, and where a type
+///   does not carry it, `$createdAt`. A type whose documents can be replaced
+///   must require `$updatedAt`: measured from creation alone, its author could
+///   wait the window out and then rewrite the document into something no
+///   moderator can remove any more. A type whose documents never change has
+///   no modification after the creation, so `$createdAt` says as much;
 /// - it lasts at least a second: a window of none would be a type moderators
 ///   can never delete from, which is said by not setting the flag.
 ///
@@ -2122,10 +2126,20 @@ pub(super) fn apply_can_be_deleted_by_moderators_for(
             name,
         )));
     }
-    if !document_type.required_fields.contains(UPDATED_AT) {
+    let requires_updated_at = document_type.required_fields.contains(UPDATED_AT);
+    if document_type.documents_mutable && !requires_updated_at {
         return Err(structure_error(format!(
             "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
-             a document's last modification: list `$updatedAt` in `required`",
+             a document's last modification, and its documents can be replaced: list \
+             `$updatedAt` in `required`",
+            name,
+        )));
+    }
+    if !requires_updated_at && !document_type.required_fields.contains(CREATED_AT) {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
+             a document's last modification: list `$updatedAt`, or `$createdAt` for documents \
+             that never change, in `required`",
             name,
         )));
     }

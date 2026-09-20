@@ -2419,6 +2419,57 @@ async fn should_open_the_window_again_when_the_author_modifies_the_post() {
 }
 
 #[tokio::test]
+async fn should_measure_the_window_from_the_creation_of_a_post_that_never_changes() {
+    // An immutable type needs no `$updatedAt`: nothing modifies a post after it is created, so
+    // `$createdAt` is its last modification.
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "documentsMutable": false,
+                    "required": ["text", "$createdAt"],
+                })),
+            )
+        },
+    )
+    .await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (in_time, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let (settled, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, in_time.id()))
+        .await;
+    assert_success(&setup.process_at(&delete, BLOCK_TIME_MS + MODERATION_WINDOW_MS, &transaction));
+
+    let too_late = setup
+        .moderate(&setup.moderator, delete_action(POST, settled.id()))
+        .await;
+    let execution = setup.process_at(
+        &too_late,
+        BLOCK_TIME_MS + MODERATION_WINDOW_MS + 1,
+        &transaction,
+    );
+    assert_paid_with_code(&execution, DOCUMENT_MODERATION_WINDOW_ELAPSED);
+    // The refusal names the creation time as the last modification.
+    assert!(
+        matches!(&execution, StateTransitionExecutionResult::PaidConsensusError { error, .. }
+            if matches!(error, ConsensusError::StateError(
+                StateError::DocumentModerationWindowElapsedError(e)
+            ) if e.last_modified_at() == BLOCK_TIME_MS)),
+        "expected the creation time as the last modification, got {execution:?}"
+    );
+}
+
+#[tokio::test]
 async fn should_fix_the_window_of_a_document_type() {
     let setup = setup_with_a_moderation_window().await;
     let transaction = setup.platform.drive.grove.start_transaction();

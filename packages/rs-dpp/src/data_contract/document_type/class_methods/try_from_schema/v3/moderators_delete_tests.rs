@@ -245,11 +245,54 @@ fn should_refuse_a_window_on_a_type_moderators_can_not_delete_from() {
 }
 
 #[test]
-fn should_refuse_a_window_on_a_type_that_does_not_require_updated_at() {
-    assert_refused_naming(
-        parse_moderated(windowed_schema(platform_value!({ "required": ["text"] }))),
-        &["canBeDeletedByModeratorsFor", "$updatedAt"],
+fn should_measure_the_window_of_documents_that_never_change_from_their_creation() {
+    // Nothing modifies such a document after it is created, so `$createdAt` is its last
+    // modification and `$updatedAt` is not needed.
+    let document_type = parse_moderated(windowed_schema(platform_value!({
+        "documentsMutable": false,
+        "required": ["$createdAt"],
+    })))
+    .expect("parse");
+    assert_eq!(
+        document_type.documents_can_be_deleted_by_moderators_for(),
+        Some(86400)
     );
+}
+
+#[test]
+fn should_refuse_a_window_on_a_type_that_carries_no_clock() {
+    for mutable in [true, false] {
+        assert_refused_naming(
+            parse_moderated(windowed_schema(platform_value!({
+                "documentsMutable": mutable,
+                "required": ["text"],
+            }))),
+            &["canBeDeletedByModeratorsFor", "$updatedAt"],
+        );
+    }
+}
+
+#[test]
+fn should_refuse_a_window_measured_from_creation_on_documents_that_can_be_replaced() {
+    // Measured from creation alone, an author could wait the window out and then rewrite the
+    // document into something no moderator can remove any more.
+    assert_refused_naming(
+        parse_moderated(windowed_schema(platform_value!({
+            "documentsMutable": true,
+            "required": ["$createdAt"],
+        }))),
+        &[
+            "canBeDeletedByModeratorsFor",
+            "can be replaced",
+            "$updatedAt",
+        ],
+    );
+    // With both, `$updatedAt` is the clock and the type is fine.
+    parse_moderated(windowed_schema(platform_value!({
+        "documentsMutable": true,
+        "required": ["$createdAt", "$updatedAt"],
+    })))
+    .expect("parse");
 }
 
 #[test]

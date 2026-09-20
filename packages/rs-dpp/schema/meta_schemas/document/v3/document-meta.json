@@ -897,7 +897,7 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 4294967295,
-      "description": "For how many seconds after a document's last modification (`$updatedAt`) the contract's moderators may still delete it. Once block time is later than `$updatedAt` plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer or a purchase does not. Absent means no limit. Requires `canBeDeletedByModerators: true` and `$updatedAt` in `required`. Fixed when the document type is created. Says nothing about what a document's own owner may do. Available from protocol version 14."
+      "description": "For how many seconds after a document's last modification the contract's moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer or a purchase does not. Absent means no limit. Requires `canBeDeletedByModerators: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Fixed when the document type is created. Says nothing about what a document's own owner may do. Available from protocol version 14."
     },
     "indexOnly": {
       "type": "boolean",
