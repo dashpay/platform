@@ -310,13 +310,11 @@ mod tests {
             .unwrap()
             .expect("expected to write the beta version item");
 
-        // Until the contract is updated there is no version item where this build reads it.
-        let before_the_update =
-            drive.fetch_contract_version(contract_id, None, platform_version);
-        assert!(
-            matches!(before_the_update, Ok(None)),
-            "expected no version item, got {before_the_update:?}"
-        );
+        // Until the contract is updated, a read of its version item goes through a key that is
+        // not a tree, and fails. Only `getDataContractsLatestVersions` reads it, not consensus.
+        assert!(drive
+            .fetch_contract_version(contract_id, None, platform_version)
+            .is_err());
 
         contract.increment_version();
         apply(&drive, &contract, 2000, platform_version);
