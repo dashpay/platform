@@ -239,7 +239,7 @@ describe('App Connect Contract', () => {
           authBoundsId: crypto.randomBytes(32),
           sessionSeconds: 604800,
           sessionBudget: 10000000000,
-          requestedEncryptionKeys: crypto.randomBytes(96 * 4),
+          requestedEncryptionKeys: crypto.randomBytes(97 * 4),
         };
       });
 
@@ -469,7 +469,7 @@ describe('App Connect Contract', () => {
         });
 
         it('should accept eight records', async () => {
-          rawAppManifestDocument.requestedEncryptionKeys = crypto.randomBytes(96 * 8);
+          rawAppManifestDocument.requestedEncryptionKeys = crypto.randomBytes(97 * 8);
 
           const document = dpp.document.create(dataContract, identityId, 'appManifest', rawAppManifestDocument);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -477,8 +477,28 @@ describe('App Connect Contract', () => {
           expect(validationResult.isValid()).to.be.true();
         });
 
-        it('should be not longer than 768 bytes', async () => {
-          rawAppManifestDocument.requestedEncryptionKeys = crypto.randomBytes(769);
+        it('should carry a 64-character document type name unpadded in a record', async () => {
+          // The longest document type name Platform admits fills the name
+          // field exactly: 32-byte contract id, 1-byte purpose mask, 64-byte name.
+          const name = 'a'.repeat(64);
+          const record = Buffer.concat([
+            crypto.randomBytes(32),
+            Buffer.from([0b11]),
+            Buffer.from(name, 'ascii'),
+          ]);
+          expect(record.length).to.equal(97);
+          rawAppManifestDocument.requestedEncryptionKeys = record;
+
+          const document = dpp.document.create(dataContract, identityId, 'appManifest', rawAppManifestDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          expect(validationResult.isValid()).to.be.true();
+
+          const stored = Buffer.from(document.get('requestedEncryptionKeys'));
+          expect(stored.subarray(33, 97).toString('ascii')).to.equal(name);
+        });
+
+        it('should be not longer than 776 bytes', async () => {
+          rawAppManifestDocument.requestedEncryptionKeys = crypto.randomBytes(777);
 
           const document = dpp.document.create(dataContract, identityId, 'appManifest', rawAppManifestDocument);
           const validationResult = document.validate(dpp.protocolVersion);

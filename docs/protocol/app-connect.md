@@ -72,7 +72,7 @@ rejected (`ReferencedDocumentPropertyMismatchError`). A wallet therefore fetches
 | `authBoundsDocType` | string, at most 64 characters, optional | The document type name, present only when `authBoundsKind` is `2`. |
 | `sessionSeconds` | integer | The login key lifetime the app asks for, in seconds. |
 | `sessionBudget` | integer | The login key budget the app asks for, in credits. |
-| `requestedEncryptionKeys` | 0 to 768 bytes, optional | The encryption keys the wallet should register on the identity at login, packed as fixed 96-byte records (below). |
+| `requestedEncryptionKeys` | 0 to 776 bytes, optional | The encryption keys the wallet should register on the identity at login, packed as fixed 97-byte records (below). |
 
 `appContractId`, `name`, `url`, `authBoundsKind`, `sessionSeconds` and `sessionBudget` are
 required. The single index, `byApp` on `(appContractId)`, is unique: one manifest per app
@@ -101,15 +101,15 @@ keys the identity already holds, and adds the missing ones in the same identity 
 login key.
 
 Document schemas admit byte arrays but not arrays of objects, so the list is packed. Each record
-is 96 bytes:
+is 97 bytes:
 
 | Offset | Size | Content |
 |---|---|---|
 | 0 | 32 | The id of the data contract the keys serve. |
 | 32 | 1 | Purpose mask: bit 0 asks for an ENCRYPTION key, bit 1 for a DECRYPTION key. |
-| 33 | 63 | The document type name, zero-padded; all zero for a contract-level key. |
+| 33 | 64 | The document type name, zero-padded (64 bytes is the longest name Platform admits, so every name fits); all zero for a contract-level key. |
 
-The array holds zero to eight records, so its length is a multiple of 96 up to 768. For each
+The array holds zero to eight records, so its length is a multiple of 97 up to 776. For each
 record and each purpose bit, the wallet makes sure the identity holds an enabled key with that
 purpose, bound to that contract (or that document type of it), and registers one if it does not.
 The bound contract or document type has to opt in with `requiresIdentityEncryptionBoundedKey` or
@@ -140,26 +140,36 @@ The app keeps the matching private key in memory until the answer arrives.
    owner.
 2. Lets the user choose an identity if the wallet holds more than one usable one.
 3. Derives the session key for this request (its derivation leaf is the request id, so a
-   different `e` yields a different key). If that key is already on the identity and not
-   expired, the same request was already served: skip to step 6 with it.
+   different `e` yields a different key). If the login key is present on the identity and not
+   expired **and** every requested encryption key is present, the same request was already
+   served in full: skip to step 6 with them. If the login key is present but some requested
+   keys are not, a previous attempt was cut short after its first update; continue at step 4
+   with what is missing.
 4. For every `requestedEncryptionKeys` record, checks the identity for the bound keys it asks
    for and plans to add the missing ones.
 5. Shows the approval sheet: the app's name and URL, the key's lifetime and budget (the wallet's
    grant, which the user can shorten), the bounds, and any encryption keys that will be added.
-   On approval, broadcasts one identity update that adds the login key with the manifest's
-   bounds and the granted limits, plus any missing bound encryption keys.
-6. Encrypts the granted private keys to the app's ephemeral key and creates, or replaces, its
-   `loginKeyResponse` for this app. If the identity update failed, nothing is published.
+   On approval, provisions the keys in identity updates of at most six new keys each
+   (`max_public_keys_in_creation`): the login key goes in the first update, with as many of the
+   missing encryption keys as fit, and the rest follow in further updates. Each update is
+   waited for before the next is sent. A manifest that asks for eight records with both
+   purposes needs seventeen keys, three updates.
+6. Once every granted key is confirmed on the identity, encrypts the granted private keys to
+   the app's ephemeral key and creates, or replaces, its `loginKeyResponse` for this app. If
+   any update failed, nothing is published: the keys that did land stay on the identity, and
+   the next attempt at the same request resumes from the missing ones (step 3).
 
 ### The app
 
 Polls the `loginKeyResponse` documents whose `contractId` is its own contract and whose
-`appEphemeralPubKeyHash` is `hash160(e)`. For each result the app derives the shared secret from
-`walletEphemeralPubKey` and tries to decrypt the payload; the first one whose authentication tag
-verifies is the candidate answer, and the rest are discarded. The app then reads `$ownerId` from
-that document, verifies that each granted key's public half is a live key on that identity, and
-treats that identity as the logged-in user. It is logged in until the key expires or its budget
-runs out, at which point it starts a new `connect`.
+`appEphemeralPubKeyHash` is `hash160(e)`. For each candidate the app derives the shared secret
+from `walletEphemeralPubKey` and tries to decrypt the payload; if the authentication tag
+verifies, it reads `$ownerId` from that document and checks that each granted key's public half
+is a live key on that identity. Only a candidate that passes both checks is the answer; the app
+keeps scanning past one that decrypts but fails the key check (anyone who saw the request can
+produce such a row), and discards the remaining candidates only once an answer is found. It
+treats the answer's `$ownerId` as the logged-in user, until the key expires or its budget runs
+out, at which point it starts a new `connect`.
 
 **Who logs in.** Whoever scans the request logs in, as with any QR or passkey login: if a
 second party scans the same code first, the app is logged into that party's identity. The app

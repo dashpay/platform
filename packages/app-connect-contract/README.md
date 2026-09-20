@@ -20,7 +20,7 @@ It gives the two halves of a login one well-known contract id on every network:
   the app, states the contract bounds its login key must carry, the session
   lifetime and budget it asks for (a default the wallet may raise or
   lower), and the encryption keys the wallet should register on the
-  identity at login, packed as fixed 96-byte records in
+  identity at login, packed as fixed 97-byte records in
   `requestedEncryptionKeys`.
 
 Both document types are created by ordinary identities

@@ -22,6 +22,13 @@ use dpp::data_contract::TokenConfiguration;
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+#[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
+#[cfg(any(
+    feature = "document-history-contract",
+    feature = "all-system-contracts"
+))]
+use dpp::version::feature_initial_protocol_versions::DOCUMENT_HISTORY_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use lru::LruCache;
@@ -875,7 +882,13 @@ impl ContextProvider for TrustedHttpContextProvider {
                 feature = "document-history-contract",
                 feature = "all-system-contracts"
             ))]
-            if *id == SystemDataContract::DocumentHistory.id() {
+            // Absent below its activation version, as Drive's system contract cache reports
+            // it: the contract does not exist in state there, and its schema is not
+            // expressible under the older meta-schema, so materializing it would fail.
+            if *id == SystemDataContract::DocumentHistory.id()
+                && platform_version.protocol_version
+                    >= DOCUMENT_HISTORY_CONTRACT_INITIAL_PROTOCOL_VERSION
+            {
                 return load_system_data_contract(
                     SystemDataContract::DocumentHistory,
                     platform_version,
@@ -890,7 +903,12 @@ impl ContextProvider for TrustedHttpContextProvider {
             }
 
             #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::AppConnect.id() {
+            // Same activation gate: below protocol version 14 the app-connect contract is
+            // absent, so the lookup falls through to the fallback provider (or `None`).
+            if *id == SystemDataContract::AppConnect.id()
+                && platform_version.protocol_version
+                    >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
+            {
                 return load_system_data_contract(SystemDataContract::AppConnect, platform_version)
                     .map(|contract| Some(Arc::new(contract)))
                     .map_err(|e| {
@@ -1564,6 +1582,61 @@ mod tests {
 
         // Test that we can use the builder pattern to add known contracts
         // The builder pattern is more appropriate since contracts are only added during initialization
+    }
+
+    /// Compiled-in system contracts are served only from their activation version on,
+    /// matching Drive's `SystemDataContracts::find_by_id`: below it the contract does not
+    /// exist in state, and its schema would not even parse under the older meta-schema.
+    #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn test_app_connect_contract_is_absent_before_protocol_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        let provider = TrustedHttpContextProvider::new(
+            Network::Testnet,
+            None,
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::AppConnect.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(13).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .expect("the lookup must succeed at protocol version 14")
+            .expect("the app-connect contract must be served at protocol version 14");
+        assert_eq!(contract.id(), id);
+    }
+
+    #[cfg(any(
+        feature = "document-history-contract",
+        feature = "all-system-contracts"
+    ))]
+    #[test]
+    fn test_document_history_contract_is_absent_before_protocol_13() {
+        use dpp::version::PlatformVersion;
+
+        let provider = TrustedHttpContextProvider::new(
+            Network::Testnet,
+            None,
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::DocumentHistory.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(12).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(13).unwrap())
+            .expect("the lookup must succeed at protocol version 13")
+            .is_some());
     }
 
     #[test]

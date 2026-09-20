@@ -145,8 +145,8 @@
         "type": "array",
         "byteArray": true,
         "minItems": 0,
-        "maxItems": 768,
-        "description": "The encryption keys the app needs the wallet to register on the identity at login, zero to eight fixed 96-byte records: a contract id (32 bytes), a purpose mask (1 byte: bit 0 ENCRYPTION, bit 1 DECRYPTION) and a zero-padded document type name (63 bytes, all zero for a contract-level key)",
+        "maxItems": 776,
+        "description": "The encryption keys the app needs the wallet to register on the identity at login, zero to eight fixed 97-byte records: a contract id (32 bytes), a purpose mask (1 byte: bit 0 ENCRYPTION, bit 1 DECRYPTION) and a zero-padded document type name (64 bytes, the longest name Platform admits; all zero for a contract-level key)",
         "position": 8
       }
     },

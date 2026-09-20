@@ -17,3 +17,12 @@ pub const CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1
 /// The protocol version that introduces document action fees and the `ContractFeeClaim` state
 /// transition, which pays out the fee pots they collect in.
 pub const CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
+
+/// The document history system contract is written to state by the upgrade to protocol
+/// version 13 and registered at genesis from that version on; below it the contract does
+/// not exist and lookups must report it absent.
+pub const DOCUMENT_HISTORY_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 13;
+/// The app-connect system contract is written to state by the upgrade to protocol
+/// version 14 and registered at genesis from that version on; below it the contract does
+/// not exist and lookups must report it absent.
+pub const APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;

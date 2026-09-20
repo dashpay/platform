@@ -57,8 +57,8 @@ pub mod document_types {
         /// on the user's identity; the wallet does that at login from this list.
         pub mod requested_encryption_keys {
             /// Size of one record: contract id, purpose mask, document type name.
-            pub const RECORD_SIZE: usize = 96;
-            /// Maximum number of records, so the array is at most 768 bytes.
+            pub const RECORD_SIZE: usize = 97;
+            /// Maximum number of records, so the array is at most 776 bytes.
             pub const MAX_RECORDS: usize = 8;
             /// Byte offset and length of the contract id within a record.
             pub const CONTRACT_ID_OFFSET: usize = 0;
@@ -70,9 +70,10 @@ pub mod document_types {
             /// Purpose mask bit asking for a DECRYPTION key bound there.
             pub const PURPOSE_DECRYPTION: u8 = 0b10;
             /// Byte offset and length of the zero-padded document type name within a
-            /// record; all zero for a contract-level key.
+            /// record; all zero for a contract-level key. 64 bytes is the longest
+            /// document type name Platform admits, so every name fits unpadded.
             pub const DOCUMENT_TYPE_NAME_OFFSET: usize = 33;
-            pub const DOCUMENT_TYPE_NAME_SIZE: usize = 63;
+            pub const DOCUMENT_TYPE_NAME_SIZE: usize = 64;
         }
     }
 }
