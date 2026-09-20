@@ -49,6 +49,11 @@ impl FlagsKind {
         }
     }
 
+    /// Whether a node's flags say only that the element carries none
+    pub fn is_none_only(flags: &[FlagsKind]) -> bool {
+        flags == [FlagsKind::None]
+    }
+
     /// What the flags mean
     pub fn meaning(&self) -> &'static str {
         match self {

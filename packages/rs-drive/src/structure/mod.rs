@@ -178,7 +178,9 @@ pub struct StructureNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kinds_note: Option<String>,
     /// The element flags that can sit on the element. More than one when the
-    /// code chooses between them.
+    /// code chooses between them. Left out of the exported file when the
+    /// element carries none, which is the common case.
+    #[serde(skip_serializing_if = "FlagsKind::is_none_only")]
     pub flags: Vec<FlagsKind>,
     /// Who the owner in the flags is, or what decides between several kinds
     #[serde(skip_serializing_if = "Option::is_none")]
