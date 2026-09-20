@@ -1,3 +1,5 @@
+#[cfg(feature = "validation")]
+mod apply_update;
 mod equal_ignoring_time_based_fields;
 mod registration_cost;
 pub mod schema;

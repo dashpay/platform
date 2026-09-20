@@ -72,7 +72,17 @@ impl Drive {
                 }
             }
             StateTransition::DataContractUpdate(st) => {
-                if st.data_contract().config().keeps_history() {
+                // generation 0 proves full-contract updates only; a delta-based
+                // update is proved by generation 1
+                let Some(data_contract) = st.data_contract() else {
+                    return Ok(ProofCreationResult::new_with_error(
+                        ProofError::InvalidTransition(
+                            "a delta-based data contract update needs prover generation 1"
+                                .to_string(),
+                        ),
+                    ));
+                };
+                if data_contract.config().keeps_history() {
                     contract_ids_to_historical_path_query(&st.modified_data_ids())
                 } else {
                     contract_ids_to_non_historical_path_query(&st.modified_data_ids())

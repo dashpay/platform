@@ -528,7 +528,7 @@ meaningfully.
 
 This is a lot of steps, but each one is mechanical and the compiler guides you
 through most of it. If you add a field to a version struct and forget to set it
-in one of the fourteen platform version constants, the build fails.
+in one of the fifteen platform version constants, the build fails.
 
 ## Passing Version References
 

@@ -34,6 +34,8 @@ use crate::consensus::state::identity::{IdentityAlreadyExistsError, IdentityInsu
 use crate::consensus::ConsensusError;
 use crate::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
+use crate::consensus::state::data_contract::data_contract_update_entry_already_exists_error::DataContractUpdateEntryAlreadyExistsError;
+use crate::consensus::state::data_contract::data_contract_update_entry_not_found_error::DataContractUpdateEntryNotFoundError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
@@ -407,6 +409,12 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedDocumentPropertyMismatchError(ReferencedDocumentPropertyMismatchError),
+
+    #[error(transparent)]
+    DataContractUpdateEntryAlreadyExistsError(DataContractUpdateEntryAlreadyExistsError),
+
+    #[error(transparent)]
+    DataContractUpdateEntryNotFoundError(DataContractUpdateEntryNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {
