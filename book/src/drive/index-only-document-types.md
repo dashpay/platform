@@ -177,7 +177,24 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   omit its hashtag exactly when its post has none (anything laxer would
   let likes on tagged posts silently deflate per-tag aggregates), which is
   what lets an agreement key double as a `skipIfAbsent` trigger with both
-  sides of the reference optional.
+  sides of the reference optional. The referenced side of a pair may also
+  name the referenced document's `$ownerId` or `$creatorId` (the referring
+  side must then be an identifier property): `{ "authorId": "$ownerId" }`
+  binds a like to its post's current owner, so an `[authorId, postId]`
+  index can be preallocated and ranked per author. `$ownerId` follows the
+  post through transfers and `$creatorId` never changes; either is checked
+  when the like is written, not when the post later moves. `$creatorId` is
+  only recorded by transferable or tradeable types of a format-1 contract,
+  which contract registration checks before accepting the declaration.
+  The referring side may in turn be the like's own `$ownerId`, the writer:
+  `{ "$ownerId": "$ownerId" }` lets only the post's current owner create
+  or replace a like on it, `{ "$ownerId": "$creatorId" }` only its
+  original creator. That is a write gate, checked on create and on every
+  replace of the like, not only when its reference changes, since the post
+  may have been transferred in between; a transfer itself is not
+  re-checked, so on a transferable referring type it governs writing, not
+  holding. A writer gate does not make an owner-prefixed index
+  preallocatable.
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under
@@ -202,11 +219,14 @@ a refersTo-referenced document, that lopsidedness is avoidable: an index
 may declare `preallocated: true` iff every index property is either the
 referring property itself (its value is the referenced document's `$id`)
 or a key of that reference's `propertyAgreement` (consensus-equal to a
-referenced-document property), and the reference targets a document type
+referenced-document property, its `$ownerId` and `$creatorId` included),
+and the reference targets a document type
 of the **same contract**. `byHashtagPost` (`[hashtag, postId]`) qualifies
 — `hashtag` through the agreement, `postId` as the reference;
 `byLiker` (`[$ownerId]`) cannot, since no referenced document determines
-the liker.
+the liker. An `[authorId, postId]` index whose `authorId` agrees with the
+post's `$ownerId` qualifies too: the poster is the one owner a referenced
+post does determine.
 
 Three things change, all bit-compatible with the fallback layout:
 

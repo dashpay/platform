@@ -17,12 +17,17 @@
 //   * `dpp.validation.validation_result.flatten`
 //   * `dpp.validation.validation_result.merge_many`
 //   * `drive_abci...batch_state_transition.failed_per_transition_action`
+//   * `drive_abci...batch_state_transition.contract_moderation_gate`
 // A future protocol bump that needs different aggregator or
 // failure-action semantics should add another value to one of those
 // fields rather than rename this file.
 
+mod contract_moderation_gate;
+
+use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
+use std::borrow::Cow;
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::error::Error;
@@ -31,6 +36,7 @@ use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocume
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::basic::BasicError;
 
+use dpp::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 
@@ -117,6 +123,7 @@ trait BatchTransitionInternalTransformerV0 {
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
         user_fee_increase: UserFeeIncrease,
+        lapsed_suspensions: &mut BTreeSet<Identifier>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -260,6 +267,8 @@ impl BatchTransitionTransformerV0 for BatchTransition {
             }
         }
 
+        let mut lapsed_suspensions: BTreeSet<Identifier> = BTreeSet::new();
+
         let validation_result_documents = document_transitions_by_contracts_and_types
             .iter()
             .map(
@@ -272,6 +281,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                         owner_id,
                         document_transitions_by_document_type,
                         user_fee_increase,
+                        &mut lapsed_suspensions,
                         execution_context,
                         transaction,
                         platform_version,
@@ -313,6 +323,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                 owner_id,
                 transitions,
                 user_fee_increase,
+                lapsed_suspensions,
                 ..Default::default()
             }
             .into();
@@ -411,6 +422,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
         user_fee_increase: UserFeeIncrease,
+        lapsed_suspensions: &mut BTreeSet<Identifier>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -435,7 +447,33 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             ));
         };
 
-        let validation_result = document_transitions
+        // Contract moderation (protocol version 14): a moderated contract refuses the document
+        // transitions of a banned or suspended signer, its deletions excepted. The gate is its own versioned helper,
+        // selected by `batch_state_transition.contract_moderation_gate`, so that this shared
+        // transformer does for earlier protocol versions exactly what it did before.
+        let refusal = Self::contract_moderation_gate(
+            drive,
+            block_info,
+            &data_contract_fetch_info.contract,
+            owner_id,
+            document_transitions,
+            lapsed_suspensions,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        // A barred signer keeps its deletions: only they carry on, next to the refusal.
+        let (refused, document_transitions) = match refusal {
+            Some(ContractModerationRefusal { refused, deletions }) => {
+                if deletions.is_empty() {
+                    return Ok(refused);
+                }
+                (Some(refused), Cow::Owned(deletions))
+            }
+            None => (None, Cow::Borrowed(document_transitions)),
+        };
+
+        let mut validation_result = document_transitions
             .iter()
             .map(|(document_type_name, document_transitions)| {
                 Self::transform_document_transitions_within_document_type_v0(
@@ -454,6 +492,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             })
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
+        validation_result.extend(refused);
         Ok(ConsensusValidationResult::flatten(
             validation_result,
             platform_version,
@@ -917,6 +956,25 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
+                // Contract moderation (protocol version 14): a barred identity receives nothing.
+                if let Some(error) = Self::contract_moderation_counterparty_gate(
+                    drive,
+                    block_info,
+                    &data_contract_fetch_info.contract,
+                    document_transfer_transition.recipient_owner_id(),
+                    ContractModerationCounterpartyRole::Recipient,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_transfer_transition.base(),
+                        owner_id,
+                        vec![error],
+                        platform_version,
+                    );
+                }
+
                 let (document_transfer_action, fee_result) =
                     DocumentTransferTransitionAction::try_from_borrowed_document_transfer_transition(
                         document_transfer_transition,
@@ -1063,6 +1121,25 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                             platform_version,
                         );
                     }
+                }
+
+                // Contract moderation (protocol version 14): a barred identity sells nothing.
+                if let Some(error) = Self::contract_moderation_counterparty_gate(
+                    drive,
+                    block_info,
+                    &data_contract_fetch_info.contract,
+                    original_document.owner_id(),
+                    ContractModerationCounterpartyRole::Seller,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_purchase_transition.base(),
+                        owner_id,
+                        vec![error],
+                        platform_version,
+                    );
                 }
 
                 let (document_purchase_action, fee_result) =

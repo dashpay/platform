@@ -1,7 +1,8 @@
 //! Document-type parser **generation 3** — protocol version 14 and later.
 //!
 //! Generation 3 is generation 2 plus the ranked index keywords
-//! (`rankedCountable` / `rankedSummable` / `rankedAverageable`).
+//! (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
+//! indexOnly grammar, and the doctype-level `immutable` property list.
 //!
 //! It exists as its own generation — rather than as a version gate inside the
 //! shipped ones — because that is what keeps a historical block from ever
@@ -23,6 +24,7 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
@@ -248,6 +250,13 @@ fn try_from_schema_generation_3(
     // consumes `schema`.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
+    let immutable_fields =
+        common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
+    let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
+        &schema,
+        name,
+        property_names::IMMUTABLE_ALLOW_SETTING,
+    )?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -316,6 +325,15 @@ fn try_from_schema_generation_3(
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
     common::apply_index_only(&mut v2, index_only, name)?;
+    // After the core parse: the lints read the resolved `documentsMutable`
+    // flag (contract default applied) and the parsed top-level properties.
+    common::apply_immutable_fields(
+        &mut v2,
+        immutable_fields,
+        immutable_fields_allow_setting,
+        name,
+        full_validation,
+    )?;
 
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
@@ -368,6 +386,8 @@ impl DocumentType {
     }
 }
 
+#[cfg(test)]
+mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
 

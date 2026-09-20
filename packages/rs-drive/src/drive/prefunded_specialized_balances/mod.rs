@@ -14,6 +14,8 @@ mod estimation_costs;
 mod fetch;
 #[cfg(feature = "server")]
 mod prove;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{Drive, RootTree};

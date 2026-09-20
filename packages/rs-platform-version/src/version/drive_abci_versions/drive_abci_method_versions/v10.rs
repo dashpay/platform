@@ -112,13 +112,13 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         remove_votes_for_removed_masternodes: 0,
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
-        execute_event: 1, // changed: deducts what a budgeted signing key spent from its remaining budget
+        execute_event: 1, // changed: deducts what a budgeted signing key spent from its remaining budget, and charges a document batch's gas sponsor instead of its signer
         process_raw_state_transitions: 0,
         // unchanged from V9: v1 since v13 (records the balance effects of paid-INVALID /
         // unsuccessful-paid transitions)
         process_validation_result: 1,
         decode_raw_state_transitions: 0,
-        validate_fees_of_event: 1, // changed: refuses an expired signing key and a spend the signing key's remaining budget does not cover
+        validate_fees_of_event: 1, // changed: refuses an expired signing key and a spend the signing key's remaining budget does not cover, and judges a sponsored document batch's fee against its gas sponsor's balance
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
         // unchanged from V9: v1 since v13 (records shielded-spend transparent credits)

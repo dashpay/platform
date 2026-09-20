@@ -307,10 +307,10 @@ mod tests {
             // and therefore the root hash after insertion.
             9..=13 => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
             // Protocol version 14 also stores the contract's version as a four-byte
-            // item beside the contract (`[64, id] / 2`), one more element under the
-            // contract's root subtree, and ships DashPay contract v2 with the
-            // optional `shieldedAddress` profile field.
-            _ => "3edbd4a7467ce38dcff24e517310ca8c66a096980669d0791f533ecd807203b4",
+            // item in the contract's other tree (`[64, id, 2] / 64`), one more tree under
+            // the contract's root subtree, serializes every contract with config version 2,
+            // and ships DashPay contract v2 with the optional `shieldedAddress` profile field.
+            _ => "c25bc863d30a4185311546d51bacfdc030ee57671dbae774775d0efd4474220c",
         };
 
         assert_eq!(

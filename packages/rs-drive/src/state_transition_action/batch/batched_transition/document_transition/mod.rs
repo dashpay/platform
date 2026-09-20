@@ -68,6 +68,19 @@ impl DocumentTransitionAction {
         }
     }
 
+    /// The action's name as the document type's token costs and consensus errors spell it
+    pub fn action_name(&self) -> &'static str {
+        match self {
+            DocumentTransitionAction::CreateAction(_) => "create",
+            DocumentTransitionAction::ReplaceAction(_) => "replace",
+            DocumentTransitionAction::DeleteAction(_)
+            | DocumentTransitionAction::IndexOnlyDeleteAction(_) => "delete",
+            DocumentTransitionAction::TransferAction(_) => "transfer",
+            DocumentTransitionAction::PurchaseAction(_) => "purchase",
+            DocumentTransitionAction::UpdatePriceAction(_) => "update_price",
+        }
+    }
+
     /// base owned
     pub fn base_owned(self) -> DocumentBaseTransitionAction {
         match self {

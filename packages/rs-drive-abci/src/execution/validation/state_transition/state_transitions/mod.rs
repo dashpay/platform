@@ -28,6 +28,9 @@ pub mod data_contract_create;
 /// Module for updating an existing data contract entity.
 pub mod data_contract_update;
 
+/// Module for banning and suspending identities on a moderated data contract.
+pub mod contract_user_moderation;
+
 /// Module for voting from a masternode.
 pub mod masternode_vote;
 
@@ -2676,6 +2679,7 @@ pub(in crate::execution) mod tests {
                     token_amount: token_cost_amount,
                     effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                     gas_fees_paid_by,
+                    optional: false,
                 }));
                 let gas_fees_paid_by_int: u8 = gas_fees_paid_by.into();
                 let schema = document_type.schema_mut();

@@ -213,7 +213,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     }
 
     /// Swift mirror of `dpp::identity::identity_public_key::contract_bounds::ContractBounds`.
-    /// Pinned to two variants (no `MultipleContractsOfSameOwner`)
+    /// Pinned to three variants (no `MultipleContractsOfSameOwner`)
     /// to match the Rust enum's currently-supported shape.
     public enum ContractBounds: Sendable, Equatable {
         /// Key may be used within a specific contract (any
@@ -223,6 +223,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// specific document type. Maps to `kind == 2` on the
         /// FFI side.
         case singleContractDocumentType(id: Data, documentTypeName: String)
+        /// AUTHENTICATION key bound to a contract group. `id` is the
+        /// 32-byte contract GROUP id, and there is never a document
+        /// type. Maps to `kind == 3` on the FFI side.
+        case contractGroup(id: Data)
     }
 
     /// Inspectable fields of a parsed raw `IdentityUpdateTransition`.
@@ -661,12 +665,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// `body` under one combined pinning frame.
     ///
     /// Contract-bounds pinning extends the same pattern: when the
-    /// row carries `.singleContract` or `.singleContractDocumentType`
-    /// we open a nested `withUnsafeBytes` (for the 32-byte contract
-    /// id) and a `withCString` (for the document type, if any) so
-    /// the pointers we hand the FFI stay valid for the entire
-    /// `body` invocation. Rows without bounds drop straight through
-    /// to the next level of recursion.
+    /// row carries any bound we open a nested `withUnsafeBytes` (for
+    /// the 32-byte contract or group id) and a `withCString` (for the
+    /// document type, if any) so the pointers we hand the FFI stay
+    /// valid for the entire `body` invocation. Rows without bounds
+    /// drop straight through to the next level of recursion.
     private static func pinNext<R>(
         _ index: Int,
         _ rows: inout [IdentityPubkeyFFI],
@@ -743,6 +746,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                 return documentTypeName.withCString { docTypePtr in
                     body(2, idPtr, docTypePtr)
                 }
+            }
+        case .contractGroup(let id):
+            precondition(
+                id.count == 32,
+                "ContractBounds.contractGroup id must be exactly 32 bytes (got \(id.count))"
+            )
+            return id.withUnsafeBytes { raw -> R in
+                let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
+                return body(3, idPtr, nil)
             }
         }
     }
@@ -3501,7 +3513,10 @@ extension ManagedPlatformWallet {
         )
     }
 
-    private static func parsedContractBounds(
+    // `internal` (not `private`) so the kind-tag decode can be covered
+    // directly: every production caller reaches it through a live FFI
+    // parse, which a unit test has no handle for.
+    static func parsedContractBounds(
         from entry: ParsedIdentityUpdatePublicKeyFFI,
         index: Int
     ) throws -> ContractBounds? {
@@ -3524,6 +3539,11 @@ extension ManagedPlatformWallet {
             return .singleContractDocumentType(
                 id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) },
                 documentTypeName: documentTypeName
+            )
+        case 3:
+            var idTuple = entry.contract_bounds_id
+            return .contractGroup(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) }
             )
         default:
             throw PlatformWalletError.deserialization(

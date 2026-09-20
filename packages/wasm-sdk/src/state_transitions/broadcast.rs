@@ -8,6 +8,8 @@ use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -25,6 +27,16 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             .transitions_iter()
             .map(|transition| transition.data_contract_id())
             .collect(),
+        // A ban's proof covers every list the contract keeps, which the verifier reads from
+        // the contract. The other moderations prove the one entry they edit and need none.
+        StateTransition::ContractUserModeration(moderation)
+            if matches!(
+                moderation.action(),
+                ContractUserModerationAction::Ban { .. }
+            ) =>
+        {
+            BTreeSet::from([moderation.data_contract_id()])
+        }
         _ => BTreeSet::new(),
     }
 }
@@ -368,6 +380,39 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![first_contract_id, second_contract_id],
         );
+    }
+
+    #[test]
+    fn should_prepare_the_moderated_contract_of_a_ban_only() {
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+
+        let contract_id = Identifier::new([0x44; 32]);
+        let state_transition = StateTransition::ContractUserModeration(
+            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            }),
+        );
+
+        assert_eq!(
+            referenced_contract_ids(&state_transition)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![contract_id],
+        );
+
+        // Only a ban's proof is read against the contract.
+        let unban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+            ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                action: ContractUserModerationAction::Unban {
+                    identity_id: Identifier::new([0x55; 32]),
+                },
+                ..Default::default()
+            },
+        ));
+        assert!(referenced_contract_ids(&unban).is_empty());
     }
 
     #[test]

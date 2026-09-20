@@ -139,18 +139,35 @@
               "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
             },
             "propertyAgreement": {
-              "description": "permanentDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time; both properties must exist and share one property type, validated at contract registration",
+              "description": "permanentDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
               "propertyNames": {
-                "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                "anyOf": [
+                  {
+                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                  },
+                  {
+                    "const": "$ownerId"
+                  }
+                ]
               },
               "additionalProperties": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 256,
-                "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                  },
+                  {
+                    "enum": [
+                      "$ownerId",
+                      "$creatorId"
+                    ]
+                  }
+                ]
               }
             }
           },
@@ -457,7 +474,11 @@
             1,
             2
           ],
-          "description": "0 - DocumentOwner (default), 1 - ContractOwner, 2 - PreferContractOwner"
+          "description": "Who the contract owner offers to have pay the gas (storage and processing fee) of this token-paid action: 0 - DocumentOwner (default, the contract owner never pays), 1 - ContractOwner (pays, and accepts every request), 2 - PreferContractOwner (pays when their balance covers the fee, but refuses a transition that insists on them). The transition asks with the same values in $tokenPaymentInfo.gasFeesPaidBy: DocumentOwner always pays itself, PreferContractOwner is accepted by every offer, and ContractOwner is accepted only by offer 1, else the transition is rejected (GasFeesPaidByNotAllowedError, code 40129). Acted on from protocol version 14; a failed transition is always paid for by its signer."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "True if a transition may leave $tokenPaymentInfo out for this action and pay no token, in which case its signer pays the gas in credits as for an action without a token cost and no gas sponsorship applies; with $tokenPaymentInfo present the token is charged exactly as for a required cost, and an insufficient token balance is a rejection, never a fallback to credits. Default false: the token payment is required (RequiredTokenPaymentInfoNotSetError, code 40115). Available from protocol version 14."
         }
       },
       "required": [
@@ -932,6 +953,22 @@
       "items": {
         "type": "string"
       }
+    },
+    "immutable": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128), unless the property is listed under immutableAllowSetting and the stored document has no value for it yet. Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property that is not transient: system properties ($-prefixed) are excluded because the platform manages them, nested paths are not accepted (list the containing object to freeze it whole), and a transient property is never stored so it could never be written once frozen. On contract update the list may gain entries but never lose one. Available from protocol version 14."
+    },
+    "immutableAllowSetting": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "The subset of the immutable properties a replace may still set while the stored document has no value for them: a first-time set is accepted, after which the property is frozen like the rest of the immutable list (it can neither change nor be removed). Every entry must also appear in immutable; it is only meaningful for optional properties, since a required one always has a value from creation. On contract update an entry may be dropped (tightening) at any time, but may only be added for a property that becomes immutable in the same update: an already-immutable property cannot start allowing a set. Available from protocol version 14."
     },
     "additionalProperties": {
       "type": "boolean",

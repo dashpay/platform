@@ -8,8 +8,8 @@ use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{credit_pools, tokens, RootTree};
 use crate::util::batch::grovedb_op_batch::KnownPath::{
     TokenBalancesRoot, TokenContractInfoRoot, TokenDirectSellPriceRoot, TokenDistributionRoot,
-    TokenIdentityInfoRoot, TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot,
-    TokenStatusRoot, TokenTimedDistributionRoot,
+    TokenIdentityInfoRoot, TokenOncePerIdentityDistributionRoot, TokenPerpetualDistributionRoot,
+    TokenPreProgrammedDistributionRoot, TokenStatusRoot, TokenTimedDistributionRoot,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
@@ -66,6 +66,7 @@ enum KnownPath {
     TokenTimedDistributionRoot,                                       //Level 3
     TokenPreProgrammedDistributionRoot,                               //Level 3
     TokenPerpetualDistributionRoot,                                   //Level 3
+    TokenOncePerIdentityDistributionRoot,                             //Level 3
     TokenIdentityInfoRoot,                                            //Level 2
     TokenContractInfoRoot,                                            //Level 2
     TokenStatusRoot,                                                  //Level 2
@@ -280,6 +281,9 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                     }
                     tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY => {
                         (format!("PreProgrammedDistribution({})", tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY), Some(TokenPreProgrammedDistributionRoot))
+                    }
+                    tokens::paths::TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY => {
+                        (format!("OncePerIdentityDistribution({})", tokens::paths::TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY), Some(TokenOncePerIdentityDistributionRoot))
                     }
                     _ => (hex_to_ascii(key), None),
                 },

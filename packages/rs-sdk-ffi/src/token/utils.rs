@@ -52,6 +52,7 @@ pub fn convert_token_distribution_type(
     match ffi_type {
         DashSDKTokenDistributionType::PreProgrammed => TokenDistributionType::PreProgrammed,
         DashSDKTokenDistributionType::Perpetual => TokenDistributionType::Perpetual,
+        DashSDKTokenDistributionType::OncePerIdentity => TokenDistributionType::OncePerIdentity,
     }
 }
 

@@ -415,12 +415,89 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertTrue(reread.hasLimits)
     }
 
-    func testV2AddsKeyLimitColumnsWithoutChangingTheFrozenBaseline() throws {
+    /// Legacy contract bounds keep their inferred variant after V1 -> V2,
+    /// and the new discriminator can then represent contract groups.
+    @MainActor
+    func testV1StoreMigratesToV2AndBackfillsTheContractBoundsKind() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("dash.store")
+
+        let contractId = Data(repeating: 0x7C, count: 32)
+
+        let v1Schema = Schema(versionedSchema: DashSchemaV1.self)
+        let v1Configuration = ModelConfiguration(
+            "DashContractBoundsKindMigrationTest",
+            schema: v1Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        var v1Container: ModelContainer? = try ModelContainer(
+            for: v1Schema,
+            configurations: [v1Configuration])
+        v1Container?.mainContext.insert(DashSchemaV1.PersistentPublicKey(
+            keyId: 3,
+            purpose: .authentication,
+            securityLevel: .high,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x02, count: 33),
+            contractBounds: [contractId],
+            contractBoundsDocumentTypeName: "contactRequest",
+            identityId: "legacyDocTypeKey"))
+        v1Container?.mainContext.insert(DashSchemaV1.PersistentPublicKey(
+            keyId: 4,
+            purpose: .authentication,
+            securityLevel: .high,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x03, count: 33),
+            contractBounds: [contractId],
+            identityId: "legacyContractKey"))
+        try v1Container?.mainContext.save()
+        v1Container = nil
+
+        let v2Schema = Schema(versionedSchema: DashSchemaV2.self)
+        let v2Configuration = ModelConfiguration(
+            "DashContractBoundsKindMigrationTest",
+            schema: v2Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        let migrated = try ModelContainer(
+            for: v2Schema,
+            migrationPlan: DashMigrationPlan.self,
+            configurations: [v2Configuration])
+
+        let rows = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentPublicKey>(sortBy: [SortDescriptor(\.keyId)]))
+        XCTAssertEqual(rows.map(\.keyId), [3, 4], "both V1 rows survive the migration")
+        XCTAssertEqual(
+            rows.map(\.contractBoundsKind), [nil, nil],
+            "a row written before the column backfills NULL")
+        XCTAssertEqual(rows[0].contractBounds?.first, contractId)
+        XCTAssertEqual(
+            rows[0].effectiveContractBoundsKind, 2,
+            "a legacy row with a doc-type name still infers SingleContractDocumentType")
+        XCTAssertEqual(
+            rows[1].effectiveContractBoundsKind, 1,
+            "a legacy row with a bare id still infers SingleContract")
+
+        // And the new column is writable on the migrated row.
+        rows[1].contractBoundsKind = 3
+        try migrated.mainContext.save()
+        let reread = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentPublicKey>(sortBy: [SortDescriptor(\.keyId)]))
+        XCTAssertEqual(reread[1].effectiveContractBoundsKind, 3)
+    }
+
+    func testV2AddsKeyColumnsWithoutChangingTheFrozenBaseline() throws {
         let baseline = Schema(versionedSchema: DashSchemaV1.self)
         let live = Schema(versionedSchema: DashSchemaV2.self)
         let oldKey = try XCTUnwrap(baseline.entities.first { $0.name == "PersistentPublicKey" })
         let newKey = try XCTUnwrap(live.entities.first { $0.name == "PersistentPublicKey" })
-        for column in ["totalBudget", "expiresAt"] {
+        for column in ["totalBudget", "expiresAt", "contractBoundsKind"] {
             XCTAssertNil(oldKey.attributesByName[column])
             XCTAssertNotNil(newKey.attributesByName[column])
         }

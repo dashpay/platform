@@ -35,8 +35,10 @@ struct TokenDetailsView: View {
                 // Control Rules
                 controlRulesSection
 
-                // Distribution Rules
-                if token.perpetualDistribution != nil || token.preProgrammedDistribution != nil {
+                // Distribution Rules. `hasDistribution` also covers the
+                // once-per-identity kind, which is derived from the
+                // contract JSON rather than stored on the token row.
+                if token.hasDistribution {
                     distributionSection
                 }
 
@@ -303,6 +305,20 @@ struct TokenDetailsView: View {
                     InfoRow(label: "Events:", value: "\(preProgrammed.distributionSchedule.count)")
                     InfoRow(label: "Total distributed:", value: formatTokenAmount(preProgrammed.totalDistributed))
                     InfoRow(label: "Remaining:", value: formatTokenAmount(preProgrammed.remainingToDistribute))
+                }
+            }
+
+            if let oncePerIdentity = token.oncePerIdentityDistribution {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Once-per-Identity Distribution")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    InfoRow(
+                        label: "Amount per identity:",
+                        value: formatTokenAmount(oncePerIdentity.amount)
+                    )
                 }
             }
 

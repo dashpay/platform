@@ -7,8 +7,11 @@ use dpp::consensus::state::contract_group::{
     ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
     IdentityNotContractGroupOwnerOrAdminError,
 };
+use dpp::consensus::state::contract_moderation::ContractModeratorIdentityNotFoundError;
 use dpp::consensus::ConsensusError;
 use dpp::contract_group::ContractGroupMember;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::identifier::Identifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::{
@@ -28,6 +31,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::common::validate_non_masternode_identity_exists::validate_non_masternode_identity_exists;
 use crate::execution::validation::state_transition::data_contract_common::data_contract_reference_validation::validate_data_contract_references;
 use crate::execution::validation::state_transition::state_transitions::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
@@ -71,7 +75,7 @@ impl DataContractCreateStateTransitionStateValidationV1 for DataContractCreateTr
             return Ok(action);
         }
 
-        let (reference_result, registered_group_id) = {
+        let (reference_result, registered_group_id, moderators) = {
             let StateTransitionAction::DataContractCreateAction(create_action) =
                 action.data_as_borrowed()?
             else {
@@ -85,6 +89,16 @@ impl DataContractCreateStateTransitionStateValidationV1 for DataContractCreateTr
                 .contract_group()
                 .map(|(contract_group_id, _)| *contract_group_id);
 
+            // The owner signed this transition, so it exists; everybody else named is looked up.
+            let contract = create_action.data_contract_ref();
+            let owner_id = contract.owner_id();
+            let moderators: Vec<Identifier> = contract
+                .config()
+                .moderation()
+                .and_then(|moderation| moderation.moderators.identity_ids())
+                .map(|ids| ids.iter().filter(|id| **id != owner_id).copied().collect())
+                .unwrap_or_default();
+
             (
                 validate_data_contract_references(
                     create_action.data_contract_ref(),
@@ -95,6 +109,7 @@ impl DataContractCreateStateTransitionStateValidationV1 for DataContractCreateTr
                     platform_version,
                 )?,
                 registered_group_id,
+                moderators,
             )
         };
 
@@ -126,6 +141,33 @@ impl DataContractCreateStateTransitionStateValidationV1 for DataContractCreateTr
                 ),
                 contract_group_errors,
             ));
+        }
+
+        // Contract moderation: every identity named as a moderator must exist. One that does
+        // not can never sign a moderation, so naming it is a mistake, and the cheapest place to
+        // catch it is here, once, rather than in every feature that will read the set. At most
+        // `max_contract_moderators` lookups, each billed; a miss is paid like the ones above.
+        for moderator_id in &moderators {
+            if !validate_identity_exists(
+                platform.drive,
+                moderator_id,
+                execution_context,
+                tx,
+                platform_version,
+            )? {
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    StateTransitionAction::BumpIdentityNonceAction(
+                        BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(
+                            self,
+                        ),
+                    ),
+                    vec![ContractModeratorIdentityNotFoundError::new(
+                        self.data_contract().id(),
+                        *moderator_id,
+                    )
+                    .into()],
+                ));
+            }
         }
 
         Ok(action)

@@ -7,10 +7,14 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
+use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
+use dpp::document::DocumentV0Getters;
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
@@ -25,6 +29,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use std::borrow::Cow;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
@@ -52,6 +57,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -65,6 +71,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -87,6 +94,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             contract,
             document_type,
             document_data,
+            owner_id,
             changed_fields,
             platform,
             block_info,
@@ -102,6 +110,7 @@ fn validate_document_type_references_v0(
     contract: &DataContract,
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
     changed_fields: Option<&BTreeSet<String>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
@@ -124,12 +133,18 @@ fn validate_document_type_references_v0(
             // - an identityPublicKey reference binds the key id property,
             //   since the referenced key is the (identity id, key id) pair
             //   and a freshly written key id must exist and not be disabled.
+            // A writer gate (an agreement keyed by `$ownerId`) is re-checked
+            // on EVERY replace: the writer is transition metadata that never
+            // appears among the changed fields, and either document may have
+            // been transferred since the last write, so a replace of an
+            // unrelated field by a now-unauthorized owner must still fail.
             let bound_property_changed = match reference_target {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     property_agreement, ..
-                } => property_agreement
-                    .keys()
-                    .any(|referring_property| is_changed_field(changed, referring_property)),
+                } => property_agreement.keys().any(|referring_property| {
+                    is_referring_system_agreement_property(referring_property)
+                        || is_changed_field(changed, referring_property)
+                }),
                 DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                     is_changed_field(changed, key_id_property)
                 }
@@ -305,9 +320,6 @@ fn validate_document_type_references_v0(
                 // agreement key triggers a skipIfAbsent index stay
                 // consistently absent for untagged targets.
                 if let Some(referenced_document) = &referenced_document {
-                    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-                    use dpp::document::DocumentV0Getters;
-
                     for (referring_property, referenced_property) in property_agreement {
                         let mismatch = || {
                             SimpleConsensusValidationResult::new_with_error(
@@ -324,17 +336,48 @@ fn validate_document_type_references_v0(
                         // mismatch, never absence — folding it into `None`
                         // would let two malformed sides "agree" as
                         // both-absent.
-                        let Ok(referring_value) =
-                            document_data.get_optional_at_path(referring_property)
-                        else {
-                            return Ok(mismatch());
+                        // The referring side is a schema property of the document
+                        // being written, or the writer's own `$ownerId`, which
+                        // lives on the transition rather than in its data: that
+                        // pair is a write gate, and the writer is `owner_id`.
+                        let referring_value: Option<Cow<Value>> = if referring_property == OWNER_ID
+                        {
+                            Some(Cow::Owned(Value::Identifier(owner_id.to_buffer())))
+                        } else {
+                            let Ok(referring_value) =
+                                document_data.get_optional_at_path(referring_property)
+                            else {
+                                return Ok(mismatch());
+                            };
+                            referring_value.map(Cow::Borrowed)
                         };
-                        let Ok(referenced_value) = referenced_document
-                            .properties()
-                            .get_optional_at_path(referenced_property)
-                        else {
-                            return Ok(mismatch());
-                        };
+                        // The referenced side may name one of the two system
+                        // identifiers a document carries outside its data:
+                        // `$ownerId`, which follows the document through
+                        // transfers, and `$creatorId`, set once at creation
+                        // and absent on document types that do not record
+                        // it. Contract registration validated that either
+                        // faces an identifier property on the referring
+                        // side, and the key serializer below already encodes
+                        // both names as 32-byte identifiers.
+                        let referenced_value: Option<Cow<Value>> =
+                            match referenced_property.as_str() {
+                                OWNER_ID => Some(Cow::Owned(Value::Identifier(
+                                    referenced_document.owner_id().to_buffer(),
+                                ))),
+                                CREATOR_ID => referenced_document.creator_id().map(|creator_id| {
+                                    Cow::Owned(Value::Identifier(creator_id.to_buffer()))
+                                }),
+                                _ => {
+                                    let Ok(referenced_value) = referenced_document
+                                        .properties()
+                                        .get_optional_at_path(referenced_property)
+                                    else {
+                                        return Ok(mismatch());
+                                    };
+                                    referenced_value.map(Cow::Borrowed)
+                                }
+                            };
                         let (referring_value, referenced_value) =
                             match (referring_value, referenced_value) {
                                 (Some(referring_value), Some(referenced_value)) => {
@@ -348,7 +391,7 @@ fn validate_document_type_references_v0(
                             };
                         let Ok(referring_encoded) = document_type.serialize_value_for_key(
                             referring_property,
-                            referring_value,
+                            &referring_value,
                             platform_version,
                         ) else {
                             return Ok(mismatch());
@@ -356,7 +399,7 @@ fn validate_document_type_references_v0(
                         let Ok(referenced_encoded) = referenced_document_type
                             .serialize_value_for_key(
                                 referenced_property,
-                                referenced_value,
+                                &referenced_value,
                                 platform_version,
                             )
                         else {

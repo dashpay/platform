@@ -5009,6 +5009,7 @@ mod creation_tests {
                 token_amount: 5,
                 effect: Default::default(),
                 gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                optional: false,
             })
         );
 

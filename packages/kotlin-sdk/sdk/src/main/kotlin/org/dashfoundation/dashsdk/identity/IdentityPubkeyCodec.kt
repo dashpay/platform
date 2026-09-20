@@ -28,11 +28,12 @@ import java.io.DataOutputStream
  *   u8  purpose          (DPP Purpose discriminant, 0 = AUTHENTICATION)
  *   u8  securityLevel    (DPP SecurityLevel discriminant, 0 = MASTER)
  *   u8  readOnly         (0 / 1)
- *   u8  contractBoundsKind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+ *   u8  contractBoundsKind (0 none, 1 SingleContract, 2 SingleContractDocumentType,
+ *                           3 ContractGroup)
  *   u16 pubkeyLen
  *   u8[pubkeyLen] pubkeyBytes  (compressed pubkey, or 20-byte HASH160)
  *   if contractBoundsKind != 0:
- *     u8[32] contractBoundsId
+ *     u8[32] contractBoundsId  (contract id, or contract group id for kind 3)
  *   if contractBoundsKind == 2:
  *     u16 docTypeLen, u8[docTypeLen] docType (UTF-8)
  *   u8  limitsFlags        (bit 0: totalBudget follows, bit 1: expiresAt follows)
@@ -41,6 +42,7 @@ import java.io.DataOutputStream
  *   if limitsFlags & 2:
  *     u64 expiresAt        (block time in ms from which the key can no longer sign)
  * ```
+ * Kind 3 carries the id only, never a document type.
  */
 object IdentityPubkeyCodec {
 
@@ -71,6 +73,7 @@ object IdentityPubkeyCodec {
                     dos.writeShort(dt.size)
                     dos.write(dt)
                 }
+                is ContractBounds.ContractGroup -> dos.write(bounds.contractGroupId)
             }
             // Usage limits (protocol version 14): flags first, then only the values set.
             val flags = (if (k.totalBudget != null) 1 else 0) or (if (k.expiresAt != null) 2 else 0)
@@ -81,10 +84,14 @@ object IdentityPubkeyCodec {
         return out.toByteArray()
     }
 
-    /** Discriminant matching the FFI: 0 none, 1 SingleContract, 2 with doc type. */
+    /**
+     * Discriminant matching the FFI: 0 none, 1 SingleContract, 2 with doc type,
+     * 3 ContractGroup.
+     */
     internal fun contractBoundsKind(bounds: ContractBounds?): Int = when (bounds) {
         null -> 0
         is ContractBounds.SingleContract -> 1
         is ContractBounds.SingleContractDocumentType -> 2
+        is ContractBounds.ContractGroup -> 3
     }
 }

@@ -1,3 +1,41 @@
+## [4.2.0-beta.2](https://github.com/dashpay/platform/compare/v4.2.0-beta.1...v4.2.0-beta.2) (2026-09-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** propertyAgreement on $ownerId and $creatorId: referenced side and writer gate (#4816)
+* **sdk:** key limits on every client: wasm-dpp2, platform-wallet, FFI, Kotlin and Swift (#4811)
+* **platform:** add the IdentityKeyLimitsUpdate state transition (#4807)
+
+### Features
+
+* **dpp:** immutable properties on mutable document types ([#4815](https://github.com/dashpay/platform/issues/4815))
+* **dpp:** propertyAgreement on $ownerId and $creatorId: referenced side and writer gate ([#4816](https://github.com/dashpay/platform/issues/4816))
+* **platform:** add the IdentityKeyLimitsUpdate state transition ([#4807](https://github.com/dashpay/platform/issues/4807))
+* **sdk:** key limits on every client: wasm-dpp2, platform-wallet, FFI, Kotlin and Swift ([#4811](https://github.com/dashpay/platform/issues/4811))
+* **sdk:** show and lock immutable document properties in the mobile example apps ([#4820](https://github.com/dashpay/platform/issues/4820))
+* **wasm-dpp2:** expose immutable document properties to JavaScript ([#4817](https://github.com/dashpay/platform/issues/4817))
+
+
+### Bug Fixes
+
+* **dpp:** make the v3 meta-schema aggregate prerequisites sugar-aware ([#4809](https://github.com/dashpay/platform/issues/4809))
+* **drive-abci:** re-validate identityPublicKey references when only the key id changes ([#4812](https://github.com/dashpay/platform/issues/4812))
+* **drive-abci:** refuse indexOnly creates that collide within one batch ([#4813](https://github.com/dashpay/platform/issues/4813))
+* **platform-wallet:** look up the funding tx's block when a ChainLock proof has no record height ([#4738](https://github.com/dashpay/platform/issues/4738))
+* **sdk:** gate the address trunk-state proof on the GroveDB envelope floor ([#4810](https://github.com/dashpay/platform/issues/4810))
+* **sdk:** retry DPNS broadcasts when owner identity is missing ([#4797](https://github.com/dashpay/platform/issues/4797))
+
+
+### Continuous Integration
+
+* re-pin PR Hygiene so it can verify access granted by the organisation ([#4804](https://github.com/dashpay/platform/issues/4804))
+
+
+### Miscellaneous Chores
+
+* mark protocol 14 as shipped and drop the wasm-dpp errorsText test helper ([#4806](https://github.com/dashpay/platform/issues/4806))
+
 ## [4.2.0-beta.1](https://github.com/dashpay/platform/compare/v4.2.0-dev.11...v4.2.0-beta.1) (2026-09-17)
 
 

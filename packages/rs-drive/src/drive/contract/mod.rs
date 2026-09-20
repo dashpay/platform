@@ -15,6 +15,10 @@ pub(crate) mod get_fetch;
 mod insert;
 #[cfg(feature = "server")]
 mod migration;
+/// The banlist and the suspension list a moderated contract keeps.
+pub mod moderation;
+#[cfg(feature = "server")]
+mod other_tree;
 /// Various paths for contract operations
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;
@@ -24,6 +28,8 @@ pub(crate) mod prove;
 pub(crate) mod queries;
 #[cfg(feature = "server")]
 mod refresh_cache;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(feature = "fixtures-and-mocks")]
 /// Test helpers and utility methods
 pub mod test_helpers;

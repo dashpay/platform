@@ -92,6 +92,9 @@ impl StateTransitionFactoryWasm {
                 StateTransition::IdentityKeyLimitsUpdate(_) => Err(JsValue::from_str(
                     "identity key limits update transitions are not supported in wasm-dpp StateTransitionFactory; use wasm-dpp2",
                 )),
+                StateTransition::ContractUserModeration(_) => Err(JsValue::from_str(
+                    "contract user moderation transitions are not supported in wasm-dpp StateTransitionFactory; use wasm-dpp2",
+                )),
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {

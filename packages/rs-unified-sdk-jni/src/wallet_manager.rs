@@ -42,7 +42,7 @@
 
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{build_extension, build_vtable, KotlinPersistenceCtx};
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET};
+use crate::support::{guard, take_pwffi_error, throw_pwffi_result, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
     jboolean, jbyteArray, jdoubleArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE,
@@ -3889,14 +3889,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// Success-coded message first (so they can't hand the result to
 /// `take_pwffi_error`, which treats Success as "no error, nothing to free").
 fn throw_pwffi(env: &mut JNIEnv, result: &mut PlatformWalletFFIResult) {
-    let message = if result.message.is_null() {
-        format!("platform-wallet error (code {})", result.code as i32)
-    } else {
-        unsafe { CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
+    throw_pwffi_result(env, result);
     unsafe { platform_wallet_ffi_result_free(result) };
 }
 

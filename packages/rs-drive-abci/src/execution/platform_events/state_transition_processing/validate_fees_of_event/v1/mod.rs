@@ -6,6 +6,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::signature::PublicKeyExpiredError;
+use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
 use dpp::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
@@ -44,18 +45,23 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// v1 enforces the usage limits of the key that signed the state transition, which identity
-    /// signature validation recorded on the event, on top of the v0 balance check:
+    /// v1 enforces, on top of the v0 balance check, what identity signature validation and the
+    /// batch transformer recorded on the event from protocol version 14:
     ///
-    /// * a key whose expiry is at or before the block time can no longer sign;
-    /// * what the transition requires from the key's budget (see [`required_from_key_budget`])
-    ///   must fit in what is left of it.
+    /// * the usage limits of the key that signed the state transition: a key whose expiry is at
+    ///   or before the block time can no longer sign, and what the transition requires from the
+    ///   key's budget (see [`required_from_key_budget`]) must fit in what is left of it;
+    /// * the contract owner a document batch asks to pay its gas: the fee is judged against the
+    ///   sponsor's balance, and the identity only has to fund `removed_balance`. A sponsor whose
+    ///   balance falls short refuses a batch that insists on them (`GasFeesPaidBy::ContractOwner`)
+    ///   unpaid, and hands a batch that merely prefers them back to the identity's balance. When
+    ///   the sponsor pays, the key's budget only has to cover `removed_balance`.
     ///
-    /// Both failures leave the state transition unpaid, like an insufficient balance: the key was
-    /// not allowed to spend, so nothing is charged through it. This stage runs in check tx with
-    /// the last committed block time and at execution with the block's own time.
+    /// Every failure leaves the state transition unpaid, like an insufficient balance: nobody
+    /// was allowed to be charged. This stage runs in check tx with the last committed block time
+    /// and at execution with the block's own time.
     ///
-    /// Every event without signing key limits is validated by v0.
+    /// Every event with neither signing key limits nor a gas sponsor is validated by v0.
     pub(super) fn validate_fees_of_event_v1(
         &self,
         event: &ExecutionEvent,
@@ -71,7 +77,8 @@ where
             execution_operations,
             additional_fixed_fee_cost,
             user_fee_increase,
-            signing_key_limits: Some(signing_key_limits),
+            signing_key_limits,
+            gas_sponsor,
             ..
         } = event
         else {
@@ -84,17 +91,29 @@ where
             );
         };
 
-        if let Some(expires_at) = signing_key_limits.expires_at {
-            if block_info.time_ms >= expires_at {
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    FeeResult::default(),
-                    vec![PublicKeyExpiredError::new(
-                        signing_key_limits.key_id,
-                        expires_at,
-                        block_info.time_ms,
-                    )
-                    .into()],
-                ));
+        if signing_key_limits.is_none() && gas_sponsor.is_none() {
+            return self.validate_fees_of_event_v0(
+                event,
+                block_info,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            );
+        }
+
+        if let Some(signing_key_limits) = signing_key_limits {
+            if let Some(expires_at) = signing_key_limits.expires_at {
+                if block_info.time_ms >= expires_at {
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        FeeResult::default(),
+                        vec![PublicKeyExpiredError::new(
+                            signing_key_limits.key_id,
+                            expires_at,
+                            block_info.time_ms,
+                        )
+                        .into()],
+                    ));
+                }
             }
         }
 
@@ -106,8 +125,7 @@ where
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "partial identity info with no balance in paid execution event",
                 )))?;
-        let balance_after_principal_operation =
-            balance.saturating_sub(removed_balance.unwrap_or_default());
+        let principal = removed_balance.unwrap_or_default();
         let mut estimated_fee_result = self
             .drive
             .apply_drive_operations(
@@ -138,40 +156,82 @@ where
             required_balance = required_balance.saturating_add(*additional_fixed_fee_cost);
         }
 
-        if balance_after_principal_operation < required_balance {
-            let total_required =
-                required_balance.saturating_add(removed_balance.unwrap_or_default());
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                estimated_fee_result,
-                vec![StateError::IdentityInsufficientBalanceError(
-                    IdentityInsufficientBalanceError::new(identity.id, balance, total_required),
-                )
-                .into()],
-            ));
-        }
+        // The sponsor pays the gas when their balance covers it; the identity always funds the
+        // principal. Execution asks `covers` the same question on the same estimate.
+        let sponsor_pays = match gas_sponsor {
+            Some(gas_sponsor) => {
+                if balance < principal {
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![StateError::IdentityInsufficientBalanceError(
+                            IdentityInsufficientBalanceError::new(identity.id, balance, principal),
+                        )
+                        .into()],
+                    ));
+                }
+                if gas_sponsor.covers(required_balance) {
+                    true
+                } else if gas_sponsor.strict {
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![StateError::GasSponsorInsufficientBalanceError(
+                            GasSponsorInsufficientBalanceError::new(
+                                gas_sponsor.identity_id,
+                                gas_sponsor.balance,
+                                required_balance,
+                            ),
+                        )
+                        .into()],
+                    ));
+                } else {
+                    false
+                }
+            }
+            None => false,
+        };
 
-        if let Some(remaining_budget) = signing_key_limits.remaining_budget {
-            let required_budget = required_from_key_budget(
-                *removed_balance,
-                estimated_fee_result.storage_fee,
-                *additional_fixed_fee_cost,
-                user_fee_increase_amount,
-            );
-            // Signature validation already refuses a spent budget; the zero check keeps a
-            // transition that requires nothing from slipping through on an empty one.
-            if remaining_budget == 0 || required_budget > remaining_budget {
+        if !sponsor_pays {
+            let balance_after_principal_operation = balance.saturating_sub(principal);
+            if balance_after_principal_operation < required_balance {
+                let total_required = required_balance.saturating_add(principal);
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     estimated_fee_result,
-                    vec![StateError::IdentityPublicKeyBudgetExceededError(
-                        IdentityPublicKeyBudgetExceededError::new(
-                            identity.id,
-                            signing_key_limits.key_id,
-                            remaining_budget,
-                            required_budget,
-                        ),
+                    vec![StateError::IdentityInsufficientBalanceError(
+                        IdentityInsufficientBalanceError::new(identity.id, balance, total_required),
                     )
                     .into()],
                 ));
+            }
+        }
+
+        if let Some(signing_key_limits) = signing_key_limits {
+            if let Some(remaining_budget) = signing_key_limits.remaining_budget {
+                let required_budget = if sponsor_pays {
+                    principal
+                } else {
+                    required_from_key_budget(
+                        *removed_balance,
+                        estimated_fee_result.storage_fee,
+                        *additional_fixed_fee_cost,
+                        user_fee_increase_amount,
+                    )
+                };
+                // Signature validation already refuses a spent budget; the zero check keeps a
+                // transition that requires nothing from slipping through on an empty one.
+                if remaining_budget == 0 || required_budget > remaining_budget {
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![StateError::IdentityPublicKeyBudgetExceededError(
+                            IdentityPublicKeyBudgetExceededError::new(
+                                identity.id,
+                                signing_key_limits.key_id,
+                                remaining_budget,
+                                required_budget,
+                            ),
+                        )
+                        .into()],
+                    ));
+                }
             }
         }
 

@@ -43,6 +43,17 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
     /// The transient fields on the document type
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
+    /// The top-level properties frozen at document creation on a mutable
+    /// document type (`immutable` keyword, protocol version 14): a replace
+    /// that changes, adds or removes any of them is rejected. Always empty
+    /// when `documents_mutable` is false, where every property is already
+    /// immutable.
+    pub(in crate::data_contract) immutable_fields: BTreeSet<String>,
+    /// The subset of `immutable_fields` a replace may still set while the
+    /// stored document has no value for them (`immutableAllowSetting`
+    /// keyword, protocol version 14). Once present they are frozen like the
+    /// rest of the list. Every entry is also in `immutable_fields`.
+    pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Should transfers of documents of this type be recorded in the document
@@ -154,6 +165,8 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             binary_paths: value.binary_paths,
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
+            immutable_fields: BTreeSet::new(),
+            immutable_fields_allow_setting: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,
@@ -194,6 +207,8 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             binary_paths: value.binary_paths,
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
+            immutable_fields: BTreeSet::new(),
+            immutable_fields_allow_setting: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,

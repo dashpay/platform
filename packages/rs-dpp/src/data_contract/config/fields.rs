@@ -19,4 +19,5 @@ pub mod property {
     pub const REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityDecryptionBoundedKey";
     pub const SIZED_INTEGER_TYPES: &str = "sized_integer_types";
+    pub const MODERATION: &str = "moderation";
 }

@@ -40,6 +40,11 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
     /// Updated fields
     pub changed_data_fields: BTreeSet<String>,
+    /// The subset of `changed_data_fields` the stored document had no value
+    /// for: properties this replace supplies for the first time. Read by the
+    /// immutable-property check, which lets a property listed under
+    /// `immutableAllowSetting` through exactly when it is set from absent.
+    pub added_data_fields: BTreeSet<String>,
     /// Creator id
     pub creator_id: Option<Identifier>,
 }
@@ -81,6 +86,9 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// The fields that have changed
     fn changed_data_fields(&self) -> &BTreeSet<String>;
+    /// The changed fields the stored document had no value for (set for the
+    /// first time by this replace)
+    fn added_data_fields(&self) -> &BTreeSet<String>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
 

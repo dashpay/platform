@@ -1,6 +1,8 @@
 /// Handles operations related to adding transaction history.
 #[cfg(feature = "server")]
 mod add_transaction_history_operations;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 /// Defines logic for applying status updates within the system.
 #[cfg(feature = "server")]

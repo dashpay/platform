@@ -24,9 +24,10 @@ pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 11] = [
 
 pub const VOTING_TRANSITION_TYPE: [StateTransitionType; 1] = [StateTransitionType::MasternodeVote];
 
-pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
+pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 3] = [
     StateTransitionType::DataContractCreate,
     StateTransitionType::DataContractUpdate,
+    StateTransitionType::ContractUserModeration,
 ];
 
 /// The StateTransitionLike represents set of methods that are shared for all types of State Transition.

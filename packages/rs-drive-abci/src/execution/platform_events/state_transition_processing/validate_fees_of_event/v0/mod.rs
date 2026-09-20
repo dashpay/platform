@@ -390,6 +390,7 @@ mod tests {
             additional_fixed_fee_cost: None,
             user_fee_increase: 0,
             signing_key_limits: None,
+            gas_sponsor: None,
         };
 
         let previous_fee_versions = Default::default();
@@ -656,6 +657,7 @@ mod tests {
             additional_fixed_fee_cost: Some(1_000),
             user_fee_increase: 0,
             signing_key_limits: None,
+            gas_sponsor: None,
         };
 
         let result = platform

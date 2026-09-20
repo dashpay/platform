@@ -6,6 +6,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::prelude::IdentityNonce;
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use dpp::ProtocolError;
 use std::sync::Arc;
@@ -81,6 +82,18 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
     fn token_cost(&self) -> Option<(Identifier, DocumentActionTokenEffect, TokenAmount)> {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.token_cost,
+        }
+    }
+
+    fn gas_fees_paid_by(&self) -> GasFeesPaidBy {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.gas_fees_paid_by,
+        }
+    }
+
+    fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.contract_gas_fees_paid_by,
         }
     }
 }

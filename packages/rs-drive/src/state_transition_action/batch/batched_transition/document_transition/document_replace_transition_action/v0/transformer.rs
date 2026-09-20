@@ -108,6 +108,16 @@ impl DocumentReplaceTransitionActionV0 {
 
         let original_creator_id = original_document.creator_id();
 
+        // The fields the stored document had no value for: this replace sets
+        // them for the first time. A subset of the changed fields below, kept
+        // apart because the immutable-property check treats a first-time set
+        // differently from a change or a removal.
+        let added_fields: BTreeSet<String> = data
+            .keys()
+            .filter(|key| !original_document.properties().contains_key(*key))
+            .cloned()
+            .collect();
+
         // Determine which fields have changed between the original document and the new data
         let changed_fields: BTreeSet<String> = data
             .iter()
@@ -153,6 +163,7 @@ impl DocumentReplaceTransitionActionV0 {
                         original_document_transferred_at_core_block_height,
                     data: data.clone(),
                     changed_data_fields: changed_fields,
+                    added_data_fields: added_fields,
                     creator_id: original_creator_id,
                 }
                 .into(),

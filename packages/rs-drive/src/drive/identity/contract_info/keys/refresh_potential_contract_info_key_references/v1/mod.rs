@@ -1,7 +1,6 @@
 use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
 use crate::drive::identity::{
-    identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec,
-    identity_key_location_within_identity_vec,
+    identity_contract_info_group_path_key_purpose_vec, identity_key_location_within_identity_vec,
 };
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
@@ -207,19 +206,14 @@ impl Drive {
                 if storage_key_requirements == StorageKeyRequirements::MultipleReferenceToLatest {
                     // we also refresh the sibling reference, so we can query the current key
 
+                    // The alias lives in the purpose subtree for every purpose, beside the
+                    // key id it names (see `add_contract_info_operations_v1`).
                     let sibling_ref_type_path = SiblingReference(key_id_bytes);
-                    let sibling_path = if purpose == Purpose::AUTHENTICATION {
-                        // A bound authentication key's current-key reference belongs beside
-                        // its key IDs, under the purpose subtree. Legacy purposes keep
-                        // their historical path (see v0).
-                        identity_contract_info_group_path_key_purpose_vec(
-                            &identity_id,
-                            &root_id,
-                            purpose,
-                        )
-                    } else {
-                        identity_contract_info_group_keys_path_vec(&identity_id, &root_id)
-                    };
+                    let sibling_path = identity_contract_info_group_path_key_purpose_vec(
+                        &identity_id,
+                        &root_id,
+                        purpose,
+                    );
 
                     // Untrusted refresh: the slot may point at a newer key covering the same
                     // contract, so only the stored value hash is rebuilt; a trusted refresh

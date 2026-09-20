@@ -91,6 +91,11 @@ impl Drive {
         // network at the v11→v12 boundary.
         self.insert_shielded_pool_structure(transaction, platform_version)?;
 
+        // Once-per-identity distributions root tree (protocol version 14): one claims subtree
+        // per token that lets every identity claim a fixed amount once. The upgrade path
+        // (`Platform::transition_to_version_14`) calls the same helper.
+        self.insert_once_per_identity_distributions_root_tree(transaction, platform_version)?;
+
         Ok(())
     }
 }

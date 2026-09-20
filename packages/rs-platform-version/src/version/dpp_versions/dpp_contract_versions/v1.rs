@@ -24,6 +24,7 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
         validate_update: 0,
         schema: 0,
         validate_groups: 0,
+        validate_moderation_config: 0,
         equal_ignoring_time_fields: 0,
         registration_cost: 0,
     },
@@ -65,5 +66,6 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
     },
     token_versions: TokenVersions {
         validate_structure_interval: 0,
+        validate_pre_programmed_distribution_amounts: 0,
     },
 };

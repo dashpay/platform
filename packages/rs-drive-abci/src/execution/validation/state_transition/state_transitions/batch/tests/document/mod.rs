@@ -1,12 +1,15 @@
 mod creation;
 mod deletion;
 mod dpns;
+mod gas_sponsorship;
+mod immutable;
 mod index_only;
 mod keep_history;
 mod nft;
 mod ranked_group_drain;
 mod replacement;
 mod required_since;
+mod system_agreement;
 mod transfer;
 
 use super::*;

@@ -20,6 +20,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::batch::ResolvedGasSponsor;
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNonceActionAccessorsV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 use drive::util::batch::DriveOperation;
@@ -47,6 +49,12 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// budget or an expiry. Fee validation enforces them and execution deducts from the
         /// budget, both from protocol version 14.
         signing_key_limits: Option<SigningKeyLimits>,
+        /// The contract owner a document batch asks to pay its gas, with their balance, when
+        /// every transition of the batch is a token-paid document action whose document type
+        /// offers that. Fee validation v1 judges the fee against the sponsor's balance and
+        /// execution v1 charges the sponsor instead of the identity when it covers the fee, both
+        /// from protocol version 14; the identity always funds `removed_balance` itself.
+        gas_sponsor: Option<ResolvedGasSponsor>,
     },
     /// A drive event that is paid by address inputs, this one can also be used by asset lock to address
     PaidFromAddressInputs {
@@ -250,6 +258,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor: None,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -272,6 +281,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor: None,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -282,6 +292,17 @@ impl ExecutionEvent<'_> {
             StateTransitionAction::BatchAction(batch_action) => {
                 let user_fee_increase = action.user_fee_increase();
                 let removed_balance = batch_action.all_used_balances()?;
+                // The sponsor pays only for a batch that is valid as a whole: a transition that
+                // failed state validation was replaced by a nonce bump, and its signer pays for
+                // the work that ran on it.
+                let gas_sponsor = batch_action.gas_sponsor().copied().filter(|_| {
+                    !batch_action.transitions().iter().any(|transition| {
+                        matches!(
+                            transition,
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(_)
+                        )
+                    })
+                });
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -294,6 +315,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -330,6 +352,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: Some(registration_cost),
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor: None,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -356,6 +379,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: Some(registration_cost),
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor: None,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -528,6 +552,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor: None,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -603,6 +628,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: Some(shielded_verification_fee),
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor: None,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -761,6 +787,7 @@ impl ExecutionEvent<'_> {
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
                         signing_key_limits,
+                        gas_sponsor: None,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

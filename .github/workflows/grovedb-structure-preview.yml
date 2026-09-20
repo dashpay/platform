@@ -1,0 +1,133 @@
+name: GroveDB Structure Preview (PR)
+
+# When a pull request changes the described GroveDB structure, post a link that
+# opens the structure viewer on exactly what the pull request adds, changes and
+# removes. The viewer compares the two files itself; this only builds the link
+# and lists the changes as text.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'packages/rs-drive/grovedb-structure.json'
+      - '.github/workflows/grovedb-structure-preview.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: grovedb-structure-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  VIEWER_URL: https://dashpay.github.io/grovedb-structure-viewer/
+  STRUCTURE_PATH: packages/rs-drive/grovedb-structure.json
+
+jobs:
+  preview:
+    name: Link the structure viewer
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Compare the structure and post the link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const path = process.env.STRUCTURE_PATH;
+
+            // Compare against where the branch left the base, so structure merged
+            // into the base since then does not show up as removed
+            let base = pr.base.sha;
+            try {
+              const { data } = await github.rest.repos.compareCommitsWithBasehead({
+                owner, repo, basehead: `${pr.base.sha}...${pr.head.sha}`, per_page: 1,
+              });
+              base = data.merge_base_commit.sha;
+            } catch (error) {
+              core.warning(`Could not find the merge base, using the base tip: ${error.message}`);
+            }
+
+            async function read(where, ref) {
+              try {
+                const { data } = await github.rest.repos.getContent({ ...where, path, ref, mediaType: { format: 'raw' } });
+                return JSON.parse(data);
+              } catch (error) {
+                if (error.status === 404) return null;
+                throw error;
+              }
+            }
+            const head = await read({ owner: pr.head.repo.owner.login, repo: pr.head.repo.name }, pr.head.sha);
+            const before = await read({ owner, repo }, base);
+            if (!head) {
+              core.notice('The pull request has no structure file.');
+              return;
+            }
+
+            // The file comes from the pull request: nothing of it is trusted.
+            // Only identifiers of the expected shape are printed, as code.
+            const safe = (id) => (typeof id === 'string' && /^[a-z0-9_]+(\.[a-z0-9_]+)*$/.test(id) && id.length < 300 ? `\`${id}\`` : '`(unreadable id)`');
+            function index(doc) {
+              const nodes = new Map();
+              const parents = new Map();
+              const visit = (node, parent) => {
+                if (!node || typeof node !== 'object' || nodes.size > 10000) return;
+                const { children, ...own } = node;
+                nodes.set(node.id, JSON.stringify(own));
+                if (parent) parents.set(node.id, parent.id);
+                if (Array.isArray(children)) children.forEach((child) => visit(child, node));
+              };
+              if (doc) visit(doc.root, null);
+              return { nodes, parents };
+            }
+            const old = index(before);
+            const now = index(head);
+            const added = [...now.nodes.keys()].filter((id) => !old.nodes.has(id));
+            const removed = [...old.nodes.keys()].filter((id) => !now.nodes.has(id));
+            const changed = [...now.nodes.keys()].filter((id) => old.nodes.has(id) && old.nodes.get(id) !== now.nodes.get(id));
+            // A subtree that is new or gone as a whole is listed once, by its top
+            const tops = (ids, side) => ids.filter((id) => !ids.includes(side.parents.get(id)));
+            const list = (title, ids, all) => (ids.length === 0 ? [] : [
+              `**${title}** (${all.length} node${all.length === 1 ? '' : 's'})`,
+              ...ids.slice(0, 30).map((id) => `- ${safe(id)}`),
+              ...(ids.length > 30 ? [`- and ${ids.length - 30} more`] : []),
+              '',
+            ]);
+
+            const source = `${pr.head.repo.full_name}@${pr.head.sha}`;
+            const link = before
+              ? `${process.env.VIEWER_URL}?base=${base}&head=${encodeURIComponent(source)}`
+              : `${process.env.VIEWER_URL}?head=${encodeURIComponent(source)}`;
+            const nothing = added.length + removed.length + changed.length === 0;
+
+            const marker = '<!-- grovedb-structure-preview -->';
+            const body = [
+              marker,
+              '🌳 **GroveDB structure**',
+              '',
+              nothing
+                ? `No node of the described GroveDB structure was added, changed or removed. [Open the structure viewer](${link}) on this pull request's version.`
+                : `This pull request changes the described GroveDB structure. **[Open it in the structure viewer](${link})**: new nodes glow, removed ones stay as ghosts, and the tour walks through each change.`,
+              '',
+              ...list('Added', tops(added, now), added),
+              ...list('Changed', changed, changed),
+              ...list('Removed', tops(removed, old), removed),
+              `_Compared \`${base.slice(0, 10)}\` with \`${pr.head.sha.slice(0, 10)}\`. Updated at ${new Date().toISOString()}_`,
+            ].join('\n');
+
+            await core.summary.addRaw(body.replace(marker, '')).write();
+
+            // Fork pull requests run with a read-only token that cannot post comments
+            if (pr.head.repo.full_name !== `${owner}/${repo}`) {
+              core.notice(`Structure viewer: ${link}`);
+              return;
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: pr.number });
+            const existing = comments.find((comment) => comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+            }

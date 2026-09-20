@@ -13,6 +13,24 @@ pub struct DriveContractMethodVersions {
     pub update: DriveContractUpdateMethodVersions,
     pub costs: DriveContractCostsMethodVersions,
     pub get: DriveContractGetMethodVersions,
+    pub moderation: DriveContractModerationMethodVersions,
+}
+
+/// Drive methods for contract moderation: the banlist and the suspension list a moderated
+/// contract keeps under its own subtree (keys `128` and `192` of its other tree, `[64, id, 2]`). Protocol version 14.
+#[derive(Clone, Debug, Default)]
+pub struct DriveContractModerationMethodVersions {
+    pub add_contract_ban: FeatureVersion,
+    pub remove_contract_ban: FeatureVersion,
+    pub add_contract_suspension: FeatureVersion,
+    pub remove_contract_suspension: FeatureVersion,
+    pub fetch_contract_moderation_status: FeatureVersion,
+    pub fetch_contract_moderation_entries: FeatureVersion,
+    pub prove_contract_moderation_status: FeatureVersion,
+    pub prove_contract_moderation_entries: FeatureVersion,
+    pub insert_contract_moderation_trees: FeatureVersion,
+    pub add_estimation_costs_for_contract_moderation_trees: FeatureVersion,
+    pub add_estimation_costs_for_contract_moderation_entry: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

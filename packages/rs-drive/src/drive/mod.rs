@@ -31,6 +31,8 @@ pub mod credit_pools;
 /// Document module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod document;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 /// Identity module
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -186,8 +188,12 @@ pub struct Drive {
 //       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
-//                                     /                          /
-//                           Saved Block Transactions 36       ShieldedBalances 52
+//                                     /                          /                                                                                                                                         \
+//                           Saved Block Transactions 36       ShieldedBalances 52                                                                                                                     ContractGroups 124
+//
+// This is the shape of a fresh chain. `drive::structure` describes every level below the root as
+// code, and `packages/rs-drive/grovedb-structure.json` records this shape from a real GroveDB
+// (`layer_shapes.root`), so a test fails when the two drift apart.
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
