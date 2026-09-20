@@ -6,7 +6,6 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllItems;
@@ -37,17 +36,17 @@ impl Drive {
         contract_id: [u8; 32],
         list: ContractModerationList,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        platform_version: &PlatformVersion,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_contract_moderation_trees_v0(
             contract_id,
             estimated_costs_only_with_layer_info,
-            &platform_version.drive,
+            drive_version,
         )?;
 
         // The list itself: one item per barred identity, keyed by identity id. An entry holds a
-        // reason of any length up to the limit, so every entry is estimated at the largest.
-        let value_size = estimated_entry_value_size(list, platform_version);
+        // reason of any length up to the limit, estimated at a typical one.
+        let value_size = estimated_entry_value_size(list);
 
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_moderation_list_path(&contract_id, list)),

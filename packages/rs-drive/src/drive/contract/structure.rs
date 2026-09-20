@@ -11,8 +11,10 @@ const CONTRACT_FLAGS: &str =
      created in. System contracts created at genesis carry no flags.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
-     refunded when it is removed. A suspension replaced with a reason of another \
-     length passes to the moderator who replaced it.";
+     refunded when it is removed. A suspension replaced with a longer reason \
+     passes to the moderator who replaced it, who pays for the added bytes; \
+     replaced with a shorter or an equally long one it stays the first \
+     moderator's, who is refunded the removed bytes.";
 
 /// Data contracts and their documents
 pub(crate) fn structure() -> StructureNode {

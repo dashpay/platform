@@ -87,7 +87,7 @@ impl Drive {
                 contract_id.to_buffer(),
                 ContractModerationList::Banlist,
                 estimated_costs_only_with_layer_info,
-                platform_version,
+                &platform_version.drive,
             )?;
         }
 

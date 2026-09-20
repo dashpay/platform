@@ -3,7 +3,6 @@ use dpp::data_contract::config::moderation::{
 };
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::Identifier;
-use dpp::version::PlatformVersion;
 use grovedb::Element;
 
 /// One page of one of a contract's moderation lists: at most `limit` identities in id order,
@@ -68,21 +67,22 @@ pub const CONTRACT_SUSPENSION_UNTIL_SIZE: usize = 8;
 /// The most bytes a reason's code takes in an entry: the tag and the u16.
 pub const CONTRACT_MODERATION_REASON_CODE_MAX_SIZE: u32 = 3;
 
-/// The size an entry of `list` is estimated at when its value is not known: the largest one,
-/// a reason with a code and a text at `SystemLimits::max_contract_moderation_reason_length`.
-pub fn estimated_entry_value_size(
-    list: ContractModerationList,
-    platform_version: &PlatformVersion,
-) -> u32 {
+/// The length a reason's text is estimated at when it is not known: a sentence. Estimating
+/// every entry at the longest reason the protocol admits made the dry-run processing fee of a
+/// moderation some 25 times the applied one.
+pub const ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE: u32 = 128;
+
+/// The size an entry of `list` is estimated at when its value is not known: the entries a
+/// write walks past, and the entry a delete removes. An entry being written is priced by its
+/// own size.
+pub fn estimated_entry_value_size(list: ContractModerationList) -> u32 {
     let until_size = match list {
         ContractModerationList::Banlist => 0,
         ContractModerationList::Suspensions => CONTRACT_SUSPENSION_UNTIL_SIZE as u32,
     };
     until_size
         + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
-        + platform_version
-            .system_limits
-            .max_contract_moderation_reason_length as u32
+        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
 }
 
 const REASON_WITHOUT_CODE: u8 = 0;
@@ -91,7 +91,9 @@ const REASON_WITH_CODE: u8 = 1;
 /// Encodes a banlist entry: its reason.
 ///
 /// A reason is a tag byte (`0`: no code, `1`: a code), the code as two big-endian bytes when
-/// the tag says so, and the text as UTF-8 up to the end of the value.
+/// the tag says so, and the text as UTF-8 up to the end of the value. A reason is always
+/// written with its tag; a value without one is an entry from before reasons existed and
+/// decodes as the empty reason.
 pub fn encode_ban(reason: &ContractModerationReason) -> Vec<u8> {
     let mut value = Vec::with_capacity(reason_encoded_size(reason));
     encode_reason_into(reason, &mut value);
@@ -155,7 +157,10 @@ fn decode_reason(value: &[u8]) -> Result<ContractModerationReason, String> {
             (Some(u16::from_be_bytes(*code)), text)
         }
         Some((tag, _)) => return Err(format!("moderation reason has unknown code tag {}", tag)),
-        None => return Err("moderation entry holds no reason".to_string()),
+        // An entry written before entries carried a reason: an empty banlist item, a bare
+        // `until`. It reads as the empty reason rather than as corrupted state, which would
+        // turn every document transition of the identity, and its unban, into an internal error.
+        None => return Ok(ContractModerationReason::default()),
     };
     let text = std::str::from_utf8(text)
         .map_err(|_| "moderation reason text is not UTF-8".to_string())?
@@ -207,12 +212,27 @@ mod tests {
 
     #[test]
     fn should_refuse_a_malformed_entry() {
-        decode_ban(&[]).expect_err("no reason");
         decode_ban(&[2, b'x']).expect_err("unknown tag");
         decode_ban(&[1, 0]).expect_err("code cut short");
         decode_ban(&[0, 0xff, 0xfe]).expect_err("not utf-8");
         decode_suspension(&[0; 7]).expect_err("until cut short");
-        decode_suspension(&[0; 8]).expect_err("no reason");
+    }
+
+    #[test]
+    fn should_read_an_entry_written_before_reasons_as_the_empty_reason() {
+        assert_eq!(
+            decode_ban(&[]).expect("decode"),
+            ContractBan {
+                reason: ContractModerationReason::default()
+            }
+        );
+        assert_eq!(
+            decode_suspension(&77u64.to_be_bytes()).expect("decode"),
+            ContractSuspension {
+                until: 77,
+                reason: ContractModerationReason::default()
+            }
+        );
     }
 
     #[test]

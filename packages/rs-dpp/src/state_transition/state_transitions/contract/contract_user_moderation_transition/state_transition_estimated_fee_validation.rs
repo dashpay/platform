@@ -10,8 +10,11 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl StateTransitionEstimatedFeeValidation for ContractUserModerationTransition {
-    /// One small contract-scoped write, so the contract update floor is reused rather than a
-    /// new slot added to the shipped fee schedules.
+    /// One contract-scoped write, so the contract update floor is reused rather than a new slot
+    /// added to the shipped fee schedules. It is a floor, not the price: a ban or a suspension
+    /// stores its reason, up to a kilobyte, and like a document's content that storage is
+    /// checked against the balance when the fees of the event are validated, from the dry run
+    /// of the write.
     fn calculate_min_required_fee(
         &self,
         platform_version: &PlatformVersion,

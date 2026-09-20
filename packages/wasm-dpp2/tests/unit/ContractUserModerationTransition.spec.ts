@@ -52,7 +52,7 @@ describe('ContractUserModeration', () => {
       expect(transition.identityId.toString()).to.equal(TARGET_ID);
       expect(transition.identityContractNonce).to.equal(BigInt(7));
       expect(transition.until).to.equal(undefined);
-      expect(transition.reason).to.deep.equal({ text: 'spam' });
+      expect(transition.reason).to.deep.equal({ code: null, text: 'spam' });
       expect(transition.userFeeIncrease).to.equal(0);
     });
 
@@ -82,7 +82,7 @@ describe('ContractUserModeration', () => {
 
       expect(transition.action).to.equal('suspend');
       expect(transition.until).to.equal(BigInt(1800000000000));
-      expect(transition.reason).to.deep.equal({ text: 'spam' });
+      expect(transition.reason).to.deep.equal({ code: null, text: 'spam' });
     });
 
     it('should refuse a suspension without an end', () => {
@@ -153,6 +153,8 @@ describe('ContractUserModeration', () => {
         until: 1800000000000,
         reason: { code: null, text: 'spam' },
       });
+      // The getter gives the reason the shape it has in the JSON
+      expect(createTransition({ action: 'suspend', until: BigInt(5) }).reason).to.deep.equal(json.action.reason);
       expect(json.userFeeIncrease).to.equal(4);
       expect(json.signature).to.equal('');
       expect(json.signaturePublicKeyId).to.equal(0);

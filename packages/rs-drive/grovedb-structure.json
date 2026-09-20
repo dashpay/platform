@@ -2850,7 +2850,7 @@
                         "flags": [
                           "EpochOwned"
                         ],
-                        "flags_note": "The owner is the moderator who added the entry. They pay for it, and are refunded when it is removed. A suspension replaced with a reason of another length passes to the moderator who replaced it.",
+                        "flags_note": "The owner is the moderator who added the entry. They pay for it, and are refunded when it is removed. A suspension replaced with a longer reason passes to the moderator who replaced it, who pays for the added bytes; replaced with a shorter or an equally long one it stays the first moderator's, who is refunded the removed bytes.",
                         "value": "the moderator's reason: a tag byte (0 no code, 1 a code), the code as a u16 big endian when tagged, then the text as UTF-8 to the end of the value",
                         "since": 14,
                         "presence": "always",
@@ -2894,7 +2894,7 @@
                         "flags": [
                           "EpochOwned"
                         ],
-                        "flags_note": "The owner is the moderator who added the entry. They pay for it, and are refunded when it is removed. A suspension replaced with a reason of another length passes to the moderator who replaced it.",
+                        "flags_note": "The owner is the moderator who added the entry. They pay for it, and are refunded when it is removed. A suspension replaced with a longer reason passes to the moderator who replaced it, who pays for the added bytes; replaced with a shorter or an equally long one it stays the first moderator's, who is refunded the removed bytes.",
                         "value": "the block time in milliseconds the suspension runs until, u64 big endian, then the moderator's reason as in a banlist entry",
                         "since": 14,
                         "presence": "always",

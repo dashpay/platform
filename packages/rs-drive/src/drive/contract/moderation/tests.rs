@@ -766,6 +766,134 @@ fn should_bill_the_replacing_moderator_for_a_longer_reason() {
 }
 
 #[test]
+fn should_keep_a_shorter_replacement_with_the_first_moderator() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract(false, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let first_moderator = identity(0x51);
+    let second_moderator = identity(0x52);
+    let target = identity(0x53);
+
+    drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            10,
+            &reason(&"flooding ".repeat(40)),
+            false,
+            first_moderator,
+            &BlockInfo::default_with_epoch(Epoch::new(0).expect("epoch 0")),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to suspend");
+
+    // Another moderator, a later epoch, a shorter reason: nothing is added, the removed bytes
+    // go back to the moderator that paid for them, and the entry stays that moderator's.
+    let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
+    let fee = drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            20,
+            &reason("flooding"),
+            true,
+            second_moderator,
+            &later,
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to replace the suspension with a shorter reason");
+    assert_eq!(fee.storage_fee, 0, "a shorter replacement stores nothing");
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(first_moderator)
+            .is_some(),
+        "the removed bytes are refunded to the moderator that paid for them"
+    );
+    assert!(fee
+        .fee_refunds
+        .calculate_refunds_amount_for_identity(second_moderator)
+        .is_none());
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &[ContractModerationList::Suspensions],
+        suspended_until(20, "flooding"),
+    );
+
+    let fee = drive
+        .remove_contract_suspension(contract_id, target, &later, true, None, platform_version)
+        .expect("expected to unsuspend");
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(first_moderator)
+            .is_some(),
+        "the first moderator still owns the entry"
+    );
+    assert!(fee
+        .fee_refunds
+        .calculate_refunds_amount_for_identity(second_moderator)
+        .is_none());
+}
+
+#[test]
+fn should_not_estimate_a_replacement_below_what_it_costs() {
+    let platform_version = PlatformVersion::latest();
+    let max_length = platform_version
+        .system_limits
+        .max_contract_moderation_reason_length as usize;
+
+    // From the shortest entry to the longest, and the other way: GroveDB's average-case replace
+    // assumes an item keeps its size, which would price no storage for the longer reason.
+    for (from, to) in [(0, max_length), (max_length, 0), (8, 8)] {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = moderated_contract(false, true);
+        insert(&drive, &contract, platform_version);
+        let contract_id = contract.id();
+        let moderator = contract.owner_id();
+        let target = identity(0x54);
+        let suspend = |until: u64, length: usize, replaces_existing: bool, apply: bool| {
+            drive
+                .add_contract_suspension(
+                    contract_id,
+                    target,
+                    until,
+                    &reason(&"x".repeat(length)),
+                    replaces_existing,
+                    moderator,
+                    &BlockInfo::default(),
+                    apply,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to suspend")
+        };
+
+        suspend(10, from, false, true);
+        let estimated = suspend(20, to, true, false);
+        let applied = suspend(20, to, true, true);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "{from} -> {to} bytes: estimated storage {} below applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+        assert!(
+            estimated.total_base_fee() >= applied.total_base_fee(),
+            "{from} -> {to} bytes: estimated {} below applied {}",
+            estimated.total_base_fee(),
+            applied.total_base_fee()
+        );
+    }
+}
+
+#[test]
 fn should_charge_a_ban_by_the_length_of_its_reason() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));

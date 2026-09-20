@@ -1,6 +1,5 @@
 mod transformer;
 
-use dpp::data_contract::config::moderation::ContractModerationStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
@@ -16,10 +15,10 @@ pub struct ContractUserModerationTransitionActionV0 {
     pub identity_contract_nonce: IdentityNonce,
     /// what is done, to whom
     pub action: ContractUserModerationAction,
-    /// the target's status as read when the transition was validated, so that Drive knows
-    /// whether a suspend replaces an entry and whether a ban also removes a suspension,
-    /// without reading again
-    pub current_status: ContractModerationStatus,
+    /// whether the target carried a suspension when the transition was validated, so that
+    /// Drive knows whether a suspend replaces an entry and whether a ban also removes a
+    /// suspension, without reading again. The status itself, with its reasons, stays behind.
+    pub target_is_suspended: bool,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }

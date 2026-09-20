@@ -3,10 +3,11 @@ use dpp::data_contract::config::moderation::ContractModerationStatus;
 use dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
 
 impl ContractUserModerationTransitionActionV0 {
-    /// The action of a borrowed transition, carrying the target's status as it is stored
+    /// The action of a borrowed transition, keeping of the target's stored status what Drive
+    /// needs: whether it carries a suspension
     pub fn from_borrowed_transition_with_status(
         value: &ContractUserModerationTransitionV0,
-        current_status: ContractModerationStatus,
+        current_status: &ContractModerationStatus,
     ) -> Self {
         let ContractUserModerationTransitionV0 {
             owner_id,
@@ -21,7 +22,7 @@ impl ContractUserModerationTransitionActionV0 {
             data_contract_id: *data_contract_id,
             identity_contract_nonce: *identity_contract_nonce,
             action: action.clone(),
-            current_status,
+            target_is_suspended: current_status.suspension.is_some(),
             user_fee_increase: *user_fee_increase,
         }
     }

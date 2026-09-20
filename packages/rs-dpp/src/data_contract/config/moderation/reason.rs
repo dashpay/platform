@@ -5,7 +5,6 @@ use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// Why a moderator banned or suspended an identity. Every ban and every suspension carries
 /// one, and it is stored with the entry, so whoever reads the list reads the reason.
@@ -47,15 +46,6 @@ impl ContractModerationReason {
             );
         }
         SimpleConsensusValidationResult::new()
-    }
-}
-
-impl fmt::Display for ContractModerationReason {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.code {
-            Some(code) => write!(f, "[{}] {}", code, self.text),
-            None => write!(f, "{}", self.text),
-        }
     }
 }
 
@@ -130,21 +120,5 @@ mod tests {
             [ConsensusError::BasicError(BasicError::ContractModerationReasonTooLongError(error))]
                 if error.length() == max_length as u64 + 2 && error.max_length() == max_length
         ));
-    }
-
-    #[test]
-    fn should_display_the_code_when_there_is_one() {
-        assert_eq!(
-            ContractModerationReason::from_text("spam").to_string(),
-            "spam"
-        );
-        assert_eq!(
-            ContractModerationReason {
-                code: Some(3),
-                text: "spam".to_string()
-            }
-            .to_string(),
-            "[3] spam"
-        );
     }
 }

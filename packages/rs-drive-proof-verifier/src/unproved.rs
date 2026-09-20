@@ -888,7 +888,7 @@ impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractMode
         request: I,
         response: O,
         _network: Network,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(Option<Self>, ResponseMetadata), Error>
     where
         Self: Sized,
@@ -938,14 +938,14 @@ impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractMode
                 // An entry comes with its reason. Only the lists asked for are decoded, since
                 // only they are reported.
                 let ban = (banned && lists.contains(&ContractModerationList::Banlist))
-                    .then(|| reason_from_response(status.ban_reason, platform_version))
+                    .then(|| reason_from_response(status.ban_reason))
                     .transpose()?
                     .map(|reason| ContractBan { reason });
                 let suspension = status
                     .suspended_until
                     .filter(|_| lists.contains(&ContractModerationList::Suspensions))
                     .map(|until| {
-                        reason_from_response(status.suspension_reason, platform_version)
+                        reason_from_response(status.suspension_reason)
                             .map(|reason| ContractSuspension { until, reason })
                     })
                     .transpose()?;
@@ -974,7 +974,7 @@ impl FromUnproved<platform::GetContractModerationEntriesRequest> for ContractMod
         _request: I,
         response: O,
         _network: Network,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(Option<Self>, ResponseMetadata), Error>
     where
         Self: Sized,
@@ -988,9 +988,7 @@ impl FromUnproved<platform::GetContractModerationEntriesRequest> for ContractMod
         let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
 
         let entries = match v0.result {
-            Some(V0Result::Entries(entries)) => {
-                Some(entries_from_response(entries.entries, platform_version)?)
-            }
+            Some(V0Result::Entries(entries)) => Some(entries_from_response(entries.entries)?),
             Some(V0Result::Proof(_)) => {
                 return Err(Error::ResponseDecodeError {
                     error: "expected unproved contract moderation entries, got a proof".to_string(),
@@ -1492,7 +1490,7 @@ mod contract_moderation_tests {
     }
 
     #[test]
-    fn should_refuse_an_entry_without_a_reason_or_with_a_reason_no_entry_can_hold() {
+    fn should_refuse_an_entry_without_a_reason_or_with_a_code_past_u16() {
         let no_reason = status(
             vec![BANLIST],
             ContractModerationStatusProto {
@@ -1516,25 +1514,6 @@ mod contract_moderation_tests {
             },
         );
         assert!(matches!(wide_code, Err(Error::ResponseDecodeError { .. })));
-
-        let too_long = status(
-            vec![BANLIST],
-            ContractModerationStatusProto {
-                banned: Some(true),
-                lists: vec![BANLIST],
-                ban_reason: Some(ContractModerationReasonProto {
-                    code: None,
-                    text: "x".repeat(
-                        PlatformVersion::latest()
-                            .system_limits
-                            .max_contract_moderation_reason_length as usize
-                            + 1,
-                    ),
-                }),
-                ..Default::default()
-            },
-        );
-        assert!(matches!(too_long, Err(Error::ResponseDecodeError { .. })));
 
         // A clean identity has no reason to give.
         let clean = status(

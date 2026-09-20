@@ -86,12 +86,12 @@ impl Drive {
                 contract_id.to_buffer(),
                 list,
                 estimated_costs_only_with_layer_info,
-                platform_version,
+                &platform_version.drive,
             )?;
             BatchDeleteApplyType::StatelessBatchDelete {
                 in_tree_type: TreeType::NormalTree,
                 estimated_key_size: DEFAULT_HASH_SIZE_U32,
-                estimated_value_size: estimated_entry_value_size(list, platform_version)
+                estimated_value_size: estimated_entry_value_size(list)
                     + StorageFlags::approximate_size(true, None),
             }
         } else {

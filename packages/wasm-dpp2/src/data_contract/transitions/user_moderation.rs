@@ -32,7 +32,8 @@ const CONTRACT_USER_MODERATION_TS: &str = r#"
 export interface ContractModerationReason {
     /**
      * Reserved for the ban codes a contract may declare in a later protocol version: a u16,
-     * expected to be left out today. A value is stored as written and never checked.
+     * expected to be left out today. A value is stored as written and never checked. A reason
+     * read back always carries it, `null` when there is none.
      */
     code?: number | null;
     /** Free text, at most 1024 bytes of UTF-8. May be empty. */
@@ -119,13 +120,14 @@ extern "C" {
     pub type ContractModerationReasonJs;
 }
 
-/// A reason as the plain object JavaScript reads: `text`, and `code` when there is one.
+/// A reason as the plain object JavaScript reads: `code`, `null` when there is none, and
+/// `text`. The shape `toJSON()` and `toObject()` give the reason inside a transition, so a
+/// reason compares equal whichever call produced it.
 pub fn moderation_reason_to_js(reason: &ContractModerationReason) -> JsValue {
     let object = js_sys::Object::new();
     // Setting a property on a fresh plain object cannot fail.
-    if let Some(code) = reason.code {
-        let _ = js_sys::Reflect::set(&object, &"code".into(), &JsValue::from(code));
-    }
+    let code = reason.code.map_or(JsValue::NULL, JsValue::from);
+    let _ = js_sys::Reflect::set(&object, &"code".into(), &code);
     let _ = js_sys::Reflect::set(&object, &"text".into(), &JsValue::from_str(&reason.text));
     object.into()
 }

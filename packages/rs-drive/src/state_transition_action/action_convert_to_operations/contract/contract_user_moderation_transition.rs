@@ -29,7 +29,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         data_contract_id: contract_id,
                         identity_contract_nonce,
                         action,
-                        current_status,
+                        target_is_suspended,
                         ..
                     },
                 ) = self;
@@ -48,7 +48,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         reason,
                     } => {
                         // A ban supersedes a suspension, lapsed or not.
-                        if current_status.suspension.is_some() {
+                        if target_is_suspended {
                             operations.push(ContractModerationOperation(
                                 ContractModerationOperationType::RemoveSuspension {
                                     contract_id,
@@ -84,7 +84,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                 identity_id,
                                 until,
                                 reason,
-                                replaces_existing: current_status.suspension.is_some(),
+                                replaces_existing: target_is_suspended,
                                 moderator_id,
                             },
                         ));
@@ -114,31 +114,19 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::data_contract::config::moderation::{
-        ContractModerationReason, ContractModerationStatus, ContractSuspension,
-    };
+    use dpp::data_contract::config::moderation::ContractModerationReason;
     use dpp::platform_value::Identifier;
-
-    fn suspended_until(until: u64) -> ContractModerationStatus {
-        ContractModerationStatus {
-            ban: None,
-            suspension: Some(ContractSuspension {
-                until,
-                reason: ContractModerationReason::from_text("earlier"),
-            }),
-        }
-    }
 
     fn action(
         action: ContractUserModerationAction,
-        current_status: ContractModerationStatus,
+        target_is_suspended: bool,
     ) -> ContractUserModerationTransitionAction {
         ContractUserModerationTransitionAction::V0(ContractUserModerationTransitionActionV0 {
             moderator_id: Identifier::from([0xAA; 32]),
             data_contract_id: Identifier::from([0xBB; 32]),
             identity_contract_nonce: 4,
             action,
-            current_status,
+            target_is_suspended,
             user_fee_increase: 0,
         })
     }
@@ -154,7 +142,7 @@ mod tests {
                 identity_id: target,
                 reason: ContractModerationReason::from_text("spam"),
             },
-            ContractModerationStatus::default(),
+            false,
         )
         .into_high_level_drive_operations(&epoch, platform_version)
         .expect("operations");
@@ -184,7 +172,7 @@ mod tests {
                 identity_id: target,
                 reason: ContractModerationReason::from_text("spam"),
             },
-            suspended_until(10),
+            true,
         )
         .into_high_level_drive_operations(&epoch, platform_version)
         .expect("operations");
@@ -211,7 +199,7 @@ mod tests {
                 until: 99,
                 reason: ContractModerationReason::from_text("again"),
             },
-            suspended_until(10),
+            true,
         )
         .into_high_level_drive_operations(&epoch, platform_version)
         .expect("operations");

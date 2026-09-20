@@ -52,8 +52,8 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
     /// a contract that does not exist included, is paid for by bumping the signer's contract
     /// nonce.
     ///
-    /// The action carries the target's status as read here, so Drive edits the lists without
-    /// reading them again, and the mempool, which transforms without a state validation stage,
+    /// The action carries what Drive needs of the target's status as read here, so Drive edits
+    /// the lists without reading them again, and the mempool, which transforms without a state validation stage,
     /// refuses with the same consensus codes as a block.
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
@@ -167,7 +167,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
 
         Ok(ConsensusValidationResult::new_with_data(
             ContractUserModerationTransitionAction::from_borrowed_transition_with_status(
-                self, status,
+                self, &status,
             )
             .into(),
         ))

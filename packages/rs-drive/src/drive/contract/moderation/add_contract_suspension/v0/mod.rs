@@ -73,8 +73,14 @@ impl Drive {
     /// A suspension is `until` as eight big-endian bytes, then its reason, under the identity's
     /// id, flagged with the moderator's identity so the storage refund on removal goes back to
     /// whoever paid. An existing entry is replaced in place; two operations on one key would
-    /// fail the batch. A replacement of another size merges the flags as a document transfer
-    /// does: the entry, and the refund of its removal, pass to the moderator that replaced it.
+    /// fail the batch. The replacement brings its own reason, so the entry may change size, and
+    /// its flags follow GroveDB's flag merge: a longer entry passes, with the refund of its
+    /// removal, to the moderator that replaced it, who pays for the added bytes; a shorter or
+    /// an equally long one stays the first moderator's, who is refunded the removed bytes.
+    ///
+    /// An estimate prices the replacement as a fresh insert. GroveDB's average-case replace
+    /// assumes an item keeps its size and would price no storage for a longer reason, which
+    /// the moderator's balance is then not checked against; the whole entry is an upper bound.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contract_suspension_operations_v0(
@@ -92,12 +98,13 @@ impl Drive {
         _transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let estimating = estimated_costs_only_with_layer_info.is_some();
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_contract_moderation_entry(
                 contract_id.to_buffer(),
                 ContractModerationList::Suspensions,
                 estimated_costs_only_with_layer_info,
-                platform_version,
+                &platform_version.drive,
             )?;
         }
 
@@ -117,7 +124,7 @@ impl Drive {
         ));
 
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if replaces_existing {
+        if replaces_existing && !estimating {
             self.batch_replace(
                 path_key_element,
                 &mut batch_operations,
