@@ -1904,3 +1904,138 @@ fn should_materialize_the_page_under_the_proofs_budget_past_an_empty_index_branc
     assert_eq!(verified.page_documents, materialized.page_documents);
     assert_eq!(verified.sub_results, materialized.sub_results);
 }
+
+/// Five quoted posts in key order (tagged "btc", so they stay off the
+/// "dash" page) and the five page posts quoting them.
+const QUOTED: [[u8; 32]; 5] = [[0x10; 32], [0x20; 32], [0x30; 32], [0x40; 32], [0x50; 32]];
+const QUOTING: [[u8; 32]; 5] = [[0x91; 32], [0x92; 32], [0x93; 32], [0x94; 32], [0x95; 32]];
+
+/// Inserts every quoted post except `missing`, and every quoting post.
+fn setup_quoting_page(missing: &[[u8; 32]]) -> (crate::drive::Drive, DataContract) {
+    let (drive, feed, _dashpay) = setup();
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        if !missing.contains(quoted) {
+            insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        }
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    (drive, feed)
+}
+
+fn quoted_posts_join(feed: &DataContract) -> DriveDocumentQuery<'_> {
+    page_by_hashtag(feed, "dash", Some(10)).with_sub_queries(vec![bound(
+        feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )])
+}
+
+/// The by-id join's counterpart of the chained soundness pair, half
+/// one: with a quoted post NOT in state, the honest merged proof still
+/// satisfies grovedb's verification of the full derived query, so the
+/// absence is proven and only the assembly refuses the result today.
+#[test]
+fn should_prove_the_absence_of_a_missing_joined_document() {
+    let pv = platform_version();
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(QUOTED.to_vec());
+
+    for missing in cases {
+        let (drive, feed) = setup_quoting_page(&missing);
+        let query = quoted_posts_join(&feed);
+        let (proof, page_documents) = drive
+            .query_composite_documents_with_proof(&query, pv)
+            .expect("the proof generates whether or not the quoted posts exist");
+        let derived = query
+            .derive_all(&page_documents, |_| None)
+            .expect("derived values");
+        assert_eq!(derived[0].len(), QUOTED.len());
+
+        let (page, sub_path_queries) = query
+            .proof_path_queries(&derived, pv)
+            .expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let (_root, trios) =
+            grovedb::GroveDb::verify_query(&proof, &merged, &pv.drive.grove_version)
+                .expect("grovedb verifies the merged query with the missing ids in it");
+        let proved_quoted: Vec<([u8; 32], bool)> = trios
+            .into_iter()
+            .filter_map(|(_, key, element)| {
+                let id: [u8; 32] = key.as_slice().try_into().ok()?;
+                QUOTED.contains(&id).then_some((id, element.is_some()))
+            })
+            .collect();
+        let present: Vec<[u8; 32]> = proved_quoted
+            .iter()
+            .filter(|(_, is_present)| *is_present)
+            .map(|(id, _)| *id)
+            .collect();
+        let expected: Vec<[u8; 32]> = QUOTED
+            .iter()
+            .filter(|post| !missing.contains(post))
+            .copied()
+            .collect();
+        assert_eq!(present, expected, "missing {missing:?}");
+
+        let refused = query.verify_composite_documents_proof(&proof, pv);
+        assert!(
+            matches!(refused, Err(Error::Proof(_))),
+            "the assembly is what refuses a dangling join today, got {refused:?}"
+        );
+    }
+}
+
+/// Half two: withholding an EXISTING quoted post's id from the join
+/// component leaves the proof without coverage for a key the verifier's
+/// re-derived query demands; grovedb refuses it before any assembly
+/// rule.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_joined_document() {
+    let pv = platform_version();
+    let (drive, feed) = setup_quoting_page(&[]);
+    let query = quoted_posts_join(&feed);
+    let (_honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let honest = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(vec![QUOTED[0], QUOTED[4]]);
+
+    for withheld in cases {
+        let mut served = honest.clone();
+        served[0].retain(|id| !withheld.contains(&id.to_buffer()));
+        let (page, sub_path_queries) = query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+}
