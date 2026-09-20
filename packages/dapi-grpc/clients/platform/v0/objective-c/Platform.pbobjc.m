@@ -12224,11 +12224,13 @@ void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCas
 
 @dynamic innerDocumentsArray, innerDocumentsArray_Count;
 @dynamic outerDocumentsArray, outerDocumentsArray_Count;
+@dynamic missingOuterIdsArray, missingOuterIdsArray_Count;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *innerDocumentsArray;
   NSMutableArray *outerDocumentsArray;
+  NSMutableArray *missingOuterIdsArray;
 } GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_;
 
 // This method is threadsafe because it is initially called
@@ -12252,6 +12254,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__sto
         .number = GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_OuterDocumentsArray,
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_, outerDocumentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "missingOuterIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_MissingOuterIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_, missingOuterIdsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
       },
@@ -12339,11 +12350,13 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments__s
 @dynamic resultOneOfCase;
 @dynamic documents;
 @dynamic counts;
+@dynamic missingIdsArray, missingIdsArray_Count;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_ {
   uint32_t _has_storage_[2];
   GetDocumentsResponse_GetDocumentsResponseV1_Documents *documents;
   GetDocumentsResponse_GetDocumentsResponseV1_CountEntries *counts;
+  NSMutableArray *missingIdsArray;
 } GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_;
 
 // This method is threadsafe because it is initially called
@@ -12369,6 +12382,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_Su
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_, counts),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "missingIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_MissingIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_, missingIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

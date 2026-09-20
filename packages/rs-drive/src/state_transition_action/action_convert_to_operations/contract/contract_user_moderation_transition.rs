@@ -114,7 +114,6 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             data_contract_fetch_info,
                             document_owner_id,
                             removed_at,
-                            replaced_removal_moderator_id,
                         } =
                             document_deletion
                                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
@@ -124,7 +123,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         // of its type right and does not ask `canBeDeleted` (that is the
                         // owner's rule, not the moderators'), then its record. The marker makes
                         // the batch refund nobody: the document's owner forfeits the storage
-                        // fee. Only the moderator of a record this one replaces is still refunded.
+                        // fee.
                         operations.push(DocumentOperation(
                             DocumentOperationType::DeleteDocumentByModerator {
                                 document_id,
@@ -147,13 +146,10 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                     reason,
                                     removed_at,
                                 },
-                                replaces_existing: replaced_removal_moderator_id.is_some(),
                             },
                         ));
                         operations.push(ContractModerationOperation(
-                            ContractModerationOperationType::ForfeitStorageRefunds {
-                                except: replaced_removal_moderator_id,
-                            },
+                            ContractModerationOperationType::ForfeitStorageRefunds,
                         ));
                     }
                 }

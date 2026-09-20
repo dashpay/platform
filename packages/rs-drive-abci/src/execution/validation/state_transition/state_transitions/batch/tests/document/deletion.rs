@@ -100,6 +100,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -283,6 +286,14 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(
+                contact_request_document_type,
+                &entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document.set(
             "toUserId",
@@ -469,7 +480,7 @@ mod deletion_tests {
 
         let entropy = Bytes32::random_with_rng(&mut rng);
 
-        let document = note_document_type
+        let mut document = note_document_type
             .random_document_with_identifier_and_entropy(
                 &mut rng,
                 identity.id(),
@@ -479,6 +490,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(note_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut altered_document = document.clone();
         altered_document.set_revision(Some(1));
@@ -680,6 +694,14 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(
+                contact_request_document_type,
+                &entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document.set(
             "toUserId",
@@ -854,6 +876,14 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(
+                contact_request_document_type,
+                &entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document.set(
             "toUserId",
@@ -1133,6 +1163,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1312,6 +1345,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1486,7 +1522,7 @@ mod deletion_tests {
 
         let entropy = Bytes32::random_with_rng(&mut rng);
 
-        let document = preorder_document_type
+        let mut document = preorder_document_type
             .random_document_with_identifier_and_entropy(
                 &mut rng,
                 identity.id(),
@@ -1496,6 +1532,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(preorder_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut altered_document = document.clone();
 

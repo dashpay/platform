@@ -17,8 +17,8 @@ use std::collections::HashMap;
 impl Drive {
     /// A record is the document owner's id, the moderator's id, the removal time and the
     /// reason, under the document's id, flagged with the moderator's identity: the moderator
-    /// pays for it. Nothing ever deletes it. An existing record is replaced in place, as a
-    /// suspension is.
+    /// pays for it. Nothing ever deletes it, and nothing replaces it: a document id is produced
+    /// at most once.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contract_document_removal_operations_v0(
@@ -27,7 +27,6 @@ impl Drive {
         document_type_name: &str,
         document_id: Identifier,
         removal: &ContractDocumentRemoval,
-        replaces_existing: bool,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -59,19 +58,11 @@ impl Drive {
         ));
 
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if replaces_existing {
-            self.batch_replace(
-                path_key_element,
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
-        } else {
-            self.batch_insert(
-                path_key_element,
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
-        }
+        self.batch_insert(
+            path_key_element,
+            &mut batch_operations,
+            &platform_version.drive,
+        )?;
 
         Ok(batch_operations)
     }

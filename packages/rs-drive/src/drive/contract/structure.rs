@@ -13,8 +13,7 @@ const CONTRACT_FLAGS: &str =
      created in. System contracts created at genesis carry no flags.";
 const REMOVAL_FLAGS: &str =
     "The owner is the moderator who deleted the document. They pay for the record, \
-     which nothing deletes. A record replaced with a reason of another length passes \
-     to the moderator who replaced it.";
+     which nothing deletes or replaces.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
      refunded when it is removed. A suspension replaced with a longer reason \
@@ -143,8 +142,8 @@ pub(crate) fn structure() -> StructureNode {
                             )
                             .describe(
                                 "One removal: whose document it was, who removed it, \
-                                     when and why. Never deleted; replaced when a document \
-                                     of the same id is created and removed again.",
+                                     when and why. Never deleted and never replaced: a \
+                                     document id is produced at most once.",
                             ),
                         ),
                     ),

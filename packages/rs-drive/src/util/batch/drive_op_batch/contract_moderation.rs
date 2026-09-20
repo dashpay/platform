@@ -55,8 +55,9 @@ pub enum ContractModerationOperationType {
         /// The identity to unsuspend.
         identity_id: Identifier,
     },
-    /// Records that a moderator deleted a document. The deletion itself is an ordinary
-    /// document operation of the same batch.
+    /// Records that a moderator deleted a document. The deletion itself is a document
+    /// operation of the same batch. A document id is produced at most once, so a record is
+    /// written once and never replaced.
     AddDocumentRemoval {
         /// The moderated contract.
         contract_id: Identifier,
@@ -66,19 +67,11 @@ pub enum ContractModerationOperationType {
         document_id: Identifier,
         /// Whose it was, who removed it (and pays for the record), why and when.
         removal: ContractDocumentRemoval,
-        /// Whether a record of that id is already there, which is then replaced.
-        replaces_existing: bool,
     },
     /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
     /// (`Drive::apply_drive_operations` generation 1). A moderator's document deletion carries
     /// it, so the deleted document's owner gets no storage refund.
-    ForfeitStorageRefunds {
-        /// The one identity the batch still refunds: the moderator whose removal record the
-        /// deletion replaces, who paid for that record and is owed what a shorter one frees.
-        /// Whoever the document's storage flags name is not known without reading them (a
-        /// transfer may leave the first owner there), so the rule names who is spared.
-        except: Option<Identifier>,
-    },
+    ForfeitStorageRefunds,
 }
 
 impl DriveLowLevelOperationConverter for ContractModerationOperationType {
@@ -154,19 +147,17 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 document_type_name,
                 document_id,
                 removal,
-                replaces_existing,
             } => drive.add_contract_document_removal_operations(
                 contract_id,
                 &document_type_name,
                 document_id,
                 &removal,
-                replaces_existing,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
-            ContractModerationOperationType::ForfeitStorageRefunds { .. } => Ok(vec![]),
+            ContractModerationOperationType::ForfeitStorageRefunds => Ok(vec![]),
         }
     }
 }

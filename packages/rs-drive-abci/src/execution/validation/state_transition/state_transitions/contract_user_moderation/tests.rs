@@ -306,31 +306,37 @@ impl Setup {
 
     /// A document creation by `actor` on the contract, and the document it creates
     async fn create_document_keeping_it(&self, actor: &Actor) -> (Document, StateTransition) {
-        let (document, _, transition) = self
-            .create_document_of_type(actor, DOCUMENT_TYPE, None)
-            .await;
-        (document, transition)
+        self.create_document_of_type(actor, DOCUMENT_TYPE).await
     }
 
-    /// A creation by `actor` of a document of `document_type_name`, with the document and the
-    /// entropy its id derives from. Given the entropy of an earlier creation by the same actor,
-    /// the document gets the same id again.
+    /// A creation by `actor` of a document of `document_type_name`, and the document it creates
     async fn create_document_of_type(
         &self,
         actor: &Actor,
         document_type_name: &str,
-        entropy: Option<Bytes32>,
-    ) -> (Document, Bytes32, StateTransition) {
+    ) -> (Document, StateTransition) {
+        self.create_document_of_type_with(actor, document_type_name, |_| {})
+            .await
+    }
+
+    /// The same, with `modify` applied to the document before its creation is built
+    async fn create_document_of_type_with(
+        &self,
+        actor: &Actor,
+        document_type_name: &str,
+        modify: impl FnOnce(&mut Document),
+    ) -> (Document, StateTransition) {
         let platform_version = PlatformVersion::latest();
         let document_type = self
             .contract
             .document_type_for_name(document_type_name)
             .expect("expected the document type");
+        let creation_nonce = actor.contract_nonce();
         // The borrow ends before the await below (clippy::await_holding_refcell_ref).
         let (entropy, document) = {
             let mut rng = self.rng.borrow_mut();
-            let entropy = entropy.unwrap_or_else(|| Bytes32::random_with_rng(&mut rng));
-            let document = document_type
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let mut document = document_type
                 .random_document_with_identifier_and_entropy(
                     &mut rng,
                     actor.id(),
@@ -340,6 +346,10 @@ impl Setup {
                     platform_version,
                 )
                 .expect("expected a random document");
+            modify(&mut document);
+            document
+                .set_id_for_creation(document_type, &entropy.0, creation_nonce, platform_version)
+                .expect("expected to set the document id");
             (entropy, document)
         };
         let transition = BatchTransition::new_document_creation_transition_from_document(
@@ -347,7 +357,7 @@ impl Setup {
             document_type,
             entropy.0,
             &actor.key,
-            actor.contract_nonce(),
+            creation_nonce,
             0,
             None,
             &actor.signer,
@@ -356,7 +366,7 @@ impl Setup {
         )
         .await
         .expect("expected to build the document creation");
-        (document, entropy, transition)
+        (document, transition)
     }
 
     /// The record of a moderator's deletion of `document_id`, if there is one
@@ -1540,6 +1550,9 @@ async fn should_keep_a_barred_identity_from_receiving_or_selling_documents() {
             platform_version,
         )
         .expect("expected a random card");
+    let creation_nonce = seller.contract_nonce();
+    card.set_id_for_creation(card_type, &entropy.0, creation_nonce, platform_version)
+        .expect("expected to set the document id");
     card.set("attack", 4.into());
     card.set("defense", 7.into());
     let create = BatchTransition::new_document_creation_transition_from_document(
@@ -1547,7 +1560,7 @@ async fn should_keep_a_barred_identity_from_receiving_or_selling_documents() {
         card_type,
         entropy.0,
         &seller.key,
-        seller.contract_nonce(),
+        creation_nonce,
         0,
         None,
         &seller.signer,
@@ -1693,7 +1706,7 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
     let user_id = setup.user.id();
 
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
     assert_success(&setup.process(&create, &transaction));
     setup.commit(transaction);
     let balance_before = setup.balance(user_id, None);
@@ -1756,7 +1769,7 @@ async fn should_refund_the_author_who_deletes_the_same_post_themselves() {
     let user_id = setup.user.id();
 
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
     assert_success(&setup.process(&create, &transaction));
     setup.commit(transaction);
     let balance_before = setup.balance(user_id, None);
@@ -1793,15 +1806,11 @@ async fn should_refuse_a_document_deletion_that_breaks_a_rule() {
     let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
 
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
     assert_success(&setup.process(&create, &transaction));
-    let (owners_post, _, create) = setup
-        .create_document_of_type(&setup.owner, POST, None)
-        .await;
+    let (owners_post, create) = setup.create_document_of_type(&setup.owner, POST).await;
     assert_success(&setup.process(&create, &transaction));
-    let (moderators_post, _, create) = setup
-        .create_document_of_type(&setup.moderator, POST, None)
-        .await;
+    let (moderators_post, create) = setup.create_document_of_type(&setup.moderator, POST).await;
     assert_success(&setup.process(&create, &transaction));
     let (nice_document, create) = setup.create_document_keeping_it(&setup.user).await;
     assert_success(&setup.process(&create, &transaction));
@@ -1919,46 +1928,6 @@ async fn should_refuse_a_document_deletion_that_breaks_a_rule() {
 }
 
 #[tokio::test]
-async fn should_replace_the_record_when_a_post_created_again_is_removed_again() {
-    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
-
-    let transaction = setup.platform.drive.grove.start_transaction();
-    let (post, entropy, create) = setup.create_document_of_type(&setup.user, POST, None).await;
-    assert_success(&setup.process(&create, &transaction));
-    let delete = setup
-        .moderate(&setup.moderator, delete_action(POST, post.id()))
-        .await;
-    assert_success(&setup.process(&delete, &transaction));
-
-    // Nothing stops the author from creating the same id again: a record says a document of
-    // that id was removed, not that the id is gone for good.
-    let (again, _, create_again) = setup
-        .create_document_of_type(&setup.user, POST, Some(entropy))
-        .await;
-    assert_eq!(again.id(), post.id());
-    let later = BLOCK_TIME_MS + 60_000;
-    assert_success(&setup.process_at(&create_again, later, &transaction));
-
-    let delete_again = setup
-        .moderate(
-            &setup.owner,
-            ContractUserModerationAction::DeleteDocument {
-                document_type_name: POST.to_string(),
-                document_id: post.id(),
-                reason: ContractModerationReason::from_text("spam, again, and at more length"),
-            },
-        )
-        .await;
-    assert_success(&setup.process_at(&delete_again, later, &transaction));
-    let removal = setup
-        .post_removal(post.id(), Some(&transaction))
-        .expect("expected the record");
-    assert_eq!(removal.moderator_id, setup.owner.id());
-    assert_eq!(removal.removed_at, later);
-    assert_eq!(removal.reason.text, "spam, again, and at more length");
-}
-
-#[tokio::test]
 async fn should_tie_the_document_type_keyword_to_the_moderation_declaration() {
     // A document type moderators could delete from on a contract without moderation is
     // refused where the document type is parsed (`moderators_delete_tests` in dpp), with the
@@ -2041,12 +2010,18 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
     let transaction = setup.platform.drive.grove.start_transaction();
     let mut with_posts = setup.contract.clone();
     with_posts.increment_version();
-    add_document_type(&mut with_posts, POST, post_schema(true));
+    // `canBeDeleted: false`, so that what follows about references depends on the moderators'
+    // keyword alone.
+    add_document_type(
+        &mut with_posts,
+        POST,
+        post_schema_with(platform_value!({ "canBeDeleted": false })),
+    );
     let update = setup.contract_update(with_posts.clone()).await;
     assert_success(&setup.process(&update, &transaction));
     setup.contract = with_posts;
 
-    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
     assert_success(&setup.process(&create, &transaction));
     let delete = setup
         .moderate(&setup.moderator, delete_action(POST, post.id()))
@@ -2077,11 +2052,49 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
             "additionalProperties": false,
         }),
     );
-    let update = setup.contract_update(referring).await;
+    let update = setup.contract_update(referring.clone()).await;
     assert_paid_with_code(
         &setup.process(&update, &transaction),
         REFERENCED_DOCUMENT_TYPE_DELETABLE,
     );
+
+    // A deletable reference is what points at it: deletable means by anyone, the moderators
+    // included, whatever `canBeDeleted` says about a post's own author.
+    let bookmark_schema = referring
+        .document_type_for_name("bookmark")
+        .expect("expected the bookmark type")
+        .schema()
+        .clone();
+    let mut deletable_reference = bookmark_schema;
+    deletable_reference
+        .get_mut("properties")
+        .ok()
+        .flatten()
+        .and_then(|properties| properties.get_mut("postId").ok().flatten())
+        .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
+        .expect("expected the refersTo declaration")
+        .insert(
+            "type".to_string(),
+            Value::Text("deletableDocument".to_string()),
+        )
+        .expect("expected to set the reference kind");
+    let mut referring = setup.contract.clone();
+    referring.increment_version();
+    add_document_type(&mut referring, "bookmark", deletable_reference);
+    let update = setup.contract_update(referring.clone()).await;
+    assert_success(&setup.process(&update, &transaction));
+    setup.contract = referring;
+
+    // And at document write: a bookmark of a post that exists is admitted.
+    let (kept_post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let post_id = kept_post.id();
+    let (_, bookmark) = setup
+        .create_document_of_type_with(&setup.stranger, "bookmark", |bookmark| {
+            bookmark.set("postId", post_id.into())
+        })
+        .await;
+    assert_success(&setup.process(&bookmark, &transaction));
 }
 
 /// `post_schema(true)` with further document type keywords
@@ -2132,7 +2145,7 @@ async fn should_let_a_moderator_delete_a_post_its_author_can_not_delete() {
     .await;
 
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
     assert_success(&setup.process(&create, &transaction));
 
     let own_delete = own_post_deletion(&setup, &setup.user, post.clone()).await;
@@ -2152,7 +2165,7 @@ async fn should_let_a_moderator_delete_a_post_its_author_can_not_delete() {
     assert_success(&setup.process(&delete, &transaction));
     setup.commit(transaction);
     // The mempool's fee estimate runs the same deletion: it takes the next one too.
-    let (another, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (another, create) = setup.create_document_of_type(&setup.user, POST).await;
     let transaction = setup.platform.drive.grove.start_transaction();
     assert_success(&setup.process(&create, &transaction));
     setup.commit(transaction);
@@ -2186,7 +2199,7 @@ async fn should_delete_a_transferred_post_and_record_the_owner_it_had() {
     .await;
 
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (mut post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (mut post, create) = setup.create_document_of_type(&setup.user, POST).await;
     assert_success(&setup.process(&create, &transaction));
 
     post.set_revision(Some(2));
@@ -2274,7 +2287,7 @@ async fn should_charge_a_moderator_no_token_for_a_post_whose_deletion_costs_toke
     setup.contract = contract;
 
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
     assert_success(&setup.process(&create, &transaction));
 
     // The author holds no token and can not pay for the deletion.

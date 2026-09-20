@@ -3017,12 +3017,12 @@
                             "flags": [
                               "EpochOwned"
                             ],
-                            "flags_note": "The owner is the moderator who deleted the document. They pay for the record, which nothing deletes. A record replaced with a reason of another length passes to the moderator who replaced it.",
+                            "flags_note": "The owner is the moderator who deleted the document. They pay for the record, which nothing deletes or replaces.",
                             "value": "the document owner's id, the moderator's id, the block time in milliseconds of the removal as a u64 big endian, then the moderator's reason as in a banlist entry",
                             "since": 14,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                            "description": "One removal: whose document it was, who removed it, when and why. Never deleted; replaced when a document of the same id is created and removed again.",
+                            "description": "One removal: whose document it was, who removed it, when and why. Never deleted and never replaced: a document id is produced at most once.",
                             "children": []
                           }
                         ]

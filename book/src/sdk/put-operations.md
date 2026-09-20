@@ -111,20 +111,23 @@ let transition = if self.revision().is_some()
     )
 } else {
     // This is a new document -- generate entropy and create
-    let (document, entropy) = document_state_transition_entropy
-        .map(|e| (self.clone(), e))
-        .unwrap_or_else(|| {
+    let (document, entropy) = match document_state_transition_entropy {
+        Some(entropy) => (self.clone(), entropy),
+        None => {
             let mut rng = StdRng::from_entropy();
             let mut document = self.clone();
             let entropy = rng.gen::<[u8; 32]>();
-            document.set_id(Document::generate_document_id_v0(
+            document.set_id(Document::generate_document_id(
                 &document_type.data_contract_id(),
                 &document.owner_id(),
                 document_type.name(),
                 entropy.as_slice(),
-            ));
+                new_identity_contract_nonce,
+                sdk.version(),
+            )?);
             (document, entropy)
-        });
+        }
+    };
 
     BatchTransition::new_document_creation_transition_from_document(
         document,
@@ -142,8 +145,11 @@ let transition = if self.revision().is_some()
 ```
 
 For new documents, the SDK generates 32 bytes of entropy (unless you provide your own)
-and uses it to deterministically generate the document ID. This ensures the same
-inputs always produce the same document ID.
+and derives the document ID from it and, from protocol version 14, from the identity
+contract nonce it just fetched. `sdk.version()` tracks the network's protocol version,
+so the SDK switches derivation when the network does. Because the ID depends on the
+nonce, the ID on the document you pass in is a placeholder: use the ID of the confirmed
+document that `put_to_platform_and_wait_for_response` returns.
 
 ### Step 3: Validate Structure
 

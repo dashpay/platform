@@ -9,13 +9,9 @@ use dpp::fee::fee_result::FeeResult;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb_costs::storage_cost::removal::{
-    StorageRemovalPerEpochByIdentifier, StorageRemovedBytes,
-};
-use intmap::IntMap;
+use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
 
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
@@ -42,8 +38,8 @@ impl Drive {
     /// If not, it only estimates the costs and updates estimated costs with layer info.
     ///
     /// Generation 1 (protocol version 14) is generation 0, and a batch that carries a storage
-    /// refund forfeiture ([`DriveOperation::storage_refund_forfeiture`], a moderator's document
-    /// deletion) refunds nobody but the identity the forfeiture spares: the bytes it removes still leave the system, but whoever paid
+    /// refund forfeiture ([`DriveOperation::forfeits_storage_refunds`], a moderator's document
+    /// deletion) refunds nobody: the bytes it removes still leave the system, but whoever paid
     /// for them gets nothing back, and the credits stay in the storage pools they were
     /// distributed to. An estimate carries no refund to begin with, so `check_tx` sees the
     /// same fee with or without the forfeiture.
@@ -60,9 +56,9 @@ impl Drive {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
-        let storage_refund_forfeiture = operations
+        let forfeits_storage_refunds = operations
             .iter()
-            .find_map(DriveOperation::storage_refund_forfeiture);
+            .any(DriveOperation::forfeits_storage_refunds);
         // With no caller transaction, TTL preparation (direct drainage
         // writes), conversion reads, and the batch apply would each commit
         // on their own, so a conversion error after preparation would leave
@@ -118,8 +114,8 @@ impl Drive {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }
 
-        if let Some(spared) = storage_refund_forfeiture {
-            forfeit_storage_refunds(&mut cost_operations, spared);
+        if forfeits_storage_refunds {
+            forfeit_storage_refunds(&mut cost_operations);
         }
 
         // Execute drive operation callbacks after updating state. Nothing was written when
@@ -143,52 +139,31 @@ impl Drive {
     }
 }
 
-/// The identity GroveDB's removal sections use for storage nobody owns, which the fee
-/// calculation counts as removed from the system and refunds to nobody.
-const NOBODY: [u8; 32] = [0; 32];
-
-/// Turns every removal attributed to an identity other than `spared` into a removal attributed
-/// to nobody: the same bytes leave the system (`FeeResult::removed_bytes_from_system`), and no
-/// refund is computed for them. What is attributed to `spared` stays as it is.
-fn forfeit_storage_refunds(
-    cost_operations: &mut [LowLevelDriveOperation],
-    spared: Option<Identifier>,
-) {
+/// Turns every removal attributed to an identity into a removal attributed to nobody: the same
+/// bytes leave the system (`FeeResult::removed_bytes_from_system`), and no refund is computed
+/// for them. The whole batch, which is exact: a moderator's deletion removes the document and
+/// nothing else, since its removal record is written once (a document id is produced at most
+/// once) and the nonce it bumps keeps its size.
+fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {
         let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation else {
             continue;
         };
-        let StorageRemovedBytes::SectionedStorageRemoval(sections) =
-            &mut cost.storage_cost.removed_bytes
-        else {
-            continue;
-        };
-        let kept = spared.and_then(|identity| sections.remove_entry(identity.as_bytes()));
-        let forfeited: u32 = sections
-            .values()
-            .flat_map(|per_epoch| per_epoch.values())
-            .sum();
-        cost.storage_cost.removed_bytes = match kept {
-            None => StorageRemovedBytes::BasicStorageRemoval(forfeited),
-            Some((identity, per_epoch)) => {
-                let mut sections = StorageRemovalPerEpochByIdentifier::default();
-                sections.insert(identity, per_epoch);
-                if forfeited > 0 {
-                    let mut to_nobody = IntMap::new();
-                    to_nobody.insert(0u16, forfeited);
-                    sections.insert(NOBODY, to_nobody);
-                }
-                StorageRemovedBytes::SectionedStorageRemoval(sections)
-            }
-        };
+        if let StorageRemovedBytes::SectionedStorageRemoval(_) = &cost.storage_cost.removed_bytes {
+            let removed_bytes = cost.storage_cost.removed_bytes.total_removed_bytes();
+            cost.storage_cost.removed_bytes =
+                StorageRemovedBytes::BasicStorageRemoval(removed_bytes);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use grovedb_costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
     use grovedb_costs::storage_cost::StorageCost;
     use grovedb_costs::OperationCost;
+    use intmap::IntMap;
 
     #[test]
     fn should_attribute_a_forfeited_removal_to_nobody() {
@@ -217,7 +192,7 @@ mod tests {
             }),
         ];
 
-        forfeit_storage_refunds(&mut cost_operations, None);
+        forfeit_storage_refunds(&mut cost_operations);
 
         let removed: Vec<&StorageRemovedBytes> = cost_operations
             .iter()
@@ -234,41 +209,6 @@ mod tests {
                 &StorageRemovedBytes::BasicStorageRemoval(42),
                 &StorageRemovedBytes::BasicStorageRemoval(9),
             ]
-        );
-    }
-
-    #[test]
-    fn should_keep_what_is_owed_to_the_spared_identity() {
-        let section = |epoch: u16, bytes: u32| {
-            let mut per_epoch = IntMap::new();
-            per_epoch.insert(epoch, bytes);
-            per_epoch
-        };
-        let mut removal = StorageRemovalPerEpochByIdentifier::default();
-        removal.insert([7; 32], section(0, 40));
-        removal.insert([8; 32], section(2, 5));
-        let mut cost_operations = vec![LowLevelDriveOperation::CalculatedCostOperation(
-            OperationCost {
-                storage_cost: StorageCost {
-                    added_bytes: 0,
-                    replaced_bytes: 0,
-                    removed_bytes: StorageRemovedBytes::SectionedStorageRemoval(removal),
-                },
-                ..Default::default()
-            },
-        )];
-
-        forfeit_storage_refunds(&mut cost_operations, Some(Identifier::from([8; 32])));
-
-        let mut expected = StorageRemovalPerEpochByIdentifier::default();
-        expected.insert([8; 32], section(2, 5));
-        expected.insert(NOBODY, section(0, 40));
-        let LowLevelDriveOperation::CalculatedCostOperation(cost) = &cost_operations[0] else {
-            unreachable!("a calculated cost was given");
-        };
-        assert_eq!(
-            cost.storage_cost.removed_bytes,
-            StorageRemovedBytes::SectionedStorageRemoval(expected)
         );
     }
 }

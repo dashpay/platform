@@ -17,6 +17,26 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(crate) trait DocumentReferenceValidation {
+    /// Whether the top-level `property` of this document's type is a
+    /// `refersTo: deletableDocument` reference whose target `referenced_id`
+    /// is no longer in state. `false` for any other property.
+    ///
+    /// Read by the immutable-property check on replaces: clearing an
+    /// `immutable` deletableDocument reference is the one way left to
+    /// rewrite a document whose target was deleted, and it is only allowed
+    /// once the target really is gone.
+    #[allow(clippy::too_many_arguments)]
+    fn deletable_document_reference_target_is_gone(
+        &self,
+        property: &str,
+        referenced_id: Identifier,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error>;
+
     /// Validates the document's `refersTo` references against platform state.
     ///
     /// When `changed_fields` is provided (replace transitions), only references on
@@ -43,6 +63,41 @@ pub(crate) trait DocumentReferenceValidation {
 }
 
 impl DocumentReferenceValidation for DocumentBaseTransitionAction {
+    fn deletable_document_reference_target_is_gone(
+        &self,
+        property: &str,
+        referenced_id: Identifier,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .document_reference_validation
+        {
+            0 => self.deletable_document_reference_target_is_gone_v0(
+                property,
+                referenced_id,
+                platform,
+                block_info,
+                transaction,
+                execution_context,
+                platform_version,
+            ),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "DocumentBaseTransitionAction::deletable_document_reference_target_is_gone"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
     fn validate_document_references(
         &self,
         document_data: &BTreeMap<String, Value>,

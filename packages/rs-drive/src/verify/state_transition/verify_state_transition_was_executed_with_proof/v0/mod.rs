@@ -2714,8 +2714,8 @@ impl Drive {
 
 /// A moderator's document deletion is proved by the record it left: the one of the document
 /// named, saying that the transition's signer removed it for the transition's reason. When is
-/// the block's to say, and whose the document was only the record knows. Nothing is said about
-/// the document itself, whose id its author may create again.
+/// the block's to say, and whose the document was only the record knows. A document id is
+/// produced at most once, so the record is of that document and of no other.
 fn verify_contract_document_deletion_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,

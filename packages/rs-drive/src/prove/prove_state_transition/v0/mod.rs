@@ -256,8 +256,8 @@ impl Drive {
             // The lists the moderation touched: a ban also removes a suspension, so it proves
             // every list the contract keeps (the banlist entry present, the suspension absent);
             // an unban, a suspend and an unsuspend prove the one entry they edit.
-            // A document deletion proves the record it left, and nothing about the document,
-            // whose id its author may create again.
+            // A document deletion proves the record it left: a document id is produced at most
+            // once, so the record is of that document and the document is gone.
             StateTransition::ContractUserModeration(st) => {
                 let contract_id = st.data_contract_id();
                 if let Some((document_type_name, document_id)) = st.action().document() {

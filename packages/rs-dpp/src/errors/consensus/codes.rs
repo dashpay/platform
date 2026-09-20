@@ -353,6 +353,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentImmutablePropertyChangedError(_) => 40128,
             Self::GasFeesPaidByNotAllowedError(_) => 40129,
             Self::InconsistentGasFeesPaidByInBatchError(_) => 40130,
+            Self::ReferencedDocumentTypeNotDeletableError(_) => 40131,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

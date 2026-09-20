@@ -93,6 +93,11 @@ impl LimitedKeySetup {
             .expect("expected a document");
         set_valid_profile_payment_addresses(&mut document, profile);
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        // the id commits to the nonce of the creation, which `profile_creation` sends with
+        // the first identity contract nonce
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, version)
+            .expect("expected to set the document id");
         (document, entropy)
     }
 

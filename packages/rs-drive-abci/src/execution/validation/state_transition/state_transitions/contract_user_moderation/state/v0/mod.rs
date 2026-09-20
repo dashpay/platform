@@ -217,9 +217,8 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
 /// exists, and it is not the owner's or a moderator's. Every refusal is paid for by
 /// bumping the signer's contract nonce.
 ///
-/// The action carries the contract, the document's owner and the moderator of a removal
-/// record already stored for the same document id, so Drive deletes the document and writes
-/// its record without reading again. Nothing the document type prices is charged, neither
+/// The action carries the contract and the document's owner, so Drive deletes the document
+/// and writes its record without reading again. Nothing the document type prices is charged, neither
 /// its deletion token cost nor its `actionFees` deletion fee: both are what a document's own
 /// owner pays for deleting it, and a moderator removes content on the contract's behalf.
 #[allow(clippy::too_many_arguments)]
@@ -300,21 +299,9 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         );
     }
 
-    // A document id can be created again by its author; removing it again replaces the
-    // record. The read is not only there to pick a replace over an insert, which an
-    // insert-or-replace would spare: the moderator who paid for the record being replaced is
-    // the one identity this deletion still refunds (a shorter record frees bytes they paid
-    // for), and only the record says who that is.
-    let (fee, existing_removal) = platform.drive.fetch_contract_document_removal_with_fee(
-        contract_id,
-        document_type_name,
-        document_id,
-        &block_info.epoch,
-        tx,
-        platform_version,
-    )?;
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-
+    // The record this deletion leaves is always new: a document id is produced at most once
+    // (it commits to the nonce of its create transition), so no earlier removal can have
+    // recorded this id and nothing has to be read to write it.
     Ok(ConsensusValidationResult::new_with_data(
         ContractUserModerationTransitionAction::from_borrowed_transition_with_document_deletion(
             transition,
@@ -322,7 +309,6 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
                 data_contract_fetch_info: Arc::clone(contract_fetch_info),
                 document_owner_id,
                 removed_at: block_info.time_ms,
-                replaced_removal_moderator_id: existing_removal.map(|removal| removal.moderator_id),
             },
         )
         .into(),

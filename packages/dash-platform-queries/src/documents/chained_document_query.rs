@@ -38,8 +38,11 @@ pub struct ChainedDocumentQuery {
     /// The inner query (the subselect).
     pub inner: DocumentQuery,
     /// The inner property whose proven values become the outer `$id`s.
-    /// Must carry a same-contract `refersTo: permanentDocument`
-    /// declaration targeting `outer_document_type_name`.
+    /// Must carry a same-contract `refersTo: permanentDocument` or
+    /// `refersTo: deletableDocument` declaration targeting
+    /// `outer_document_type_name`. With the latter, a join value whose
+    /// document was deleted since has no outer document and is reported
+    /// among the result's missing outer ids.
     pub join_property: String,
     /// The outer (joined) document type — the `refersTo` target.
     pub outer_document_type_name: String,

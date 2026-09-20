@@ -150,14 +150,12 @@ fn record<'a>(
     contract_id: Identifier,
     document_id: Identifier,
     removal: ContractDocumentRemoval,
-    replaces_existing: bool,
 ) -> DriveOperation<'a> {
     ContractModerationOperation(ContractModerationOperationType::AddDocumentRemoval {
         contract_id,
         document_type_name: POST.to_string(),
         document_id,
         removal,
-        replaces_existing,
     })
 }
 
@@ -256,7 +254,6 @@ fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
             contract.id(),
             document_id,
             removal(1, 2, "spam", 10),
-            false,
         )],
         true,
     );
@@ -331,7 +328,6 @@ fn should_create_the_removals_tree_with_the_first_document_type_an_update_adds()
             contract.id(),
             document_id,
             removal(1, 2, "spam", 10),
-            false,
         )],
         true,
     );
@@ -488,7 +484,6 @@ fn should_record_read_and_prove_removals() {
                 contract_id,
                 entry.document_id,
                 entry.removal.clone(),
-                false,
             )],
             true,
         );
@@ -572,68 +567,6 @@ fn should_refuse_a_read_out_of_bounds() {
 }
 
 #[test]
-fn should_replace_the_record_of_a_document_id_removed_again() {
-    let platform_version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
-    let document_id = identity(0x31);
-
-    apply(
-        &drive,
-        vec![record(
-            contract.id(),
-            document_id,
-            removal(1, 2, "spam", 10),
-            false,
-        )],
-        true,
-    );
-    let (_, stored) = drive
-        .fetch_contract_document_removal_with_fee(
-            contract.id(),
-            POST,
-            document_id,
-            &Epoch::new(0).expect("epoch"),
-            None,
-            platform_version,
-        )
-        .expect("expected to read the record");
-    assert_eq!(stored, Some(removal(1, 2, "spam", 10)));
-
-    // Its author created the id again, and another moderator removed it again.
-    let again = removal(1, 3, "spam, again, with a longer explanation", 20);
-    apply(
-        &drive,
-        vec![record(contract.id(), document_id, again.clone(), true)],
-        true,
-    );
-    assert_removals(
-        &drive,
-        contract.id(),
-        &by_ids(&[document_id]),
-        vec![ContractDocumentRemovalEntry {
-            document_id,
-            removal: again,
-        }],
-    );
-
-    // A document with no record reads as none, billed all the same.
-    let (fee, none) = drive
-        .fetch_contract_document_removal_with_fee(
-            contract.id(),
-            POST,
-            identity(0x55),
-            &Epoch::new(0).expect("epoch"),
-            None,
-            platform_version,
-        )
-        .expect("expected to read the absence of a record");
-    assert_eq!(none, None);
-    assert!(fee.processing_fee > 0);
-}
-
-#[test]
 fn should_estimate_a_record_at_no_less_than_it_costs() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -651,7 +584,6 @@ fn should_estimate_a_record_at_no_less_than_it_costs() {
                 contract.id(),
                 identity(text.len() as u8),
                 removal(1, 2, text, 10),
-                false,
             )]
         };
         let estimated = apply(&drive, operations(), false);
@@ -721,8 +653,8 @@ fn delete_post_by_moderator<'a>(
     })
 }
 
-fn forfeit<'a>(except: Option<Identifier>) -> DriveOperation<'a> {
-    ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds { except })
+fn forfeit<'a>() -> DriveOperation<'a> {
+    ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds)
 }
 
 #[test]
@@ -768,9 +700,8 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                     reason: ContractModerationReason::from_text("spam"),
                     removed_at: 10,
                 },
-                false,
             ),
-            forfeit(None),
+            forfeit(),
         ]
     };
     let estimated = apply(&drive, operations(), false);
@@ -848,18 +779,12 @@ fn should_delete_for_a_moderator_a_document_its_owner_can_not_delete() {
     // The moderators' is not, estimated or applied.
     apply(
         &drive,
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            forfeit(None),
-        ],
+        vec![delete_post_by_moderator(&contract, post.id()), forfeit()],
         false,
     );
     apply(
         &drive,
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            forfeit(None),
-        ],
+        vec![delete_post_by_moderator(&contract, post.id()), forfeit()],
         true,
     );
     let post_is_stored = drive
@@ -873,63 +798,6 @@ fn should_delete_for_a_moderator_a_document_its_owner_can_not_delete() {
         )
         .expect("expected to query the posts");
     assert!(!post_is_stored);
-}
-
-#[test]
-fn should_still_refund_the_moderator_whose_record_a_deletion_replaces() {
-    let platform_version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
-    let author = identity(0x41);
-    let first_moderator = identity(0x42);
-    let second_moderator = identity(0x43);
-
-    // A first removal with a long reason, which its moderator pays for.
-    let post = add_post(&drive, &contract, author);
-    let record_of = |moderator_id: Identifier, text: &str| ContractDocumentRemoval {
-        document_owner_id: author,
-        moderator_id,
-        reason: ContractModerationReason::from_text(text),
-        removed_at: 10,
-    };
-    apply(
-        &drive,
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            record(
-                contract.id(),
-                post.id(),
-                record_of(first_moderator, &"x".repeat(600)),
-                false,
-            ),
-            forfeit(None),
-        ],
-        true,
-    );
-
-    // The author creates the same post again, and another moderator removes it with no reason
-    // at all: the shorter record frees bytes the first moderator paid for.
-    let post = add_post(&drive, &contract, author);
-    let again = apply(
-        &drive,
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            record(
-                contract.id(),
-                post.id(),
-                record_of(second_moderator, ""),
-                true,
-            ),
-            forfeit(Some(first_moderator)),
-        ],
-        true,
-    );
-
-    // The first moderator is refunded, and nobody else: not the author for the post.
-    let refunded: Vec<&[u8; 32]> = again.fee_refunds.0.keys().collect();
-    assert_eq!(refunded, vec![first_moderator.as_bytes()]);
-    assert!(again.removed_bytes_from_system > 0);
 }
 
 #[test]

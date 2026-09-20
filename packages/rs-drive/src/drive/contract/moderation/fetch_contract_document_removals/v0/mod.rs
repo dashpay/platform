@@ -1,19 +1,15 @@
 use crate::drive::contract::moderation::types::{
-    decode_document_removal, ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
+    ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
 };
-use crate::drive::contract::paths::{
-    contract_document_removals_path, contract_document_type_removals_path,
-};
+use crate::drive::contract::paths::contract_document_removals_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
-use dpp::data_contract::config::moderation::ContractDocumentRemoval;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     #[inline(always)]
@@ -76,39 +72,5 @@ impl Drive {
                 )
             })
             .collect()
-    }
-
-    #[inline(always)]
-    pub(super) fn fetch_contract_document_removal_add_to_operations_v0(
-        &self,
-        contract_id: Identifier,
-        document_type_name: &str,
-        document_id: Identifier,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<ContractDocumentRemoval>, Error> {
-        let element = self.grove_get_raw_optional(
-            (&contract_document_type_removals_path(contract_id.as_slice(), document_type_name))
-                .into(),
-            document_id.as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )?;
-        let malformed = |description: String| {
-            Error::Drive(DriveError::CorruptedDriveState(format!(
-                "contract {} {} document removal of {} is malformed: {}",
-                contract_id, document_type_name, document_id, description
-            )))
-        };
-        match element {
-            None => Ok(None),
-            Some(Element::Item(value, _)) => {
-                decode_document_removal(&value).map(Some).map_err(malformed)
-            }
-            Some(_) => Err(malformed("not an item".to_string())),
-        }
     }
 }

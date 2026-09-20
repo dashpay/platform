@@ -715,7 +715,6 @@ mod fixtures {
                             reason: ContractModerationReason::from_text("spam"),
                             removed_at: 1_000,
                         },
-                        replaces_existing: false,
                     },
                 )],
                 true,

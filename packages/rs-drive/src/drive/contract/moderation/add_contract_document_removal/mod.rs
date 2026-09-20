@@ -14,9 +14,8 @@ use std::collections::HashMap;
 
 impl Drive {
     /// The operations recording that a moderator deleted a document: the record under the
-    /// document's type, keyed by the document's id. `replaces_existing` says a record of that
-    /// id is already there (its author created the id again and it is removed again), as read
-    /// when the transition was validated.
+    /// document's type, keyed by the document's id. A document id is produced at most once
+    /// (it commits to the nonce of its create transition), so the record is always new.
     #[allow(clippy::too_many_arguments)]
     pub fn add_contract_document_removal_operations(
         &self,
@@ -24,7 +23,6 @@ impl Drive {
         document_type_name: &str,
         document_id: Identifier,
         removal: &ContractDocumentRemoval,
-        replaces_existing: bool,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -44,7 +42,6 @@ impl Drive {
                 document_type_name,
                 document_id,
                 removal,
-                replaces_existing,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

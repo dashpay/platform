@@ -8,10 +8,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// The document itself is gone; this is what is left to say that it was removed, not lost:
 /// whose it was, who removed it, why and when. It is stored under the contract, by document
-/// type then document id, paid for by the moderator, and never deleted. A document id can be
-/// created again by its author, and a second removal of the same id replaces the record, so a
-/// record means "a document with this id was removed at this time", not "this id is gone for
-/// good".
+/// type then document id, paid for by the moderator, and never deleted. It is final: a
+/// document id commits to the nonce of its create transition and is produced at most once, so
+/// the removed id can not be created again and no second removal can replace the record.
 #[derive(
     Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
 )]

@@ -1,8 +1,10 @@
 mod action_fees;
 mod creation;
+mod deletable_document_reference;
 mod deletion;
 mod dpns;
 mod gas_sponsorship;
+mod id_reuse;
 mod immutable;
 mod index_only;
 mod keep_history;

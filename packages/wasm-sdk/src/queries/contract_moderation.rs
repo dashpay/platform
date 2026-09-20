@@ -129,9 +129,8 @@ export interface ContractDocumentRemovalsQuery {
 }
 
 /**
- * The record a contract keeps of one document a moderator deleted. A document id can be
- * created again by its author, so a record says a document with this id was removed at that
- * time, not that the id is gone for good.
+ * The record a contract keeps of one document a moderator deleted. It is final: a document id
+ * is produced at most once, so the removed id can not be created again.
  */
 export interface ContractDocumentRemovalEntry {
   documentId: string;

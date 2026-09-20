@@ -775,7 +775,7 @@ async fn should_let_a_live_contract_gain_fees_through_a_new_document_type() {
         .expect("expected the paid note document type");
     let mut rng = StdRng::seed_from_u64(7);
     let entropy = Bytes32::random_with_rng(&mut rng);
-    let document = paid_note
+    let mut document = paid_note
         .random_document_with_identifier_and_entropy(
             &mut rng,
             setup.stranger.id(),
@@ -785,12 +785,16 @@ async fn should_let_a_live_contract_gain_fees_through_a_new_document_type() {
             platform_version,
         )
         .expect("expected a random paid note");
+    let creation_nonce = setup.stranger.contract_nonce();
+    document
+        .set_id_for_creation(paid_note, &entropy.0, creation_nonce, platform_version)
+        .expect("expected to set the document id");
     let creation = BatchTransition::new_document_creation_transition_from_document(
         document,
         paid_note,
         entropy.0,
         &setup.stranger.key,
-        setup.stranger.contract_nonce(),
+        creation_nonce,
         0,
         None,
         &setup.stranger.signer,

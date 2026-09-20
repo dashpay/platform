@@ -2485,8 +2485,10 @@ pub(super) fn apply_index_only(
         // The terminal is the member key — it must be a referable entity id:
         // the owner identity, or a property carrying a refersTo declaration
         // whose value alone IS the referenced entity's id (identity,
-        // contract, token, or permanent document — all kinds that can never
-        // dangle). `identityPublicKey` is deliberately NOT admitted: it is a
+        // contract, token, or a document of either reference kind; a
+        // deletable document's entries simply outlive it, as the member key
+        // is an Item, not a Reference). `identityPublicKey` is deliberately
+        // NOT admitted: it is a
         // compound reference — this property carries the identity id while a
         // separate `keyIdProperty` carries the key id — so a terminal keyed
         // by it would conflate references to different keys of the same
@@ -2502,14 +2504,16 @@ pub(super) fn apply_index_only(
                                 | DocumentPropertyReferenceTarget::Contract
                                 | DocumentPropertyReferenceTarget::Token
                                 | DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                                | DocumentPropertyReferenceTarget::DeletableDocument { .. }
                         )
                     ) => {}
                 Some(_) => {
                     return Err(structure_error(format!(
                         "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
                          must be \"$ownerId\" or an identifier property with a refersTo \
-                         declaration targeting identity, contract, token, or \
-                         permanentDocument: the terminal is the entry's member key and must \
+                         declaration targeting identity, contract, token, \
+                         permanentDocument, or deletableDocument: the terminal is the \
+                         entry's member key and must \
                          alone be a referable entity id (an identityPublicKey reference is \
                          compound — its key id lives in a separate property — and is not \
                          admitted)",
@@ -2625,7 +2629,9 @@ pub(super) fn apply_index_only(
                  but its path is not determined by a reference: every index property must \
                  be either a property with a same-contract permanentDocument `refersTo` \
                  declaration (the referring property — its value is the referenced \
-                 document's $id) or a key of that declaration's `propertyAgreement` \
+                 document's $id; a deletableDocument declaration does not qualify, \
+                 since the trees would outlive a deleted target) or a key of that \
+                 declaration's `propertyAgreement` \
                  (consensus-equal to a referenced-document property, which may be the \
                  referenced document's $ownerId or $creatorId). The referring document's \
                  OWN system properties like $ownerId cannot be determined by the \

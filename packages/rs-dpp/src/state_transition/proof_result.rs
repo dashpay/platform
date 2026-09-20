@@ -158,8 +158,8 @@ pub enum StateTransitionProofResult {
     /// Returned by a `ContractUserModeration` that deletes a document: the record the removal
     /// left under the contract (contract id, document type name, document id, record). The
     /// proof shows the record, and the verifier checks that it names the transition's signer
-    /// and carries the transition's reason. It says nothing about the document itself, whose
-    /// id its author may create again.
+    /// and carries the transition's reason. A document id is produced at most once, so the
+    /// record is of this document and of no other.
     VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
 }
 

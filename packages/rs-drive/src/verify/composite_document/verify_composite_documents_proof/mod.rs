@@ -21,8 +21,10 @@ impl DriveDocumentQuery<'_> {
     /// enforces every component's per-instance limit and range
     /// completeness. The proven results are then routed back to their
     /// components: an entry no derivation asked for is an invalid proof,
-    /// so is a by-id join missing a referenced document (a
-    /// `permanentDocument` reference cannot dangle), and so is any
+    /// so is a by-id join off a `permanentDocument` property missing a
+    /// referenced document (such a reference cannot dangle; off a
+    /// `deletableDocument` property the proven-absent document is left
+    /// out instead), and so is any
     /// divergence between the values the proven page derives and the
     /// candidates the query was built from. A proof covering only the
     /// page (an old node serving the plain query) fails the full pass

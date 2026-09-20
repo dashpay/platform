@@ -227,7 +227,6 @@ mod tests {
                         document_type_name: POST.to_string(),
                         document_id: Identifier::from([seed; 32]),
                         removal: removal(seed),
-                        replaces_existing: false,
                     },
                 )],
                 true,

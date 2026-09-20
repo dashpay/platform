@@ -1120,7 +1120,7 @@ impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
 
 /// Wire shape for `ChainedDocuments` mock round-trip: both halves as
 /// per-document CBOR lists.
-type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>);
+type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<[u8; 32]>);
 
 impl MockResponse for drive_proof_verifier::ChainedDocuments {
     /// Both halves as per-document CBOR, bincode-framed as
@@ -1138,6 +1138,10 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
                 .iter()
                 .map(|d| d.to_cbor().expect("encode outer document"))
                 .collect(),
+            self.missing_outer_ids
+                .iter()
+                .map(|id| id.to_buffer())
+                .collect(),
         );
         bincode::encode_to_vec(halves, bincode_config).expect("encode ChainedDocuments")
     }
@@ -1147,7 +1151,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((inner, outer), _): (MockChainedHalves, _) =
+        let ((inner, outer, missing), _): (MockChainedHalves, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode ChainedDocuments");
         let decode = |bufs: Vec<Vec<u8>>| {
             bufs.into_iter()
@@ -1159,6 +1163,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
         drive_proof_verifier::ChainedDocuments {
             inner_documents: decode(inner),
             outer_documents: decode(outer),
+            missing_outer_ids: missing.into_iter().map(Identifier::from).collect(),
         }
     }
 }
@@ -1169,7 +1174,11 @@ type MockCompositeSubResult = (bool, Vec<Vec<u8>>, DocumentSplitCountTriples);
 
 /// Wire shape for `CompositeDocuments` mock round-trip: the page as a
 /// per-document CBOR list, then one entry per sub-query.
-type MockCompositeShape = (Vec<Vec<u8>>, Vec<MockCompositeSubResult>);
+type MockCompositeShape = (
+    Vec<Vec<u8>>,
+    Vec<MockCompositeSubResult>,
+    Vec<Vec<[u8; 32]>>,
+);
 
 impl MockResponse for drive_proof_verifier::CompositeDocuments {
     /// The page and every documents sub-result as per-document CBOR,
@@ -1203,6 +1212,10 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
                     ),
                 })
                 .collect(),
+            self.sub_result_missing_ids
+                .iter()
+                .map(|ids| ids.iter().map(|id| id.to_buffer()).collect())
+                .collect(),
         );
         bincode::encode_to_vec(shape, bincode_config).expect("encode CompositeDocuments")
     }
@@ -1212,7 +1225,7 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((page, sub_results), _): (MockCompositeShape, _) =
+        let ((page, sub_results, missing_ids), _): (MockCompositeShape, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode CompositeDocuments");
         let decode = |bufs: Vec<Vec<u8>>| -> Vec<Document> {
             bufs.into_iter()
@@ -1243,6 +1256,10 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
                         )
                     }
                 })
+                .collect(),
+            sub_result_missing_ids: missing_ids
+                .into_iter()
+                .map(|ids| ids.into_iter().map(Identifier::from).collect())
                 .collect(),
         }
     }

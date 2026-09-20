@@ -196,8 +196,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   create state validation to 2, enforcing `refersTo` document references
 ///   and rejecting a non-contested create whose id is already present in the
 ///   contested tree. Document replace state validation 1 enforces the same
-///   reference checks. v13 keeps the v9 table and therefore keeps
-///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
+///   reference checks, re-validates a `refersTo: deletableDocument`
+///   reference on every replace (a dead one must be repointed or cleared),
+///   and lets an `immutable` one be cleared once its target is deleted.
+///   v13 keeps the v9 table and therefore keeps accepting all of these, so
+///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
@@ -378,11 +381,36 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     on, `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds its converter, and
 ///     the verify table gains `verify_contract_fee_pots`.
 ///
-/// 18. **Document deletion by moderators**: a document type of a contract
+/// 18. **Document ids commit to the identity contract nonce**: up to v13 a new
+///     document's id hashed the contract, owner, document type and the entropy
+///     of the create transition, and the create check only asks whether a
+///     document exists under the id right now. The owner of a deleted
+///     document could therefore create another one under the same id by
+///     reusing the entropy, with different content, and everything that
+///     referenced the id (a `refersTo` property, a like, a moderation removal
+///     record) then pointed at the new content, which defeats
+///     `documentsMutable: false` for a deletable document type.
+///     `DOCUMENT_VERSIONS_V4` sets `generate_document_id` to 1: the id also
+///     hashes a domain tag and the identity contract nonce of the create
+///     transition, which is consumed at most once, so an id can be produced
+///     at most once. The entropy stays in the hash (ids remain
+///     unpredictable) and on the wire (the transition format is unchanged);
+///     batch advanced structure validation 1, which only this version
+///     selects, recomputes the id through `Document::generate_document_id`
+///     and bills both passes of the double SHA-256 by the real preimage
+///     length (4 blocks for most document type names) where v13 bills a
+///     flat 2.
+///     Ids of documents created before the upgrade can not be produced by
+///     the new derivation either. A client that still derives the entropy
+///     only id has every create rejected with
+///     `InvalidDocumentTransitionIdError`.
+///
+/// 19. **Document deletion by moderators**: a document type of a contract
 ///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
-///     history, is indexOnly or restricts creation, and never the target of a
-///     permanentDocument reference). A moderation declaration may then keep
+///     history, is indexOnly or restricts creation; for references such a type
+///     is deletable, so a permanentDocument reference refuses it and a
+///     deletableDocument reference accepts it). A moderation declaration may then keep
 ///     no list at all. `ContractUserModeration` gains the `DeleteDocument`
 ///     action: the owner or a moderator deletes a document of such a type,
 ///     except the owner's and the moderators' own, with a reason like a
@@ -395,10 +423,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract's first. The deleted document's
 ///     owner gets no storage refund: `apply_drive_operations = 1`
 ///     (`DRIVE_VERSION_V9`) attributes the removal of a batch that carries
-///     the forfeiture to nobody, so the credits stay in the storage pools;
-///     only the moderator of a record the deletion replaces is still
-///     refunded. Neither the type's deletion token cost nor its `actionFees`
-///     deletion fee is charged.
+///     the forfeiture to nobody, so the credits stay in the storage pools.
+///     A record is final, since a document id is produced at most once (18).
+///     Neither the type's deletion token cost nor its `actionFees` deletion
+///     fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
 ///

@@ -2160,6 +2160,13 @@ message GetDocumentsResponse {
     message ChainedDocuments {
       repeated bytes inner_documents = 1;
       repeated bytes outer_documents = 2;
+      // The join values that have NO outer document, in first
+      // appearance order: referenced documents deleted after the
+      // inner document was written. Only a join property declaring
+      // `refersTo: deletableDocument` can report any; under
+      // `refersTo: permanentDocument` a missing document fails the
+      // query instead.
+      repeated bytes missing_outer_ids = 3;
     }
 
     // A composite query's page and per-sub-query results, documents
@@ -2177,6 +2184,11 @@ message GetDocumentsResponse {
           // value's index-key bytes.
           CountEntries counts = 2;
         }
+        // DOCUMENTS by-id join only: the derived ids that have NO
+        // document, in first appearance order (referenced documents
+        // deleted since). Only a source property declaring
+        // `refersTo: deletableDocument` can report any.
+        repeated bytes missing_ids = 3;
       }
       repeated SubQueryResult sub_results = 2;
     }
