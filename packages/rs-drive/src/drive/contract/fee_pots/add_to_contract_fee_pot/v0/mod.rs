@@ -5,7 +5,7 @@ use crate::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_path, prefunded_specialized_balances_path_vec,
 };
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -52,7 +52,7 @@ impl Drive {
         let new_total = previous_credits
             .unwrap_or_default()
             .checked_add(amount)
-            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+            .ok_or(Error::Fee(FeeError::Overflow(
                 "adding to a contract fee pot would overflow credits",
             )))?;
         // As for every balance, i64::MAX itself is avoided.

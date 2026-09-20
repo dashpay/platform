@@ -1,4 +1,5 @@
 use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::contract_fee_claim::v0::ContractFeeClaimTransitionActionV0;
@@ -35,11 +36,11 @@ impl DriveHighLevelOperationConverter for ContractFeeClaimTransitionAction {
 
                 // What leaves the pot is what reaches the balances: the credits only move.
                 let paid_out = payouts.values().try_fold(0 as Credits, |total, amount| {
-                    total.checked_add(*amount).ok_or(Error::Drive(
-                        DriveError::CorruptedCodeExecution(
+                    total
+                        .checked_add(*amount)
+                        .ok_or(Error::Fee(FeeError::Overflow(
                             "the payouts of a contract fee claim overflow credits",
-                        ),
-                    ))
+                        )))
                 })?;
 
                 let mut operations = vec![
