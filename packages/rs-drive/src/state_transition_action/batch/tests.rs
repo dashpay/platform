@@ -3255,13 +3255,14 @@ mod action_fees {
         }
     }
 
-    /// The operations as `(removed from the payer, [(contract, pot, amount)])`
-    fn summarize(
-        operations: Vec<DriveOperation<'static>>,
-    ) -> (
+    /// What was removed from the payer, and what was added to each pot of each contract
+    type Summary = (
         Option<(Identifier, u64)>,
         Vec<(Identifier, ContractFeePot, u64)>,
-    ) {
+    );
+
+    /// The operations as `(removed from the payer, [(contract, pot, amount)])`
+    fn summarize(operations: Vec<DriveOperation<'static>>) -> Summary {
         let mut removed = None;
         let mut added = vec![];
         for operation in operations {

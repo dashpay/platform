@@ -123,7 +123,7 @@ impl DocumentBaseTransitionActionV0 {
         // where state is read, since the default pricing follows the epoch's fee multiplier.
         let declared_action_fee = document_type
             .action_fees()
-            .and_then(|fees| get_action_fee(fees).map(|fee| (fees.pricing(), fee)));
+            .and_then(|fees| get_action_fee(fees).map(|fee| Box::new((fees.pricing(), fee))));
         Ok(DocumentBaseTransitionActionV0 {
             id: value.id(),
             identity_contract_nonce: value.identity_contract_nonce(),

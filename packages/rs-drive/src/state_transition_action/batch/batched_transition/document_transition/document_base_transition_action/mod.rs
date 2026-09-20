@@ -100,7 +100,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
 
     fn declared_action_fee(&self) -> Option<(ActionFeePricing, DocumentActionFee)> {
         match self {
-            DocumentBaseTransitionAction::V0(v0) => v0.declared_action_fee,
+            DocumentBaseTransitionAction::V0(v0) => v0.declared_action_fee.as_deref().copied(),
         }
     }
 }

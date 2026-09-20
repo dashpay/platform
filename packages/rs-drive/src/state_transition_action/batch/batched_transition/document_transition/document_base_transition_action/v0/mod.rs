@@ -31,8 +31,9 @@ pub struct DocumentBaseTransitionActionV0 {
     /// has no token cost, since only a token payment can be sponsored
     pub contract_gas_fees_paid_by: GasFeesPaidBy,
     /// The fee the document type declares for this action and how it is priced, `None` when
-    /// it declares none (protocol version 14)
-    pub declared_action_fee: Option<(ActionFeePricing, DocumentActionFee)>,
+    /// it declares none (protocol version 14). Boxed: most actions declare none, and the
+    /// action sits in the largest variant of the batched transition enum.
+    pub declared_action_fee: Option<Box<(ActionFeePricing, DocumentActionFee)>>,
 }
 
 /// document base transition action accessors v0

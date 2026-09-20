@@ -91,9 +91,12 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::basic::contract_moderation::{
-    ContractModerationSelfTargetError, InvalidContractModerationConfigError,
+    ContractModerationSelfTargetError, DocumentActionFeesWithoutModerationError,
+    InvalidContractModerationConfigError,
 };
 use dpp::consensus::state::contract_moderation::{
+    ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
+    ContractFeesNothingToClaimError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -618,6 +621,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ContractModerationCounterpartyBarredError(e) => {
             generic_consensus_error!(ContractModerationCounterpartyBarredError, e).into()
+        }
+        StateError::ContractFeesAlreadyClaimedThisEpochError(e) => {
+            generic_consensus_error!(ContractFeesAlreadyClaimedThisEpochError, e).into()
+        }
+        StateError::ContractFeesNothingToClaimError(e) => {
+            generic_consensus_error!(ContractFeesNothingToClaimError, e).into()
+        }
+        StateError::ContractFeeClaimNotAllowedError(e) => {
+            generic_consensus_error!(ContractFeeClaimNotAllowedError, e).into()
         }
     }
 }
@@ -1186,6 +1198,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ContractModerationSelfTargetError(e) => {
             generic_consensus_error!(ContractModerationSelfTargetError, e).into()
+        }
+        BasicError::DocumentActionFeesWithoutModerationError(e) => {
+            generic_consensus_error!(DocumentActionFeesWithoutModerationError, e).into()
         }
     }
 }
