@@ -1,4 +1,5 @@
 import CoreData
+import Darwin
 import Foundation
 import SQLite3
 import SwiftData
@@ -89,8 +90,46 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         try withStore(baseline: true) { url in
             _ = try open(url, hooks: .init(visit: { _, _ in XCTFail("Known V1 must not bridge") }))
             XCTAssertTrue(try operationDirectories(url).isEmpty)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".legacy-v2.lock"))
         }
         _ = try DashModelContainer.createInMemory()
+    }
+
+    func testOrdinaryStoresIgnoreBridgeLockButLegacyAndPendingRecoveryRequireIt() throws {
+        try withStore(baseline: true) { url in
+            let descriptor = Darwin.open(url.path + ".legacy-v2.lock", O_CREAT | O_RDWR, 0o600)
+            XCTAssertGreaterThanOrEqual(descriptor, 0)
+            defer { Darwin.close(descriptor) }
+            XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+            try autoreleasepool { _ = try open(url) } // Known V1.
+            let current = try open(url) // Current V2.
+            XCTAssertEqual(try current.mainContext.fetchCount(FetchDescriptor<PersistentWallet>()), 1)
+        }
+        for interrupted in [false, true] {
+            try withStore { url in
+                if interrupted {
+                    XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, _ in
+                        if phase == .afterCommit { throw Injected.stop }
+                    })))
+                }
+                let descriptor = Darwin.open(url.path + ".legacy-v2.lock", O_CREAT | O_RDWR, 0o600)
+                XCTAssertGreaterThanOrEqual(descriptor, 0)
+                defer { Darwin.close(descriptor) }
+                XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+                XCTAssertThrowsError(try open(url))
+            }
+        }
+    }
+
+    func testMissingBridgeMetadataUsesOrdinaryOpeningWithoutCreatingBridgeFiles() throws {
+        try withStore(baseline: true) { url in
+            var metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
+            metadata.removeValue(forKey: "NSStoreModelVersionChecksumKey")
+            try NSPersistentStoreCoordinator.setMetadata(metadata, type: .sqlite, at: url)
+            let container = try open(url, hooks: .init(visit: { _, _ in XCTFail("Must use the ordinary plan") }))
+            XCTAssertEqual(try container.mainContext.fetchCount(FetchDescriptor<PersistentWallet>()), 1)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".legacy-v2.lock"))
+        }
     }
 
     func testHistoricalStorePreservesDataDefaultsBackupAndDoesNotBridgeAgain() throws {

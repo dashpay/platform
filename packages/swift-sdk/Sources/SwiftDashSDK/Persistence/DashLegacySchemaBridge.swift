@@ -38,17 +38,22 @@ enum DashLegacySchemaBridge {
             }
             return try ordinary()
         }
+        let root = backupDirectory(for: url)
+        let marker = root.appendingPathComponent("active.json")
+        if !FileManager.default.fileExists(atPath: marker.path) {
+            // Detection must not impose bridge-specific metadata or locking
+            // requirements on stores handled by SwiftData's ordinary path.
+            guard let source = try? identity(at: url),
+                  (try? needsBridge(source, plan: plan)) == true else { return try ordinary() }
+        }
         let lock = try StoreLock(url: url)
         defer { lock.close() }
-        let root = backupDirectory(for: url)
         try SQLite.recoverRollbackJournal(at: url)
         try recoverIfNeeded(at: url, root: root)
-        let source = try identity(at: url)
-        // Newer/unknown identifiers are never downgraded or treated as legacy.
-        guard source.versions == ["1.0.0"] else { return try ordinary() }
-        for registered in plan.schemas where version(registered.versionIdentifier) == "1.0.0" {
-            if source == (try identity(for: registered)) { return try ordinary() }
-        }
+        // Another opener may have finished migration before this lock was
+        // acquired. Recovery errors above remain fatal; ordinary detection does not.
+        guard let source = try? identity(at: url),
+              (try? needsBridge(source, plan: plan)) == true else { return try ordinary() }
         guard configuration.allowsSave else { throw SQLite.Failure.unsupported("The store is read-only") }
         let permitted = Set(Schema(versionedSchema: DashSchemaV1.self).entities.map(\.name))
         let required: Set<String> = ["PersistentWallet", "PersistentAccount", "PersistentTransaction", "PersistentTxo"]
@@ -140,6 +145,14 @@ enum DashLegacySchemaBridge {
 
     static func backupDirectory(for url: URL) -> URL {
         url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".legacy-v2-backups", isDirectory: true)
+    }
+
+    private static func needsBridge(_ source: Identity, plan: any SchemaMigrationPlan.Type) throws -> Bool {
+        guard source.versions == ["1.0.0"] else { return false }
+        for registered in plan.schemas where version(registered.versionIdentifier) == "1.0.0" {
+            if source == (try identity(for: registered)) { return false }
+        }
+        return true
     }
 
     private static func recoverIfNeeded(at url: URL, root: URL) throws {
