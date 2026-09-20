@@ -363,6 +363,10 @@ def validate_schema(schema):
 
 def read_inventory(root, commit):
     inventory = json.loads(git(root, "show", f"{commit}:{INVENTORY_FILE}"))
+    return validate_inventory(inventory)
+
+
+def validate_inventory(inventory):
     if inventory.get("format_version") != 1:
         raise SystemExit("unsupported historical schema model inventory")
     models = inventory["models"]
@@ -376,7 +380,7 @@ def read_inventory(root, commit):
     return inventory
 
 
-def render_snapshot(root, version, entry):
+def render_snapshot(root, version, entry, *, inventory=None):
     validate_schema(entry["schema"])
     if entry["schema"]["schema_version"] != version:
         raise SystemExit("registry key does not match captured schema version")
@@ -386,7 +390,7 @@ def render_snapshot(root, version, entry):
     namespace = "DashSchemaSnapshotV" + version.split(".")[0]
     if entry["namespace"] != namespace:
         raise SystemExit("unexpected snapshot namespace")
-    inventory = read_inventory(root, commit)
+    inventory = read_inventory(root, commit) if inventory is None else validate_inventory(inventory)
     models = inventory["models"]
     if set(models) != set(entry["schema"]["entity_hashes"]):
         raise SystemExit("historical inventory differs from captured model membership")

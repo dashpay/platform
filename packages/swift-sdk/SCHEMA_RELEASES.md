@@ -4,7 +4,58 @@ SwiftData schemas become supported history when a build reaches App Store
 distribution. TestFlight uploads capture provenance and a synthetic SQLite
 fixture, but do not by themselves register a released schema. V1 is the agreed
 existing baseline. Intermediate pre-release V2–V5 schemas have been collapsed
-into the working V2, including the public-key usage-limit columns; databases from those old development builds are unsupported.
+into the working V2, including the public-key usage-limit columns. A separate
+compatibility bridge handles older, unregistered `1.0.0` database layouts when
+they can migrate without losing existing data. Other intermediate development
+databases are unsupported.
+
+## Legacy stores before the release registry
+
+Frozen V1 and its fixture remain unchanged. They describe the accepted baseline,
+but do not establish the exact schema shipped by the first App Store binary.
+Some older app sources created an unversioned `Schema(modelTypes)` and omitted
+the explicit migration plan; those databases still report version `1.0.0`.
+
+The shared `DashModelContainer` factory recognizes registered schema
+fingerprints before opening an existing store. Unknown legacy `1.0.0` stores
+may use the compatibility bridge: take a consistent backup including committed
+WAL data, migrate an isolated copy automatically to `DashSchemaV2`, verify that
+existing stored values and relationship rows survived, and reopen it through
+the ordinary migration plan before installing it. The backup is retained for
+recovery. Corruption, removed fields/entities, changed stored data, and newer
+unknown schema versions are errors; this is not a general retry for any
+container failure and never resets the store.
+
+Applications with their own database paths must use
+`DashModelContainer.create(url:)` before opening the store elsewhere. Direct
+`ModelContainer` construction bypasses this compatibility bridge. The iOS host
+uses the shared factory while retaining its existing store path and lifecycle.
+The bridge is for local stores; CloudKit and in-memory containers continue to
+use their ordinary migration plan.
+
+Recovery files live beside the original store under
+`<store filename>.legacy-v2-backups/`. A successful bridge retains an
+`original.store` backup. The `active.json` journal records an interrupted
+installation; the next open reconciles it before exposing a container. These
+are local wallet data, protected like the original store and excluded from
+device backup. Do not upload them as release fixtures or edit the recovery
+journal to bypass a failure.
+
+The historical regression fixture reconstructs Platform
+`fd8d8d13e5d7cea17b00df5974934ab1910e8039` from the same checkout pair as iOS
+`8094751eb2be8d52b57da3589fdd2ae2dcd0ecc6` in
+[Actions run 32706880873](https://github.com/dashpay/dashwallet-ios/actions/runs/32706880873).
+It contains synthetic records, not user data or an extracted App Store store.
+The run failed before upload, so this provenance establishes a tested source
+layout rather than proof of publication. Regression tests exercise the public
+factory, data/default preservation, writes, reopen, and failure recovery.
+
+Keep the bridge for installations that skip the V2 app release. When advancing
+to V3, bind `DashSchemaV2` to its released snapshot and retain the legacy-to-V2
+step before the normal V2-to-current plan. The bridge must never automatically
+follow the latest live model graph. The release observer's one-time `bootstrap`
+only records its observation baseline; it neither runs this migration nor
+proves V1's App Store provenance.
 
 ## Release flow
 
@@ -126,6 +177,7 @@ Run the automation tests with:
 ```sh
 python3 -m unittest discover -s packages/swift-sdk/scripts -p 'test_*.py'
 python3 packages/swift-sdk/scripts/freeze_schema_models.py --check
+python3 packages/swift-sdk/scripts/historical_schema_fixture.py --check
 ```
 
 Swift SDK CI additionally checks the generated schemas against the released

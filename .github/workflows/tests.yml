@@ -504,6 +504,9 @@ jobs:
       - name: Check the frozen SwiftData models match FREEZES
         run: python3 packages/swift-sdk/scripts/freeze_schema_models.py --check
 
+      - name: Verify the historical migration fixture and pinned sources
+        run: python3 packages/swift-sdk/scripts/historical_schema_fixture.py --check
+
       - name: Test the freeze generator
         run: python3 -m unittest discover -s packages/swift-sdk/scripts -p 'test_*.py' -v
 

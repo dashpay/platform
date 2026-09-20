@@ -116,14 +116,14 @@ public enum DashModelContainer {
             groupContainer: groupContainer,
             cloudKitDatabase: cloudKit ? .automatic : .none
         )
-        return try makeContainer(configuration: modelConfiguration)
+        return try makeContainer(configuration: modelConfiguration, bridgeLegacyStore: !cloudKit)
     }
 
     /// Open (or create) the store at an explicit file URL through the same
     /// schema and migration plan as `create(cloudKit:groupContainer:)`. The
     /// migration tests use it to open stores written by older builds exactly
     /// the way the app would.
-    static func create(url: URL) throws -> ModelContainer {
+    public static func create(url: URL) throws -> ModelContainer {
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             url: url,
@@ -139,11 +139,14 @@ public enum DashModelContainer {
     /// tested against, because it is the order under which a mixed
     /// live/frozen graph would rebind a released version's entities.
     private static func makeContainer(
-        configuration: ModelConfiguration
+        configuration: ModelConfiguration,
+        bridgeLegacyStore: Bool = true
     ) throws -> ModelContainer {
-        // Always wire the migration plan so stores created by an older SDK
-        // advance through the registered versioned schemas.
-        try ModelContainer(
+        if bridgeLegacyStore {
+            return try DashLegacySchemaBridge.open(
+                configuration: configuration, schema: schema, plan: DashMigrationPlan.self)
+        }
+        return try ModelContainer(
             for: schema,
             migrationPlan: DashMigrationPlan.self,
             configurations: [configuration]
@@ -181,8 +184,9 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 /// Migration tests establish compatibility from this accepted baseline into
 /// the current live schema. They do not reconstruct or verify the database
 /// written by the original App Store binary. Other historical development
-/// layouts are unsupported: opening an unrecognized store throws an error;
-/// the container does not silently erase or recreate it.
+/// layouts are accepted only by the local legacy bridge when every existing
+/// value and relationship survives migration to fixed V2. Other layouts fail;
+/// the container never erases or recreates a user's database.
 public enum DashSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(1, 0, 0)
