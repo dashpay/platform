@@ -9,9 +9,12 @@ use crate::drive::tokens::paths::{
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use crate::drive::RootTree;
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/tokens/paths.rs";
+const QUEUED_RELEASE_FLAGS: &str =
+    "The owner is the contract owner: releases are queued when the token is \
+     created.";
 
 fn token(description: &str) -> StructureNode {
     StructureNode::identifier("token", "token_id", "The token id").describe(description)
@@ -139,6 +142,16 @@ pub(crate) fn structure() -> StructureNode {
 }
 
 fn distributions() -> StructureNode {
+    let identity_claim = |value: &str, description: &str| {
+        StructureNode::identifier("identity", "identity_id", "The claiming identity's id")
+            .kind(ElementKind::Item)
+            .flags(
+                &[FlagsKind::EpochOwned],
+                "The owner is the identity that claimed, in the epoch of the claim.",
+            )
+            .value(value)
+            .describe(description)
+    };
     let identity = |value: &str, description: &str| {
         StructureNode::identifier("identity", "identity_id", "The claiming identity's id")
             .kind(ElementKind::Item)
@@ -172,7 +185,7 @@ fn distributions() -> StructureNode {
                  token when it has a once per identity rule.",
             )
             .kind(ElementKind::Tree)
-            .child(identity(
+            .child(identity_claim(
                 "the claim's block time in milliseconds, u64 big \
                  endian",
                 "One identity that claimed.",
@@ -267,6 +280,7 @@ fn distributions() -> StructureNode {
                     "The release time in milliseconds",
                 )
                 .kind(ElementKind::Tree)
+                .flags(&[FlagsKind::EpochOwned], QUEUED_RELEASE_FLAGS)
                 .describe("Everything released at this time, across tokens.")
                 .child(
                     StructureNode::dynamic(
@@ -278,6 +292,7 @@ fn distributions() -> StructureNode {
                          recipient and distribution type",
                     )
                     .kind(ElementKind::Reference)
+                    .flags(&[FlagsKind::EpochOwned], QUEUED_RELEASE_FLAGS)
                     .reference("tokens.distributions.pre_programmed.token.time.recipient")
                     .describe("One pending release. Deleted when it is claimed."),
                 ),

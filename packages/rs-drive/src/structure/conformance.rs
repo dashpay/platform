@@ -1,11 +1,11 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::structure::{ElementKind, KeySpec, NodeId, Presence, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeySpec, NodeId, Presence, StructureNode};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 /// One way a real GroveDB differs from the description.
@@ -32,6 +32,17 @@ pub enum Violation {
         expected: Vec<ElementKind>,
         /// The kind of the element
         actual: ElementKind,
+    },
+    /// An element carries flags of a kind its node does not list
+    FlagsMismatch {
+        /// The node describing the element
+        node: NodeId,
+        /// The path of the layer
+        path: Vec<Vec<u8>>,
+        /// The flags the node lists
+        expected: Vec<FlagsKind>,
+        /// The flags on the element
+        actual: FlagsKind,
     },
     /// An element exists in a protocol version its node says it is not in
     OutsideItsVersions {
@@ -76,6 +87,16 @@ impl fmt::Display for Violation {
                 "`{node}` in {} is {actual:?}, expected one of {expected:?}",
                 readable_path(path),
             ),
+            Violation::FlagsMismatch {
+                node,
+                path,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "`{node}` in {} carries {actual:?} flags, expected one of {expected:?}",
+                readable_path(path),
+            ),
             Violation::OutsideItsVersions { node, since, until } => write!(
                 f,
                 "`{node}` exists but is described as since {since} until {until:?}"
@@ -96,6 +117,8 @@ pub struct ConformanceReport {
     pub violations: Vec<Violation>,
     /// Every node at least one element was matched to
     pub visited: BTreeSet<NodeId>,
+    /// The kinds of element flags found on the elements of each node
+    pub flags: BTreeMap<NodeId, BTreeSet<FlagsKind>>,
 }
 
 impl ConformanceReport {
@@ -189,14 +212,15 @@ impl Walk<'_> {
             };
 
             // Try each candidate on a report of its own and keep the best fit
+            let flags = FlagsKind::of(&element);
             let mut chosen = (*first, ConformanceReport::default());
-            self.element(path, &key, kind, first, &mut chosen.1)?;
+            self.element(path, &key, kind, flags, first, &mut chosen.1)?;
             for candidate in &candidates[1..] {
                 if chosen.1.violations.is_empty() {
                     break;
                 }
                 let mut attempt = ConformanceReport::default();
-                self.element(path, &key, kind, candidate, &mut attempt)?;
+                self.element(path, &key, kind, flags, candidate, &mut attempt)?;
                 if attempt.violations.len() < chosen.1.violations.len() {
                     chosen = (*candidate, attempt);
                 }
@@ -204,6 +228,9 @@ impl Walk<'_> {
             found.insert(chosen.0.id.as_str());
             report.violations.append(&mut chosen.1.violations);
             report.visited.append(&mut chosen.1.visited);
+            for (id, kinds) in chosen.1.flags {
+                report.flags.entry(id).or_default().extend(kinds);
+            }
         }
 
         for child in described {
@@ -227,10 +254,24 @@ impl Walk<'_> {
         path: &[Vec<u8>],
         key: &[u8],
         kind: ElementKind,
+        flags: FlagsKind,
         node: &StructureNode,
         report: &mut ConformanceReport,
     ) -> Result<(), Error> {
         report.visited.insert(node.id.clone());
+        report
+            .flags
+            .entry(node.id.clone())
+            .or_default()
+            .insert(flags);
+        if !node.flags.contains(&flags) {
+            report.violations.push(Violation::FlagsMismatch {
+                node: node.id.clone(),
+                path: path.to_vec(),
+                expected: node.flags.clone(),
+                actual: flags,
+            });
+        }
         if !node.exists_in(self.platform_version.protocol_version) {
             report.violations.push(Violation::OutsideItsVersions {
                 node: node.id.clone(),

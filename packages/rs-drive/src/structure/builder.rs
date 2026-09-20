@@ -1,4 +1,6 @@
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, KeySpec, Presence, StructureNode};
+use crate::structure::{
+    ElementKind, FlagsKind, KeyEncoding, KeyMatcher, KeySpec, Presence, StructureNode,
+};
 use dpp::util::deserializer::ProtocolVersion;
 
 impl StructureNode {
@@ -9,6 +11,8 @@ impl StructureNode {
             key,
             kinds: vec![],
             kinds_note: None,
+            flags: vec![FlagsKind::None],
+            flags_note: None,
             value: None,
             reference: None,
             since: 1,
@@ -92,6 +96,14 @@ impl StructureNode {
     pub fn kinds(mut self, kinds: &[ElementKind], note: &str) -> Self {
         self.kinds = kinds.to_vec();
         self.kinds_note = Some(note.to_string());
+        self
+    }
+
+    /// The element flags on the element. `note` says who the owner in the
+    /// flags is, or what decides between several kinds.
+    pub fn flags(mut self, flags: &[FlagsKind], note: &str) -> Self {
+        self.flags = flags.to_vec();
+        self.flags_note = Some(note.to_string());
         self
     }
 

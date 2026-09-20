@@ -24,6 +24,7 @@ mod builder;
 pub mod conformance;
 /// Serialization of the description to the committed JSON file
 pub mod export;
+mod flags;
 mod kinds;
 /// Static checks of the description
 pub mod lint;
@@ -34,6 +35,7 @@ mod tests;
 
 use crate::drive::structure::root_structure;
 use dpp::util::deserializer::ProtocolVersion;
+pub use flags::FlagsKind;
 pub use kinds::ElementKind;
 use serde::Serialize;
 
@@ -175,6 +177,12 @@ pub struct StructureNode {
     /// When there are several kinds, what decides between them
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kinds_note: Option<String>,
+    /// The element flags that can sit on the element. More than one when the
+    /// code chooses between them.
+    pub flags: Vec<FlagsKind>,
+    /// Who the owner in the flags is, or what decides between several kinds
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flags_note: Option<String>,
     /// What an item holds
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,

@@ -4,9 +4,12 @@ use crate::structure::conformance::{check_conformance, Violation};
 use crate::structure::export::{StructureDocument, STRUCTURE_JSON_PATH};
 use crate::structure::lint::lint;
 use crate::structure::shape::layer_shapes;
-use crate::structure::{drive_structure, ElementKind, StructureNode};
+use crate::structure::{drive_structure, ElementKind, FlagsKind, StructureNode};
 use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+use dpp::block::block_info::BlockInfo;
+use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -177,6 +180,50 @@ mod walker {
                 node: "imaginary".to_string(),
                 path: vec![],
             }]
+        );
+    }
+
+    #[test]
+    fn should_report_element_flags_of_another_kind() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let identity = Identity::random_identity(2, Some(5), platform_version)
+            .expect("expected a random identity");
+        drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the identity");
+
+        // An identity's tree carries the epoch it was created in
+        let mut structure = drive_structure();
+        let identities = structure
+            .children
+            .iter_mut()
+            .find(|child| child.id == "identities")
+            .expect("expected the identities node");
+        identities.children[0].flags = vec![FlagsKind::None];
+
+        let report = check_conformance(&drive, &structure, None, platform_version)
+            .expect("expected to walk the state");
+
+        assert_eq!(
+            report.violations,
+            vec![Violation::FlagsMismatch {
+                node: "identities.identity".to_string(),
+                path: vec![vec![RootTree::Identities as u8]],
+                expected: vec![FlagsKind::None],
+                actual: FlagsKind::Epoch,
+            }]
+        );
+        assert_eq!(
+            report.flags.get("identities.identity.keys"),
+            Some(&BTreeSet::from([FlagsKind::None]))
         );
     }
 
