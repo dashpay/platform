@@ -6,9 +6,14 @@ use crate::drive::votes::paths::{
     VOTING_STORAGE_TREE_KEY,
 };
 use crate::drive::RootTree;
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/votes/paths.rs";
+const CONTENDER_FLAGS: &str =
+    "The owner is the contender whose document created the level, who is \
+     refunded when the poll is cleaned up. Written without storage flags, it carries none.";
+const POLL_FLAGS: &str = "The owner is the identity whose contested document started the poll.";
+const OWNED: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const CONTESTED_DOCUMENT: &str =
     "votes.contested_resource.active_polls.contract.document_type.storage.document";
 const INDEX_VALUE: &str =
@@ -22,6 +27,7 @@ fn voting_storage() -> StructureNode {
         "VOTING_STORAGE_TREE_KEY",
     )
     .kind(ElementKind::SumTree)
+    .flags(&OWNED, CONTENDER_FLAGS)
     .describe("The votes for this choice; the sum is the tally.")
     .child(
         StructureNode::identifier(
@@ -103,6 +109,7 @@ pub(crate) fn structure() -> StructureNode {
                  with the sign bit flipped",
             )
             .kind(ElementKind::Tree)
+            .flags(&[FlagsKind::EpochOwned], POLL_FLAGS)
             .describe("The polls ending at this time.")
             .child(
                 StructureNode::dynamic(
@@ -113,6 +120,7 @@ pub(crate) fn structure() -> StructureNode {
                     "The double sha256 of the serialized vote poll",
                 )
                 .kind(ElementKind::Item)
+                .flags(&[FlagsKind::EpochOwned], POLL_FLAGS)
                 .value("serialized VotePoll")
                 .describe("One poll ending at this time."),
             ),
@@ -211,6 +219,7 @@ fn active_polls() -> StructureNode {
                     .child(
                         StructureNode::identifier("document", "document_id", "The document id")
                             .kind(ElementKind::Item)
+                            .flags(&OWNED, CONTENDER_FLAGS)
                             .value("serialized document")
                             .describe("One competing document."),
                     ),
@@ -241,6 +250,7 @@ fn index_value() -> StructureNode {
          null",
     )
     .kind(ElementKind::Tree)
+    .flags(&OWNED, CONTENDER_FLAGS)
     .describe(
         "One value of the contested index. Below the last \
          value sit the poll's choices.",
@@ -263,6 +273,7 @@ fn index_value() -> StructureNode {
             "RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32",
         )
         .kind(ElementKind::Tree)
+        .flags(&OWNED, CONTENDER_FLAGS)
         .lazy()
         .describe("Votes to abstain.")
         .child(voting_storage()),
@@ -273,11 +284,13 @@ fn index_value() -> StructureNode {
             "RESOURCE_LOCK_VOTE_TREE_KEY_U8_32",
         )
         .kind(ElementKind::Tree)
+        .flags(&OWNED, CONTENDER_FLAGS)
         .lazy()
         .describe("Votes to lock the value so nobody gets it.")
         .child(voting_storage()),
         StructureNode::identifier("contender", "identity_id", "The contending identity's id")
             .kind(ElementKind::Tree)
+            .flags(&OWNED, CONTENDER_FLAGS)
             .describe(
                 "One contender, below the last value of the \
                  index. A 32 byte key is an index value at the \
@@ -287,6 +300,7 @@ fn index_value() -> StructureNode {
             .children(vec![
                 StructureNode::fixed("document", &[0], "Document", "")
                     .kind(ElementKind::Reference)
+                    .flags(&OWNED, CONTENDER_FLAGS)
                     .reference(CONTESTED_DOCUMENT)
                     .describe("The contender's document."),
                 voting_storage(),
@@ -300,6 +314,7 @@ fn index_value() -> StructureNode {
              null",
         )
         .kind(ElementKind::Tree)
+        .flags(&OWNED, CONTENDER_FLAGS)
         .recurse(INDEX_VALUE)
         .describe(
             "The next property of the index, shaped like this \

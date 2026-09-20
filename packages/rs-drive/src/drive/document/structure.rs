@@ -1,6 +1,15 @@
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/document/paths.rs";
+const CONTRACT_FLAGS: &str =
+    "The owner is the contract owner. System contracts created at genesis carry \
+     no flags.";
+const DOCUMENT_FLAGS: &str =
+    "The owner is the owner of the document, who is refunded when it is deleted. \
+     Documents the system writes carry no flags.";
+const LEVEL_FLAGS: &str = "The owner is the owner of the document that created this level of the \
+     index. Levels created with the contract carry the contract owner, and levels of \
+     system data carry no flags.";
 const DOCUMENT: &str = "contracts.contract.documents.document_type.primary_key.document";
 const REVISION: &str = "contracts.contract.documents.document_type.primary_key.document.revision";
 const INDEX_PROPERTY: &str = "contracts.contract.documents.document_type.index_property";
@@ -40,6 +49,7 @@ pub(crate) fn document_type() -> StructureNode {
         "The document type name",
     )
     .kind(ElementKind::Tree)
+    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
     .source(SOURCE)
     .describe(
         "One document type. Created with the contract, \
@@ -53,6 +63,7 @@ pub(crate) fn document_type() -> StructureNode {
                                             and documentsSummable settings; see \
                                             primary_key_tree_type.rs.",
             )
+            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
             .lazy()
             .source("packages/rs-drive/src/drive/document/primary_key_tree_type.rs")
             .book("drive/document-count-trees.md")
@@ -73,6 +84,7 @@ pub(crate) fn document_type() -> StructureNode {
                              summable; a tree of revisions when it keeps \
                              history.",
                     )
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
                     .value("serialized document")
                     .describe("One document.")
                     .children(vec![
@@ -105,6 +117,7 @@ pub(crate) fn document_type() -> StructureNode {
                                     range property appends its grid as #range#step",
         )
         .kinds(&INDEX_PROPERTY_TREES, INDEX_PROPERTY_NOTE)
+        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
         .source("packages/rs-drive/src/drive/document/index_level_tree_types.rs")
         .book("drive/indexes.md")
         .describe(
@@ -138,6 +151,7 @@ fn index_value() -> StructureNode {
          summable, so each value carries its count or \
          sum.",
     )
+    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
     .describe(
         "Every document with this value, reached through \
          the rest of the index.",
@@ -160,6 +174,7 @@ fn index_value() -> StructureNode {
                 "The end of an index: a tree of members, or for a \
                  unique index the one reference itself.",
             )
+            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
             .lazy()
             .reference(DOCUMENT)
             .describe("Where an index ends at this value.")
@@ -181,6 +196,7 @@ fn index_value() -> StructureNode {
                      document types an item holding the row's \
                      commitment. With a sum under a summable index.",
                 )
+                .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
                 .reference(DOCUMENT)
                 .value(
                     "for index only document types, a 32 byte row \
@@ -196,6 +212,7 @@ fn index_value() -> StructureNode {
             "The name of the index's next property",
         )
         .kinds(&INDEX_PROPERTY_TREES, INDEX_PROPERTY_NOTE)
+        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
         .recurse(INDEX_PROPERTY)
         .describe(
             "The next property of a compound index, shaped \

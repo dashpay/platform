@@ -1,4 +1,4 @@
-use crate::structure::{ElementKind, NodeId, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, NodeId, StructureNode};
 use dpp::util::deserializer::ProtocolVersion;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
@@ -19,6 +19,8 @@ pub struct StructureDocument {
     pub latest_protocol_version: ProtocolVersion,
     /// Every element kind, with what a reader needs to draw it
     pub element_kinds: Vec<ElementKindInfo>,
+    /// Every kind of element flags, with what it means
+    pub flag_kinds: Vec<FlagsKindInfo>,
     /// The structure
     pub root: StructureNode,
     /// The exact Merk binary tree of layers whose keys are all fixed, by the
@@ -37,6 +39,17 @@ pub struct ElementKindInfo {
     pub is_opaque: bool,
     /// Whether the element points at another element
     pub is_reference: bool,
+}
+
+/// What a reader needs to know about a kind of element flags
+#[derive(Clone, Debug, Serialize)]
+pub struct FlagsKindInfo {
+    /// The name of the kind
+    pub name: FlagsKind,
+    /// What the flags mean
+    pub meaning: String,
+    /// How the flags are laid out in bytes
+    pub layout: String,
 }
 
 /// The exact Merk binary tree of one layer.
@@ -80,6 +93,14 @@ impl StructureDocument {
                     is_tree: kind.is_tree(),
                     is_opaque: kind.is_opaque(),
                     is_reference: kind.is_reference(),
+                })
+                .collect(),
+            flag_kinds: FlagsKind::ALL
+                .iter()
+                .map(|kind| FlagsKindInfo {
+                    name: *kind,
+                    meaning: kind.meaning().to_string(),
+                    layout: kind.layout().to_string(),
                 })
                 .collect(),
             root,

@@ -664,10 +664,7 @@ fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
             platform_version,
         )
         .expect("expected to replace the suspension");
-    assert_eq!(
-        fee.storage_fee, 0,
-        "a same-size replacement stores nothing"
-    );
+    assert_eq!(fee.storage_fee, 0, "a same-size replacement stores nothing");
 
     let fee = drive
         .remove_contract_suspension(contract_id, target, &later, true, None, platform_version)

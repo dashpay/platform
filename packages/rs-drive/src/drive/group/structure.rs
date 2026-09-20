@@ -3,11 +3,11 @@ use crate::drive::group::paths::{
     GROUP_INFO_KEY,
 };
 use crate::drive::RootTree;
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/group/paths.rs";
 
-fn action(description: &str) -> StructureNode {
+fn action(description: &str, flags: &[FlagsKind], flags_note: &str) -> StructureNode {
     StructureNode::identifier("action", "action_id", "The action id")
         .kind(ElementKind::Tree)
         .describe(description)
@@ -15,6 +15,7 @@ fn action(description: &str) -> StructureNode {
             StructureNode::fixed("info", ACTION_INFO_KEY, "ActionInfo", "ACTION_INFO_KEY")
                 .ascii()
                 .kind(ElementKind::Item)
+                .flags(flags, flags_note)
                 .value("serialized GroupAction")
                 .describe(
                     "What the action does, written by its first \
@@ -35,6 +36,7 @@ fn action(description: &str) -> StructureNode {
             .child(
                 StructureNode::identifier("signer", "identity_id", "The signer's identity id")
                     .kind(ElementKind::SumItem)
+                    .flags(flags, flags_note)
                     .value("the signer's power in the group")
                     .describe("One signature."),
             ),
@@ -99,6 +101,8 @@ pub(crate) fn structure() -> StructureNode {
                     .child(action(
                         "One action in progress. Moved to the closed \
                          actions when it gathers the required power.",
+                        &[FlagsKind::EpochOwned],
+                        "The owner is the member who signed, in the epoch they signed.",
                     )),
                     StructureNode::fixed(
                         "closed",
@@ -112,7 +116,11 @@ pub(crate) fn structure() -> StructureNode {
                         "Actions that were carried out, kept so an action \
                          id cannot be reused.",
                     )
-                    .child(action("One completed action.")),
+                    .child(action(
+                        "One completed action.",
+                        &[FlagsKind::None],
+                        "Entries moved or written when an action closes carry no flags.",
+                    )),
                 ]),
             ),
     )

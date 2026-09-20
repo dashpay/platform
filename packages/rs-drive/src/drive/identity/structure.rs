@@ -1,7 +1,7 @@
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::RootTree;
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 use dpp::identity::{Purpose, SecurityLevel};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/identity/mod.rs";
@@ -51,6 +51,7 @@ pub(crate) fn structure() -> StructureNode {
     .child(
         StructureNode::identifier("identity", "identity_id", "The identity id")
             .kind(ElementKind::Tree)
+.flags(&[FlagsKind::Epoch], "The epoch the identity was created in. No owner: nothing under an identity is refunded.")
             .source(SOURCE)
             .describe("One identity.")
             .children(vec![

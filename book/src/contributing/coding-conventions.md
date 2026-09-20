@@ -511,7 +511,8 @@ now does.
    protocol upgrade (`transition_to_version_N`) call, in the same order, so a
    fresh chain and an upgraded one hold the same state.
 3. Describe it in the `structure.rs` beside that `paths.rs`, from the same
-   constant, with `since` set to the protocol version that introduces it.
+   constant, with `since` set to the protocol version that introduces it and
+   the element flags it is written with.
 4. Regenerate the exported file and commit it:
    `UPDATE_GROVEDB_STRUCTURE=1 cargo test -p drive --lib structure::tests`.
 5. Make sure something writes to the new nodes under test: a fixture in
