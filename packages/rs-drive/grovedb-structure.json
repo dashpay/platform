@@ -2834,12 +2834,13 @@
                 "id": "withdrawals.sum_amount.entry",
                 "key": {
                   "type": "dynamic",
-                  "name": "time_and_index",
+                  "name": "expiration_date",
                   "matcher": {
-                    "type": "any"
+                    "type": "len",
+                    "len": 8
                   },
-                  "encoding": "composite",
-                  "description": "The block time followed by the transaction index"
+                  "encoding": "u64_be",
+                  "description": "When the amount stops counting against the limit, in milliseconds"
                 },
                 "kinds": [
                   "SumItem"
@@ -2848,7 +2849,7 @@
                 "since": 4,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-                "description": "One withdrawal's amount.",
+                "description": "What was withdrawn with this expiration date. Withdrawals sharing a date are added together.",
                 "children": []
               }
             ]
@@ -2867,7 +2868,7 @@
             "since": 4,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-            "description": "Transactions that were broadcast, kept until the core chain confirms or expires them.",
+            "description": "Transactions that were broadcast, kept until the core chain confirms or expires them. A sum tree whose entries are plain items moved over from the queue, so its sum stays zero.",
             "children": [
               {
                 "id": "withdrawals.broadcasted.transaction",
@@ -2882,9 +2883,9 @@
                   "description": "The index of the withdrawal transaction"
                 },
                 "kinds": [
-                  "ItemWithSumItem"
+                  "Item"
                 ],
-                "value": "the signed transaction and its amount",
+                "value": "the asset unlock transaction, as it was queued",
                 "since": 4,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",

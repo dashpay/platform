@@ -204,6 +204,7 @@ mod fixtures {
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::structure::conformance::ConformanceReport;
     use crate::util::batch::drive_op_batch::AddressFundsOperationType;
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -219,10 +220,22 @@ mod fixtures {
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::contract_group::{
+        generate_contract_group_id, ContractGroupMember, ContractGroupMembership,
+        ContractGroupRegistration,
+    };
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -232,15 +245,18 @@ mod fixtures {
     use dpp::data_contract::v1::DataContractV1;
     use dpp::data_contract::DataContract;
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::fee::Credits;
     use dpp::group::action_event::GroupActionEvent;
     use dpp::group::group_action::v0::GroupActionV0;
     use dpp::group::group_action::GroupAction;
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
-    use dpp::platform_value::{BinaryData, Value};
+    use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
+    use dpp::identity::Identity;
+    use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::platform_value::Value;
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
@@ -250,29 +266,17 @@ mod fixtures {
     use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
 
-    /// Nodes no fixture below reaches yet. The coverage test fails when a
-    /// listed node does get reached, so this list can only shrink.
-    const UNVERIFIED: &[&str] = &[
-        // Token distributions: need a token configured with each rule
-        "tokens.distributions.once_per_identity.token",
-        "tokens.distributions.once_per_identity.token.identity",
+    /// Nodes no fixture below reaches, but the drive-abci strategy tests do:
+    /// they check the state of every chain they run against the description
+    /// (`assert_state_conforms_to_structure` in their `execution.rs`), and
+    /// between them they write these.
+    const REACHED_BY_STRATEGY_TESTS: &[&str] = &[
         "tokens.distributions.perpetual.token",
         "tokens.distributions.perpetual.token.info",
         "tokens.distributions.perpetual.token.last_claim",
         "tokens.distributions.perpetual.token.last_claim.identity",
-        "tokens.distributions.timed.ms.time",
-        "tokens.distributions.timed.ms.time.release",
-        "tokens.distributions.pre_programmed.token",
-        "tokens.distributions.pre_programmed.token.last_claim",
-        "tokens.distributions.pre_programmed.token.last_claim.identity",
-        "tokens.distributions.pre_programmed.token.time",
-        "tokens.distributions.pre_programmed.token.time.recipient",
-        // Masternode keys, key budgets
         "identities.identity.key_references.transfer.key",
         "identities.identity.key_references.voting.key",
-        "identities.identity.key_budgets",
-        "identities.identity.key_budgets.key",
-        // Written by block execution in drive-abci
         "saved_block_transactions.compacted.range",
         "saved_block_transactions.compacted_expiration.expiration",
         "saved_block_transactions.address_balances.block",
@@ -286,35 +290,20 @@ mod fixtures {
         "withdrawals.broadcasted.transaction",
         "withdrawals.total_credits_history.snapshot",
         "withdrawals.credit_inflows.inflow",
-        // Shielded pool contents
-        "shielded_balances.main_pool.nullifiers.nullifier",
         "shielded_balances.main_pool.anchors_by_height.height",
         "shielded_balances.main_pool.anchors_in_pool.anchor",
-        // Votes cast on a contested resource: rs-drive has no fixture that runs a vote
         "votes.contested_resource.identity_votes.voter",
         "votes.contested_resource.identity_votes.voter.vote",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.abstain.votes.voter",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.lock.votes.voter",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.votes.voter",
-        // Contract groups
-        "contract_groups.groups.group",
-        "contract_groups.groups.group.info",
-        "contract_groups.groups.group.contracts",
-        "contract_groups.groups.group.contracts.contract",
-        "contract_groups.groups.group.document_types",
-        "contract_groups.groups.group.document_types.member",
-        "contract_groups.groups.group.tokens",
-        "contract_groups.groups.group.tokens.member",
-        "contract_groups.members.contract",
-        "contract_groups.members.contract.groups",
-        "contract_groups.members.contract.groups.group",
-        "contract_groups.members.contract.document_types",
-        "contract_groups.members.contract.document_types.document_type",
-        "contract_groups.members.contract.document_types.document_type.group",
-        "contract_groups.members.contract.tokens",
-        "contract_groups.members.contract.tokens.token",
-        "contract_groups.members.contract.tokens.token.group",
     ];
+
+    /// Nodes nothing reaches, so their description has not been checked
+    /// against a real GroveDB. Empty, and meant to stay empty: whoever
+    /// describes a node can write a fixture that creates it. The coverage test
+    /// fails when a listed node does get reached.
+    const UNVERIFIED: &[&str] = &[];
 
     fn conformance_of(drive: &Drive, fixture: &str) -> ConformanceReport {
         let platform_version = PlatformVersion::latest();
@@ -695,24 +684,46 @@ mod fixtures {
         conformance_of(&drive, "contested_documents")
     }
 
-    /// An identity with an encryption and a decryption key bound to a whole
-    /// contract that keeps a reference to the latest key of each purpose.
-    fn whole_contract_bound_keys() -> ConformanceReport {
+    fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &PlatformVersion::latest().drive,
+            )
+            .expect("expected to apply the operations");
+    }
+
+    /// A token with a pre-programmed release and a once per identity rule,
+    /// before and after each is claimed. The second release stays queued.
+    fn token_distributions() -> ConformanceReport {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let recipient = [7; 32];
 
-        let mut contract = get_dashpay_contract_fixture(None, 1, platform_version.protocol_version)
+        let mut configuration = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        configuration
+            .distribution_rules_mut()
+            .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                TokenPreProgrammedDistributionV0 {
+                    distributions: BTreeMap::from([
+                        (100, BTreeMap::from([(Identifier::from(recipient), 445)])),
+                        (200, BTreeMap::from([(Identifier::from(recipient), 5)])),
+                    ]),
+                },
+            )));
+        configuration
+            .distribution_rules_mut()
+            .set_once_per_identity_distribution(Some(TokenOncePerIdentityDistribution::V0(
+                TokenOncePerIdentityDistributionV0 { amount: 100 },
+            )));
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
-        contract
-            .config_mut()
-            .set_requires_identity_encryption_bounded_key(Some(
-                StorageKeyRequirements::MultipleReferenceToLatest,
-            ));
-        contract
-            .config_mut()
-            .set_requires_identity_decryption_bounded_key(Some(
-                StorageKeyRequirements::MultipleReferenceToLatest,
-            ));
+        contract.set_tokens(BTreeMap::from([(0, configuration)]));
         drive
             .apply_contract(
                 &contract,
@@ -722,29 +733,194 @@ mod fixtures {
                 None,
                 platform_version,
             )
-            .expect("expected to insert the contract");
+            .expect("expected to insert the token contract");
+        let mut report = conformance_of(&drive, "token_distributions_unclaimed");
 
-        let mut rng = StdRng::seed_from_u64(78);
-        let mut identity = Identity::random_identity(3, Some(78), platform_version)
+        let token_id = contract.token_id(0).expect("expected a token").to_buffer();
+        apply_operations(
+            &drive,
+            drive
+                .mark_pre_programmed_release_as_distributed_operations(
+                    token_id,
+                    recipient,
+                    100,
+                    &BlockInfo::default(),
+                    &mut None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the pre-programmed claim operations"),
+        );
+        apply_operations(
+            &drive,
+            drive
+                .mark_once_per_identity_release_as_distributed_operations(
+                    token_id,
+                    recipient,
+                    1000,
+                    &BlockInfo::default(),
+                    &mut None,
+                    platform_version,
+                )
+                .expect("expected the once per identity claim operations"),
+        );
+        report
+            .visited
+            .extend(conformance_of(&drive, "token_distributions_claimed").visited);
+        report
+    }
+
+    /// A key bound to a contract, a document type or a contract group. A key
+    /// given a budget is a version 1 key and gets a budget entry.
+    fn bound_key(
+        key_id: KeyID,
+        purpose: Purpose,
+        bounds: ContractBounds,
+        total_budget: Option<Credits>,
+    ) -> IdentityPublicKey {
+        let mut rng = StdRng::seed_from_u64(key_id as u64 + 900);
+        IdentityPublicKeyV1 {
+            id: key_id,
+            purpose,
+            security_level: if purpose == Purpose::AUTHENTICATION {
+                SecurityLevel::HIGH
+            } else {
+                SecurityLevel::MEDIUM
+            },
+            contract_bounds: Some(bounds),
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(
+                KeyType::ECDSA_SECP256K1
+                    .random_public_key_data(&mut rng, PlatformVersion::latest())
+                    .expect("expected a random key"),
+            ),
+            disabled_at: None,
+            total_budget,
+            expires_at: None,
+        }
+        .into()
+    }
+
+    /// Contract groups with every kind of member, and an identity whose keys
+    /// are bound to a contract that wants one key per purpose, to a contract
+    /// that keeps a reference to the latest key of each purpose, to a document
+    /// type of that contract, and to a contract group; one of its keys has a
+    /// budget.
+    fn contract_groups_and_bound_keys() -> ConformanceReport {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let owner = Identifier::from([1; 32]);
+
+        let mut contracts = vec![];
+        for (seed, requirement) in [
+            (1, StorageKeyRequirements::Unique),
+            (2, StorageKeyRequirements::MultipleReferenceToLatest),
+        ] {
+            let mut contract =
+                get_dashpay_contract_fixture(None, seed, platform_version.protocol_version)
+                    .data_contract_owned();
+            contract
+                .config_mut()
+                .set_requires_identity_encryption_bounded_key(Some(requirement));
+            contract
+                .config_mut()
+                .set_requires_identity_decryption_bounded_key(Some(requirement));
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to insert the contract");
+            contracts.push(contract);
+        }
+
+        let group_id = generate_contract_group_id(&owner, 1);
+        drive
+            .insert_contract_group(
+                group_id,
+                &(
+                    owner,
+                    ContractGroupRegistration {
+                        admins: BTreeSet::new(),
+                        name: Some("wallet".to_string()),
+                        description: None,
+                    },
+                )
+                    .into(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to register the contract group");
+        let member = |member| ContractGroupMembership {
+            contract_group_id: group_id,
+            member,
+        };
+        drive
+            .insert_contract_group_memberships(
+                contracts[0].id(),
+                &[
+                    member(ContractGroupMember::Contract),
+                    member(ContractGroupMember::DocumentType("profile".to_string())),
+                    member(ContractGroupMember::Token(0)),
+                ],
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to record the memberships");
+
+        let mut identity = Identity::random_identity(3, Some(77), platform_version)
             .expect("expected a random identity");
-        for (id, purpose) in [(10, Purpose::ENCRYPTION), (11, Purpose::DECRYPTION)] {
-            identity.add_public_key(
-                IdentityPublicKeyV0 {
-                    id,
-                    purpose,
-                    security_level: SecurityLevel::MEDIUM,
-                    contract_bounds: Some(ContractBounds::SingleContract { id: contract.id() }),
-                    key_type: KeyType::ECDSA_SECP256K1,
-                    read_only: false,
-                    data: BinaryData::new(
-                        KeyType::ECDSA_SECP256K1
-                            .random_public_key_data(&mut rng, platform_version)
-                            .expect("expected a random key"),
-                    ),
-                    disabled_at: None,
-                }
-                .into(),
-            );
+        for key in [
+            bound_key(
+                10,
+                Purpose::ENCRYPTION,
+                ContractBounds::SingleContract {
+                    id: contracts[0].id(),
+                },
+                None,
+            ),
+            bound_key(
+                11,
+                Purpose::DECRYPTION,
+                ContractBounds::SingleContractDocumentType {
+                    id: contracts[1].id(),
+                    document_type_name: "contactRequest".to_string(),
+                },
+                None,
+            ),
+            bound_key(
+                12,
+                Purpose::AUTHENTICATION,
+                ContractBounds::ContractGroup { id: group_id },
+                Some(5_000_000),
+            ),
+            bound_key(
+                13,
+                Purpose::ENCRYPTION,
+                ContractBounds::SingleContract {
+                    id: contracts[1].id(),
+                },
+                None,
+            ),
+            bound_key(
+                14,
+                Purpose::DECRYPTION,
+                ContractBounds::SingleContract {
+                    id: contracts[1].id(),
+                },
+                None,
+            ),
+        ] {
+            identity.add_public_key(key);
         }
         drive
             .add_new_identity(
@@ -756,7 +932,19 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to add the identity");
-        conformance_of(&drive, "whole_contract_bound_keys")
+        conformance_of(&drive, "contract_groups_and_bound_keys")
+    }
+
+    fn spent_nullifiers() -> ConformanceReport {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        apply_operations(
+            &drive,
+            drive
+                .insert_nullifiers(&[[3; 32], [4; 32]], platform_version)
+                .expect("expected the nullifier operations"),
+        );
+        conformance_of(&drive, "spent_nullifiers")
     }
 
     #[test]
@@ -769,7 +957,9 @@ mod fixtures {
             address_balances(),
             current_then_paid_epoch(),
             contested_documents(),
-            whole_contract_bound_keys(),
+            token_distributions(),
+            contract_groups_and_bound_keys(),
+            spent_nullifiers(),
         ] {
             visited.extend(report.visited);
         }
@@ -778,7 +968,8 @@ mod fixtures {
         let mut wrongly_listed = vec![];
         drive_structure().walk(&mut |node| {
             let reached = visited.contains(&node.id);
-            let listed = UNVERIFIED.contains(&node.id.as_str());
+            let listed = UNVERIFIED.contains(&node.id.as_str())
+                || REACHED_BY_STRATEGY_TESTS.contains(&node.id.as_str());
             if !reached && !listed {
                 unreached.push(node.id.clone());
             }

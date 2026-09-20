@@ -75,14 +75,17 @@ pub(crate) fn structure() -> StructureNode {
         .child(
             StructureNode::dynamic(
                 "entry",
-                "time_and_index",
-                KeyMatcher::Any,
-                KeyEncoding::Composite,
-                "The block time followed by the transaction index",
+                "expiration_date",
+                KeyMatcher::Len(8),
+                KeyEncoding::U64Be,
+                "When the amount stops counting against the limit, in milliseconds",
             )
             .kind(ElementKind::SumItem)
             .value("credits")
-            .describe("One withdrawal's amount."),
+            .describe(
+                "What was withdrawn with this expiration date. Withdrawals sharing a date \
+                 are added together.",
+            ),
         ),
         StructureNode::fixed(
             "broadcasted",
@@ -95,12 +98,14 @@ pub(crate) fn structure() -> StructureNode {
         .source("packages/rs-drive/src/drive/identity/withdrawals/paths.rs")
         .describe(
             "Transactions that were broadcast, kept until the \
-             core chain confirms or expires them.",
+             core chain confirms or expires them. A sum tree whose \
+             entries are plain items moved over from the queue, so \
+             its sum stays zero.",
         )
         .child(index(
             "transaction",
-            ElementKind::ItemWithSumItem,
-            "the signed transaction and its amount",
+            ElementKind::Item,
+            "the asset unlock transaction, as it was queued",
             "One broadcast transaction.",
         )),
         StructureNode::fixed(

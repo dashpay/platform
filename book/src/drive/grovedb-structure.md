@@ -93,9 +93,19 @@ address balances, an epoch before and after payout, contested documents. A
 change that adds a root tree, a subtree key or a level fails here until it is
 described.
 
-**Coverage.** Every node must be reached by some fixture, or be listed in
-`UNVERIFIED` with the reason no fixture reaches it yet. The test also fails
-when a listed node does get reached, so the list can only shrink.
+**The strategy tests.** The drive-abci strategy tests check the state of every
+chain they run with the same walker (`assert_state_conforms_to_structure`), at
+whatever protocol version the chain ended on. They write far more than the
+fixtures do: votes, withdrawals, token distributions, epochs changing, protocol
+upgrades. Whatever a change's own strategy tests write is walked, so structure
+created only during some operation is caught too.
+
+**Coverage.** Every node must be reached by some rs-drive fixture or be listed
+as reached by the strategy tests. `UNVERIFIED`, the list for nodes written from
+reading the code and never checked against a real GroveDB, is empty and meant
+to stay so: whoever describes a node can write a fixture that creates it. The
+test also fails when a listed node does get reached by a fixture, so the lists
+can only shrink.
 
 **The exported file.** The description is serialized to
 `packages/rs-drive/grovedb-structure.json`, which is what the viewer reads. A
