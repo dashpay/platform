@@ -134,9 +134,11 @@ pub fn entries_query_from_request(
 }
 
 /// The reason of an unproved response. Every ban and every suspension carries one, so a
-/// response without it is refused, and so is a code that is not a u16.
+/// response without it is refused, and so is a reason no entry can hold: a code that is not a
+/// u16, or a text longer than `SystemLimits::max_contract_moderation_reason_length`.
 pub fn reason_from_response(
     reason: Option<ContractModerationReasonProto>,
+    platform_version: &PlatformVersion,
 ) -> Result<ContractModerationReason, Error> {
     let ContractModerationReasonProto { code, text } =
         reason.ok_or(Error::ResponseDecodeError {
@@ -149,12 +151,19 @@ pub fn reason_from_response(
             })
         })
         .transpose()?;
-    Ok(ContractModerationReason { code, text })
+    let reason = ContractModerationReason { code, text };
+    if let Some(error) = reason.validate(platform_version).errors.first() {
+        return Err(Error::ResponseDecodeError {
+            error: format!("contract moderation reason is not one an entry can hold: {error}"),
+        });
+    }
+    Ok(reason)
 }
 
 /// The entries of an unproved response.
 pub fn entries_from_response(
     entries: Vec<ContractModerationEntryProto>,
+    platform_version: &PlatformVersion,
 ) -> Result<ContractModerationEntries, Error> {
     entries
         .into_iter()
@@ -169,7 +178,7 @@ pub fn entries_from_response(
                     }
                 })?,
                 until: entry.until,
-                reason: reason_from_response(entry.reason)?,
+                reason: reason_from_response(entry.reason, platform_version)?,
             })
         })
         .collect::<Result<Vec<_>, Error>>()
@@ -306,24 +315,27 @@ mod tests {
 
     #[test]
     fn should_read_the_entries_of_an_unproved_response() {
-        let page = entries_from_response(vec![
-            ContractModerationEntryProto {
-                identity_id: id(1).to_vec(),
-                until: None,
-                reason: Some(ContractModerationReasonProto {
-                    code: None,
-                    text: "spam".to_string(),
-                }),
-            },
-            ContractModerationEntryProto {
-                identity_id: id(2).to_vec(),
-                until: Some(99),
-                reason: Some(ContractModerationReasonProto {
-                    code: Some(3),
-                    text: String::new(),
-                }),
-            },
-        ])
+        let page = entries_from_response(
+            vec![
+                ContractModerationEntryProto {
+                    identity_id: id(1).to_vec(),
+                    until: None,
+                    reason: Some(ContractModerationReasonProto {
+                        code: None,
+                        text: "spam".to_string(),
+                    }),
+                },
+                ContractModerationEntryProto {
+                    identity_id: id(2).to_vec(),
+                    until: Some(99),
+                    reason: Some(ContractModerationReasonProto {
+                        code: Some(3),
+                        text: String::new(),
+                    }),
+                },
+            ],
+            PlatformVersion::latest(),
+        )
         .expect("expected entries");
         assert_eq!(
             page.entries(),
@@ -344,21 +356,50 @@ mod tests {
             ]
         );
 
-        let err = entries_from_response(vec![ContractModerationEntryProto {
-            identity_id: vec![1; 5],
-            until: None,
-            reason: Some(ContractModerationReasonProto::default()),
-        }])
+        let err = entries_from_response(
+            vec![ContractModerationEntryProto {
+                identity_id: vec![1; 5],
+                until: None,
+                reason: Some(ContractModerationReasonProto::default()),
+            }],
+            PlatformVersion::latest(),
+        )
         .unwrap_err();
         assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
 
         // Every entry carries a reason
-        let err = entries_from_response(vec![ContractModerationEntryProto {
-            identity_id: id(1).to_vec(),
-            until: None,
-            reason: None,
-        }])
+        let err = entries_from_response(
+            vec![ContractModerationEntryProto {
+                identity_id: id(1).to_vec(),
+                until: None,
+                reason: None,
+            }],
+            PlatformVersion::latest(),
+        )
         .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+
+        // A text no entry can hold: one byte over the limit
+        let max_length = PlatformVersion::latest()
+            .system_limits
+            .max_contract_moderation_reason_length as usize;
+        let entry_with_text = |length: usize| {
+            vec![ContractModerationEntryProto {
+                identity_id: id(1).to_vec(),
+                until: None,
+                reason: Some(ContractModerationReasonProto {
+                    code: None,
+                    text: "x".repeat(length),
+                }),
+            }]
+        };
+        entries_from_response(entry_with_text(max_length), PlatformVersion::latest())
+            .expect("expected the longest reason to decode");
+        let err = entries_from_response(entry_with_text(max_length + 1), PlatformVersion::latest())
+            .unwrap_err();
         assert!(
             matches!(err, Error::ResponseDecodeError { .. }),
             "got: {err:?}"
