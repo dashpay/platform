@@ -305,7 +305,8 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     }
 
     // A document type may give its moderators a window: so many seconds after a document's
-    // last modification, past which the document is settled and nobody removes it. A replace
+    // last modification, past which the document is settled and no moderator deletes it (its
+    // own owner's deletion is `canBeDeleted`'s business, at any age). A replace
     // moves `$updatedAt` and opens the window again, since what it wrote is new content. The
     // type requires `$updatedAt`, so every document carries it; one that did not would read as
     // modified at time zero, which is settled: the refusal that protects the author.

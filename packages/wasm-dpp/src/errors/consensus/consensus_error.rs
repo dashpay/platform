@@ -145,6 +145,9 @@ use dpp::consensus::state::document::referenced_document_property_mismatch_error
 use dpp::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
 use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
+use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
+use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
@@ -586,6 +589,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InconsistentGasFeesPaidByInBatchError(e) => {
             generic_consensus_error!(InconsistentGasFeesPaidByInBatchError, e).into()
+        }
+        StateError::DocumentActionFeeAgreementNotSetError(e) => {
+            generic_consensus_error!(DocumentActionFeeAgreementNotSetError, e).into()
+        }
+        StateError::DocumentActionFeeAgreementMismatchError(e) => {
+            generic_consensus_error!(DocumentActionFeeAgreementMismatchError, e).into()
+        }
+        StateError::DocumentActionFeeMultiplierNotToleratedError(e) => {
+            generic_consensus_error!(DocumentActionFeeMultiplierNotToleratedError, e).into()
         }
         StateError::GasSponsorInsufficientBalanceError(e) => {
             generic_consensus_error!(GasSponsorInsufficientBalanceError, e).into()

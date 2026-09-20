@@ -3,6 +3,9 @@ use crate::state_transition_action::batch::{
     GasPayer, ResolvedContractGroupMemberships, ResolvedGasSponsor,
 };
 use dpp::prelude::FeeMultiplier;
+use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
+use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -50,6 +53,62 @@ pub struct BatchTransitionActionV0 {
 }
 
 impl BatchTransitionActionV0 {
+    /// See `BatchTransitionAction::validate_action_fee_agreements`
+    pub(in crate::state_transition_action) fn validate_action_fee_agreements(
+        &self,
+    ) -> Result<Result<(), ConsensusError>, ProtocolError> {
+        for transition in &self.transitions {
+            let BatchedTransitionAction::DocumentAction(document_action) = transition else {
+                continue;
+            };
+            let base = document_action.base();
+            let Some(declared) = base.declared_action_fee_with_agreement() else {
+                continue;
+            };
+            let document_type_name = || base.document_type_name().clone();
+            let action = || document_action.action_name().to_string();
+            let Some(agreement) = declared.agreement else {
+                return Ok(Err(DocumentActionFeeAgreementNotSetError::new(
+                    document_type_name(),
+                    action(),
+                    declared.pricing,
+                    declared.fee,
+                )
+                .into()));
+            };
+            if !agreement.matches_declared(declared.pricing, declared.fee) {
+                return Ok(Err(DocumentActionFeeAgreementMismatchError::new(
+                    document_type_name(),
+                    action(),
+                    declared.pricing,
+                    declared.fee,
+                    &agreement,
+                )
+                .into()));
+            }
+            // A matching agreement names the fee multiplier exactly when the fee follows it.
+            if let Some(agreed_fee_multiplier) = agreement.fee_multiplier() {
+                let current = self.action_fee_multiplier_permille.ok_or(
+                    ProtocolError::CorruptedCodeExecution(
+                        "the batch transformer reads the fee multiplier of every batch that \
+                         declares an action fee priced by it"
+                            .to_string(),
+                    ),
+                )?;
+                if !agreed_fee_multiplier.tolerates(current) {
+                    return Ok(Err(DocumentActionFeeMultiplierNotToleratedError::new(
+                        document_type_name(),
+                        action(),
+                        agreed_fee_multiplier,
+                        current,
+                    )
+                    .into()));
+                }
+            }
+        }
+        Ok(Ok(()))
+    }
+
     /// See `BatchTransitionAction::resolve_gas_payer`
     pub(in crate::state_transition_action) fn resolve_gas_payer(
         &self,

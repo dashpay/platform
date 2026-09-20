@@ -1,3 +1,6 @@
+pub mod document_action_fee_agreement_mismatch_error;
+pub mod document_action_fee_agreement_not_set_error;
+pub mod document_action_fee_multiplier_not_tolerated_error;
 pub mod document_already_present_error;
 pub mod document_contest_currently_locked_error;
 pub mod document_contest_document_with_same_id_already_present_error;

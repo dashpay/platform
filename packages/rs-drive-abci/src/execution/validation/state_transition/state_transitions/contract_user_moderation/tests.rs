@@ -2357,8 +2357,8 @@ async fn should_let_moderators_delete_a_post_only_within_the_window_after_its_la
         .await;
     assert_success(&setup.process_at(&delete, BLOCK_TIME_MS + MODERATION_WINDOW_MS, &transaction));
 
-    // One millisecond later the post is settled: nobody removes it, the owner of the contract
-    // included, and the refusal is paid.
+    // One millisecond later the post is settled: no moderator deletes it, the owner of the
+    // contract included, and the refusal is paid.
     let past_the_window = BLOCK_TIME_MS + MODERATION_WINDOW_MS + 1;
     for actor in [&setup.moderator, &setup.owner] {
         let too_late = setup

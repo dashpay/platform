@@ -3,6 +3,7 @@ pub mod transformer;
 
 use crate::drive::contract::DataContractFetchInfo;
 use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::identifier::Identifier;
@@ -11,6 +12,19 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use dpp::ProtocolError;
 use std::sync::Arc;
+
+/// The fee a document type declares for an action, with what the transition agreed to pay
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeclaredDocumentActionFee {
+    /// How the declared amounts become the amounts charged
+    pub pricing: ActionFeePricing,
+    /// The declared amounts
+    pub fee: DocumentActionFee,
+    /// The transition's action fee agreement, as it came on the wire. The batch's advanced
+    /// structure validation judges it against the declaration, and against the fee multiplier
+    /// the batch transformer read.
+    pub agreement: Option<DocumentActionFeeAgreement>,
+}
 
 #[derive(Debug, Clone)]
 /// document base transition action v0
@@ -30,10 +44,11 @@ pub struct DocumentBaseTransitionActionV0 {
     /// Who the document type's token cost offers to pay the gas: `DocumentOwner` when the action
     /// has no token cost, since only a token payment can be sponsored
     pub contract_gas_fees_paid_by: GasFeesPaidBy,
-    /// The fee the document type declares for this action and how it is priced, `None` when
-    /// it declares none (protocol version 14). Boxed: most actions declare none, and the
-    /// action sits in the largest variant of the batched transition enum.
-    pub declared_action_fee: Option<Box<(ActionFeePricing, DocumentActionFee)>>,
+    /// The fee the document type declares for this action, how it is priced and what the
+    /// transition agreed to pay, `None` when it declares none (protocol version 14). Boxed:
+    /// most actions declare none, and the action sits in the largest variant of the batched
+    /// transition enum.
+    pub declared_action_fee: Option<Box<DeclaredDocumentActionFee>>,
 }
 
 /// document base transition action accessors v0
@@ -72,4 +87,7 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy;
     /// The fee the document type declares for this action and how it is priced
     fn declared_action_fee(&self) -> Option<(ActionFeePricing, DocumentActionFee)>;
+    /// The fee the document type declares for this action, with what the transition agreed
+    /// to pay
+    fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee>;
 }

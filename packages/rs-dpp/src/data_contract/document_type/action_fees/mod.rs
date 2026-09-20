@@ -4,7 +4,8 @@
 //! Each fee has two parts. The `owner` part accumulates in the contract's owner pot and the
 //! `moderators` part in its moderators pot; a `ContractFeeClaim` state transition pays a pot
 //! out. Whoever pays the gas of the action pays its fee. The amounts are fixed when the
-//! document type is published and never change.
+//! document type is published, and a transition names the ones it agrees to pay (see
+//! [`agreement`]).
 
 use crate::balances::credits::{Credits, MAX_CREDITS};
 use crate::block::epoch::EpochIndex;
@@ -21,6 +22,7 @@ use crate::prelude::TimestampMillis;
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
+use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -29,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 
+pub mod agreement;
 pub mod v0;
 
 use v0::DocumentActionFeesV0;
@@ -45,7 +48,7 @@ pub mod pricing_names {
 pub const FEE_MULTIPLIER_PERMILLE_BASE: u64 = 1000;
 
 /// How the declared amounts of a document type's action fees become the amounts charged.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash, Encode, Decode, DecodeUntrusted)]
 pub enum ActionFeePricing {
     /// The declared amounts are scaled by the fee multiplier of the epoch the action executes
     /// in, so they follow the network's fees.
@@ -53,6 +56,12 @@ pub enum ActionFeePricing {
     FeeMultiplier,
     /// The declared amounts are charged as written.
     Fixed,
+}
+
+impl fmt::Display for ActionFeePricing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 impl ActionFeePricing {
@@ -394,6 +403,21 @@ impl DocumentActionFees {
     pub fn document_purchase_action_fee(&self) -> Option<DocumentActionFee> {
         match self {
             DocumentActionFees::V0(v0) => v0.purchase,
+        }
+    }
+
+    /// The fee of `action`, `None` when the document type charges nothing for it. Deleting an
+    /// index-only document is a deletion.
+    pub fn action_fee(&self, action: DocumentTransitionActionType) -> Option<DocumentActionFee> {
+        match action {
+            DocumentTransitionActionType::Create => self.document_creation_action_fee(),
+            DocumentTransitionActionType::Replace => self.document_replacement_action_fee(),
+            DocumentTransitionActionType::Delete
+            | DocumentTransitionActionType::IndexOnlyDelete => self.document_deletion_action_fee(),
+            DocumentTransitionActionType::Transfer => self.document_transfer_action_fee(),
+            DocumentTransitionActionType::UpdatePrice => self.document_price_update_action_fee(),
+            DocumentTransitionActionType::Purchase => self.document_purchase_action_fee(),
+            DocumentTransitionActionType::IgnoreWhileBumpingRevision => None,
         }
     }
 

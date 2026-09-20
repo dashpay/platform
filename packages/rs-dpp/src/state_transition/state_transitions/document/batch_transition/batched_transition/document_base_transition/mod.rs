@@ -5,6 +5,8 @@ pub mod v0;
 mod v0_methods;
 pub mod v1;
 mod v1_methods;
+pub mod v2;
+mod v2_methods;
 
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
 use crate::data_contract::DataContract;
@@ -12,6 +14,7 @@ use crate::state_transition::batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
 use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+use crate::state_transition::batch_transition::document_base_transition::v2::DocumentBaseTransitionV2;
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -55,6 +58,9 @@ pub enum DocumentBaseTransition {
     #[display("V1({})", "_1")]
     #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(DocumentBaseTransitionV1),
+    #[display("V2({})", _0)]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "2"))]
+    V2(DocumentBaseTransitionV2),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
