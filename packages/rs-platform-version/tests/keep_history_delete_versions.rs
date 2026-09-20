@@ -399,6 +399,16 @@ fn should_expose_one_implementation_of_each_new_lifecycle_slot() {
             version
                 .drive
                 .methods
+                .document
+                .delete
+                .add_estimation_costs_for_lifecycle_record,
+            expected_erase_version,
+            "lifecycle record estimation at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive
+                .methods
                 .state_transitions
                 .convert_to_high_level_operations
                 .document_erase_transition,

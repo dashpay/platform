@@ -191,27 +191,6 @@ export interface DocumentHistoryQuery {
   /** Maximum ten entries. A single revision requires limit one. */
   limit?: number;
 }
-export interface DocumentHistoryResult {
-  entries: { timeMs: bigint; revision: bigint; document: Document }[];
-  /** Missing when the legacy storage generation cannot authenticate lifecycle metadata. */
-  lifecycle?: {
-    /**
-     * ACTIVE while the document is visible to ordinary reads, DELETED once it
-     * has been deleted and its revisions are retained, ERASING once an
-     * authorized erasure has begun, ABSENT when nothing is left.
-     */
-    state: "ACTIVE" | "DELETED" | "ERASING" | "ABSENT";
-    remainingRevisions: bigint;
-    /** Zero unless the document has been deleted. */
-    deletedAtMs: bigint;
-    /** Zero unless an authorized erasure has begun. */
-    erasingStartedAtMs: bigint;
-    /** Timestamp of the newest revision retained when the erasure began. */
-    erasingFromTimeMs: bigint;
-    /** History sequence of that revision. */
-    erasingFromRevision: bigint;
-  };
-}
 "#;
 
 #[wasm_bindgen]
@@ -438,7 +417,13 @@ struct DocumentHistoryLifecycleSerde {
 
 #[wasm_bindgen(js_class = DocumentHistoryLifecycle)]
 impl DocumentHistoryLifecycleWasm {
-    #[wasm_bindgen(getter)]
+    /// `ACTIVE` while the document is visible to ordinary reads, `DELETED`
+    /// once it has been deleted and its revisions are retained, `ERASING` once
+    /// an authorized erasure has begun, `ABSENT` when nothing is left.
+    #[wasm_bindgen(
+        getter,
+        unchecked_return_type = "\"ACTIVE\" | \"DELETED\" | \"ERASING\" | \"ABSENT\""
+    )]
     pub fn state(&self) -> String {
         self.state.clone()
     }
@@ -448,21 +433,25 @@ impl DocumentHistoryLifecycleWasm {
         BigInt::from(self.remaining_revisions)
     }
 
+    /// Zero unless the document has been deleted.
     #[wasm_bindgen(getter = "deletedAtMs")]
     pub fn deleted_at_ms(&self) -> BigInt {
         BigInt::from(self.deleted_at_ms)
     }
 
+    /// Zero unless an authorized erasure has begun.
     #[wasm_bindgen(getter = "erasingStartedAtMs")]
     pub fn erasing_started_at_ms(&self) -> BigInt {
         BigInt::from(self.erasing_started_at_ms)
     }
 
+    /// Timestamp of the newest revision retained when the erasure began.
     #[wasm_bindgen(getter = "erasingFromTimeMs")]
     pub fn erasing_from_time_ms(&self) -> BigInt {
         BigInt::from(self.erasing_from_time_ms)
     }
 
+    /// History sequence of the newest revision retained when the erasure began.
     #[wasm_bindgen(getter = "erasingFromRevision")]
     pub fn erasing_from_revision(&self) -> BigInt {
         BigInt::from(self.erasing_from_revision)
@@ -509,6 +498,8 @@ impl DocumentHistoryResultWasm {
         self.entries.clone()
     }
 
+    /// Missing when the legacy storage generation cannot authenticate lifecycle
+    /// metadata.
     #[wasm_bindgen(getter)]
     pub fn lifecycle(&self) -> Option<DocumentHistoryLifecycleWasm> {
         self.lifecycle.clone()

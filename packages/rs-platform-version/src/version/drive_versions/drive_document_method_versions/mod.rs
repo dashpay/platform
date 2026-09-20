@@ -166,6 +166,10 @@ pub struct DriveDocumentDeleteMethodVersions {
     /// Estimation layers for the erase chunk. Same dormancy as
     /// `erase_document_for_contract_operations`.
     pub add_estimation_costs_for_erase_document: OptionalFeatureVersion,
+    /// Estimation layers for the lifecycle record a delete writes and an
+    /// erase removes, shared by both. Same dormancy as
+    /// `erase_document_for_contract_operations`.
+    pub add_estimation_costs_for_lifecycle_record: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

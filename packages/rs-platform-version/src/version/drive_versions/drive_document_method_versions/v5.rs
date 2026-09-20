@@ -35,6 +35,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             delete_document_for_contract_operations: 1,
             erase_document_for_contract_operations: Some(0),
             add_estimation_costs_for_erase_document: Some(0),
+            add_estimation_costs_for_lifecycle_record: Some(0),
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },
         insert: DriveDocumentInsertMethodVersions {

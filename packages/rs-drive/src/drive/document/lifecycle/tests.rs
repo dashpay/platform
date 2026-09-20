@@ -1895,3 +1895,50 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
         assert!(page.entries.is_empty());
     }
 }
+
+/// A lifecycle delete given only the contract's id has to fetch the contract,
+/// and that fetch is billed: its operation must come back with the delete's
+/// operations rather than be dropped on the way out, as it is for an erase.
+#[test]
+fn should_keep_the_contract_fetch_cost_of_a_lifecycle_delete_by_contract_id() {
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+    use crate::util::batch::DocumentOperationType;
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+
+    let owner = [48u8; 32];
+    let version = latest();
+    let (drive, contract, id) = setup_history(1, owner);
+    let block_info = BlockInfo::default_with_time(5_000);
+
+    let delete_with = |contract_info: DataContractInfo| {
+        DocumentOperationType::DeleteDocumentWithLifecycle {
+            document_id: id,
+            deleter_id: Some(Identifier::new(owner)),
+            contract_info,
+            document_type_info: DocumentTypeInfo::DocumentTypeName("person".to_string()),
+        }
+        .into_low_level_drive_operations(&drive, &mut None, &block_info, None, version)
+        .expect("expected the delete to convert")
+    };
+
+    // The delete bills its own reads too, so the comparison is against the
+    // borrowed-contract path, which performs no fetch.
+    let borrowed = delete_with(DataContractInfo::BorrowedDataContract(&contract));
+    assert!(!borrowed.is_empty(), "the delete itself emits operations");
+
+    let by_id = delete_with(DataContractInfo::DataContractId(contract.id()));
+    assert!(
+        matches!(
+            by_id.first(),
+            Some(LowLevelDriveOperation::PreCalculatedFeeResult(_))
+        ),
+        "the contract fetch is billed first, got {:?}",
+        by_id.first()
+    );
+    assert_eq!(
+        by_id[1..],
+        borrowed[..],
+        "after the fetch cost, the by-id path emits exactly the delete's operations"
+    );
+}

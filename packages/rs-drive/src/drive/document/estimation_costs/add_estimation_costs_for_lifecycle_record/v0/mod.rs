@@ -4,7 +4,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
@@ -25,11 +24,10 @@ impl Drive {
     ///
     /// A dry run that leaves either layer unregistered fails outright, so both
     /// are always registered even when the tree already exists.
-    pub(crate) fn add_estimation_costs_for_lifecycle_record(
+    pub(super) fn add_estimation_costs_for_lifecycle_record_v0(
         contract: &DataContract,
         document_type: DocumentTypeRef,
         layers: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        _platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let flags_size = Some(StorageFlags::approximate_size(true, None));
         layers.insert(

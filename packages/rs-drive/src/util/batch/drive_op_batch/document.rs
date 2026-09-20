@@ -496,18 +496,24 @@ impl DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
-                drive.delete_document_for_contract_operations_with_lifecycle_without_ttl_drain(
-                    document_id,
-                    contract,
-                    document_type,
-                    block_info,
-                    deleter_id,
-                    None,
-                    estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
-                    transaction,
-                    platform_version,
-                )
+                // The contract resolution above may have billed a fetch; keep
+                // its operations ahead of the delete's so the caller pays for
+                // both.
+                let mut operations = drive
+                    .delete_document_for_contract_operations_with_lifecycle_without_ttl_drain(
+                        document_id,
+                        contract,
+                        document_type,
+                        block_info,
+                        deleter_id,
+                        None,
+                        estimated_costs_only_with_layer_info,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
             }
             DocumentOperationType::EraseDocument {
                 document_id,
