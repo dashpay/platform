@@ -98,6 +98,7 @@ GPBObjCClassDeclaration(GetContractFeePotsRequest);
 GPBObjCClassDeclaration(GetContractFeePotsRequest_GetContractFeePotsRequestV0);
 GPBObjCClassDeclaration(GetContractFeePotsResponse);
 GPBObjCClassDeclaration(GetContractFeePotsResponse_ContractFeePot);
+GPBObjCClassDeclaration(GetContractFeePotsResponse_ContractFeePotLastClaim);
 GPBObjCClassDeclaration(GetContractFeePotsResponse_ContractFeePots);
 GPBObjCClassDeclaration(GetContractFeePotsResponse_GetContractFeePotsResponseV0);
 GPBObjCClassDeclaration(GetContractGroupInfoRequest);
@@ -7221,16 +7222,84 @@ void GetContractFeePotsResponse_ClearVersionOneOfCase(GetContractFeePotsResponse
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetContractFeePotsResponse_ContractFeePotLastClaim
+
+@implementation GetContractFeePotsResponse_ContractFeePotLastClaim
+
+@dynamic epoch;
+@dynamic timeMs;
+@dynamic claimantId;
+
+typedef struct GetContractFeePotsResponse_ContractFeePotLastClaim__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t epoch;
+  NSData *claimantId;
+  uint64_t timeMs;
+} GetContractFeePotsResponse_ContractFeePotLastClaim__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "epoch",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractFeePotsResponse_ContractFeePotLastClaim_FieldNumber_Epoch,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractFeePotsResponse_ContractFeePotLastClaim__storage_, epoch),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "timeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractFeePotsResponse_ContractFeePotLastClaim_FieldNumber_TimeMs,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContractFeePotsResponse_ContractFeePotLastClaim__storage_, timeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "claimantId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractFeePotsResponse_ContractFeePotLastClaim_FieldNumber_ClaimantId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContractFeePotsResponse_ContractFeePotLastClaim__storage_, claimantId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractFeePotsResponse_ContractFeePotLastClaim class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractFeePotsResponse_ContractFeePotLastClaim__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractFeePotsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetContractFeePotsResponse_ContractFeePot
 
 @implementation GetContractFeePotsResponse_ContractFeePot
 
 @dynamic credits;
-@dynamic hasLastClaimEpoch, lastClaimEpoch;
+@dynamic hasLastClaim, lastClaim;
 
 typedef struct GetContractFeePotsResponse_ContractFeePot__storage_ {
   uint32_t _has_storage_[1];
-  uint32_t lastClaimEpoch;
+  GetContractFeePotsResponse_ContractFeePotLastClaim *lastClaim;
   uint64_t credits;
 } GetContractFeePotsResponse_ContractFeePot__storage_;
 
@@ -7250,13 +7319,13 @@ typedef struct GetContractFeePotsResponse_ContractFeePot__storage_ {
         .dataType = GPBDataTypeUInt64,
       },
       {
-        .name = "lastClaimEpoch",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetContractFeePotsResponse_ContractFeePot_FieldNumber_LastClaimEpoch,
+        .name = "lastClaim",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractFeePotsResponse_ContractFeePotLastClaim),
+        .number = GetContractFeePotsResponse_ContractFeePot_FieldNumber_LastClaim,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetContractFeePotsResponse_ContractFeePot__storage_, lastClaimEpoch),
+        .offset = (uint32_t)offsetof(GetContractFeePotsResponse_ContractFeePot__storage_, lastClaim),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeUInt32,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =

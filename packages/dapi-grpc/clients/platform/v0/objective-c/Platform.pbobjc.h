@@ -78,6 +78,7 @@ CF_EXTERN_C_BEGIN
 @class GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues;
 @class GetContractFeePotsRequest_GetContractFeePotsRequestV0;
 @class GetContractFeePotsResponse_ContractFeePot;
+@class GetContractFeePotsResponse_ContractFeePotLastClaim;
 @class GetContractFeePotsResponse_ContractFeePots;
 @class GetContractFeePotsResponse_GetContractFeePotsResponseV0;
 @class GetContractGroupInfoRequest_GetContractGroupInfoRequestV0;
@@ -3377,11 +3378,35 @@ GPB_FINAL @interface GetContractFeePotsResponse : GPBMessage
  **/
 void GetContractFeePotsResponse_ClearVersionOneOfCase(GetContractFeePotsResponse *message);
 
+#pragma mark - GetContractFeePotsResponse_ContractFeePotLastClaim
+
+typedef GPB_ENUM(GetContractFeePotsResponse_ContractFeePotLastClaim_FieldNumber) {
+  GetContractFeePotsResponse_ContractFeePotLastClaim_FieldNumber_Epoch = 1,
+  GetContractFeePotsResponse_ContractFeePotLastClaim_FieldNumber_TimeMs = 2,
+  GetContractFeePotsResponse_ContractFeePotLastClaim_FieldNumber_ClaimantId = 3,
+};
+
+/**
+ * The last payout of a pot, which the claim that made it left in state
+ **/
+GPB_FINAL @interface GetContractFeePotsResponse_ContractFeePotLastClaim : GPBMessage
+
+/** The epoch (u16) the pot was paid out in; a pot is paid */
+@property(nonatomic, readwrite) uint32_t epoch;
+
+/** out at most once per epoch */
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+/** The identity that signed the claim: the contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *claimantId;
+
+@end
+
 #pragma mark - GetContractFeePotsResponse_ContractFeePot
 
 typedef GPB_ENUM(GetContractFeePotsResponse_ContractFeePot_FieldNumber) {
   GetContractFeePotsResponse_ContractFeePot_FieldNumber_Credits = 1,
-  GetContractFeePotsResponse_ContractFeePot_FieldNumber_LastClaimEpoch = 2,
+  GetContractFeePotsResponse_ContractFeePot_FieldNumber_LastClaim = 2,
 };
 
 /**
@@ -3392,10 +3417,11 @@ GPB_FINAL @interface GetContractFeePotsResponse_ContractFeePot : GPBMessage
 /** What the pot holds */
 @property(nonatomic, readwrite) uint64_t credits;
 
-/** The epoch the pot was last paid out in, unset when it never was; */
-@property(nonatomic, readwrite) uint32_t lastClaimEpoch;
+/** Unset when the pot was never paid out */
+@property(nonatomic, readwrite, strong, null_resettable) GetContractFeePotsResponse_ContractFeePotLastClaim *lastClaim;
+/** Test to see if @c lastClaim has been set. */
+@property(nonatomic, readwrite) BOOL hasLastClaim;
 
-@property(nonatomic, readwrite) BOOL hasLastClaimEpoch;
 @end
 
 #pragma mark - GetContractFeePotsResponse_ContractFeePots

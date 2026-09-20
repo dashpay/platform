@@ -3248,14 +3248,44 @@ export namespace GetContractFeePotsResponse {
     v0?: GetContractFeePotsResponse.GetContractFeePotsResponseV0.AsObject,
   }
 
+  export class ContractFeePotLastClaim extends jspb.Message {
+    getEpoch(): number;
+    setEpoch(value: number): void;
+
+    getTimeMs(): string;
+    setTimeMs(value: string): void;
+
+    getClaimantId(): Uint8Array | string;
+    getClaimantId_asU8(): Uint8Array;
+    getClaimantId_asB64(): string;
+    setClaimantId(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractFeePotLastClaim.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractFeePotLastClaim): ContractFeePotLastClaim.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractFeePotLastClaim, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractFeePotLastClaim;
+    static deserializeBinaryFromReader(message: ContractFeePotLastClaim, reader: jspb.BinaryReader): ContractFeePotLastClaim;
+  }
+
+  export namespace ContractFeePotLastClaim {
+    export type AsObject = {
+      epoch: number,
+      timeMs: string,
+      claimantId: Uint8Array | string,
+    }
+  }
+
   export class ContractFeePot extends jspb.Message {
     getCredits(): string;
     setCredits(value: string): void;
 
-    hasLastClaimEpoch(): boolean;
-    clearLastClaimEpoch(): void;
-    getLastClaimEpoch(): number;
-    setLastClaimEpoch(value: number): void;
+    hasLastClaim(): boolean;
+    clearLastClaim(): void;
+    getLastClaim(): GetContractFeePotsResponse.ContractFeePotLastClaim | undefined;
+    setLastClaim(value?: GetContractFeePotsResponse.ContractFeePotLastClaim): void;
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractFeePot.AsObject;
@@ -3270,7 +3300,7 @@ export namespace GetContractFeePotsResponse {
   export namespace ContractFeePot {
     export type AsObject = {
       credits: string,
-      lastClaimEpoch: number,
+      lastClaim?: GetContractFeePotsResponse.ContractFeePotLastClaim.AsObject,
     }
   }
 

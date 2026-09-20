@@ -27220,6 +27220,261 @@ $root.org = (function() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
+                        GetContractFeePotsResponse.ContractFeePotLastClaim = (function() {
+
+                            /**
+                             * Properties of a ContractFeePotLastClaim.
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse
+                             * @interface IContractFeePotLastClaim
+                             * @property {number|null} [epoch] ContractFeePotLastClaim epoch
+                             * @property {number|Long|null} [timeMs] ContractFeePotLastClaim timeMs
+                             * @property {Uint8Array|null} [claimantId] ContractFeePotLastClaim claimantId
+                             */
+
+                            /**
+                             * Constructs a new ContractFeePotLastClaim.
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse
+                             * @classdesc Represents a ContractFeePotLastClaim.
+                             * @implements IContractFeePotLastClaim
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractFeePotsResponse.IContractFeePotLastClaim=} [properties] Properties to set
+                             */
+                            function ContractFeePotLastClaim(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractFeePotLastClaim epoch.
+                             * @member {number} epoch
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @instance
+                             */
+                            ContractFeePotLastClaim.prototype.epoch = 0;
+
+                            /**
+                             * ContractFeePotLastClaim timeMs.
+                             * @member {number|Long} timeMs
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @instance
+                             */
+                            ContractFeePotLastClaim.prototype.timeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * ContractFeePotLastClaim claimantId.
+                             * @member {Uint8Array} claimantId
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @instance
+                             */
+                            ContractFeePotLastClaim.prototype.claimantId = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new ContractFeePotLastClaim instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractFeePotsResponse.IContractFeePotLastClaim=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim} ContractFeePotLastClaim instance
+                             */
+                            ContractFeePotLastClaim.create = function create(properties) {
+                                return new ContractFeePotLastClaim(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractFeePotLastClaim message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractFeePotsResponse.IContractFeePotLastClaim} message ContractFeePotLastClaim message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractFeePotLastClaim.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.epoch);
+                                if (message.timeMs != null && Object.hasOwnProperty.call(message, "timeMs"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.timeMs);
+                                if (message.claimantId != null && Object.hasOwnProperty.call(message, "claimantId"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.claimantId);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractFeePotLastClaim message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractFeePotsResponse.IContractFeePotLastClaim} message ContractFeePotLastClaim message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractFeePotLastClaim.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractFeePotLastClaim message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim} ContractFeePotLastClaim
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractFeePotLastClaim.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.epoch = reader.uint32();
+                                        break;
+                                    case 2:
+                                        message.timeMs = reader.uint64();
+                                        break;
+                                    case 3:
+                                        message.claimantId = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractFeePotLastClaim message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim} ContractFeePotLastClaim
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractFeePotLastClaim.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractFeePotLastClaim message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractFeePotLastClaim.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    if (!$util.isInteger(message.epoch))
+                                        return "epoch: integer expected";
+                                if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                    if (!$util.isInteger(message.timeMs) && !(message.timeMs && $util.isInteger(message.timeMs.low) && $util.isInteger(message.timeMs.high)))
+                                        return "timeMs: integer|Long expected";
+                                if (message.claimantId != null && message.hasOwnProperty("claimantId"))
+                                    if (!(message.claimantId && typeof message.claimantId.length === "number" || $util.isString(message.claimantId)))
+                                        return "claimantId: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractFeePotLastClaim message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim} ContractFeePotLastClaim
+                             */
+                            ContractFeePotLastClaim.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim();
+                                if (object.epoch != null)
+                                    message.epoch = object.epoch >>> 0;
+                                if (object.timeMs != null)
+                                    if ($util.Long)
+                                        (message.timeMs = $util.Long.fromValue(object.timeMs)).unsigned = true;
+                                    else if (typeof object.timeMs === "string")
+                                        message.timeMs = parseInt(object.timeMs, 10);
+                                    else if (typeof object.timeMs === "number")
+                                        message.timeMs = object.timeMs;
+                                    else if (typeof object.timeMs === "object")
+                                        message.timeMs = new $util.LongBits(object.timeMs.low >>> 0, object.timeMs.high >>> 0).toNumber(true);
+                                if (object.claimantId != null)
+                                    if (typeof object.claimantId === "string")
+                                        $util.base64.decode(object.claimantId, message.claimantId = $util.newBuffer($util.base64.length(object.claimantId)), 0);
+                                    else if (object.claimantId.length >= 0)
+                                        message.claimantId = object.claimantId;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractFeePotLastClaim message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim} message ContractFeePotLastClaim
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractFeePotLastClaim.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.epoch = 0;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.timeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.timeMs = options.longs === String ? "0" : 0;
+                                    if (options.bytes === String)
+                                        object.claimantId = "";
+                                    else {
+                                        object.claimantId = [];
+                                        if (options.bytes !== Array)
+                                            object.claimantId = $util.newBuffer(object.claimantId);
+                                    }
+                                }
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    object.epoch = message.epoch;
+                                if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                    if (typeof message.timeMs === "number")
+                                        object.timeMs = options.longs === String ? String(message.timeMs) : message.timeMs;
+                                    else
+                                        object.timeMs = options.longs === String ? $util.Long.prototype.toString.call(message.timeMs) : options.longs === Number ? new $util.LongBits(message.timeMs.low >>> 0, message.timeMs.high >>> 0).toNumber(true) : message.timeMs;
+                                if (message.claimantId != null && message.hasOwnProperty("claimantId"))
+                                    object.claimantId = options.bytes === String ? $util.base64.encode(message.claimantId, 0, message.claimantId.length) : options.bytes === Array ? Array.prototype.slice.call(message.claimantId) : message.claimantId;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractFeePotLastClaim to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractFeePotLastClaim.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractFeePotLastClaim;
+                        })();
+
                         GetContractFeePotsResponse.ContractFeePot = (function() {
 
                             /**
@@ -27227,7 +27482,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse
                              * @interface IContractFeePot
                              * @property {number|Long|null} [credits] ContractFeePot credits
-                             * @property {number|null} [lastClaimEpoch] ContractFeePot lastClaimEpoch
+                             * @property {org.dash.platform.dapi.v0.GetContractFeePotsResponse.IContractFeePotLastClaim|null} [lastClaim] ContractFeePot lastClaim
                              */
 
                             /**
@@ -27254,12 +27509,12 @@ $root.org = (function() {
                             ContractFeePot.prototype.credits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
-                             * ContractFeePot lastClaimEpoch.
-                             * @member {number} lastClaimEpoch
+                             * ContractFeePot lastClaim.
+                             * @member {org.dash.platform.dapi.v0.GetContractFeePotsResponse.IContractFeePotLastClaim|null|undefined} lastClaim
                              * @memberof org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePot
                              * @instance
                              */
-                            ContractFeePot.prototype.lastClaimEpoch = 0;
+                            ContractFeePot.prototype.lastClaim = null;
 
                             /**
                              * Creates a new ContractFeePot instance using the specified properties.
@@ -27287,8 +27542,8 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.credits != null && Object.hasOwnProperty.call(message, "credits"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.credits);
-                                if (message.lastClaimEpoch != null && Object.hasOwnProperty.call(message, "lastClaimEpoch"))
-                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.lastClaimEpoch);
+                                if (message.lastClaim != null && Object.hasOwnProperty.call(message, "lastClaim"))
+                                    $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim.encode(message.lastClaim, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 return writer;
                             };
 
@@ -27327,7 +27582,7 @@ $root.org = (function() {
                                         message.credits = reader.uint64();
                                         break;
                                     case 2:
-                                        message.lastClaimEpoch = reader.uint32();
+                                        message.lastClaim = $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -27367,9 +27622,11 @@ $root.org = (function() {
                                 if (message.credits != null && message.hasOwnProperty("credits"))
                                     if (!$util.isInteger(message.credits) && !(message.credits && $util.isInteger(message.credits.low) && $util.isInteger(message.credits.high)))
                                         return "credits: integer|Long expected";
-                                if (message.lastClaimEpoch != null && message.hasOwnProperty("lastClaimEpoch"))
-                                    if (!$util.isInteger(message.lastClaimEpoch))
-                                        return "lastClaimEpoch: integer expected";
+                                if (message.lastClaim != null && message.hasOwnProperty("lastClaim")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim.verify(message.lastClaim);
+                                    if (error)
+                                        return "lastClaim." + error;
+                                }
                                 return null;
                             };
 
@@ -27394,8 +27651,11 @@ $root.org = (function() {
                                         message.credits = object.credits;
                                     else if (typeof object.credits === "object")
                                         message.credits = new $util.LongBits(object.credits.low >>> 0, object.credits.high >>> 0).toNumber(true);
-                                if (object.lastClaimEpoch != null)
-                                    message.lastClaimEpoch = object.lastClaimEpoch >>> 0;
+                                if (object.lastClaim != null) {
+                                    if (typeof object.lastClaim !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePot.lastClaim: object expected");
+                                    message.lastClaim = $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim.fromObject(object.lastClaim);
+                                }
                                 return message;
                             };
 
@@ -27418,15 +27678,15 @@ $root.org = (function() {
                                         object.credits = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.credits = options.longs === String ? "0" : 0;
-                                    object.lastClaimEpoch = 0;
+                                    object.lastClaim = null;
                                 }
                                 if (message.credits != null && message.hasOwnProperty("credits"))
                                     if (typeof message.credits === "number")
                                         object.credits = options.longs === String ? String(message.credits) : message.credits;
                                     else
                                         object.credits = options.longs === String ? $util.Long.prototype.toString.call(message.credits) : options.longs === Number ? new $util.LongBits(message.credits.low >>> 0, message.credits.high >>> 0).toNumber(true) : message.credits;
-                                if (message.lastClaimEpoch != null && message.hasOwnProperty("lastClaimEpoch"))
-                                    object.lastClaimEpoch = message.lastClaimEpoch;
+                                if (message.lastClaim != null && message.hasOwnProperty("lastClaim"))
+                                    object.lastClaim = $root.org.dash.platform.dapi.v0.GetContractFeePotsResponse.ContractFeePotLastClaim.toObject(message.lastClaim, options);
                                 return object;
                             };
 
