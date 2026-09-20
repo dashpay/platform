@@ -76,6 +76,10 @@ CF_EXTERN_C_BEGIN
 @class GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo;
 @class GetContestedResourcesResponse_GetContestedResourcesResponseV0;
 @class GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues;
+@class GetContractFeePotsRequest_GetContractFeePotsRequestV0;
+@class GetContractFeePotsResponse_ContractFeePot;
+@class GetContractFeePotsResponse_ContractFeePots;
+@class GetContractFeePotsResponse_GetContractFeePotsResponseV0;
 @class GetContractGroupInfoRequest_GetContractGroupInfoRequestV0;
 @class GetContractGroupInfoResponse_ContractGroupInfo;
 @class GetContractGroupInfoResponse_GetContractGroupInfoResponseV0;
@@ -3307,6 +3311,149 @@ GPB_FINAL @interface GetContractModerationEntriesResponse_GetContractModerationE
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetContractModerationEntriesResponse_GetContractModerationEntriesResponseV0_ClearResultOneOfCase(GetContractModerationEntriesResponse_GetContractModerationEntriesResponseV0 *message);
+
+#pragma mark - GetContractFeePotsRequest
+
+typedef GPB_ENUM(GetContractFeePotsRequest_FieldNumber) {
+  GetContractFeePotsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContractFeePotsRequest_Version_OneOfCase) {
+  GetContractFeePotsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContractFeePotsRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetContractFeePotsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetContractFeePotsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContractFeePotsRequest_GetContractFeePotsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContractFeePotsRequest_ClearVersionOneOfCase(GetContractFeePotsRequest *message);
+
+#pragma mark - GetContractFeePotsRequest_GetContractFeePotsRequestV0
+
+typedef GPB_ENUM(GetContractFeePotsRequest_GetContractFeePotsRequestV0_FieldNumber) {
+  GetContractFeePotsRequest_GetContractFeePotsRequestV0_FieldNumber_ContractId = 1,
+  GetContractFeePotsRequest_GetContractFeePotsRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetContractFeePotsRequest_GetContractFeePotsRequestV0 : GPBMessage
+
+/** The 32-byte id of the data contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetContractFeePotsResponse
+
+typedef GPB_ENUM(GetContractFeePotsResponse_FieldNumber) {
+  GetContractFeePotsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContractFeePotsResponse_Version_OneOfCase) {
+  GetContractFeePotsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContractFeePotsResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetContractFeePotsResponse : GPBMessage
+
+@property(nonatomic, readonly) GetContractFeePotsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContractFeePotsResponse_GetContractFeePotsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContractFeePotsResponse_ClearVersionOneOfCase(GetContractFeePotsResponse *message);
+
+#pragma mark - GetContractFeePotsResponse_ContractFeePot
+
+typedef GPB_ENUM(GetContractFeePotsResponse_ContractFeePot_FieldNumber) {
+  GetContractFeePotsResponse_ContractFeePot_FieldNumber_Credits = 1,
+  GetContractFeePotsResponse_ContractFeePot_FieldNumber_LastClaimEpoch = 2,
+};
+
+/**
+ * One of the two pots a contract's document action fees collect in
+ **/
+GPB_FINAL @interface GetContractFeePotsResponse_ContractFeePot : GPBMessage
+
+/** What the pot holds */
+@property(nonatomic, readwrite) uint64_t credits;
+
+/** The epoch the pot was last paid out in, unset when it never was; */
+@property(nonatomic, readwrite) uint32_t lastClaimEpoch;
+
+@property(nonatomic, readwrite) BOOL hasLastClaimEpoch;
+@end
+
+#pragma mark - GetContractFeePotsResponse_ContractFeePots
+
+typedef GPB_ENUM(GetContractFeePotsResponse_ContractFeePots_FieldNumber) {
+  GetContractFeePotsResponse_ContractFeePots_FieldNumber_Owner = 1,
+  GetContractFeePotsResponse_ContractFeePots_FieldNumber_Moderators = 2,
+};
+
+GPB_FINAL @interface GetContractFeePotsResponse_ContractFeePots : GPBMessage
+
+/** The pot the contract owner claims */
+@property(nonatomic, readwrite, strong, null_resettable) GetContractFeePotsResponse_ContractFeePot *owner;
+/** Test to see if @c owner has been set. */
+@property(nonatomic, readwrite) BOOL hasOwner;
+
+/** The pot the moderation team shares */
+@property(nonatomic, readwrite, strong, null_resettable) GetContractFeePotsResponse_ContractFeePot *moderators;
+/** Test to see if @c moderators has been set. */
+@property(nonatomic, readwrite) BOOL hasModerators;
+
+@end
+
+#pragma mark - GetContractFeePotsResponse_GetContractFeePotsResponseV0
+
+typedef GPB_ENUM(GetContractFeePotsResponse_GetContractFeePotsResponseV0_FieldNumber) {
+  GetContractFeePotsResponse_GetContractFeePotsResponseV0_FieldNumber_Pots = 1,
+  GetContractFeePotsResponse_GetContractFeePotsResponseV0_FieldNumber_Proof = 2,
+  GetContractFeePotsResponse_GetContractFeePotsResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetContractFeePotsResponse_GetContractFeePotsResponseV0_Result_OneOfCase) {
+  GetContractFeePotsResponse_GetContractFeePotsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContractFeePotsResponse_GetContractFeePotsResponseV0_Result_OneOfCase_Pots = 1,
+  GetContractFeePotsResponse_GetContractFeePotsResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetContractFeePotsResponse_GetContractFeePotsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetContractFeePotsResponse_GetContractFeePotsResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** Both pots of the contract */
+@property(nonatomic, readwrite, strong, null_resettable) GetContractFeePotsResponse_ContractFeePots *pots;
+
+/** Cryptographic proof of the pots, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetContractFeePotsResponse_GetContractFeePotsResponseV0_ClearResultOneOfCase(GetContractFeePotsResponse_GetContractFeePotsResponseV0 *message);
 
 #pragma mark - GetContractGroupsForContractRequest
 
