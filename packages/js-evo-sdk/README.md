@@ -256,7 +256,7 @@ try {
 
 ## Chained queries (provable semi-join)
 
-A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents (a missing referenced document fails verification outright, since `permanentDocument` references cannot dangle).
+A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents. A referenced document that was removed after the inner document was written is proven absent and simply has no entry in `outerDocuments`, so match the two halves by id, not by position.
 
 ```ts
 // The posts I liked, newest page first by postId.
@@ -292,7 +292,7 @@ The inner query must target an indexOnly document type and resolve to an index c
 
 A **composite query** answers a page and everything a UI needs to render it in ONE verified round trip: the page documents, plus one to ten sub-queries whose `IN` clause the node derives from the proven page (or from an earlier `documents` sub-query). The request never names the derived values. Four sub-query shapes exist:
 
-- a **by-id join** (`bind.field: '$id'`): the documents a page property refers to (the property must declare `refersTo: permanentDocument` targeting the sub-query's type, so a missing document fails verification);
+- a **by-id join** (`bind.field: '$id'`): the documents a page property refers to (the property must declare `refersTo: permanentDocument` targeting the sub-query's type; a referenced document removed since is proven absent and left out);
 - an **indexed lookup** (`bind.field` an indexed property or `$ownerId`): documents keyed by a page value, in this or any other contract, with a `limit` on the rows it returns in total unless the index already bounds them (a unique index, or an indexOnly terminal with every prefix fixed);
 - a **count** (`kind: 'counts'`): one count per page value from a `countable` index covering the fixed clauses plus the bound field;
 - a **sibling** (no `bind`): an independent documents query proven under the same root.

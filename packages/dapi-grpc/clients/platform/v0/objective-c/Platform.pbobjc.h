@@ -4938,8 +4938,8 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_SubQuery : GPBMes
  * caps the rows the lookup returns in total, in walk order, like
  * an ordinary IN query's limit (at most 100). Lookups already
  * bounded by their values (a unique index, or an indexOnly
- * terminal with every prefix fixed), by-id joins (completeness is
- * set equality) and counts take none.
+ * terminal with every prefix fixed), by-id joins (every derived
+ * id is fetched) and counts take none.
  **/
 @property(nonatomic, readwrite) uint32_t limit;
 
@@ -5722,8 +5722,9 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
  * semi-join, in inner order (the last inner projection's
  * join-property value is the pagination cursor; outer
  * documents are ordered by first appearance of their id
- * among the inner projections, deduplicated). Routed when
- * the request's `chained` message is present.
+ * among the inner projections, deduplicated; a join value
+ * whose document is no longer in state has none). Routed
+ * when the request's `chained` message is present.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments *chained;
 
@@ -5807,7 +5808,8 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocume
 
 /**
  * DOCUMENTS: a by-id join in first-appearance order of the
- * derived ids; a lookup or sibling in query order.
+ * derived ids (one whose document is no longer in state is
+ * left out); a lookup or sibling in query order.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_Documents *documents;
 

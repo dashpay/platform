@@ -20,13 +20,14 @@ impl DriveDocumentQuery<'_> {
     /// it from its materialization), the merged query is rebuilt, and
     /// the AUTHORITATIVE full pass verifies the whole composition —
     /// grovedb enforces the inner page's lifted per-instance limit and
-    /// range completeness — with the proven outer documents required
-    /// to match the proven inner join values exactly. A missing
-    /// referenced document is an invalid proof (`refersTo:
-    /// permanentDocument` targets cannot dangle), and so is an extra
-    /// one; a proof covering only the inner half (an old node serving
-    /// the plain query) fails the full pass whenever the inner page is
-    /// non-empty.
+    /// range completeness, and every derived outer `$id` is a queried
+    /// key it must show present or absent. A join value whose outer
+    /// document is proven absent (the referenced document was removed
+    /// after the inner document was written) is left out of the outer
+    /// half; an outer document no proven join value references is an
+    /// invalid proof, and a proof covering only the inner half (an old
+    /// node serving the plain query) fails the full pass whenever the
+    /// inner page is non-empty.
     ///
     /// One proof means one root by construction; the caller combines
     /// the returned root hash with the surrounding tenderdash

@@ -122,9 +122,11 @@ impl DriveDocumentQuery<'_> {
         }
 
         // The full pass's PROVEN join values are authoritative — the
-        // bootstrap candidates were only for reconstructing the query —
-        // and the exact-set assembly refuses any divergence between
-        // them and the proven outer documents, in either direction.
+        // bootstrap candidates were only for reconstructing the query.
+        // A join value the full pass proved no document under is left
+        // out by the assembly (grovedb already refused a proof without
+        // the coverage to show it absent); an outer document no proven
+        // join value references is refused.
         let join_values = self.chained_join_values(&inner_documents)?;
         let outer_documents =
             self.assemble_chained_outer_documents(&join_values, outer_documents)?;

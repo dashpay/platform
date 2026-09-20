@@ -940,12 +940,58 @@ fn should_refuse_composite_queries_on_plain_surfaces() {
     );
 }
 
-/// A by-id join whose derived id has no document is an invalid proof
-/// (and corrupted state on the server): a permanentDocument reference
-/// cannot dangle.
+/// A by-id join whose derived id has no document (the quoted post was
+/// removed after the quoting one was written) does not fail the page:
+/// the join leaves it out, and a later binding derives from the quoted
+/// posts that ARE there. The server and the verifier agree.
 #[test]
-fn should_refuse_a_dangling_reference() {
-    let (drive, feed, _dashpay) = setup();
+fn should_leave_out_a_joined_document_that_is_not_in_state() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    // A fourth `dash` post, by owner 1, quoting a post that is not there.
+    insert_post(
+        &drive,
+        &feed,
+        [0xF6; 32],
+        OWNER_1,
+        "dash",
+        Some(MISSING_POST),
+        5,
+    );
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("a missing quoted post does not fail the composition")
+        .result;
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the proof verifies with the missing quoted post proven absent");
+
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_A, POST_B, POST_C, [0xF6; 32]]
+    );
+    assert_eq!(
+        ids(materialized.sub_results[QUOTED_POSTS].documents()),
+        vec![POST_D],
+        "D is there, the other quoted post is not"
+    );
+    assert_eq!(
+        owner_ids(materialized.sub_results[QUOTED_AUTHOR_PROFILES].documents()),
+        vec![OWNER_3],
+        "derived from the quoted posts that are in state"
+    );
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+
+    // The only quoted post missing: an empty join, and nothing derived
+    // from it.
+    let (drive, feed, dashpay) = setup();
     insert_post(
         &drive,
         &feed,
@@ -955,29 +1001,24 @@ fn should_refuse_a_dangling_reference() {
         Some(MISSING_POST),
         1,
     );
-    let pv = platform_version();
-    let query = page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(vec![bound(
-        &feed,
-        "post",
-        SubQueryKind::Documents,
-        BindingSource::Page,
-        "quotedPostId",
-        "$id",
-        None,
-    )]);
-
-    let refused = drive.query_composite_documents(&query, None, None, pv);
-    assert!(
-        matches!(refused, Err(Error::Proof(_))),
-        "expected the missing-document refusal, got {refused:?}"
-    );
-    let (proof, _) = drive
+    let query = feed_query(&feed, &dashpay, None);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("composite executes")
+        .result;
+    assert!(materialized.sub_results[QUOTED_POSTS]
+        .documents()
+        .is_empty());
+    assert!(materialized.sub_results[QUOTED_AUTHOR_PROFILES]
+        .documents()
+        .is_empty());
+    let (proof, _page) = drive
         .query_composite_documents_with_proof(&query, pv)
-        .expect("the proof itself generates");
-    assert!(
-        query.verify_composite_documents_proof(&proof, pv).is_err(),
-        "the verifier must refuse a dangling reference"
-    );
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the proof verifies");
+    assert_eq!(verified.sub_results, materialized.sub_results);
 }
 
 /// When the page is itself a by-ids fetch and a join targets the same
@@ -1945,7 +1986,7 @@ fn quoted_posts_join(feed: &DataContract) -> DriveDocumentQuery<'_> {
 /// The by-id join's counterpart of the chained soundness pair, half
 /// one: with a quoted post NOT in state, the honest merged proof still
 /// satisfies grovedb's verification of the full derived query, so the
-/// absence is proven and only the assembly refuses the result today.
+/// absence is proven, and the verifier returns the join without it.
 #[test]
 fn should_prove_the_absence_of_a_missing_joined_document() {
     let pv = platform_version();
@@ -1991,10 +2032,14 @@ fn should_prove_the_absence_of_a_missing_joined_document() {
             .collect();
         assert_eq!(present, expected, "missing {missing:?}");
 
-        let refused = query.verify_composite_documents_proof(&proof, pv);
-        assert!(
-            matches!(refused, Err(Error::Proof(_))),
-            "the assembly is what refuses a dangling join today, got {refused:?}"
+        let (_root, verified) = query
+            .verify_composite_documents_proof(&proof, pv)
+            .expect("the verifier leaves the proven-absent quoted posts out");
+        assert_eq!(verified.page_documents.len(), QUOTING.len());
+        assert_eq!(
+            ids(verified.sub_results[0].documents()),
+            expected,
+            "missing {missing:?}"
         );
     }
 }

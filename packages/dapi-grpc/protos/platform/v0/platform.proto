@@ -1656,8 +1656,8 @@ message GetDocumentsRequest {
       // caps the rows the lookup returns in total, in walk order, like
       // an ordinary IN query's limit (at most 100). Lookups already
       // bounded by their values (a unique index, or an indexOnly
-      // terminal with every prefix fixed), by-id joins (completeness is
-      // set equality) and counts take none.
+      // terminal with every prefix fixed), by-id joins (every derived
+      // id is fetched) and counts take none.
       optional uint32 limit = 5;
       enum Kind {
         // The matching documents.
@@ -2042,8 +2042,9 @@ message GetDocumentsResponse {
         // semi-join, in inner order (the last inner projection's
         // join-property value is the pagination cursor; outer
         // documents are ordered by first appearance of their id
-        // among the inner projections, deduplicated). Routed when
-        // the request's `chained` message is present.
+        // among the inner projections, deduplicated; a join value
+        // whose document is no longer in state has none). Routed
+        // when the request's `chained` message is present.
         ChainedDocuments chained = 6;
         // Composite-mode result: the page plus one result per
         // sub-query, in request order. Routed when the request
@@ -2067,7 +2068,8 @@ message GetDocumentsResponse {
       message SubQueryResult {
         oneof result {
           // DOCUMENTS: a by-id join in first-appearance order of the
-          // derived ids; a lookup or sibling in query order.
+          // derived ids (one whose document is no longer in state is
+          // left out); a lookup or sibling in query order.
           Documents documents = 1;
           // COUNT: one entry per derived value that has a count tree
           // (a value with no entry counts zero), keyed by the

@@ -78,7 +78,10 @@ interface ChainedDocumentsResult {
   innerDocuments: Document[];
   /**
    * The joined outer documents, ordered by first appearance of their
-   * id among the inner projections (deduplicated).
+   * id among the inner projections (deduplicated). A referenced
+   * document that was removed after the inner document was written is
+   * proven absent and has no entry here: match the halves by id, not by
+   * position.
    */
   outerDocuments: Document[];
 }
@@ -174,10 +177,10 @@ impl WasmSdk {
     /// both verified halves.
     ///
     /// The composition is always proof-verified: one merged grovedb
-    /// proof commits to one quorum-signed root, and the proven outer
-    /// documents must match the proven inner join values exactly (a
-    /// missing referenced document is a verification error, not an
-    /// absence).
+    /// proof commits to one quorum-signed root, and every proven inner
+    /// join value is an outer `$id` the proof must show present or
+    /// absent (a referenced document removed since is proven absent and
+    /// left out; the node cannot pass an existing one off as removed).
     #[wasm_bindgen(
         js_name = "getChainedDocuments",
         unchecked_return_type = "ChainedDocumentsResult"

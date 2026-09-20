@@ -62,9 +62,10 @@ export interface CompositeBind {
   /**
    * The sub-query field receiving the `IN` clause. `$id` makes this a
    * by-id JOIN (the source property must declare `refersTo:
-   * permanentDocument` targeting the sub-query's document type, so a
-   * missing document is a verification error); otherwise `$ownerId` or an
-   * indexed property (a LOOKUP, where absence is a proven fact).
+   * permanentDocument` targeting the sub-query's document type; a
+   * referenced document removed since is proven absent and left out);
+   * otherwise `$ownerId` or an indexed property (a LOOKUP, where absence
+   * is a proven fact too).
    */
   field: string;
 }
@@ -119,7 +120,8 @@ export interface CompositeDocumentsQuery {
 
 /**
  * A verified `documents` sub-result: a by-id join in first-appearance
- * order of the derived ids among the source documents; a lookup or
+ * order of the derived ids among the source documents (a derived id
+ * whose document is no longer in state is left out); a lookup or
  * sibling in query order.
  */
 export interface CompositeDocumentsSubResult {
@@ -423,9 +425,9 @@ impl WasmSdk {
     ///
     /// The composition is always proof-verified: one merged grovedb
     /// proof commits to one quorum-signed root, every sub-query is
-    /// re-derived from the proven page, and a by-id join whose
-    /// referenced document is missing is a verification error, not an
-    /// absence.
+    /// re-derived from the proven page, and a by-id join's referenced
+    /// document that was removed since is proven absent and left out
+    /// (the node cannot pass an existing one off as removed).
     #[wasm_bindgen(
         js_name = "getCompositeDocuments",
         unchecked_return_type = "CompositeDocumentsResult"

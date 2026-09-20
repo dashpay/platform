@@ -28,10 +28,8 @@
 //! every sub-query itself with the SAME builders the server ran, merges
 //! the same way, and verifies the whole composition in one authoritative
 //! pass; then it recomputes the derived values from the proven page and
-//! refuses any divergence from the bootstrap, any result outside a
-//! derived value set, and (for by-id joins on `refersTo:
-//! permanentDocument` properties, which cannot dangle) any missing
-//! referenced document. A node that ignores the sub-queries serves a
+//! refuses any divergence from the bootstrap and any result outside a
+//! derived value set. A node that ignores the sub-queries serves a
 //! page-only proof, which cannot satisfy the merged query whenever a
 //! sub-query derived anything — the composition fails closed.
 //!
@@ -39,9 +37,12 @@
 //!
 //! - **Documents by id** (`bind.field == "$id"`): the classic join. The
 //!   source property must declare `refersTo: permanentDocument` targeting
-//!   the sub-query's type, so every derived id MUST resolve — the result
-//!   is the referenced documents in first-appearance order, set-equal to
-//!   the derived ids.
+//!   the sub-query's type — the result is the referenced documents in
+//!   first-appearance order of the derived ids. A derived id with no
+//!   document is left out: a reference is validated when it is written
+//!   and never again, so the target may have been removed since, and
+//!   the absence is proven (every derived id is a queried key grovedb
+//!   must show present or absent).
 //! - **Documents by an indexed property** (`bind.field` is `$ownerId` or
 //!   an indexed property): a lookup, `WHERE <fixed clauses> AND <field>
 //!   IN <derived values>`, with an explicit limit unless the values
@@ -161,7 +162,7 @@ pub struct DriveSubQuery<'a> {
     /// Documents or counts.
     pub kind: SubQueryKind,
     /// The fixed clauses (everything but the derived `IN`), typed.
-    /// Must be empty for a by-id join, which resolves every derived id.
+    /// Must be empty for a by-id join, which fetches every derived id.
     pub where_clauses: Vec<WhereClause>,
     /// Ordering; documents only. Every component of the merged proof
     /// walks in the page's direction, so a documents sub-query must agree
@@ -570,8 +571,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
                 if sub_query.limit.is_some() {
                     return Err(label(
-                        "a by-id join takes no limit: every derived id must resolve, so \
-                         completeness is set equality, not a page",
+                        "a by-id join takes no limit: every derived id is fetched, so \
+                         completeness is per id, not a page",
                     ));
                 }
                 if !sub_query.order_by.is_empty() {
@@ -580,9 +581,9 @@ impl<'a> DriveDocumentQuery<'a> {
                          first appearance",
                     ));
                 }
-                // Only a permanentDocument reference guarantees every
-                // derived id resolves, which is what lets a missing
-                // document be an invalid proof instead of an absence.
+                // The permanentDocument declaration is what names the
+                // type the derived ids are fetched from, and makes each
+                // one an id that resolved when it was written.
                 match source_property_type {
                     Some(DocumentPropertyType::IdentifierWithReference(
                         DocumentPropertyReferenceTarget::PermanentDocument {
@@ -607,8 +608,8 @@ impl<'a> DriveDocumentQuery<'a> {
                     _ => {
                         return Err(label(&format!(
                             "a by-id join needs a source property declaring `refersTo: \
-                             permanentDocument` (\"{}\" does not): only a permanent-document \
-                             reference guarantees every derived id resolves",
+                             permanentDocument` (\"{}\" does not): it is what names the \
+                             document type the derived ids are fetched from",
                             binding.source_property,
                         )));
                     }
@@ -994,8 +995,7 @@ impl<'a> DriveDocumentQuery<'a> {
         if sub_query.is_by_id_join() {
             if !sub_query.where_clauses.is_empty() {
                 return Err(unsupported(
-                    "a by-id join takes no fixed clauses: every derived id must resolve"
-                        .to_string(),
+                    "a by-id join takes no fixed clauses: every derived id is fetched".to_string(),
                 ));
             }
             return Ok(DriveDocumentQuery {
@@ -1416,9 +1416,12 @@ impl<'a> DriveDocumentQuery<'a> {
 
     /// Assembles one documents sub-query's result from its decoded
     /// documents, keeping only the ones its derived values admit and, for
-    /// a by-id join, enforcing exact set equality in first-appearance
-    /// order. Shared by the server (where a violation is corrupted state)
-    /// and the verifier (where it is an invalid proof).
+    /// a by-id join, putting them in the derived ids' first-appearance
+    /// order. A derived id with no document is left out: the referenced
+    /// document was removed after the referring one was written, and the
+    /// fetch that found nothing under it is the query the proof covers.
+    /// Shared by the server (where a violation is corrupted state) and
+    /// the verifier (where it is an invalid proof).
     fn assemble_documents(
         &self,
         sub_query: &DriveSubQuery<'a>,
@@ -1446,15 +1449,9 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             let mut ordered = Vec::with_capacity(values.len());
             for value in values {
-                let document = by_id.remove(value).ok_or_else(|| {
-                    corrupted_proof(format!(
-                        "composite join results are missing referenced document {}: a \
-                         permanentDocument reference cannot dangle, so the proof does not \
-                         cover the derived query",
-                        value
-                    ))
-                })?;
-                ordered.push(document.clone());
+                if let Some(document) = by_id.remove(value) {
+                    ordered.push(document.clone());
+                }
             }
             return Ok(ordered);
         }

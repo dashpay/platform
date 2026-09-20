@@ -346,6 +346,43 @@ mod tests {
         }
     }
 
+    /// The chained query a client rebuilds to verify
+    /// [`chained_request`]'s proof.
+    fn client_side_chained_query<'a>(
+        contract: &'a dpp::prelude::DataContract,
+        version: &PlatformVersion,
+    ) -> DriveDocumentQuery<'a> {
+        let inner = DriveDocumentQuery {
+            contract,
+            document_type: contract
+                .document_type_for_name("like")
+                .expect("like doctype"),
+            internal_clauses: drive::query::InternalClauses::extract_from_clauses(
+                vec![drive::query::WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: drive::query::WhereOperator::Equal,
+                    value: Value::Identifier(OWNER_1),
+                }],
+                version,
+            )
+            .expect("clauses extract"),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        inner.with_by_id_join(
+            "postId",
+            contract
+                .document_type_for_name("post")
+                .expect("post doctype"),
+        )
+    }
+
     #[test]
     fn should_return_both_halves_without_proof() {
         let (platform, state, version, contract) = setup_yappr_state();
@@ -406,40 +443,74 @@ mod tests {
 
         // Client-side composition: rebuild the same chained query and
         // verify the single merged proof.
-        let like_type = contract
-            .document_type_for_name("like")
-            .expect("like doctype");
-        let inner = DriveDocumentQuery {
-            contract: &contract,
-            document_type: like_type,
-            internal_clauses: drive::query::InternalClauses::extract_from_clauses(
-                vec![drive::query::WhereClause {
-                    field: "$ownerId".to_string(),
-                    operator: drive::query::WhereOperator::Equal,
-                    value: Value::Identifier(OWNER_1),
-                }],
-                version,
-            )
-            .expect("clauses extract"),
-            offset: None,
-            limit: Some(10),
-            order_by: Default::default(),
-            start_at: None,
-            start_at_included: true,
-            block_time_ms: None,
-            resolved_time_ranges: vec![],
-            sub_queries: vec![],
-        };
-        let chained = inner.with_by_id_join(
-            "postId",
-            contract
-                .document_type_for_name("post")
-                .expect("post doctype"),
-        );
+        let chained = client_side_chained_query(&contract, version);
         let (_root_hash, verified) = chained
             .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), version)
             .expect("chained proof verifies — the proof alone carries everything");
         assert_eq!(verified.outer_documents.len(), 2);
+        assert_eq!(
+            verified
+                .outer_documents
+                .iter()
+                .map(|p| p.id().to_buffer())
+                .collect::<Vec<_>>(),
+            vec![POST_A, POST_B]
+        );
+    }
+
+    /// A like whose post is not in state (removed after the like was
+    /// written) does not fail the page on either wire mode: the like
+    /// stays in the inner half and the post is left out of the outer
+    /// half, proven absent.
+    #[test]
+    fn should_leave_out_a_liked_post_that_is_not_in_state() {
+        const MISSING_POST: [u8; 32] = [0xC3; 32];
+        let (platform, state, version, contract) = setup_yappr_state();
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype");
+        let mut like = like_type.random_document(Some(3), version).expect("like");
+        let mut props = std::collections::BTreeMap::new();
+        props.insert("hashtag".to_string(), Value::Text("dash".to_string()));
+        props.insert("postId".to_string(), Value::Identifier(MISSING_POST));
+        like.set_properties(props);
+        like.set_owner_id(Identifier::from(OWNER_1));
+        store_document(&platform.platform, &contract, like_type, &like, version);
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(false, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Data(data)) = result.data.expect("response data").result else {
+            panic!("expected a data result");
+        };
+        let Some(result_data::Variant::Chained(chained)) = data.variant else {
+            panic!("expected the chained variant");
+        };
+        assert_eq!(chained.inner_documents.len(), 3);
+        assert_eq!(chained.outer_documents.len(), 2);
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(true, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Proof(proof)) = result.data.expect("response data").result else {
+            panic!("expected a proof result");
+        };
+        let (_root_hash, verified) = client_side_chained_query(&contract, version)
+            .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), version)
+            .expect("the proof verifies with the missing post proven absent");
+        assert_eq!(verified.inner_documents.len(), 3);
         assert_eq!(
             verified
                 .outer_documents

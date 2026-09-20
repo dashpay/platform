@@ -29,10 +29,15 @@
 //! ([`DriveDocumentQuery::chained_join_values`] →
 //! [`DriveDocumentQuery::derive_chained_outer_query`], the same functions
 //! the server executes), so a server cannot substitute, omit, or inject
-//! outer documents. Because the join property's `refersTo` targets a
-//! `permanentDocument` type (non-deletable, enforced at write time),
-//! every proven join value MUST resolve to a document — a missing outer
-//! document is an invalid proof, not an absence.
+//! outer documents. A join value may have NO outer document: a
+//! `refersTo` target is validated when the inner document is written
+//! and never again, and `permanentDocument` only keeps the target's
+//! owner from deleting it, so this layer does not assume the target is
+//! still in state. Such a join value is left out of the outer half, and
+//! the omission is proven, not trusted: the merged query carries every
+//! derived `$id`, and grovedb refuses a proof that lacks the coverage to
+//! show a queried key present or absent, so a prover cannot pass an
+//! existing document off as removed.
 //!
 //! Guardrails (v1): the inner query must resolve to an indexOnly index
 //! that carries the join property (as terminal or prefix property, so
@@ -193,11 +198,10 @@ impl<'a> DriveDocumentQuery<'a> {
         }
 
         // The join property must be a same-contract permanentDocument
-        // reference targeting the outer type. `refersTo` writes are
-        // existence-validated and permanentDocument targets can never be
-        // deleted, so every proven join value MUST resolve — which is
-        // what lets the verifier treat a missing outer document as an
-        // invalid proof instead of needing absence proofs.
+        // reference targeting the outer type: the declaration is what
+        // names the outer type, and `refersTo` writes are
+        // existence-validated, so a join value with no outer document
+        // is a target removed since (see the module docs).
         let Some(join_document_property) =
             self.document_type.flattened_properties().get(join_property)
         else {
@@ -237,8 +241,8 @@ impl<'a> DriveDocumentQuery<'a> {
             _ => {
                 return Err(unsupported(format!(
                     "chained query join property \"{}\" must carry a `refersTo: \
-                     permanentDocument` declaration: only a permanent-document reference \
-                     guarantees every proven join value resolves to an outer document",
+                     permanentDocument` declaration: it is what names the outer document \
+                     type the proven join values are fetched from",
                     join_property,
                 )));
             }
@@ -305,8 +309,8 @@ impl<'a> DriveDocumentQuery<'a> {
 
     /// The derived outer query: a pure by-ids fetch of the join values
     /// from the outer type's primary storage. No clauses, no limit, no
-    /// cursor — completeness is set-equality against `join_values`,
-    /// checked by the verifier.
+    /// cursor — completeness is grovedb's: every join value is a queried
+    /// key, proven present or absent.
     pub fn derive_chained_outer_query(
         &self,
         join_values: &[Identifier],
@@ -348,10 +352,12 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     /// Reorders the outer documents (returned in key order by the by-ids
-    /// query) into first-appearance join order, and enforces EXACT set
-    /// equality between the proven outer ids and the derived join
-    /// values — both directions. Shared by the server (where a mismatch
-    /// is corrupted state: permanentDocument references cannot dangle)
+    /// query) into first-appearance join order. A join value with no
+    /// outer document is left out: the referenced document was removed
+    /// after the inner document was written, and the by-ids query that
+    /// found nothing under its `$id` is the very query the proof covers.
+    /// An outer document carried twice, or one no join value references,
+    /// is refused. Shared by the server (where that is corrupted state)
     /// and the verifier (where it is an invalid proof).
     pub fn assemble_chained_outer_documents(
         &self,
@@ -373,15 +379,9 @@ impl<'a> DriveDocumentQuery<'a> {
         }
         let mut ordered = Vec::with_capacity(join_values.len());
         for join_value in join_values {
-            let document = by_id.remove(join_value).ok_or_else(|| {
-                Error::Proof(crate::error::proof::ProofError::CorruptedProof(format!(
-                    "chained outer results are missing referenced document {}: a \
-                     permanentDocument reference cannot dangle, so the outer half does \
-                     not prove the derived query",
-                    join_value
-                )))
-            })?;
-            ordered.push(document);
+            if let Some(document) = by_id.remove(join_value) {
+                ordered.push(document);
+            }
         }
         if let Some((extra_id, _)) = by_id.into_iter().next() {
             return Err(Error::Proof(

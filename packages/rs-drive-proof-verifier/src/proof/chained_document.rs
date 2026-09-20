@@ -7,10 +7,12 @@
 //! lifts the inner limit into a per-instance branch limit). The
 //! verifier ([`DriveDocumentQuery::verify_chained_documents_proof`])
 //! reconstructs the merged query from the response's UNTRUSTED
-//! join-value hint, verifies in one pass, and requires the proven
-//! outer documents to match the PROVEN inner join values exactly — a
-//! missing referenced document is an invalid proof (`refersTo:
-//! permanentDocument` targets cannot dangle) — and this module's
+//! join-value hint and verifies in one pass. Every PROVEN inner join
+//! value is a queried outer `$id` the proof must show present or
+//! absent: one proven absent (the referenced document was removed
+//! after the inner document was written) has no outer document, and an
+//! outer document no proven join value references is an invalid proof.
+//! This module's
 //! [`FromProof`] impl composes that with the tenderdash signature
 //! binding of the single root.
 //!
@@ -41,7 +43,10 @@ pub struct ChainedDocuments {
     /// property carries the pagination cursor.
     pub inner_documents: Vec<Document>,
     /// The joined outer documents, ordered by first appearance of their
-    /// id among the inner projections (deduplicated).
+    /// id among the inner projections (deduplicated). A join value whose
+    /// document is proven absent (removed after the inner document was
+    /// written) has no entry here, so this can be shorter than the
+    /// distinct join values; match the halves by id, not by position.
     pub outer_documents: Vec<Document>,
 }
 
@@ -50,7 +55,7 @@ pub struct ChainedDocuments {
 ///
 /// The merk-level composition (bootstrap subset pass on the inner
 /// query, merged-query re-derivation, authoritative full verification,
-/// exact set equality against the PROVEN join values) lives in rs-drive's
+/// assembly against the PROVEN join values) lives in rs-drive's
 /// [`DriveDocumentQuery::verify_chained_documents_proof`]; this
 /// wrapper adds the [`verify_tenderdash_proof`] binding — the root hash
 /// the proof commits to is only an attested fact once it is tied to the

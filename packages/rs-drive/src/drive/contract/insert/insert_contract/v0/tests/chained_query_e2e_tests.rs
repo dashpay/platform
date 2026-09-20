@@ -344,23 +344,64 @@ fn should_reject_invalid_chained_shapes() {
     );
 }
 
-/// A like whose referenced post is missing is corrupted state at the
-/// drive level (consensus validates references on write): the chained
-/// execution refuses to return a partial join.
+/// A like whose referenced post is not in state (it was removed after
+/// the like was written) does not fail the page: the inner half keeps
+/// the like, the outer half leaves the post out, and the server and the
+/// verifier agree.
 #[test]
-fn should_refuse_a_dangling_reference() {
+fn should_leave_out_a_referenced_post_that_is_not_in_state() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
-    // A like referencing POST_A — which was never inserted.
-    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
-    insert_like(&drive, &contract, &like, true).expect("insert like");
+    // Likes of POST_A, POST_B and POST_C; POST_B was never inserted.
+    insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
+    insert_post(&drive, &contract, POST_C, "dash", "post c", 12);
+    for (post, seed) in [(POST_A, 1u64), (POST_B, 2), (POST_C, 3)] {
+        let like = build_like(&contract, "dash", post, OWNER_1, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
 
     let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
-    let refused = drive.query_chained_documents(&chained, None, None, pv);
-    assert!(
-        matches!(refused, Err(Error::Proof(_))),
-        "a dangling reference must refuse the join, got {refused:?}"
+    let outcome = drive
+        .query_chained_documents(&chained, None, None, pv)
+        .expect("a missing referenced post does not fail the join");
+    assert_eq!(outcome.result.inner_documents.len(), 3);
+    assert_eq!(
+        outcome
+            .result
+            .outer_documents
+            .iter()
+            .map(|d| d.id().to_buffer())
+            .collect::<Vec<_>>(),
+        vec![POST_A, POST_C],
     );
+
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (_root, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("the proof verifies with the missing post proven absent");
+    assert_eq!(verified.inner_documents.len(), 3);
+    assert_eq!(verified.outer_documents, outcome.result.outer_documents);
+
+    // No referenced post in state at all: every like, no post.
+    let (drive, contract) = setup_likes();
+    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert like");
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+    let outcome = drive
+        .query_chained_documents(&chained, None, None, pv)
+        .expect("chained query executes");
+    assert_eq!(outcome.result.inner_documents.len(), 1);
+    assert!(outcome.result.outer_documents.is_empty());
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (_root, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("the proof verifies");
+    assert_eq!(verified.inner_documents.len(), 1);
+    assert!(verified.outer_documents.is_empty());
 }
 
 /// A proof covering only the inner half — exactly what a node that
@@ -450,12 +491,12 @@ fn grove_verify_outer_half(
         .collect())
 }
 
-/// The soundness the "a removed referenced document is an absence, not
-/// an invalid proof" relaxation rests on, half one: when a referenced
+/// The soundness "a referenced document that is not in state is left
+/// out, not an invalid proof" rests on, half one: when a referenced
 /// post is NOT in state, the honest merged proof still satisfies
 /// grovedb's verification of the full derived query, so the absence of
-/// that `$id` is itself proven. Today only the exact-set assembly
-/// refuses the result.
+/// that `$id` is itself proven, and the verifier returns the outer half
+/// without it.
 #[test]
 fn should_prove_the_absence_of_a_missing_referenced_post() {
     let pv = platform_version();
@@ -489,10 +530,18 @@ fn should_prove_the_absence_of_a_missing_referenced_post() {
             .collect();
         assert_eq!(present, expected, "missing {missing:?}");
 
-        let refused = chained.verify_chained_documents_proof(proof.as_slice(), pv);
-        assert!(
-            matches!(refused, Err(Error::Proof(_))),
-            "the exact-set assembly is what refuses a dangling join today, got {refused:?}"
+        let (_root, verified) = chained
+            .verify_chained_documents_proof(proof.as_slice(), pv)
+            .expect("the verifier leaves the proven-absent posts out");
+        assert_eq!(verified.inner_documents.len(), POSTS.len());
+        assert_eq!(
+            verified
+                .outer_documents
+                .iter()
+                .map(|d| d.id().to_buffer())
+                .collect::<Vec<_>>(),
+            expected,
+            "missing {missing:?}"
         );
     }
 }
