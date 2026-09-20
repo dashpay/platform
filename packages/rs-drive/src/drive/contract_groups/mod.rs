@@ -15,6 +15,8 @@ pub mod paths;
 #[cfg(feature = "server")]
 mod prove;
 mod queries;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 /// Result types shared by the fetch and verify sides.
 pub mod types;
 

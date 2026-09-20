@@ -57,6 +57,9 @@ mod prove;
 /// State transition action module
 #[cfg(feature = "server")]
 pub mod state_transition_action;
+/// The complete GroveDB structure of Drive described as code
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub mod structure;
 /// Util module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod util;

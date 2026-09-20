@@ -35,6 +35,8 @@ mod insert;
 mod insert_contested;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;
 #[cfg(all(
