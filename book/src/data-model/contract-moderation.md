@@ -165,13 +165,23 @@ The team is read when the claim executes. An owner who changes the appointed set
 
 The proof of a claim's execution shows the pot with its last claim epoch and the balance of every recipient, which the prover and the verifier both read from the contract. `VerifiedContractFeeClaim` carries the contract id, the pot, that epoch, the credits left in the pot and the balances. A pot that was never claimed proves no claim; a later claim of the same pot verifies just the same, so the result is classified as affected state.
 
+### Reading the Pots
+
+- `getContractFeePots(contract_id, prove)`: both pots of the contract, each with its credits and the epoch it was last paid out in.
+
+The query always reads both pots, so its proof is one fixed path query (`Drive::contract_fee_pots_query`) that the prover and `Drive::verify_contract_fee_pots` build alike, with nothing in the request to get wrong. A pot nothing was paid into yet has no element and reads as zero credits, and a pot never paid out has no last claim epoch, which is not epoch 0: a pot can have been paid out in epoch 0, so the wire field is optional and the JavaScript field is absent. The proof says nothing about the contract itself, only about what is stored under its id, so the node refuses the query for a contract it does not hold before it proves anything, and a client that needs to know the contract exists fetches it.
+
+A recipient reads the pots to decide whether a claim is worth its gas: the credits are what it would pay, and a last claim epoch equal to the current epoch means the claim would be refused (41111). The Rust SDK has `Fetch` and `FetchUnproved` impls for `ContractFeePots` (`platform::contract_fee_pots`, queried by the contract id), the wasm-sdk `getContractFeePots` and `contractClaimFees`, and the JavaScript SDK `contracts.feePots` and `contracts.claimFees`.
+
+The claim's proof is verified against the contract, which names who the pot pays, and the team can change by a contract update. So every client fetches the contract again before a claim instead of trusting a cached copy: `ClaimContractFees` in the Rust SDK, `contractClaimFees` in the wasm-sdk, and the wasm-sdk's generic `broadcastAndWait` for a `ContractFeeClaim` built by hand, which falls back to the cached copy when that fetch fails, because the transition is already broadcast by then.
+
 ## Versioning Touchpoints
 
 All in place for protocol version 14: `CONTRACT_VERSIONS_V6` makes config V2 the config of every new contract (`max_version` and `default_current_version` 2) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and adds the `moderation` table (its `update_contract` 2 belongs to token distribution and does nothing for moderation); `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators`, `max_contract_suspension_until` and `max_contract_moderation_reason_length`.
 
 ## What Is Not There Yet
 
-Action fees on token transitions, a DAPI query and SDK methods for the fee pots and the claim, group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, ban codes declared by the contract (the reason's `code` is where they will go), further entry metadata such as a timestamp or the moderator's id, and the Swift and Kotlin SDKs. The refusal a barred identity receives (41107, 41108, 41114) does not repeat the reason: the status query does.
+Action fees on token transitions, group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, ban codes declared by the contract (the reason's `code` is where they will go), further entry metadata such as a timestamp or the moderator's id, and the Swift and Kotlin SDKs. The refusal a barred identity receives (41107, 41108, 41114) does not repeat the reason: the status query does.
 
 ## Tests
 
