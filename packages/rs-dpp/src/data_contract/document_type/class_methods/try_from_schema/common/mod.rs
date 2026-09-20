@@ -1526,12 +1526,13 @@ pub(super) fn parse_doctype_aggregate_keywords(
     //
     // Note on pre-v12 contracts: contracts created before v12 used the
     // generation-1 parser, which ignores these fields. After v12 upgrade,
-    // deserialization uses the generation-2 parser which will read them. This
-    // is safe because the contract update path runs through that parser with
-    // full_validation=true, and the primary key tree type is set correctly at
-    // contract creation time. Pre-v12 contracts can only have these flags if
-    // they were explicitly set in the schema — the meta-schema allows them as
-    // optional boolean properties.
+    // deserialization uses the generation-2 parser which will read them.
+    // Meta-schema v0 does not declare these fields: it admits them as unknown
+    // keys of any shape, so a pre-v12 contract carrying one was never
+    // validated against it, and reading it would assume a primary key tree
+    // type the contract was not created with. No such contract exists on
+    // mainnet or testnet; see `try_from_schema_generation_3` for the census
+    // and the rule that follows from it.
     let schema_map_opt = schema.to_map().ok();
 
     let documents_countable = schema_map_opt
@@ -2072,11 +2073,11 @@ pub(super) fn apply_can_be_deleted_by_moderators(
 /// doctype-level keyword they predate (their meta-schemas still reject them
 /// under `full_validation`).
 ///
-/// Every entry must be a string. The meta-schema enforces that under full
-/// validation and a stored contract can only ever have passed it, so a
-/// non-string entry is a malformed schema on either path and is refused
+/// Every entry must be a string, on either path. A non-string entry is refused
 /// rather than silently dropped: dropping it would record a smaller set than
-/// the author declared.
+/// the author declared. A contract admitted under meta-schema v0 was never
+/// checked against this keyword; `try_from_schema_generation_3` states why the
+/// stored path is strict all the same.
 pub(super) fn parse_property_name_list_keyword(
     schema: &Value,
     name: &str,
