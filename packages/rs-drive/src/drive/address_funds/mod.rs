@@ -6,6 +6,8 @@ mod estimated_costs;
 /// Functionality for fetching data from GroveDB.
 #[cfg(feature = "server")]
 pub mod fetch;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 /// Tools for generating and verifying cryptographic proofs.
 #[cfg(feature = "server")]
