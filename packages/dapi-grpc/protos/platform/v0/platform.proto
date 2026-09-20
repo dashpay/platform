@@ -51,6 +51,8 @@ service Platform {
       returns (GetContractModerationStatusResponse);
   rpc getContractModerationEntries(GetContractModerationEntriesRequest)
       returns (GetContractModerationEntriesResponse);
+  rpc getContractFeePots(GetContractFeePotsRequest)
+      returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -793,6 +795,38 @@ message GetContractModerationEntriesResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetContractModerationEntriesResponseV0 v0 = 1; }
+}
+
+message GetContractFeePotsRequest {
+  message GetContractFeePotsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the data contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractFeePotsRequestV0 v0 = 1; }
+}
+
+message GetContractFeePotsResponse {
+  // One of the two pots a contract's document action fees collect in
+  message ContractFeePot {
+    uint64 credits = 1 [ jstype = JS_STRING ]; // What the pot holds
+    optional uint32 last_claim_epoch =
+        2; // The epoch the pot was last paid out in, unset when it never was;
+           // a pot is paid out at most once per epoch
+  }
+
+  message ContractFeePots {
+    ContractFeePot owner = 1;      // The pot the contract owner claims
+    ContractFeePot moderators = 2; // The pot the moderation team shares
+  }
+
+  message GetContractFeePotsResponseV0 {
+    oneof result {
+      ContractFeePots pots = 1; // Both pots of the contract
+      Proof proof = 2;          // Cryptographic proof of the pots, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractFeePotsResponseV0 v0 = 1; }
 }
 
 message GetContractGroupsForContractRequest {

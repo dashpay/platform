@@ -20,8 +20,9 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
     GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetContestedResourcesRequest, GetContestedResourcesResponse, GetContractGroupInfoRequest,
-    GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
+    GetContestedResourcesRequest, GetContestedResourcesResponse, GetContractFeePotsRequest,
+    GetContractFeePotsResponse, GetContractGroupInfoRequest, GetContractGroupInfoResponse,
+    GetContractGroupMembersRequest, GetContractGroupMembersResponse,
     GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
     GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
     GetContractModerationStatusRequest, GetContractModerationStatusResponse,
@@ -467,6 +468,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_moderation_entries,
             "get_contract_moderation_entries",
+        )
+        .await
+    }
+
+    async fn get_contract_fee_pots(
+        &self,
+        request: Request<GetContractFeePotsRequest>,
+    ) -> Result<Response<GetContractFeePotsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_fee_pots,
+            "get_contract_fee_pots",
         )
         .await
     }
