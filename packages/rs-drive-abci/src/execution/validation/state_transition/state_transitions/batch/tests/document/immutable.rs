@@ -132,6 +132,8 @@ mod immutable_tests {
                     platform_version,
                 )
                 .expect("expected a random post");
+            post.set_id_for_creation(post_type, &entropy.0, 1, platform_version)
+                .expect("expected to set the document id");
             post.set("author", "alice".into());
             post.set("body", "first draft".into());
             fill(&mut post);

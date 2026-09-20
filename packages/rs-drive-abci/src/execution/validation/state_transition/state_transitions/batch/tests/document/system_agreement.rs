@@ -118,6 +118,8 @@ mod system_agreement_tests {
                 platform_version,
             )
             .expect("expected a random note");
+        note.set_id_for_creation(note_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         note.set("content", "a note".into());
         let create = BatchTransition::new_document_creation_transition_from_document(
             note.clone(),
@@ -215,6 +217,9 @@ mod system_agreement_tests {
                 platform_version,
             )
             .expect("expected a random message");
+        message
+            .set_id_for_creation(message_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         message.set("noteId", Value::Identifier(note_id.to_buffer()));
         for (property, value) in [
             ("authorId", author_id),
@@ -461,6 +466,9 @@ mod system_agreement_tests {
                 platform_version,
             )
             .expect("expected a random message");
+        message
+            .set_id_for_creation(message_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         message.set("noteId", Value::Identifier(note_id.to_buffer()));
         let create = BatchTransition::new_document_creation_transition_from_document(
             message.clone(),

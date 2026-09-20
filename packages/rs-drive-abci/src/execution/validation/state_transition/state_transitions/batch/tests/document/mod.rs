@@ -3,6 +3,7 @@ mod creation;
 mod deletion;
 mod dpns;
 mod gas_sponsorship;
+mod id_reuse;
 mod immutable;
 mod index_only;
 mod keep_history;

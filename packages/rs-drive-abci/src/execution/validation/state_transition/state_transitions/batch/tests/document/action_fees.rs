@@ -535,6 +535,9 @@ mod action_fee_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card, &entropy.0, 1, platform_version)
+            .expect("expected to set the document id");
         document.set("attack", 4.into());
         document.set("defense", 7.into());
 

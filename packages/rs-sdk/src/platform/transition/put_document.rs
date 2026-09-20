@@ -89,30 +89,36 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                 let (document, document_state_transition_entropy) =
                     match document_state_transition_entropy {
                         Some(entropy) => {
-                            // A caller-supplied entropy must derive the document's own id.
-                            // Platform consensus recomputes generate_document_id_v0 from the
-                            // transition entropy and rejects the create with
-                            // InvalidDocumentTransitionIdError on mismatch, so guard here
-                            // before broadcasting to fail locally (no wasted nonce/fee).
-                            ensure_entropy_matches_document_id(
-                                &document_type.data_contract_id(),
-                                &document.owner_id(),
-                                document_type.name(),
-                                &entropy,
-                                document.id(),
-                            )?;
+                            // While the id derives from the entropy alone, a caller-supplied
+                            // entropy must derive the document's own id: consensus recomputes
+                            // it and rejects the create with InvalidDocumentTransitionIdError
+                            // on mismatch, so guard here before broadcasting to fail locally
+                            // (no wasted nonce/fee). Once the id also commits to the identity
+                            // contract nonce, the id the caller set is only a placeholder and
+                            // the transition is built with the id derived below.
+                            if !Document::document_id_depends_on_nonce(sdk.version())? {
+                                ensure_entropy_matches_document_id(
+                                    &document_type.data_contract_id(),
+                                    &document.owner_id(),
+                                    document_type.name(),
+                                    &entropy,
+                                    document.id(),
+                                )?;
+                            }
                             (document, entropy)
                         }
                         None => {
                             let mut rng = StdRng::from_entropy();
                             let mut document = document;
                             let entropy = rng.gen::<[u8; 32]>();
-                            document.set_id(Document::generate_document_id_v0(
+                            document.set_id(Document::generate_document_id(
                                 &document_type.data_contract_id(),
                                 &document.owner_id(),
                                 document_type.name(),
                                 entropy.as_slice(),
-                            ));
+                                new_identity_contract_nonce,
+                                sdk.version(),
+                            )?);
                             (document, entropy)
                         }
                     };
