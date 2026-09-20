@@ -1,3 +1,71 @@
+## [4.2.0-beta.3](https://github.com/dashpay/platform/compare/v4.2.0-beta.2...v4.2.0-beta.3) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** a window after a document's last modification for moderators to delete it (#4864)
+* **platform:** document transitions state the action fee they agree to pay (#4858)
+* **platform:** moderators delete documents of the document types that allow it (#4857)
+* **platform:** references to deletable documents (refersTo deletableDocument) (#4860)
+* **platform:** document ids commit to the identity contract nonce (#4859)
+* **platform:** record who claimed a contract fee pot and when, query the pots, and claim them from the wasm and JavaScript SDKs (#4856)
+* **platform:** document action fees paid to the contract owner and moderators, with a fee claim state transition (#4851)
+* **platform:** a reason on contract bans and suspensions (#4849)
+* **platform:** contract moderation with a banlist and a suspension list (#4830)
+* **drive:** mint base supply of tokens added by contract update (#4835)
+* **drive:** bound pre-programmed distribution amounts and queue a shared release-time tree once (#4837)
+* **platform:** optional document token costs paid in credits when the token payment is left out (#4828)
+* **drive:** create distribution trees for tokens added by contract update (#4834)
+* **platform:** let the contract owner pay the gas of token-paid document actions (#4826)
+* **platform:** once-per-identity token distribution (#4827)
+
+### Features
+
+* **drive:** describe the element flags of the GroveDB structure ([#4848](https://github.com/dashpay/platform/issues/4848))
+* **drive:** describe the GroveDB structure as code ([#4845](https://github.com/dashpay/platform/issues/4845))
+* **drive:** record the Merk shape of layers below a template ([#4850](https://github.com/dashpay/platform/issues/4850))
+* **platform:** a reason on contract bans and suspensions ([#4849](https://github.com/dashpay/platform/issues/4849))
+* **platform:** a window after a document's last modification for moderators to delete it ([#4864](https://github.com/dashpay/platform/issues/4864))
+* **platform:** contract moderation with a banlist and a suspension list ([#4830](https://github.com/dashpay/platform/issues/4830))
+* **platform:** document action fees paid to the contract owner and moderators, with a fee claim state transition ([#4851](https://github.com/dashpay/platform/issues/4851))
+* **platform:** document ids commit to the identity contract nonce ([#4859](https://github.com/dashpay/platform/issues/4859))
+* **platform:** document transitions state the action fee they agree to pay ([#4858](https://github.com/dashpay/platform/issues/4858))
+* **platform:** let the contract owner pay the gas of token-paid document actions ([#4826](https://github.com/dashpay/platform/issues/4826))
+* **platform:** moderators delete documents of the document types that allow it ([#4857](https://github.com/dashpay/platform/issues/4857))
+* **platform:** once-per-identity token distribution ([#4827](https://github.com/dashpay/platform/issues/4827))
+* **platform:** optional document token costs paid in credits when the token payment is left out ([#4828](https://github.com/dashpay/platform/issues/4828))
+* **platform:** record who claimed a contract fee pot and when, query the pots, and claim them from the wasm and JavaScript SDKs ([#4856](https://github.com/dashpay/platform/issues/4856))
+* **platform:** references to deletable documents (refersTo deletableDocument) ([#4860](https://github.com/dashpay/platform/issues/4860))
+* **sdk:** carry consensus error codes through the wallet FFI ([#4838](https://github.com/dashpay/platform/issues/4838))
+* **sdk:** once-per-identity token distribution in the mobile example apps ([#4829](https://github.com/dashpay/platform/issues/4829))
+* **swift-example-app:** share a bounded login key with a browser over Bluetooth ([#4823](https://github.com/dashpay/platform/issues/4823))
+
+
+### Bug Fixes
+
+* **drive:** bound pre-programmed distribution amounts and queue a shared release-time tree once ([#4837](https://github.com/dashpay/platform/issues/4837))
+* **drive:** create distribution trees for tokens added by contract update ([#4834](https://github.com/dashpay/platform/issues/4834))
+* **drive:** mint base supply of tokens added by contract update ([#4835](https://github.com/dashpay/platform/issues/4835))
+* **drive:** store the current-key alias for bound encryption/decryption keys under the purpose subtree ([#4843](https://github.com/dashpay/platform/issues/4843))
+* **sdk:** parse change-control action takers from the rs-dpp $type map on iOS ([#4825](https://github.com/dashpay/platform/issues/4825))
+* **sdk:** parse the $type map for the perpetual distribution recipient on iOS ([#4824](https://github.com/dashpay/platform/issues/4824))
+* **sdk:** persist the contract bounds kind on Android and iOS ([#4800](https://github.com/dashpay/platform/issues/4800))
+
+
+### Tests
+
+* **dpp:** guard doctype keyword names against stray keys of contracts admitted under meta-schema v0 ([#4855](https://github.com/dashpay/platform/issues/4855))
+* **drive-abci:** check every strategy test's state against the GroveDB structure ([#4847](https://github.com/dashpay/platform/issues/4847))
+* **drive-abci:** pin that a token config update cannot set a perpetual distribution ([#4836](https://github.com/dashpay/platform/issues/4836))
+* **drive:** pin that chained and composite joins prove the absence of a referenced document ([#4852](https://github.com/dashpay/platform/issues/4852))
+
+
+### Continuous Integration
+
+* link the GroveDB structure viewer on pull requests that change structure ([#4846](https://github.com/dashpay/platform/issues/4846))
+* PR Hygiene is the merge gate; CODEOWNERS carries no rules ([#4839](https://github.com/dashpay/platform/issues/4839))
+* re-pin PR Hygiene for state labels and /skip-bots ([#4861](https://github.com/dashpay/platform/issues/4861))
+
 ## [4.2.0-beta.2](https://github.com/dashpay/platform/compare/v4.2.0-beta.1...v4.2.0-beta.2) (2026-09-18)
 
 
