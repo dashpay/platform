@@ -358,7 +358,6 @@ mod fixtures {
         "saved_block_transactions.address_balances.block",
         "pools.pending_epoch_refunds.epoch",
         "pools.epoch.finished_epoch_info",
-        "pools.epoch.processing_fees",
         "misc.genesis_core_height",
         "spent_asset_locks.outpoint",
         "withdrawals.queue.transaction",
@@ -752,7 +751,8 @@ mod fixtures {
     }
 
     /// An epoch while it runs, then after it was paid out: payout deletes the
-    /// proposers and both fee items and keeps the epoch tree.
+    /// proposers and both fee items and keeps the epoch tree. The finished
+    /// epoch info is written at payout, so no epoch ever holds all nine keys.
     fn current_then_paid_epoch(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -768,6 +768,14 @@ mod fixtures {
             &mut batch,
         );
         batch.push(epoch.update_proposer_block_count_operation(&[7; 32], 3));
+        // The first block of an epoch starts it and pays its fees into the
+        // pools in one batch, so a running epoch holds its processing fees
+        // from the start. The shape of the layer depends on that.
+        batch.push(
+            epoch
+                .update_processing_fee_pool_operation(1000)
+                .expect("expected the processing fee operation"),
+        );
         drive
             .grove_apply_batch(batch, false, None, &platform_version.drive)
             .expect("expected to start the epoch");

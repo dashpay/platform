@@ -4895,20 +4895,23 @@
     "pools.epoch": {
       "origin": "fixture current_epoch@14",
       "tree": {
-        "hex": "73",
+        "hex": "6d",
         "left": {
           "hex": "68",
           "left": {
             "hex": "63"
-          },
-          "right": {
-            "hex": "6d"
           }
         },
         "right": {
           "hex": "76",
           "left": {
-            "hex": "74"
+            "hex": "73",
+            "left": {
+              "hex": "70"
+            },
+            "right": {
+              "hex": "74"
+            }
           },
           "right": {
             "hex": "78"
