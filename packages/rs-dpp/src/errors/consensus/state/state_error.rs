@@ -19,7 +19,8 @@ use crate::consensus::state::contract_moderation::{
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
-    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
+    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
+    IdentityNotContractModeratorError,
 };
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -532,6 +533,10 @@ pub enum StateError {
     // Document deletion by moderators (protocol version 14).
     #[error(transparent)]
     DocumentTypeNotDeletableByModeratorsError(DocumentTypeNotDeletableByModeratorsError),
+
+    // The moderators' deletion window (protocol version 14).
+    #[error(transparent)]
+    DocumentModerationWindowElapsedError(DocumentModerationWindowElapsedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -896,12 +901,19 @@ mod tests {
             )),
             129
         );
-        // Document deletion by moderators (protocol version 14): the tail of the enum.
+        // Document deletion by moderators (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::DocumentTypeNotDeletableByModeratorsError(
                 DocumentTypeNotDeletableByModeratorsError::new(group_id, "post".to_string())
             )),
             130
+        );
+        // The moderators' deletion window (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentModerationWindowElapsedError(
+                DocumentModerationWindowElapsedError::new(group_id, identity_id, 1, 2, 3)
+            )),
+            131
         );
     }
 }

@@ -891,7 +891,13 @@
     },
     "canBeDeletedByModerators": {
       "type": "boolean",
-      "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract. Independent of `canBeDeleted`, which rules what a document's own owner may do. Requires the contract to declare `moderation` in its config, and is refused on a type that keeps history, is indexOnly, or restricts document creation. Fixed when the document type is created. A type carrying it can not be the target of a permanentDocument reference. Available from protocol version 14."
+      "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract. Independent of `canBeDeleted`, which rules what a document's own owner may do. Requires the contract to declare `moderation` in its config, and is refused on a type that keeps history, is indexOnly, or restricts document creation. Fixed when the document type is created. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it. `canBeDeletedByModeratorsFor` limits it to a window after a document's last modification. Available from protocol version 14."
+    },
+    "canBeDeletedByModeratorsFor": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "For how many seconds after a document's last modification (`$updatedAt`) the contract's moderators may still delete it. Once block time is past `$updatedAt` plus this many seconds the document is settled: no moderator can delete it any more. A replace or a price update moves `$updatedAt` and opens the window again; a transfer or a purchase does not. Absent means no limit. Requires `canBeDeletedByModerators: true` and `$updatedAt` in `required`. Fixed when the document type is created. Says nothing about what a document's own owner may do. Available from protocol version 14."
     },
     "indexOnly": {
       "type": "boolean",

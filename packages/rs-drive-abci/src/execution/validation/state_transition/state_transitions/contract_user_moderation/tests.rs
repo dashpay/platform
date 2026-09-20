@@ -29,6 +29,7 @@ use dpp::data_contract::document_type::random_document::{
 };
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
@@ -84,6 +85,7 @@ const CONTRACT_MODERATION_TARGET_NOT_FOUND: u32 = 41109;
 const CONTRACT_MODERATOR_IDENTITY_NOT_FOUND: u32 = 41110;
 const CONTRACT_MODERATION_COUNTERPARTY_BARRED: u32 = 41114;
 const DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS: u32 = 41115;
+const DOCUMENT_MODERATION_WINDOW_ELAPSED: u32 = 41116;
 const INVALID_DOCUMENT_TYPE: u32 = 10406;
 const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
 const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
@@ -2101,7 +2103,11 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
 fn post_schema_with(extra: Value) -> Value {
     let mut schema = post_schema(true);
     if let (Value::Map(schema_map), Value::Map(extra_map)) = (&mut schema, extra) {
-        schema_map.extend(extra_map);
+        for (key, value) in extra_map {
+            // A keyword given again replaces the one the base schema has.
+            schema_map.retain(|(existing, _)| existing != &key);
+            schema_map.push((key, value));
+        }
     }
     schema
 }
@@ -2307,4 +2313,141 @@ async fn should_charge_a_moderator_no_token_for_a_post_whose_deletion_costs_toke
         .await;
     assert_success(&setup.process(&delete, &transaction));
     assert!(setup.post_removal(post.id(), Some(&transaction)).is_some());
+}
+
+/// The window the posts of the tests below give their moderators
+const MODERATION_WINDOW_SECONDS: u64 = 60;
+const MODERATION_WINDOW_MS: TimestampMillis = MODERATION_WINDOW_SECONDS * 1_000;
+
+/// A contract whose posts are mutable and can be deleted by moderators for a minute after
+/// their last modification
+async fn setup_with_a_moderation_window() -> Setup {
+    Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "documentsMutable": true,
+                    "required": ["text", "$updatedAt"],
+                })),
+            )
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn should_let_moderators_delete_a_post_only_within_the_window_after_its_last_modification() {
+    let setup = setup_with_a_moderation_window().await;
+
+    // Two posts, written at the block time of the tests.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (in_time, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let (settled, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    // To the millisecond the window ends on, a moderator may delete.
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, in_time.id()))
+        .await;
+    assert_success(&setup.process_at(&delete, BLOCK_TIME_MS + MODERATION_WINDOW_MS, &transaction));
+
+    // One millisecond later the post is settled: nobody removes it, the owner of the contract
+    // included, and the refusal is paid.
+    let past_the_window = BLOCK_TIME_MS + MODERATION_WINDOW_MS + 1;
+    for actor in [&setup.moderator, &setup.owner] {
+        let too_late = setup
+            .moderate(actor, delete_action(POST, settled.id()))
+            .await;
+        assert_paid_with_code(
+            &setup.process_at(&too_late, past_the_window, &transaction),
+            DOCUMENT_MODERATION_WINDOW_ELAPSED,
+        );
+    }
+    assert_eq!(setup.post_removal(settled.id(), Some(&transaction)), None);
+
+    // Its author can still delete it: the window is the moderators', not the author's.
+    let own_delete = own_post_deletion(&setup, &setup.user, settled.clone()).await;
+    assert_success(&setup.process_at(&own_delete, past_the_window, &transaction));
+}
+
+#[tokio::test]
+async fn should_open_the_window_again_when_the_author_modifies_the_post() {
+    let setup = setup_with_a_moderation_window().await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (mut post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    // Long after the window closed, the author rewrites the post. What it says now is new
+    // content, which the moderators get their minute for.
+    let edited_at = BLOCK_TIME_MS + 10 * MODERATION_WINDOW_MS;
+    post.set("text", "rewritten".into());
+    post.increment_revision()
+        .expect("expected to bump the revision");
+    let replace = BatchTransition::new_document_replacement_transition_from_document(
+        post.clone(),
+        setup
+            .contract
+            .document_type_for_name(POST)
+            .expect("expected the post type"),
+        &setup.user.key,
+        setup.user.contract_nonce(),
+        0,
+        None,
+        &setup.user.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the replacement");
+    assert_success(&setup.process_at(&replace, edited_at, &transaction));
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process_at(&delete, edited_at + MODERATION_WINDOW_MS, &transaction));
+    let removal = setup
+        .post_removal(post.id(), Some(&transaction))
+        .expect("expected the record");
+    assert_eq!(removal.removed_at, edited_at + MODERATION_WINDOW_MS);
+}
+
+#[tokio::test]
+async fn should_fix_the_window_of_a_document_type() {
+    let setup = setup_with_a_moderation_window().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    // A longer window would reopen posts that had settled; none at all, every post ever.
+    for window in [Some(10 * MODERATION_WINDOW_SECONDS), None] {
+        let mut changed = setup.contract.clone();
+        changed.increment_version();
+        let mut schema = changed
+            .document_type_for_name(POST)
+            .expect("expected the post type")
+            .schema()
+            .clone();
+        match window {
+            Some(seconds) => {
+                schema
+                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
+                    .expect("expected to set the window");
+            }
+            None => {
+                if let Value::Map(map) = &mut schema {
+                    map.retain(|(key, _)| {
+                        key != &Value::Text("canBeDeletedByModeratorsFor".to_string())
+                    });
+                }
+            }
+        }
+        add_document_type(&mut changed, POST, schema);
+        let update = setup.contract_update(changed).await;
+        assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);
+    }
 }

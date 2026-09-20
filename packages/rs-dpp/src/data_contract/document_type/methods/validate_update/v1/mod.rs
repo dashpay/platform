@@ -152,7 +152,33 @@ impl DocumentTypeRef<'_> {
         if new_document_type.documents_can_be_deleted_by_moderators()
             == self.documents_can_be_deleted_by_moderators()
         {
-            return SimpleConsensusValidationResult::new();
+            // The window the moderators have is fixed with the flag: a longer one would
+            // reopen documents that had settled, and one rule for both directions keeps
+            // what an author was told when they wrote.
+            let (old_window, new_window) = (
+                self.documents_can_be_deleted_by_moderators_for(),
+                new_document_type.documents_can_be_deleted_by_moderators_for(),
+            );
+            if old_window == new_window {
+                return SimpleConsensusValidationResult::new();
+            }
+            let seconds = |window: Option<u32>| {
+                window.map_or("no limit".to_string(), |seconds| {
+                    format!("{seconds} seconds")
+                })
+            };
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change for how long after a document's last modification moderators can delete it: changing from {} to {}",
+                        seconds(old_window),
+                        seconds(new_window)
+                    ),
+                )
+                .into(),
+            );
         }
         SimpleConsensusValidationResult::new_with_error(
             DocumentTypeUpdateError::new(
@@ -523,6 +549,86 @@ mod tests {
                 )] if e.additional_message() == expected
             );
         }
+    }
+
+    #[test]
+    fn should_return_invalid_result_when_the_moderators_window_is_changed() {
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators,
+        };
+
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+            }));
+        let make_document_type = |window: Option<u32>| {
+            let mut schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                },
+                "required": ["$updatedAt"],
+                "additionalProperties": false,
+                "canBeDeletedByModerators": true,
+            });
+            if let Some(seconds) = window {
+                schema
+                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
+                    .expect("expected to set the window");
+            }
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "post",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+
+        // Longer would reopen documents that had settled; shorter, given or taken away, would
+        // still change what an author was told. One rule for every direction.
+        for (old_window, new_window, from, to) in [
+            (Some(86400), Some(172800), "86400 seconds", "172800 seconds"),
+            (Some(86400), Some(3600), "86400 seconds", "3600 seconds"),
+            (Some(86400), None, "86400 seconds", "no limit"),
+            (None, Some(86400), "no limit", "86400 seconds"),
+        ] {
+            let result = make_document_type(old_window)
+                .as_ref()
+                .validate_update(make_document_type(new_window).as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            let expected = format!(
+                "document type can not change for how long after a document's last modification moderators can delete it: changing from {from} to {to}"
+            );
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message() == expected
+            );
+        }
+
+        // Unchanged, it passes.
+        let result = make_document_type(Some(86400))
+            .as_ref()
+            .validate_update(
+                make_document_type(Some(86400)).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
     }
 
     #[test]

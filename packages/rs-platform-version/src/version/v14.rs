@@ -429,6 +429,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
+///     `canBeDeletedByModeratorsFor` bounds the deletion in time: so many
+///     seconds after a document's last modification (`$updatedAt`, which the
+///     type must then require), past which nobody removes it
+///     (`DocumentModerationWindowElapsedError`). A replace opens the window
+///     again. Fixed with the type, like the flag.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in

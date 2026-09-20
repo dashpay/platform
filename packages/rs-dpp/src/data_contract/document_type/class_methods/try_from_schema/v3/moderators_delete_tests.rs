@@ -192,3 +192,88 @@ fn should_refuse_the_keyword_before_protocol_version_14() {
     let result = parse_with_config(post_schema(platform_value!({})), &config, 13, true);
     assert!(result.is_err(), "the keyword must not pass meta-schema v2");
 }
+
+// ---- canBeDeletedByModeratorsFor: the window the moderators have ----------------------
+
+fn windowed_schema(extra: Value) -> Value {
+    let mut schema = post_schema(platform_value!({
+        "canBeDeletedByModeratorsFor": 86400,
+        "required": ["$updatedAt"],
+    }));
+    if let (Value::Map(schema_map), Value::Map(extra_map)) = (&mut schema, extra) {
+        for (key, value) in extra_map {
+            schema_map.retain(|(existing, _)| existing != &key);
+            schema_map.push((key, value));
+        }
+    }
+    schema
+}
+
+#[test]
+fn should_parse_the_window_the_moderators_have() {
+    let document_type = parse_moderated(windowed_schema(platform_value!({}))).expect("parse");
+    assert!(document_type.documents_can_be_deleted_by_moderators());
+    assert_eq!(
+        document_type.documents_can_be_deleted_by_moderators_for(),
+        Some(86400)
+    );
+}
+
+#[test]
+fn should_leave_moderators_no_limit_without_the_window() {
+    let document_type = parse_moderated(post_schema(platform_value!({}))).expect("parse");
+    assert_eq!(
+        document_type.documents_can_be_deleted_by_moderators_for(),
+        None
+    );
+}
+
+#[test]
+fn should_refuse_a_window_on_a_type_moderators_can_not_delete_from() {
+    // The flag set to false, and the flag left out: the window limits nothing either way.
+    let flag_off = windowed_schema(platform_value!({ "canBeDeletedByModerators": false }));
+    let mut flag_absent = windowed_schema(platform_value!({}));
+    if let Value::Map(map) = &mut flag_absent {
+        map.retain(|(key, _)| key != &Value::Text("canBeDeletedByModerators".to_string()));
+    }
+    for schema in [flag_off, flag_absent] {
+        assert_refused_naming(
+            parse_moderated(schema),
+            &["canBeDeletedByModeratorsFor", "canBeDeletedByModerators"],
+        );
+    }
+}
+
+#[test]
+fn should_refuse_a_window_on_a_type_that_does_not_require_updated_at() {
+    assert_refused_naming(
+        parse_moderated(windowed_schema(platform_value!({ "required": ["text"] }))),
+        &["canBeDeletedByModeratorsFor", "$updatedAt"],
+    );
+}
+
+#[test]
+fn should_refuse_a_window_that_is_not_a_positive_number_of_seconds_on_the_stored_path_too() {
+    // No meta-schema stands in front of a stored contract, and no keyword is read more
+    // leniently there: the parser refuses the shape itself.
+    let platform_version = PlatformVersion::latest();
+    for full_validation in [true, false] {
+        for window in [
+            platform_value!(0),
+            platform_value!(-5),
+            platform_value!(4294967296u64),
+            platform_value!("a day"),
+        ] {
+            let result = parse_with_config(
+                windowed_schema(platform_value!({ "canBeDeletedByModeratorsFor": window.clone() })),
+                &moderated_config(platform_version),
+                platform_version.protocol_version,
+                full_validation,
+            );
+            assert!(
+                result.is_err(),
+                "window {window:?} must be refused (full validation: {full_validation})"
+            );
+        }
+    }
+}

@@ -150,6 +150,13 @@ pub(crate) mod property_names {
     /// See `apply_can_be_deleted_by_moderators` in `try_from_schema::common`
     /// for what the flag requires of the type and of the contract.
     pub const CAN_BE_DELETED_BY_MODERATORS: &str = "canBeDeletedByModerators";
+    /// Doctype-level limit on `canBeDeletedByModerators`: for how many seconds
+    /// after a document's last modification (`$updatedAt`) the moderators may
+    /// still delete it. Past that the document is settled and no moderator can
+    /// remove it; a replace moves `$updatedAt` and opens the window again.
+    /// Absent means no limit. Meta-schema v3+ (protocol version 14). See
+    /// `apply_can_be_deleted_by_moderators_for` in `try_from_schema::common`.
+    pub const CAN_BE_DELETED_BY_MODERATORS_FOR: &str = "canBeDeletedByModeratorsFor";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

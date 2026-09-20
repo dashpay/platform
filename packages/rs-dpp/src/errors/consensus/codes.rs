@@ -463,6 +463,7 @@ impl ErrorWithCode for StateError {
             Self::ContractFeeClaimNotAllowedError(_) => 41113,
             Self::ContractModerationCounterpartyBarredError(_) => 41114,
             Self::DocumentTypeNotDeletableByModeratorsError(_) => 41115,
+            Self::DocumentModerationWindowElapsedError(_) => 41116,
         }
     }
 }

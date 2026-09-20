@@ -144,7 +144,9 @@ export class ContractsFacade {
 
   /**
    * Deletes one document on a moderated contract as a moderator, whoever owns it, except the
-   * contract owner and the moderators. The document type must set `canBeDeletedByModerators`.
+   * contract owner and the moderators. The document type must set `canBeDeletedByModerators`;
+   * when it also sets `canBeDeletedByModeratorsFor`, the deletion is refused (41116) once that
+   * many seconds have passed since the document's last modification.
    * Signed like the other moderations. `options.reason` is optional here: left out, no code and
    * an empty text are stored. Resolves with the record the deletion left under the contract;
    * the document's owner gets no storage refund.

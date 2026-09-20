@@ -314,7 +314,9 @@ export interface ContractModerationResult {
 /**
  * Options for deleting one document on a moderated data contract as a moderator (protocol
  * version 14), whoever owns it, except the contract owner and the moderators. The document
- * type must set `canBeDeletedByModerators`. As for the other moderations, the signer must hold
+ * type must set `canBeDeletedByModerators`; when it also sets `canBeDeletedByModeratorsFor`,
+ * the deletion is refused (41116) once that many seconds have passed since the document's
+ * last modification. As for the other moderations, the signer must hold
  * a CRITICAL authentication key without contract bounds of the moderating identity.
  */
 export interface ContractDeleteDocumentOptions {
