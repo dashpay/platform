@@ -208,6 +208,12 @@ impl DocumentSetPriceTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        // A local failure after the nonce is reserved would leave the cached nonce ahead of
+        // Platform's, so what can be refused without it is refused first.
+        if let Some(creation_options) = &self.state_transition_creation_options {
+            creation_options.validate_base_carries_action_fee_agreement(platform_version)?;
+        }
+
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.document.owner_id(),

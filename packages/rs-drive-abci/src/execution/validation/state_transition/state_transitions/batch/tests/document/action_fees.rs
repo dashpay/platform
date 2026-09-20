@@ -776,10 +776,10 @@ mod action_fee_tests {
     #[tokio::test]
     async fn should_refuse_a_base_carrying_an_agreement_at_protocol_version_13() {
         // Version 2 of the document base cannot decode on 4.1 software, so while protocol
-        // version 13 is active new software refuses it, unpaid, in basic structure validation.
-        // The version 1 base that protocol version 13 builds keeps working, which
+        // version 13 is active new software treats a batch carrying one as inactive: the same
+        // refusal, charging nothing, that every format added since the fork gets. The version
+        // 1 base that protocol version 13 builds keeps working, which
         // `should_ignore_who_is_asked_to_pay_the_gas_at_protocol_version_13` covers.
-        const UNSUPPORTED_VERSION: u32 = 10000;
         let platform_version =
             PlatformVersion::get(13).expect("expected protocol version 13 to exist");
         let setup = Sponsorship::build_customized(
@@ -825,10 +825,16 @@ mod action_fee_tests {
         .await
         .expect("expected a batch transition");
 
-        assert_eq!(setup.check_tx(&transition), vec![UNSUPPORTED_VERSION]);
         let tx = setup.platform.drive.grove.start_transaction();
         let result = setup.process(&transition, &tx);
-        assert_eq!(unpaid_codes(&result), vec![UNSUPPORTED_VERSION]);
+        assert!(
+            matches!(
+                &result,
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains("DocumentsBatch") && message.contains("not active")
+            ),
+            "expected the batch to be inactive before protocol version 14, got {result:?}"
+        );
         assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1));
     }
 

@@ -277,6 +277,12 @@ impl DocumentDeleteTransitionBuilder {
         // per failed call.
         let (document_type, document) = self.resolve_document_for_deletion()?;
 
+        // A local failure after the nonce is reserved would leave the cached nonce ahead of
+        // Platform's, so what can be refused without it is refused first.
+        if let Some(creation_options) = &self.state_transition_creation_options {
+            creation_options.validate_base_carries_action_fee_agreement(platform_version)?;
+        }
+
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.owner_id,

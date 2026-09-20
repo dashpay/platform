@@ -405,10 +405,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `InvalidDocumentTransitionIdError`.
 /// 19. **Document transitions agree to their action fee**: version 2 of the
 ///     document base transition, the default from this version
-///     (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`, whose
-///     `document_base_state_transition` bounds the batch's basic structure
-///     validation enforces from version 2 on), carries an action fee
-///     agreement: the owner and moderators amounts the signer saw declared,
+///     (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`) and inactive before it
+///     (`StateTransition::active_version_range`, since earlier software
+///     cannot decode it), carries an action fee agreement: the owner and moderators amounts the signer saw declared,
 ///     which must match the document type's exactly, and for a fee priced by
 ///     the fee multiplier the multiplier they knew with the increase, in
 ///     percent, they accept. Batch advanced structure 1
