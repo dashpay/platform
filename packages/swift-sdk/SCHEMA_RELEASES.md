@@ -35,8 +35,13 @@ use their ordinary migration plan.
 
 Recovery files live beside the original store under
 `<store filename>.legacy-v2-backups/`. A successful bridge retains an
-`original.store` backup. The `active.json` journal records an interrupted
-installation; the next open reconciles it before exposing a container. These
+`original.store` backup through that launch. A later successful ordinary open
+reclaims completed backup directories; failed opens and pending migrations
+never trigger cleanup. Cleanup failures do not prevent opening the wallet.
+The `active.json` journal records an interrupted installation and a fingerprint
+of the validated final data; the next open reconciles it before exposing a
+container, even if scratch copies were removed. Older journals still require
+their candidate when validating a committed installation. These
 are local wallet data, protected like the original store and excluded from
 device backup. Do not upload them as release fixtures or edit the recovery
 journal to bypass a failure.

@@ -44,8 +44,14 @@ enum DashLegacySchemaBridge {
         if !FileManager.default.fileExists(atPath: marker.path) {
             // Detection must not impose bridge-specific metadata or locking
             // requirements on stores handled by SwiftData's ordinary path.
-            guard let source = try? identity(at: url),
-                  (try? needsBridge(source, plan: plan)) == true else { return try ordinary() }
+            let needsMigration = (try? identity(at: url)).flatMap { try? needsBridge($0, plan: plan) } ?? false
+            // Recheck after reading identity: a concurrent bridge publishes its
+            // journal before the store can change to the destination schema.
+            if !needsMigration && !FileManager.default.fileExists(atPath: marker.path) {
+                let container = try ordinary()
+                reclaimCompletedBackups(at: root)
+                return container
+            }
         }
         let lock = try StoreLock(url: url)
         defer { lock.close() }
@@ -155,6 +161,21 @@ enum DashLegacySchemaBridge {
             if source == (try identity(for: registered)) { return false }
         }
         return true
+    }
+
+    /// A backup survives the migration/recovery launch. Reclaim it only after
+    /// a later ordinary open succeeds and no migration journal is pending.
+    /// Cleanup failure affects disk usage, never the ability to open the wallet.
+    private static func reclaimCompletedBackups(at root: URL) {
+        let marker = root.appendingPathComponent("active.json")
+        guard !FileManager.default.fileExists(atPath: marker.path),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return }
+        for entry in entries where UUID(uuidString: entry.lastPathComponent) != nil {
+            guard let attributes = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                  attributes.isDirectory == true, attributes.isSymbolicLink != true else { continue }
+            try? FileManager.default.removeItem(at: entry)
+        }
     }
 
     private static func recoverIfNeeded(at url: URL, root: URL) throws {

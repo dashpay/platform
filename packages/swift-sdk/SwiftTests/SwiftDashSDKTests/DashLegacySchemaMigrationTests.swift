@@ -148,7 +148,7 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
                            "wOm/tD2jkxoKsyP7GFXVNeebjqpLZbKZZ4EqYLkwlMk=")
             let reopened = try open(url, hooks: .init(visit: { _, _ in XCTFail("Completed bridge must not repeat") }))
             try verifyRows(reopened.mainContext, walletName: "saved after migration")
-            XCTAssertEqual(try operationDirectories(url).count, 1)
+            XCTAssertTrue(try operationDirectories(url).isEmpty, "A later successful open reclaims the retained backup")
         }
     }
 
@@ -281,6 +281,17 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
             XCTAssertThrowsError(try open(url))
             XCTAssertTrue(FileManager.default.fileExists(atPath:
                 DashLegacySchemaBridge.backupDirectory(for: url).appendingPathComponent("active.json").path))
+        }
+    }
+
+    func testFailedOrdinaryOpenDoesNotReclaimRetainedBackup() throws {
+        try withStore { url in
+            try autoreleasepool { _ = try open(url) }
+            let directories = try operationDirectories(url)
+            XCTAssertEqual(directories.count, 1)
+            try Data("unreadable store".utf8).write(to: url)
+            XCTAssertThrowsError(try open(url))
+            XCTAssertEqual(try operationDirectories(url), directories)
         }
     }
 
