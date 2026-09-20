@@ -22,6 +22,11 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 // PUBLIC material only: identity snapshot reaching the `entry_blob` column.
 impl_persistable_blob!(IdentityEntry);
 
+// `entry_blob` carries an encoding stamp (`entry_format`, V019): 0 is the
+// pre-payment-address `IdentityEntry` shape, 1 the current one. Every write
+// stamps 1; the stamped reader keeps rows written before V019 decodable.
+pub use super::identity_profile_encoding::decode_identity;
+
 /// Write the changeset's inserted / updated identities.
 ///
 /// The insert half of a two-part apply: [`apply_removals`] must run for
@@ -49,12 +54,13 @@ pub fn apply_upserts(
         // upsert without erroring), preserving the resident blob and index.
         // `IS` is the NULL-safe match for the nullable column.
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
-             VALUES (?1, ?2, ?3, ?4) \
+            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, entry_format) \
+             VALUES (?1, ?2, ?3, ?4, 1) \
              ON CONFLICT(identity_id) DO UPDATE SET \
                 wallet_id = COALESCE(identities.wallet_id, excluded.wallet_id), \
                 identity_index = excluded.identity_index, \
-                entry_blob = excluded.entry_blob \
+                entry_blob = excluded.entry_blob, \
+                entry_format = 1 \
              WHERE identities.wallet_id IS NULL OR identities.wallet_id IS excluded.wallet_id",
         )?;
         let wallet_id_param = wallet_id_to_param(wallet_id);
@@ -280,7 +286,7 @@ pub fn fetch(
     // the identity-id row can't leak through; sentinel matches orphan rows.
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
-        "SELECT length(entry_blob), entry_blob FROM identities \
+        "SELECT length(entry_blob), entry_blob, entry_format FROM identities \
          WHERE identity_id = ?1 AND wallet_id IS ?2",
     )?;
     let mut rows = stmt.query(params![&identity_id[..], wallet_id_param])?;
@@ -289,7 +295,7 @@ pub fn fetch(
         Some(row) => {
             blob::check_size(row.get::<_, i64>(0)?)?;
             let payload: Vec<u8> = row.get(1)?;
-            Ok(Some(blob::decode(&payload)?))
+            Ok(Some(decode_identity(&payload, row.get(2)?)?))
         }
     }
 }
@@ -351,7 +357,7 @@ pub fn load_state_with_ctx(
     // unowned bucket. A plain `=` could not express the second case at all.
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
-        "SELECT identity_id, length(entry_blob), entry_blob, identity_index \
+        "SELECT identity_id, length(entry_blob), entry_blob, identity_index, entry_format \
          FROM identities WHERE wallet_id IS ?1 ORDER BY identity_id",
     )?;
     // The ignored-senders TABLE is the authoritative ignore record (every
@@ -366,7 +372,7 @@ pub fn load_state_with_ctx(
         blob::check_size(row.get::<_, i64>(1)?)?;
         let payload: Vec<u8> = row.get(2)?;
         let typed_identity_index: Option<i64> = row.get(3)?;
-        let entry: IdentityEntry = blob::decode(&payload)?;
+        let entry: IdentityEntry = decode_identity(&payload, row.get(4)?)?;
         // Cross-check the decoded blob against the typed columns it was
         // selected by (mirrors the accounts / identity_keys readers): the
         // blob must name the same identity, and its own wallet_id (when set)
@@ -572,8 +578,9 @@ pub fn ensure_exists(
     let payload = blob::encode(&stub)?;
     let wallet_id_param = wallet_id_to_param(wallet_id);
     conn.execute(
-        "INSERT OR IGNORE INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
-         VALUES (?1, ?2, NULL, ?3)",
+        "INSERT OR IGNORE INTO identities \
+            (identity_id, wallet_id, identity_index, entry_blob, entry_format) \
+         VALUES (?1, ?2, NULL, ?3, 1)",
         params![&identity_id[..], wallet_id_param, payload],
     )?;
     Ok(())

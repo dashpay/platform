@@ -798,12 +798,29 @@ impl PlatformWallet {
         // snapshot predates a Clear.
         let snapshot_generation = coordinator.clear_generation();
         let network = self.sdk.network;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        accounts.extend(self.discovered_tip_accounts().await?);
+        // Keep retired tip accounts scanning, including identities removed from
+        // the local manager after their address was published.
+        let start = self
+            .persister
+            .load()
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_tip_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
-            // `accounts` may contain duplicates; the BTreeMap
-            // dedups by definition. The full keyset (with its
-            // `SpendAuthorizingKey`) is dropped at the end of
+        for &account in &accounts {
+            // The full keyset (with its `SpendAuthorizingKey`) is dropped at the end of
             // this iteration — only the viewing half survives.
             let ks = OrchardKeySet::from_seed(seed, network, account)?;
             account_views.insert(account, ks.viewing_keys());
@@ -821,11 +838,6 @@ impl PlatformWallet {
         // treat it like the malformed-row case below: surface it rather
         // than silently mixing two keys' state. The recovery is a
         // shielded Clear, which drops both sides at once.
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while binding shielded viewing keys: {e}"
-            ))
-        })?;
         for (account, views) in &account_views {
             let id = SubwalletId::new(self.wallet_id, *account);
             if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
@@ -915,9 +927,25 @@ impl PlatformWallet {
                 "persister load failed while rebinding shielded viewing keys: {e}"
             ))
         })?;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        // Newly discovered identities require their tip accounts too. Missing
+        // FVKs must trigger seed-backed binding: skipping them would report a
+        // successful restart while silently omitting recoverable tip history.
+        accounts.extend(self.discovered_tip_accounts().await?);
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_tip_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
+        for &account in &accounts {
             let id = SubwalletId::new(self.wallet_id, account);
             let Some(fvk_bytes) = start.shielded.viewing_keys.get(&id) else {
                 return Ok(false);

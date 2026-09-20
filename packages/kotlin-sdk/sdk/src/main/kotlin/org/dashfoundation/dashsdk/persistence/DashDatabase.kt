@@ -142,9 +142,12 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * pre-migration row reads back as an ordinary, unstamped, non-tombstone
  * entry, and a wallet with no recorded chainlock height has no boundary
  * at all (nothing collects).
+ *
+ * Version 12 adds nullable Core, Platform, and shielded payment addresses
+ * to cached owner and contact profiles, preserving the version-11 sweep state.
  */
 @Database(
-    version = 11,
+    version = 12,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -579,6 +582,17 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        /** v11 → v12: optional public payment addresses on cached profiles. */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("dashpay_profiles", "dashpay_contact_profiles")) {
+                    for (column in listOf("corePaymentAddress", "platformPaymentAddress", "shieldedAddress")) {
+                        db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` BLOB")
+                    }
+                }
+            }
+        }
+
         /**
          * v10 → v11: the four additive sweep-hold columns and the two
          * `pending_inputs` indexes — see the version-11 class doc above.
@@ -635,6 +649,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
+                    MIGRATION_11_12,
                 )
                 .build()
 

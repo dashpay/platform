@@ -26,6 +26,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -38,6 +40,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -159,6 +162,7 @@ fun DashPayTabScreen(navController: NavHostController) {
     val appUiState = container.appUiState
     var claimSheetUri by remember { mutableStateOf<String?>(null) }
     var showClaimSheet by remember { mutableStateOf(false) }
+    var showTipSheet by remember { mutableStateOf(false) }
     val pendingInvite by appUiState.pendingInviteUri.collectAsStateWithLifecycle()
     val claimInFlight by appUiState.invitationClaimInFlight.collectAsStateWithLifecycle()
     // The parked URI is NOT cleared at seeding: it stays in AppUiState (the
@@ -320,7 +324,54 @@ fun DashPayTabScreen(navController: NavHostController) {
                             onError = { unlockError = it },
                         )
 
+                        val tipManager = manager
+                        val tipWalletId = identity.walletId
+                        // The tip account follows the live identity's derivation index, not
+                        // Room's non-null `identityIndex`: its 0 is a placeholder for an identity
+                        // with no recoverable index and would alias identity 0's tip pool.
+                        val tipAccountResult by produceState<Result<Int>?>(
+                            initialValue = null, managed, tipManager, identityHex,
+                        ) {
+                            value = runCatching {
+                                val index = requireNotNull(managed) { "Wallet is not loaded" }
+                                    .identityIndex(identity.identityId)
+                                    ?: error("Tip account requires a recoverable identity index")
+                                requireNotNull(tipManager).shieldedTipAccountIndex(index)
+                            }
+                        }
+                        val tipAccount = tipAccountResult?.getOrNull()
+                        val tipSubmission = tipWalletId?.let {
+                            container.shieldedTipSubmissions.forWallet(network.ffiValue, it.toHex())
+                        }
+                        val tipSending by rememberUpdatedState(tipSubmission?.busy == true)
+                        val tipSheetState = rememberModalBottomSheetState(
+                            confirmValueChange = { value -> value != SheetValue.Hidden || !tipSending },
+                        )
+                        if (showTipSheet && managed != null && tipManager != null && tipWalletId != null && tipAccount != null && tipSubmission != null) {
+                            ModalBottomSheet(
+                                sheetState = tipSheetState,
+                                onDismissRequest = { if (!tipSubmission.busy) showTipSheet = false },
+                            ) {
+                                ShieldedTipSheet(tipManager, managed, tipWalletId, tipAccount, tipSubmission)
+                            }
+                        }
                         FormSection(title = "DashPay") {
+                            if (container.shieldedService.isAvailable) {
+                                EntityRow(
+                                    icon = Icons.AutoMirrored.Filled.Send,
+                                    title = "Send shielded tip",
+                                    onClick = {
+                                        when (val result = tipAccountResult) {
+                                            null -> unlockError = "The tip account is still loading"
+                                            else -> result.fold(
+                                                onSuccess = { showTipSheet = true },
+                                                onFailure = { unlockError = it.message ?: "Could not open shielded tips" },
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("dashpay.sendShieldedTip"),
+                                )
+                            }
                             EntityRow(
                                 icon = Icons.Default.Group,
                                 title = "Contacts",

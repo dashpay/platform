@@ -281,3 +281,33 @@ fn shield_memo_round_trips_through_ovk_recovery() {
         "the OVK-recovered memo must decode back to the original text"
     );
 }
+
+#[test]
+fn should_restore_tip_notes_without_exposing_personal_notes_to_tip_viewing_key() {
+    use crate::wallet::shielded::shielded_tip_account_index;
+    let seed = [0x67; 64];
+    let tip_index = shielded_tip_account_index(0).unwrap();
+    let tips = OrchardKeySet::from_seed(&seed, Network::Testnet, tip_index).unwrap();
+    let restored = OrchardKeySet::from_seed(&seed, Network::Testnet, tip_index).unwrap();
+    let personal = OrchardKeySet::from_seed(&seed, Network::Testnet, 0).unwrap();
+    // Rotation is just another address of the dedicated account. Both remain
+    // discoverable without a saved diversifier index or a current profile.
+    for recipient in [tips.default_address, tips.address_at(17)] {
+        let wire = make_own_ovk_wire_note(
+            recipient,
+            tips.outgoing_viewing_key.clone(),
+            123_456,
+            [0; 36],
+        );
+        assert!(try_decrypt_note_with_memo(&restored.prepared_ivk(), &wire).is_some());
+        assert!(try_decrypt_note_with_memo(&personal.prepared_ivk(), &wire).is_none());
+    }
+    let personal_wire = make_own_ovk_wire_note(
+        personal.default_address,
+        personal.outgoing_viewing_key.clone(),
+        456_789,
+        [0; 36],
+    );
+    assert!(try_decrypt_note_with_memo(&tips.prepared_ivk(), &personal_wire).is_none());
+    assert!(try_recover_outgoing_note(&tips.outgoing_viewing_key, &personal_wire).is_none());
+}

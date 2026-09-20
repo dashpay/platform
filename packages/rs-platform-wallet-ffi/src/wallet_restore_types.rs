@@ -348,6 +348,8 @@ pub struct IdentityRestoreEntryFFI {
     /// identity has no cached contact profiles.
     pub contact_profiles: *const ContactProfileRestoreEntryFFI,
     pub contact_profiles_count: usize,
+    /// Optional owned DashPay profile; contact_id is ignored.
+    pub dashpay_profile: *const ContactProfileRestoreEntryFFI,
 }
 
 /// One DashPay payment-history row to rehydrate into
@@ -378,7 +380,7 @@ pub struct PaymentRestoreEntryFFI {
 /// the managed identity's contact-profile cache (keyed by the contact's identity
 /// id) at load. Mirrors the persist-side
 /// [`crate::identity_persistence::ContactProfileRowFFI`] field-for-field
-/// (the leading `contact_id` key, the five public profile fields with
+/// (the leading `contact_id` key, the public profile fields with
 /// their `_present` byte-array flags, and the trailing `checked_at_ms`
 /// self-heal timestamp).
 ///
@@ -410,6 +412,13 @@ pub struct ContactProfileRestoreEntryFFI {
     pub avatar_fingerprint: [u8; 8],
     /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
     pub avatar_fingerprint_present: bool,
+    pub core_payment_address: [u8; 21],
+    pub core_payment_address_present: bool,
+    pub platform_payment_address: [u8; 21],
+    pub platform_payment_address_present: bool,
+    pub shielded_address: [u8; 43],
+    pub shielded_address_present: bool,
+
     /// NUL-terminated `publicMessage`, or null when `None`.
     pub public_message: *const std::os::raw::c_char,
     /// Wall-clock ms of the last fetch attempt — the
