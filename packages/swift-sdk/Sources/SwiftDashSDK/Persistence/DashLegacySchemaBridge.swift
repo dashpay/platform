@@ -23,6 +23,7 @@ enum DashLegacySchemaBridge {
         let operation: UUID
         let source: Identity
         let destination: Identity
+        let destinationData: SQLite.StoreEvidence?
     }
 
     static func open(configuration: ModelConfiguration, schema: Schema,
@@ -115,7 +116,8 @@ enum DashLegacySchemaBridge {
         try rejectExternalStorage(at: candidate)
         try SQLite.integrityCheck(candidate)
         let destination = try identity(at: candidate)
-        let journal = Journal(formatVersion: 1, operation: operation, source: source, destination: destination)
+        let journal = Journal(formatVersion: 2, operation: operation, source: source, destination: destination,
+                              destinationData: try SQLite.evidence(at: candidate))
         // Publish the marker only after both copy filenames and their data are
         // durable. The marker lives in the parent directory, synced separately.
         for fileURL in [backup, candidate] {
@@ -159,26 +161,35 @@ enum DashLegacySchemaBridge {
         let marker = root.appendingPathComponent("active.json")
         guard FileManager.default.fileExists(atPath: marker.path) else { return }
         let journal = try JSONDecoder().decode(Journal.self, from: Data(contentsOf: marker))
-        guard journal.formatVersion == 1 else { throw SQLite.Failure.unsupported("Unknown migration recovery format") }
-        let directory = root.appendingPathComponent(journal.operation.uuidString, isDirectory: true)
-        let backup = directory.appendingPathComponent("original.store")
-        guard try identity(at: backup) == journal.source else {
-            throw SQLite.Failure.unsupported("Migration backup is missing or has changed")
+        guard [1, 2].contains(journal.formatVersion) else {
+            throw SQLite.Failure.unsupported("Unknown migration recovery format")
         }
+        let directory = root.appendingPathComponent(journal.operation.uuidString, isDirectory: true)
         // SQLite commits or rolls back the entire page replacement, including
         // WAL recovery. We never restore a backup over potentially newer writes.
         let current = try identity(at: url)
         if current == journal.destination {
-            let candidate = directory.appendingPathComponent("candidate.store")
-            guard try identity(at: candidate) == journal.destination else {
-                throw SQLite.Failure.unsupported("Validated migration candidate is missing or has changed")
-            }
             try SQLite.integrityCheck(url)
-            // Explicit later stages may intentionally transform legacy values.
-            // Compare with the already validated final candidate, not the old graph.
-            try SQLite.validatePreservation(from: candidate, to: url)
+            if journal.formatVersion == 2 {
+                guard let expected = journal.destinationData,
+                      try SQLite.evidence(at: url) == expected else {
+                    throw SQLite.Failure.unsupported("Installed migration data differs from the validated candidate")
+                }
+            } else {
+                // Older journals require their candidate as the data evidence.
+                // Schema identity and SQLite integrity alone cannot prove preservation.
+                let candidate = directory.appendingPathComponent("candidate.store")
+                guard try identity(at: candidate) == journal.destination else {
+                    throw SQLite.Failure.unsupported("Validated migration candidate is missing or has changed")
+                }
+                try SQLite.validatePreservation(from: candidate, to: url)
+            }
         } else if current != journal.source {
             throw SQLite.Failure.unsupported("Store changed while migration recovery was pending")
+        } else {
+            // The original remains authoritative even if scratch copies were
+            // removed. Validate it, clear the attempt, then take fresh copies.
+            try SQLite.integrityCheck(url)
         }
         try clearJournal(at: root)
         if current == journal.source {

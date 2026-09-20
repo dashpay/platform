@@ -133,6 +133,30 @@ enum DashLegacyStoreSQLite {
         let tables: [String: Table]
     }
 
+    struct TableEvidence: Codable, Equatable {
+        let columns: [String: String]
+        let rowsDigest: String
+    }
+    struct StoreEvidence: Codable, Equatable {
+        let entities: [String]
+        let tables: [String: TableEvidence]
+    }
+
+    /// Durable evidence of the validated final candidate, independent of
+    /// SQLite page layout, WAL state and disposable migration copy files.
+    static func evidence(at url: URL) throws -> StoreEvidence {
+        let connection = try Connection(url, writable: false)
+        let layout = try layout(connection)
+        var tables: [String: TableEvidence] = [:]
+        for (name, table) in layout.tables {
+            tables[name] = TableEvidence(
+                columns: table.columns.mapValues(\.declaredType),
+                rowsDigest: try rowsDigest(connection, table: table,
+                                           names: table.columns.keys.sorted(), entities: layout.entities))
+        }
+        return StoreEvidence(entities: layout.entities.values.sorted(), tables: tables)
+    }
+
     /// Compare every original application column and typed cell, including
     /// relationship foreign keys/join rows. Extra destination columns/tables
     /// are allowed; removals, type conversions and changed values are not.

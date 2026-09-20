@@ -251,6 +251,39 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
+    func testRecoveryWorksWithoutScratchFilesBeforeAndAfterCommit() throws {
+        for phase: DashLegacySchemaBridge.Phase in [.beforeInstall, .afterCommit] {
+            try withStore { url in
+                XCTAssertThrowsError(try open(url, hooks: .init(visit: { current, _ in
+                    if current == phase { throw Injected.stop }
+                })))
+                for directory in try operationDirectories(url) {
+                    try FileManager.default.removeItem(at: directory)
+                }
+                let recovered = try open(url)
+                try verifyRows(recovered.mainContext)
+                XCTAssertFalse(FileManager.default.fileExists(atPath:
+                    DashLegacySchemaBridge.backupDirectory(for: url).appendingPathComponent("active.json").path))
+            }
+        }
+    }
+
+    func testMissingCandidateCannotHideChangedInstalledRows() throws {
+        try withStore { url in
+            XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, _ in
+                if phase == .afterCommit { throw Injected.stop }
+            })))
+            for directory in try operationDirectories(url) {
+                try FileManager.default.removeItem(at: directory)
+            }
+            try DashLegacyStoreSQLite.Connection(url, writable: true)
+                .execute("DELETE FROM ZPERSISTENTINDEX")
+            XCTAssertThrowsError(try open(url))
+            XCTAssertTrue(FileManager.default.fileExists(atPath:
+                DashLegacySchemaBridge.backupDirectory(for: url).appendingPathComponent("active.json").path))
+        }
+    }
+
     func testCorruptionExternalStorageAndNewerUnknownVersionDoNotBridge() throws {
         try withStore { url in
             try Data("not a database".utf8).write(to: url)
