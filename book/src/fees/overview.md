@@ -306,9 +306,10 @@ The epoch fee history (`previous_fee_versions` in platform state) records a
 schedule only when its number changes, is saved as numbers and restored through
 `FeeVersion::get(number)`, and serves exactly the groups `KnownCostItem` reads:
 storage, processing, hashing and signature. Every other group
-(`data_contract_registration`, `state_transition_min_fees`,
-`vote_resolution_fund_fees`, `dashvm`) is read from the active protocol
-version's schedule, `platform_version.fee_version`, and never from the history.
+(`data_contract_validation`, `data_contract_registration`,
+`state_transition_min_fees`, `vote_resolution_fund_fees`, `dashvm`) is read
+from the active protocol version's schedule, `platform_version.fee_version`,
+and never from the history.
 Upgrading from protocol version 16 to 17 therefore records nothing new in the
 history and a restart resolves the existing entry to `FEE_VERSION1`; contract
 pricing is unaffected because nothing reads it from there.
