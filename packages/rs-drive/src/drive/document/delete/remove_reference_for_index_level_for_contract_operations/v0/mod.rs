@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_size;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -69,6 +70,13 @@ impl Drive {
             key_info_path.push(KnownKey(vec![0]));
 
             let member_tree_type = terminal_member_tree_type(index_type);
+            // The member key's estimated width follows the terminal property,
+            // mirroring the insert side.
+            let member_key_max_size = index_only_terminal_max_key_size(
+                document_type,
+                terminal_property,
+                platform_version,
+            )?;
 
             // Sum-bearing entries (`ItemWithSumItem`) carry the i64 sum
             // item alongside the commitment payload; mirror the insert
@@ -90,7 +98,7 @@ impl Drive {
                         tree_type: member_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllItems(
-                            DEFAULT_HASH_SIZE_U8,
+                            member_key_max_size,
                             estimated_value_size,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
@@ -122,7 +130,7 @@ impl Drive {
 
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllItems(
-                    DEFAULT_HASH_SIZE_U8,
+                    member_key_max_size,
                     estimated_value_size,
                     storage_flags.map(|s| s.serialized_size()),
                 ),

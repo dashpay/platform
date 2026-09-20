@@ -29,8 +29,9 @@ stores nothing in primary storage. The index entries ARE the rows:
 ```
 
 The **terminal** — a per-index keyword defaulting to `$ownerId`, or any
-refersTo-typed identifier property (identity, contract, token, permanent
-or deletable document) — is the member key, sitting exactly where a normal non-unique
+schema property a prefix position could carry (an identifier with or
+without a `refersTo`, a bounded byte array or string, an integer, a
+boolean, a date) — is the member key, sitting exactly where a normal non-unique
 index keys by document id; the element is an `Item` instead of a
 `Reference` because there is nothing to point at. The `0` storage marker,
 value-tree types, and the count/sum/ranked tree derivation are
@@ -40,6 +41,19 @@ protocol v14 ranked machinery (see
 types unchanged: "the five most-liked posts in `#dash`" is an
 O(log n + k) read with an O(log n + k) proof, and Items count in
 count/ranked trees exactly as References do.
+
+The member key is the terminal value's **tree-key encoding**, produced by
+the same functions the prefix levels use (the walkers and probes through
+`get_raw_for_document_type`, queries and executed proofs through
+`serialize_value_for_key`, synthesis through `decode_value_for_tree_keys`),
+so nothing about it is specific to a 32-byte identifier: a 33-byte public
+key, a short string or an integer keys the `0` bucket exactly as it would
+key a prefix level, and fee estimation sizes the member key by the
+terminal property's declared bound (`index_only_terminal_max_key_size`)
+rather than by a fixed 32. Structural uniqueness spans the terminal value:
+one entry per (prefix values, terminal value), so two documents by one
+owner that differ only in a scalar terminal are two entries under the
+same prefix.
 
 **`timeRange` buckets** compose too: a bucketed indexOnly index writes
 one commitment entry per containing bucket under the grid-qualified
@@ -103,7 +117,7 @@ aggregate keywords follow:
 | every non-trigger property appears in ≥ 1 **non-skip** index (prefix or terminal) | only indexed values exist, and a skip index carries no value for trigger-absent documents — covered only there, a property would be validated and committed yet written nowhere |
 | **every index embeds `$ownerId`** (prefix or terminal) | entries are self-authorizing: a delete computed with owner = signer can only ever address the signer's own entries |
 | ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` — the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
-| terminal is `$ownerId` or a single-id refersTo property | the member key must alone be a referable entity id (`identityPublicKey` is compound and rejected) |
+| terminal is `$ownerId` or a schema property passing the indexed-shape limits (no arrays or objects; byte arrays ≤ 255 bytes, strings ≤ 63 characters) | the member key is the terminal's tree-key encoding, derived by the same functions the prefix levels use, and grovedb caps keys at 255 bytes; other system properties are refused because the `$createdAt` rules walk the prefix properties |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
 | non-unique, non-contested, `nullSearchable` default | v1 scope |

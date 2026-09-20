@@ -20,6 +20,8 @@
 //! validation to pin the meta-schema admission.
 
 use super::*;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::errors::DataContractError;
 use platform_value::platform_value;
@@ -167,6 +169,41 @@ fn expect_structure_error(result: Result<DocumentTypeV2, ProtocolError>, needle:
         }
         Ok(_) => panic!("expected rejection containing {needle:?}, but the schema parsed"),
     }
+}
+
+/// The terminal shares the prefix positions' shape checks, which report
+/// through the typed index consensus errors rather than a structure error.
+fn expect_basic_error(
+    result: Result<DocumentTypeV2, ProtocolError>,
+    what: &str,
+    check: impl Fn(&BasicError) -> bool,
+) {
+    match result {
+        Err(ProtocolError::ConsensusError(err)) => match *err {
+            ConsensusError::BasicError(ref basic) if check(basic) => {}
+            other => panic!("expected {what}, got {other}"),
+        },
+        Err(other) => panic!("expected {what}, got {other}"),
+        Ok(_) => panic!("expected {what}, but the schema parsed"),
+    }
+}
+
+/// Add a schema property to the likes schema and list it in `required`.
+fn with_required_property(schema: &mut Value, name: &str, definition: Value) {
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(name, definition)
+        .expect("property applies");
+    let mut required = schema
+        .get_optional_array("required")
+        .expect("required readable")
+        .unwrap_or_default();
+    required.push(Value::Text(name.to_string()));
+    schema
+        .set_value("required", Value::Array(required))
+        .expect("required applies");
 }
 
 // ── the happy path ──────────────────────────────────────────────────────
@@ -586,13 +623,155 @@ fn rejects_terminal_repeating_an_index_property() {
 }
 
 #[test]
-fn rejects_terminal_without_refers_to() {
-    // `hashtag` is a plain string — not `$ownerId`, not a refersTo-typed
-    // identifier — so it cannot be a member key.
+fn accepts_a_plain_scalar_terminal() {
+    // `hashtag` is a bounded string with no refersTo: any property a prefix
+    // position admits may be the member key, so byLiker becomes
+    // `[$ownerId] → hashtag` — one entry per (owner, hashtag).
     let schema = likes_schema_with_index_key(2, "terminal", platform_value!("hashtag"));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("a string terminal parses");
+        assert_eq!(
+            document_type.indices["byLiker"].terminal.as_deref(),
+            Some("hashtag")
+        );
+    }
+}
+
+#[test]
+fn accepts_byte_array_and_integer_terminals() {
+    // A 33-byte array (a compressed public key) and a bounded integer as
+    // member keys, each carried by a fourth index so every property stays
+    // indexed: byLiker becomes `[$ownerId] → pubKey`, byScore is
+    // `[$ownerId, pubKey] → score`.
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("pubKey"));
+    with_required_property(
+        &mut schema,
+        "pubKey",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 33,
+            "maxItems": 33,
+            "position": 2
+        }),
+    );
+    with_required_property(
+        &mut schema,
+        "score",
+        platform_value!({ "type": "integer", "minimum": 0, "maximum": 100, "position": 3 }),
+    );
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byScore",
+            "properties": [{ "$ownerId": "asc" }, { "pubKey": "asc" }],
+            "terminal": "score"
+        }));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("byte array and integer terminals parse");
+        assert_eq!(
+            document_type.indices["byLiker"].terminal.as_deref(),
+            Some("pubKey")
+        );
+        assert_eq!(
+            document_type.indices["byScore"].terminal.as_deref(),
+            Some("score")
+        );
+    }
+}
+
+#[test]
+fn object_terminals_are_not_addressable_but_their_leaves_are() {
+    // Only leaf properties exist in the flattened property map, so an
+    // object cannot be named as a terminal at all — the same as at a prefix
+    // position — while a nested leaf can, provided its ancestor is required
+    // (the no-null invariant every indexOnly property carries).
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("profile"));
+    with_required_property(
+        &mut schema,
+        "profile",
+        platform_value!({
+            "type": "object",
+            "properties": { "nick": { "type": "string", "maxLength": 8, "position": 0 } },
+            "required": ["nick"],
+            "position": 2
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema.clone(), PlatformVersion::latest(), false),
+        "does not name a property",
+    );
+
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(2)
+        .expect("byLiker exists")
+        .set_value("terminal", platform_value!("profile.nick"))
+        .expect("terminal applies");
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("a nested leaf terminal parses");
+    assert_eq!(
+        document_type.indices["byLiker"].terminal.as_deref(),
+        Some("profile.nick")
+    );
+}
+
+#[test]
+fn rejects_an_unbounded_byte_array_terminal() {
+    // 256 bytes exceeds the indexed byte-array bound (255, grovedb's key cap).
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("blob"));
+    with_required_property(
+        &mut schema,
+        "blob",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 0,
+            "maxItems": 256,
+            "position": 2
+        }),
+    );
+    expect_basic_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "InvalidIndexedPropertyConstraintError",
+        |error| matches!(error, BasicError::InvalidIndexedPropertyConstraintError(_)),
+    );
+}
+
+#[test]
+fn rejects_an_overlong_string_terminal() {
+    // 64 characters exceeds the indexed string bound (63).
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("caption"));
+    with_required_property(
+        &mut schema,
+        "caption",
+        platform_value!({ "type": "string", "maxLength": 64, "position": 2 }),
+    );
+    expect_basic_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "InvalidIndexedPropertyConstraintError",
+        |error| matches!(error, BasicError::InvalidIndexedPropertyConstraintError(_)),
+    );
+}
+
+#[test]
+fn rejects_system_property_terminals_other_than_owner_id() {
+    // `$createdAt` may be indexed in the prefix, where the rules that reason
+    // about it look; it is not admitted as a terminal.
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!("$createdAt"));
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "refersTo",
+        "only $ownerId may be a terminal",
     );
 }
 
@@ -751,46 +930,49 @@ fn rejects_indexed_created_at_that_is_not_required() {
 }
 
 #[test]
-fn rejects_identity_public_key_reference_terminals() {
-    // identityPublicKey is a compound reference (identity id here, key id
-    // in a companion property) — the member key alone cannot identify the
-    // referenced key, so it is not a legal terminal.
+fn accepts_an_identity_public_key_reference_terminal() {
+    // An identityPublicKey reference is a 32-byte identifier like any other
+    // as a member key; the companion key id is indexed in the prefix, so
+    // entries for different keys of one identity stay distinct. The old
+    // "referable entity" restriction no longer applies: a terminal is any
+    // indexable property.
     let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("keyRef"));
+    with_required_property(
+        &mut schema,
+        "keyRef",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": { "type": "identityPublicKey", "keyIdProperty": "keyId" },
+            "position": 2
+        }),
+    );
+    with_required_property(
+        &mut schema,
+        "keyId",
+        platform_value!({ "type": "integer", "minimum": 0, "maximum": 100, "position": 3 }),
+    );
     schema
-        .get_mut("properties")
-        .expect("properties accessible")
-        .expect("properties present")
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(2)
+        .expect("byLiker exists")
         .set_value(
-            "keyRef",
-            platform_value!({
-                "type": "array",
-                "byteArray": true,
-                "minItems": 32,
-                "maxItems": 32,
-                "contentMediaType": "application/x.dash.dpp.identifier",
-                "refersTo": { "type": "identityPublicKey", "keyIdProperty": "keyId" },
-                "position": 2
-            }),
+            "properties",
+            platform_value!([{ "$ownerId": "asc" }, { "keyId": "asc" }]),
         )
-        .expect("property applies");
-    schema
-        .get_mut("properties")
-        .expect("properties accessible")
-        .expect("properties present")
-        .set_value(
-            "keyId",
-            platform_value!({ "type": "integer", "minimum": 0, "maximum": 100, "position": 3 }),
-        )
-        .expect("property applies");
-    schema
-        .set_value(
-            "required",
-            platform_value!(["hashtag", "postId", "keyRef", "keyId"]),
-        )
-        .expect("required applies");
-    expect_structure_error(
-        parse_with(schema, PlatformVersion::latest(), false),
-        "identityPublicKey",
+        .expect("properties apply");
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("an identityPublicKey reference terminal parses");
+    assert_eq!(
+        document_type.indices["byLiker"].terminal.as_deref(),
+        Some("keyRef")
     );
 }
 

@@ -1288,66 +1288,88 @@ fn validate_index_properties(
                 ctx.platform_version,
             )?;
 
-            // Validate indexed property type
-            match &property_definition.property_type {
-                // Array and objects aren't supported for indexing yet
-                DocumentPropertyType::Array(_)
-                | DocumentPropertyType::Object(_)
-                | DocumentPropertyType::VariableTypeArray(_) => {
-                    Err(ProtocolError::ConsensusError(Box::new(
-                        InvalidIndexPropertyTypeError::new(
-                            ctx.name.to_owned(),
-                            index.name.to_owned(),
-                            index_property.name.to_owned(),
-                            property_definition.property_type.name(),
-                        )
-                        .into(),
-                    )))
-                }
-                // Indexed byte array size must be limited
-                DocumentPropertyType::ByteArray(sizes)
-                    if sizes.max_size.is_none()
-                        || sizes.max_size.unwrap() > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
-                {
-                    Err(ProtocolError::ConsensusError(Box::new(
-                        InvalidIndexedPropertyConstraintError::new(
-                            ctx.name.to_owned(),
-                            index.name.to_owned(),
-                            index_property.name.to_owned(),
-                            "maxItems".to_string(),
-                            format!(
-                                "should be less or equal {}",
-                                MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-                            ),
-                        )
-                        .into(),
-                    )))
-                }
-                // Indexed string length must be limited
-                DocumentPropertyType::String(sizes)
-                    if sizes.max_length.is_none()
-                        || sizes.max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
-                {
-                    Err(ProtocolError::ConsensusError(Box::new(
-                        InvalidIndexedPropertyConstraintError::new(
-                            ctx.name.to_owned(),
-                            index.name.to_owned(),
-                            index_property.name.to_owned(),
-                            "maxLength".to_string(),
-                            format!(
-                                "should be less or equal {}",
-                                MAX_INDEXED_STRING_PROPERTY_LENGTH
-                            ),
-                        )
-                        .into(),
-                    )))
-                }
-                _ => Ok(()),
-            }
+            // The shape limits every indexed value carries as a grovedb key,
+            // shared with an indexOnly index's terminal.
+            check_indexable_property_shape(
+                ctx.name,
+                &index.name,
+                &index_property.name,
+                &property_definition.property_type,
+            )
         } else {
             Ok(())
         }
     })
+}
+
+/// The shape checks a property must pass to be indexed, shared by the
+/// prefix positions of an index and an indexOnly index's terminal: the
+/// encoded value becomes a grovedb key, so arrays and objects are refused
+/// and byte arrays and strings must be bounded (grovedb caps keys at 255
+/// bytes; the string bound is in characters, each at most four bytes).
+fn check_indexable_property_shape(
+    document_type_name: &str,
+    index_name: &str,
+    property_name: &str,
+    property_type: &DocumentPropertyType,
+) -> Result<(), ProtocolError> {
+    match property_type {
+        // Array and objects aren't supported for indexing yet
+        DocumentPropertyType::Array(_)
+        | DocumentPropertyType::Object(_)
+        | DocumentPropertyType::VariableTypeArray(_) => {
+            Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexPropertyTypeError::new(
+                    document_type_name.to_owned(),
+                    index_name.to_owned(),
+                    property_name.to_owned(),
+                    property_type.name(),
+                )
+                .into(),
+            )))
+        }
+        // Indexed byte array size must be limited
+        DocumentPropertyType::ByteArray(sizes)
+            if sizes
+                .max_size
+                .is_none_or(|max_size| max_size > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) =>
+        {
+            Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    document_type_name.to_owned(),
+                    index_name.to_owned(),
+                    property_name.to_owned(),
+                    "maxItems".to_string(),
+                    format!(
+                        "should be less or equal {}",
+                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                    ),
+                )
+                .into(),
+            )))
+        }
+        // Indexed string length must be limited
+        DocumentPropertyType::String(sizes)
+            if sizes
+                .max_length
+                .is_none_or(|max_length| max_length > MAX_INDEXED_STRING_PROPERTY_LENGTH) =>
+        {
+            Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    document_type_name.to_owned(),
+                    index_name.to_owned(),
+                    property_name.to_owned(),
+                    "maxLength".to_string(),
+                    format!(
+                        "should be less or equal {}",
+                        MAX_INDEXED_STRING_PROPERTY_LENGTH
+                    ),
+                )
+                .into(),
+            )))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The identifier and binary paths implied by the parsed properties, plus
@@ -2566,52 +2588,39 @@ pub(super) fn apply_index_only(
             )));
         }
 
-        // The terminal is the member key — it must be a referable entity id:
-        // the owner identity, or a property carrying a refersTo declaration
-        // whose value alone IS the referenced entity's id (identity,
-        // contract, token, or a document of either reference kind; a
-        // deletable document's entries simply outlive it, as the member key
-        // is an Item, not a Reference). `identityPublicKey` is deliberately
-        // NOT admitted: it is a
-        // compound reference — this property carries the identity id while a
-        // separate `keyIdProperty` carries the key id — so a terminal keyed
-        // by it would conflate references to different keys of the same
-        // identity.
+        // The terminal is the member key. Any property a prefix position
+        // admits may serve: every path derives the member key through the
+        // same tree-key encoding the prefix levels use (the walkers and
+        // probes via `get_raw_for_document_type`, queries and executed
+        // proofs via `serialize_value_for_key`, synthesis via
+        // `decode_value_for_tree_keys`), so the member key needs no
+        // particular width or meaning — only the shape limits every indexed
+        // value carries. Structural uniqueness then spans the terminal's
+        // value: one entry per (prefix values, terminal value).
+        //
+        // System properties other than `$ownerId` are refused here:
+        // `$createdAt` is the one other system value an indexOnly entry can
+        // carry, and the rules that reason about it (the proof-index
+        // selection, `required` membership, bucketing) all walk the prefix
+        // properties, so admitting it as a terminal would need each of them
+        // extended first.
         if terminal != OWNER_ID {
-            use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
-            match document_type.flattened_properties.get(terminal) {
-                Some(property)
-                    if matches!(
-                        property.property_type,
-                        DocumentPropertyType::IdentifierWithReference(
-                            DocumentPropertyReferenceTarget::Identity
-                                | DocumentPropertyReferenceTarget::Contract
-                                | DocumentPropertyReferenceTarget::Token
-                                | DocumentPropertyReferenceTarget::PermanentDocument { .. }
-                                | DocumentPropertyReferenceTarget::DeletableDocument { .. }
-                        )
-                    ) => {}
-                Some(_) => {
-                    return Err(structure_error(format!(
-                        "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
-                         must be \"$ownerId\" or an identifier property with a refersTo \
-                         declaration targeting identity, contract, token, \
-                         permanentDocument, or deletableDocument: the terminal is the \
-                         entry's member key and must \
-                         alone be a referable entity id (an identityPublicKey reference is \
-                         compound — its key id lives in a separate property — and is not \
-                         admitted)",
-                        terminal, index_name, name,
-                    )));
-                }
-                None => {
-                    return Err(structure_error(format!(
-                        "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
-                         does not name a property of the document type",
-                        terminal, index_name, name,
-                    )));
-                }
+            if terminal.starts_with('$') {
+                return Err(structure_error(format!(
+                    "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
+                     is a system property: only $ownerId may be a terminal (name a schema \
+                     property, or list $createdAt among the index's properties instead)",
+                    terminal, index_name, name,
+                )));
             }
+            let Some(property) = document_type.flattened_properties.get(terminal) else {
+                return Err(structure_error(format!(
+                    "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
+                     does not name a property of the document type",
+                    terminal, index_name, name,
+                )));
+            };
+            check_indexable_property_shape(name, index_name, terminal, &property.property_type)?;
         }
 
         // Prefix properties: schema properties plus exactly two system

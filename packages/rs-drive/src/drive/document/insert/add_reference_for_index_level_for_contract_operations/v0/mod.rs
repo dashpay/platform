@@ -1,5 +1,6 @@
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::document::{
     document_reference_size, make_document_reference, make_document_reference_with_sum_item,
@@ -349,7 +350,8 @@ impl Drive {
 
     /// The indexOnly terminal: writes `[…index path, 0, <terminal value>] →
     /// Item(commitment, flags)` — the member key is the terminal property's
-    /// value (`$ownerId` or a refersTo-typed identifier) sitting exactly
+    /// value in its tree-key encoding (`$ownerId` or any indexable schema
+    /// property, sized for estimation by its declared bound) sitting exactly
     /// where a normal non-unique index keys by document id, and the element
     /// payload is the row commitment because the entry IS the row. Storage
     /// flags ride the element flags for epoch/owner refunds, exactly as on
@@ -392,6 +394,13 @@ impl Drive {
 
         let member_tree_type = terminal_member_tree_type(index_type);
         let sum_property_name: Option<&str> = index_type.summable.as_deref();
+        // The member key's estimated width follows the terminal property:
+        // 32 bytes for `$ownerId`, the declared bound otherwise.
+        let member_key_max_size = index_only_terminal_max_key_size(
+            document_and_contract_info.document_type,
+            terminal_property,
+            platform_version,
+        )?;
 
         // The `0` storage-marker tree, byte-identical in position to the
         // non-unique layout above.
@@ -474,7 +483,7 @@ impl Drive {
                     tree_type: member_tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
-                        DEFAULT_HASH_SIZE_U8,
+                        member_key_max_size,
                         estimated_value_size,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
@@ -482,9 +491,8 @@ impl Drive {
             );
         }
 
-        // Member key: the terminal property's value — 32 bytes, since the
-        // parser only admits `$ownerId` or identifier-typed refersTo
-        // properties as terminals.
+        // Member key: the terminal property's value in its tree-key
+        // encoding — the same bytes a prefix level would key by.
         let member_key: Option<Vec<u8>> = match document_and_contract_info
             .owned_document_info
             .document_info
@@ -561,7 +569,7 @@ impl Drive {
                         .document_type
                         .unique_id_for_storage()
                         .to_vec(),
-                    max_size: DEFAULT_HASH_SIZE_U8,
+                    max_size: member_key_max_size,
                 },
                 item_space,
             )),

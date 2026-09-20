@@ -74,9 +74,10 @@ pub const MAX_TIME_RANGE_PHASE_SECONDS: u64 = 31_536_000;
 /// Index-level keyword naming the property whose value is the index entry's
 /// **member key** on an `indexOnly` document type — the docId-analog terminal
 /// key stored under the `0` storage marker, where a normal index stores the
-/// document id. `"$ownerId"` (the default) or a refersTo-typed identifier
-/// property (identity, contract, token, or permanent document — the permanent
-/// kinds `refersTo` targets). Only allowed on indexOnly document types; the
+/// document id. `"$ownerId"` (the default) or any schema property a prefix
+/// position could carry (identifiers with or without a `refersTo`, bounded
+/// byte arrays and strings, integers, booleans, dates): the member key is the
+/// value's tree-key encoding. Only allowed on indexOnly document types; the
 /// doc-type-level validation rejects it elsewhere. Meta-schema v3+ (protocol
 /// version 14).
 pub const TERMINAL: &str = "terminal";
@@ -629,8 +630,9 @@ pub struct Index {
     /// index's member key: the terminal key under the `0` storage marker,
     /// sitting exactly where a normal index stores the document id — except
     /// the element is an `Item` instead of a `Reference`, because there is no
-    /// primary-storage row to reference. `"$ownerId"` or a refersTo-typed
-    /// identifier property; the doc-type-level validation
+    /// primary-storage row to reference. `"$ownerId"` or any schema property
+    /// a prefix position could carry, keyed by its tree-key encoding; the
+    /// doc-type-level validation
     /// (`apply_index_only`) normalizes an omitted value to `"$ownerId"` and
     /// rejects the keyword entirely on non-indexOnly document types, so on a
     /// parsed non-indexOnly type this is always `None`.

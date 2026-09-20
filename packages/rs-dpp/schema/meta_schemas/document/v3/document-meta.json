@@ -724,7 +724,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or an identifier property carrying a refersTo declaration (identity, contract, token, permanentDocument, or deletableDocument). Must not repeat one of the index's listed properties. Available from protocol version 14."
+            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or any schema property a prefix position could carry (no arrays or objects; byte arrays of at most 255 bytes, strings of at most 63 characters): the member key is the value's tree-key encoding, so one entry exists per (prefix values, terminal value). No other system property may be the terminal. Must not repeat one of the index's listed properties. Available from protocol version 14."
           },
           "preallocated": {
             "type": "boolean",

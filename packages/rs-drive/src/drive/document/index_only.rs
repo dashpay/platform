@@ -29,9 +29,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{DirectQueryType, QueryTarget};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::property_names::OWNER_ID;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -370,4 +372,39 @@ impl Drive {
         }
         Ok(false)
     }
+}
+
+/// The widest member key an indexOnly index's terminal can produce: 32
+/// bytes for `$ownerId`, otherwise the terminal property's maximum encoded
+/// size (a bounded byte array or string encodes to at most its declared
+/// bound — the string bound counts characters of up to four bytes — and
+/// every other indexable type encodes to a fixed width). Fee estimation
+/// sizes the `0` member bucket's keys by it, so the dry run upper-bounds
+/// the applied fee for a wide terminal exactly as it does for a 32-byte
+/// one. The contract parser keeps every terminal within grovedb's 255-byte
+/// key cap, so the clamp below is a guard, not a path.
+pub(crate) fn index_only_terminal_max_key_size(
+    document_type: DocumentTypeRef,
+    terminal_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<u8, Error> {
+    if terminal_property == OWNER_ID {
+        return Ok(DEFAULT_HASH_SIZE_U8);
+    }
+    let property = document_type
+        .flattened_properties()
+        .get(terminal_property)
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "indexOnly terminal names a property the document type lacks: the contract \
+             parser admits only $ownerId or a schema property as a terminal",
+        )))?;
+    let max_size = property
+        .property_type
+        .max_byte_size(platform_version)
+        .map_err(|e| Error::Protocol(Box::new(e)))?
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "indexOnly terminal has an unbounded type: the contract parser refuses arrays \
+             and objects as terminals",
+        )))?;
+    Ok(u8::try_from(max_size).unwrap_or(u8::MAX))
 }
