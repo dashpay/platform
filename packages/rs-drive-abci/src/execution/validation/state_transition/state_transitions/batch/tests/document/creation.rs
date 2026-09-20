@@ -684,8 +684,8 @@ mod creation_tests {
                 )),
                 actual_fees: FeeResult {
                     storage_fee: 11556000,
-                    // includes the third SHA-256 block of the nonce derived id
-                    processing_fee: 531140,
+                    // the nonce derived id is billed 4 SHA-256 blocks instead of 2
+                    processing_fee: 536140,
                     fee_refunds: FeeRefunds::default(),
                     removed_bytes_from_system: 0
                 },

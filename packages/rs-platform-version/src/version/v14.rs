@@ -393,7 +393,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     at most once. The entropy stays in the hash (ids remain
 ///     unpredictable) and on the wire (the transition format is unchanged);
 ///     batch advanced structure validation 1, which only this version
-///     selects, recomputes the id through `Document::generate_document_id`.
+///     selects, recomputes the id through `Document::generate_document_id`
+///     and bills both passes of the double SHA-256 by the real preimage
+///     length (4 blocks for most document type names) where v13 bills a
+///     flat 2.
 ///     Ids of documents created before the upgrade can not be produced by
 ///     the new derivation either. A client that still derives the entropy
 ///     only id has every create rejected with

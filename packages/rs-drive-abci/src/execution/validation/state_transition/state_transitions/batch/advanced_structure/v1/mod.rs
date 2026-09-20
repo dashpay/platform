@@ -208,9 +208,9 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                     platform_version,
                 )?;
 
-                // The nonce derived preimage is longer than the entropy only
-                // one, so it is billed by its real length (3 blocks for most
-                // document type names) instead of the 2 blocks up to v13.
+                // The nonce derived id is billed by what the double SHA-256
+                // really hashes, both passes (4 blocks for most document type
+                // names), instead of the flat 2 blocks up to v13.
                 execution_context.add_operation(ValidationOperation::DoubleSha256(
                     Document::generate_document_id_sha256_blocks(
                         create_transition.base().document_type_name(),

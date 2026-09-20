@@ -415,7 +415,7 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase() {
         run_document_set_price_and_purchase_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126445900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            126450900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
             2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
             4093100, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
@@ -840,7 +840,7 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
         run_document_set_price_and_purchase_different_epoch_documents_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            141244700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            141249700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
             2729860, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
             2733900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
             4358180, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
@@ -1424,7 +1424,7 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch() {
         run_document_set_price_and_purchase_different_epoch_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126445900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            126450900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
             2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
             4093100, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )

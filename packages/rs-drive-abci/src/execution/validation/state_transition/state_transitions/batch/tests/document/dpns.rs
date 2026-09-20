@@ -31,9 +31,9 @@ mod dpns_tests {
             // contract nonce from v14, so the three domains sort differently in
             // the primary key tree than their entropy only ids did, and the
             // inserts touch a cheaper set of nodes (v13 moves by the same amount
-            // when the seed reorders its ids). +5_000 per create: the nonce
-            // derived id preimage takes a third SHA-256 block.
-            5_880_280,
+            // when the seed reorders its ids). +10_000 per create: the nonce
+            // derived id is billed both SHA-256 passes, 4 blocks instead of 2.
+            5_895_280,
         )
         .await;
     }

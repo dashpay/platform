@@ -87,13 +87,15 @@ impl Document {
         Ok(())
     }
 
-    /// The number of SHA-256 blocks hashing the id preimage takes, which is
-    /// what validating the id of a create is billed for.
+    /// The number of SHA-256 blocks deriving the id takes, which is what
+    /// validating the id of a create is billed for.
     ///
     /// The entropy only id has always been billed as 2 blocks and stays so.
-    /// The preimage of the nonce derived id is longer (the domain tag and the
-    /// nonce), so it is billed by its real length: 3 blocks for a document
-    /// type name of up to 60 bytes, 4 beyond that.
+    /// The nonce derived id is billed by what the double SHA-256 really
+    /// hashes: the padded preimage (longer than before by the domain tag and
+    /// the nonce) plus the one block of the second pass over the 32 byte
+    /// digest. That is 4 blocks for a document type name of up to 60 bytes
+    /// and 5 beyond that.
     pub fn generate_document_id_sha256_blocks(
         document_type_name: &str,
         platform_version: &PlatformVersion,
@@ -115,7 +117,10 @@ impl Document {
                     + 32
                     + 8
                     + 9;
-                Ok(padded_len.div_ceil(64) as u16)
+                let first_pass_blocks = padded_len.div_ceil(64) as u16;
+                // the second pass hashes the 32 byte digest of the first
+                let second_pass_blocks = 1;
+                Ok(first_pass_blocks + second_pass_blocks)
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::generate_document_id_sha256_blocks".to_string(),
@@ -278,9 +283,9 @@ mod tests {
         assert_eq!(blocks("note", version_13), 2);
         assert_eq!(blocks(&"n".repeat(64), version_13), 2);
 
-        assert_eq!(blocks("note", latest), 3);
-        assert_eq!(blocks(&"n".repeat(60), latest), 3);
-        assert_eq!(blocks(&"n".repeat(61), latest), 4);
+        assert_eq!(blocks("note", latest), 4);
+        assert_eq!(blocks(&"n".repeat(60), latest), 4);
+        assert_eq!(blocks(&"n".repeat(61), latest), 5);
     }
 
     #[test]
