@@ -31,9 +31,15 @@ Core Data migration that renumbers primary keys is rejected; such a layout
 requires an explicit, separately validated migration rather than relaxing this
 bridge's data-loss checks.
 
-Before making full-size copies, the bridge checks free space on the store's
-volume. Its conservative estimate is four times the combined main-file and WAL
-size, plus the larger of 64 MiB or half that combined size. This budgets the two
+Before making full-size copies, the bridge acquires its exclusive store lock
+and removes abandoned UUID attempt directories only when no migration journal
+is pending. This also recovers space after a process was killed before writing
+its journal. It then measures actual free space on the store's volume; failed
+deletions are never counted as available space. A missing, nonpositive or failing
+ImportantUsage capacity reading falls back to filesystem free bytes; if both
+report zero, migration remains blocked. Its conservative estimate is four times
+the combined main-file and WAL size, plus the larger of 64 MiB or half that
+combined size. This budgets the two
 copies, inferred-migration/promotion journals and schema/index growth. It is a
 preflight estimate, not a reservation: other processes or larger-than-estimated
 growth can still exhaust space, and SQLite errors remain fatal without replacing
@@ -57,15 +63,22 @@ unknown CloudKit schemas require a separately supported migration.
 Recovery files live beside the original store under
 `<store filename>.legacy-v2-backups/`. A successful bridge retains an
 `original.store` backup through that launch. A later successful ordinary open
-reclaims completed backup directories; failed opens and pending migrations
-never trigger cleanup. Cleanup failures do not prevent opening the wallet.
+reclaims completed backup directories. That optional cleanup takes the same
+nonblocking store lock and rechecks the journal; lock contention skips cleanup
+without failing an ordinary open. Known stores without attempt directories do
+not create a bridge lock file. Failed opens and pending migrations never trigger
+cleanup. Cleanup failures do not prevent opening the wallet.
 The `active.json` journal records an interrupted installation and a fingerprint
 of the validated final data; the next open reconciles it before exposing a
 container, even if scratch copies were removed. Older journals still require
 their candidate when validating a committed installation. These
 are local wallet data, protected like the original store and excluded from
 device backup. Do not upload them as release fixtures or edit the recovery
-journal to bypass a failure.
+journal to bypass a failure. Clearing the journal is part of a successful open,
+not optional cleanup: the factory has not yet returned the container to the app.
+If clearing fails, the open fails and the next attempt validates recovery evidence
+again. Ignoring that error could expose a writable container while leaving a
+stale marker that rejects the app's legitimate later writes.
 
 A missing primary database with a pending journal requires deliberate recovery.
 The bridge never deletes or renames that primary file, so its absence is not a
@@ -92,6 +105,16 @@ step before the normal V2-to-current plan. The bridge must never automatically
 follow the latest live model graph. The release observer's one-time `bootstrap`
 only records its observation baseline; it neither runs this migration nor
 proves V1's App Store provenance.
+
+After publication, changing a runtime version's model shape in place can leave
+existing App Store stores with no registered matching checksum and block startup.
+`DashReleasedSchemaTests.testPublishedSnapshotsAndRuntimeVersionsMatchCapturedStores`
+compares both the archival snapshot and the runtime version against the captured
+published store; it fails on that drift. Keep the published version bound to its
+snapshot, introduce a new live version and register the connecting migration.
+The companion `testPublishedStoresMigrateAndRemainWritableThroughLiveTypes` then
+checks that published stores still open and remain writable. No mutable live
+fixture is needed for this publication boundary.
 
 ## Release flow
 

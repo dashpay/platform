@@ -46,7 +46,7 @@ enum DashLegacySchemaBridge {
             // journal before the store can change to the destination schema.
             if !needsMigration && !FileManager.default.fileExists(atPath: marker.path) {
                 let container = try ordinary()
-                reclaimCompletedBackups(at: root)
+                reclaimAfterSuccessfulOpen(at: url, root: root)
                 return container
             }
         }
@@ -73,6 +73,10 @@ enum DashLegacySchemaBridge {
             throw SQLite.Failure.unsupported("The old model contains unsupported or missing entities")
         }
         try rejectExternalStorage(at: url)
+        // A killed attempt may leave copies before it ever published a journal.
+        // Under the lock, no active marker means these directories are inactive.
+        // Remove them before measuring capacity; never credit hypothetical space.
+        reclaimInactiveAttempts(at: root, holding: lock)
         let requiredSpace = try requiredFreeSpace(at: url)
         let availableSpace = max(0, try hooks.availableCapacity(url.deletingLastPathComponent()))
         guard availableSpace >= requiredSpace else {
@@ -153,8 +157,9 @@ enum DashLegacySchemaBridge {
         committed = true
         try hooks.visit(.afterCommit, url)
         let container = try ordinary()
-        // Clear before returning a live container. Recovery must never replace
-        // a successfully opened store after the app has started writing to it.
+        // This container has not escaped to the app, so no application writes
+        // are permitted yet. Clearing must succeed before returning it: a stale
+        // marker would incorrectly compare later writes with migration evidence.
         try clearJournal(at: root)
         try? FileManager.default.removeItem(at: candidate)
         return container
@@ -188,13 +193,26 @@ enum DashLegacySchemaBridge {
     }
 
     private static func availableCapacity(at directory: URL) throws -> Int64 {
-        let values = try directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        if let capacity = values.volumeAvailableCapacityForImportantUsage { return capacity }
-        let attributes = try FileManager.default.attributesOfFileSystem(forPath: directory.path)
-        guard let capacity = (attributes[.systemFreeSize] as? NSNumber)?.int64Value else {
-            throw SQLite.Failure.database("Cannot determine available storage; check device storage and retry")
-        }
-        return capacity
+        try resolveAvailableCapacity(importantUsage: {
+            try directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+                .volumeAvailableCapacityForImportantUsage
+        }, fileSystem: {
+            let attributes = try FileManager.default.attributesOfFileSystem(forPath: directory.path)
+            guard let capacity = (attributes[.systemFreeSize] as? NSNumber)?.int64Value else {
+                throw SQLite.Failure.database("Cannot determine available storage; check device storage and retry")
+            }
+            return capacity
+        })
+    }
+
+    /// Some macOS volumes report zero/negative or no ImportantUsage capacity
+    /// despite free filesystem space. Confirm those results with a real free-byte
+    /// query; never replace them with estimated savings or a test-only allowance.
+    static func resolveAvailableCapacity(
+        importantUsage: () throws -> Int64?, fileSystem: () throws -> Int64
+    ) throws -> Int64 {
+        if let capacity = try? importantUsage(), capacity > 0 { return capacity }
+        return max(0, try fileSystem())
     }
 
     private static func needsBridge(_ source: Identity, plan: any SchemaMigrationPlan.Type) throws -> Bool {
@@ -205,18 +223,35 @@ enum DashLegacySchemaBridge {
         return true
     }
 
-    /// A backup survives the migration/recovery launch. Reclaim it only after
-    /// a later ordinary open succeeds and no migration journal is pending.
-    /// Cleanup failure affects disk usage, never the ability to open the wallet.
-    private static func reclaimCompletedBackups(at root: URL) {
-        let marker = root.appendingPathComponent("active.json")
-        guard !FileManager.default.fileExists(atPath: marker.path),
-              let entries = try? FileManager.default.contentsOfDirectory(
-                at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return }
-        for entry in entries where UUID(uuidString: entry.lastPathComponent) != nil {
-            guard let attributes = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
-                  attributes.isDirectory == true, attributes.isSymbolicLink != true else { continue }
-            try? FileManager.default.removeItem(at: entry)
+    /// Cleanup is optional after an ordinary open. Never make known/current
+    /// stores fail because a legacy opener holds the lock, and do not create a
+    /// lock file unless there are actual attempt directories to reclaim.
+    private static func reclaimAfterSuccessfulOpen(at url: URL, root: URL) {
+        guard !attemptDirectories(at: root).isEmpty,
+              let lock = try? StoreLock(url: url) else { return }
+        defer { lock.close() }
+        reclaimInactiveAttempts(at: root, holding: lock)
+    }
+
+    /// Requires exclusive ownership for both checking the marker and deleting
+    /// copies. Call before a legacy attempt starts, or after a later ordinary
+    /// open; the successful migration/recovery launch retains its own backup.
+    private static func reclaimInactiveAttempts(at root: URL, holding _: StoreLock) {
+        guard !FileManager.default.fileExists(atPath: root.appendingPathComponent("active.json").path) else { return }
+        for directory in attemptDirectories(at: root) {
+            // Failure only affects disk usage. Preflight measures the actual
+            // remaining free capacity after these attempts, not estimated savings.
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+
+    private static func attemptDirectories(at root: URL) -> [URL] {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return [] }
+        return entries.filter { entry in
+            guard UUID(uuidString: entry.lastPathComponent) != nil,
+                  let attributes = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return false }
+            return attributes.isDirectory == true && attributes.isSymbolicLink != true
         }
     }
 
@@ -343,7 +378,7 @@ enum DashLegacySchemaBridge {
             guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
                 Darwin.close(descriptor)
                 descriptor = -1
-                throw SQLite.Failure.database("Another process is opening this database; retry after it finishes")
+                throw SQLite.Failure.database("Another opener is using this database; retry after it finishes")
             }
         }
         func close() {

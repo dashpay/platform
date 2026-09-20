@@ -173,6 +173,21 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
+    func testCapacityResolverConfirmsUnavailableImportantUsageWithFilesystemFreeSpace() throws {
+        XCTAssertEqual(try DashLegacySchemaBridge.resolveAvailableCapacity(
+            importantUsage: { 1024 }, fileSystem: { XCTFail("Positive capacity needs no fallback"); return 0 }), 1024)
+        for reported: Int64? in [0, -1, nil] {
+            XCTAssertEqual(try DashLegacySchemaBridge.resolveAvailableCapacity(
+                importantUsage: { reported }, fileSystem: { 2048 }), 2048)
+        }
+        XCTAssertEqual(try DashLegacySchemaBridge.resolveAvailableCapacity(
+            importantUsage: { throw Injected.stop }, fileSystem: { 4096 }), 4096)
+        XCTAssertEqual(try DashLegacySchemaBridge.resolveAvailableCapacity(
+            importantUsage: { 0 }, fileSystem: { 0 }), 0, "A genuinely full volume remains full")
+        XCTAssertThrowsError(try DashLegacySchemaBridge.resolveAvailableCapacity(
+            importantUsage: { 0 }, fileSystem: { throw Injected.stop }), "Cannot invent capacity when both queries fail")
+    }
+
     func testSufficientDiskHeadroomPermitsMigration() throws {
         try withStore { url in
             let required = try DashLegacySchemaBridge.requiredFreeSpace(at: url)
@@ -196,6 +211,114 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
                 XCTAssertFalse(operation.isEmpty)
             }
             XCTAssertEqual(try DashLegacyStoreSQLite.rawDigest(destination), original)
+        }
+    }
+
+    func testAbandonedAttemptsAreRemovedBeforeDiskCapacityIsMeasured() throws {
+        try withStore { url in
+            let root = DashLegacySchemaBridge.backupDirectory(for: url)
+            let abandoned = root.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: abandoned, withIntermediateDirectories: true)
+            try Data(repeating: 0x61, count: 4096).write(to: abandoned.appendingPathComponent("original.store"))
+            try Data(repeating: 0x62, count: 4096).write(to: abandoned.appendingPathComponent("candidate.store"))
+            let unrelated = root.appendingPathComponent("operator-note.txt")
+            try Data("keep".utf8).write(to: unrelated)
+            let required = try DashLegacySchemaBridge.requiredFreeSpace(at: url)
+            let container = try open(url, hooks: .init(availableCapacity: { _ in
+                XCTAssertFalse(FileManager.default.fileExists(atPath: abandoned.path))
+                XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+                return required
+            }))
+            try verifyRows(container.mainContext)
+            XCTAssertEqual(try operationDirectories(url).count, 1, "Keep the new migration backup through this open")
+        }
+        try withStore { url in
+            let root = DashLegacySchemaBridge.backupDirectory(for: url)
+            let abandoned = root.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: abandoned, withIntermediateDirectories: true)
+            // A failed removal must not be counted as reclaimed free space.
+            try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path) }
+            XCTAssertThrowsError(try open(url, hooks: .init(availableCapacity: { _ in
+                XCTAssertTrue(FileManager.default.fileExists(atPath: abandoned.path))
+                return 0
+            }))) { error in
+                guard case DashLegacyStoreSQLite.Failure.insufficientDiskSpace(_, let available) = error else {
+                    return XCTFail("Expected actual available capacity to decide admission: \(error)")
+                }
+                XCTAssertEqual(available, 0)
+            }
+        }
+    }
+
+    func testOrdinaryOpenSkipsCleanupWhileAnotherOpenerOwnsTheLock() throws {
+        try withStore(baseline: true) { url in
+            try autoreleasepool { _ = try open(url) }
+            let root = DashLegacySchemaBridge.backupDirectory(for: url)
+            let active = root.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: active, withIntermediateDirectories: true)
+            let copy = active.appendingPathComponent("original.store")
+            try Data("active snapshot".utf8).write(to: copy)
+            let descriptor = Darwin.open(url.path + ".legacy-v2.lock", O_CREAT | O_RDWR, 0o600)
+            XCTAssertGreaterThanOrEqual(descriptor, 0)
+            defer { Darwin.close(descriptor) }
+            XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+            try autoreleasepool {
+                let container = try open(url)
+                XCTAssertEqual(try container.mainContext.fetchCount(FetchDescriptor<PersistentWallet>()), 1)
+            }
+            XCTAssertEqual(try Data(contentsOf: copy), Data("active snapshot".utf8))
+            XCTAssertEqual(flock(descriptor, LOCK_UN), 0)
+            _ = try open(url)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: active.path), "A later unlocked successful open may reclaim it")
+        }
+    }
+
+    func testPendingRecoveryProtectsAllAttemptsAndRetainsRecoveredBackup() throws {
+        try withStore { url in
+            XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, _ in
+                if phase == .afterCommit { throw Injected.stop }
+            })))
+            let root = DashLegacySchemaBridge.backupDirectory(for: url)
+            let marker = root.appendingPathComponent("active.json")
+            let originalJournal = try Data(contentsOf: marker)
+            let abandoned = root.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: abandoned, withIntermediateDirectories: true)
+            let attempts = Set(try operationDirectories(url))
+            try DashLegacyStoreSQLite.Connection(url, writable: true)
+                .execute("UPDATE ZPERSISTENTWALLET SET ZNAME='unverified change'")
+            XCTAssertThrowsError(try open(url))
+            XCTAssertEqual(Set(try operationDirectories(url)), attempts)
+            XCTAssertEqual(try Data(contentsOf: marker), originalJournal)
+            try DashLegacyStoreSQLite.Connection(url, writable: true)
+                .execute("UPDATE ZPERSISTENTWALLET SET ZNAME='historical audit wallet'")
+            try autoreleasepool {
+                let recovered = try open(url)
+                try verifyRows(recovered.mainContext)
+            }
+            XCTAssertEqual(Set(try operationDirectories(url)), attempts, "The successful recovery open retains its backup")
+            let reopened = try open(url)
+            try verifyRows(reopened.mainContext)
+            XCTAssertTrue(try operationDirectories(url).isEmpty)
+        }
+    }
+
+    func testJournalRemovalFailureDoesNotExposeAMigratedContainer() throws {
+        try withStore { url in
+            let root = DashLegacySchemaBridge.backupDirectory(for: url)
+            let marker = root.appendingPathComponent("active.json")
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path) }
+            XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, _ in
+                if phase == .afterCommit {
+                    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+                }
+            })))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+            XCTAssertEqual(try operationDirectories(url).count, 1)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+            let recovered = try open(url)
+            try verifyRows(recovered.mainContext)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
         }
     }
 
@@ -527,7 +650,14 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
             var longestGap = 0.0
             var previous = Date.timeIntervalSinceReferenceDate
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 10_000_000)
+                // Nonthrowing tick: cancellation must not produce a secondary
+                // CancellationError while reporting an actual migration failure.
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(10)) {
+                        continuation.resume()
+                    }
+                }
+                guard !Task.isCancelled else { break }
                 let now = Date.timeIntervalSinceReferenceDate
                 longestGap = max(longestGap, now - previous)
                 previous = now
@@ -537,7 +667,14 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
         defer { heartbeat.cancel() }
         let started = Date.timeIntervalSinceReferenceDate
-        let container = try await DashModelContainer.createAsync(url: url)
+        let container: ModelContainer
+        do {
+            container = try await DashModelContainer.createAsync(url: url)
+        } catch {
+            heartbeat.cancel()
+            _ = await heartbeat.value
+            throw error // Preserve the migration failure after draining the tick.
+        }
         let elapsed = Date.timeIntervalSinceReferenceDate - started
         heartbeat.cancel()
         let (ticks, longestGap) = await heartbeat.value
