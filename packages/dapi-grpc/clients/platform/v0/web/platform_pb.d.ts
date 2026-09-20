@@ -5364,6 +5364,13 @@ export namespace GetDocumentsResponse {
       setOuterDocumentsList(value: Array<Uint8Array | string>): void;
       addOuterDocuments(value: Uint8Array | string, index?: number): Uint8Array | string;
 
+      clearMissingOuterIdsList(): void;
+      getMissingOuterIdsList(): Array<Uint8Array | string>;
+      getMissingOuterIdsList_asU8(): Array<Uint8Array>;
+      getMissingOuterIdsList_asB64(): Array<string>;
+      setMissingOuterIdsList(value: Array<Uint8Array | string>): void;
+      addMissingOuterIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): ChainedDocuments.AsObject;
       static toObject(includeInstance: boolean, msg: ChainedDocuments): ChainedDocuments.AsObject;
@@ -5378,6 +5385,7 @@ export namespace GetDocumentsResponse {
       export type AsObject = {
         innerDocumentsList: Array<Uint8Array | string>,
         outerDocumentsList: Array<Uint8Array | string>,
+        missingOuterIdsList: Array<Uint8Array | string>,
       }
     }
 
@@ -5421,6 +5429,13 @@ export namespace GetDocumentsResponse {
         getCounts(): GetDocumentsResponse.GetDocumentsResponseV1.CountEntries | undefined;
         setCounts(value?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries): void;
 
+        clearMissingIdsList(): void;
+        getMissingIdsList(): Array<Uint8Array | string>;
+        getMissingIdsList_asU8(): Array<Uint8Array>;
+        getMissingIdsList_asB64(): Array<string>;
+        setMissingIdsList(value: Array<Uint8Array | string>): void;
+        addMissingIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
         getResultCase(): SubQueryResult.ResultCase;
         serializeBinary(): Uint8Array;
         toObject(includeInstance?: boolean): SubQueryResult.AsObject;
@@ -5436,6 +5451,7 @@ export namespace GetDocumentsResponse {
         export type AsObject = {
           documents?: GetDocumentsResponse.GetDocumentsResponseV1.Documents.AsObject,
           counts?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.AsObject,
+          missingIdsList: Array<Uint8Array | string>,
         }
 
         export enum ResultCase {

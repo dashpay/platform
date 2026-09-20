@@ -30,7 +30,7 @@ stores nothing in primary storage. The index entries ARE the rows:
 
 The **terminal** — a per-index keyword defaulting to `$ownerId`, or any
 refersTo-typed identifier property (identity, contract, token, permanent
-document) — is the member key, sitting exactly where a normal non-unique
+or deletable document) — is the member key, sitting exactly where a normal non-unique
 index keys by document id; the element is an `Item` instead of a
 `Reference` because there is nothing to point at. The `0` storage marker,
 value-tree types, and the count/sum/ranked tree derivation are
@@ -220,8 +220,11 @@ may declare `preallocated: true` iff every index property is either the
 referring property itself (its value is the referenced document's `$id`)
 or a key of that reference's `propertyAgreement` (consensus-equal to a
 referenced-document property, its `$ownerId` and `$creatorId` included),
-and the reference targets a document type
-of the **same contract**. `byHashtagPost` (`[hashtag, postId]`) qualifies
+and the reference is a `permanentDocument` one targeting a document type
+of the **same contract**. A `deletableDocument` reference shapes the path
+the same way but does not qualify: its target can be deleted, and the
+trees created alongside it would outlive it with other owners' entries
+inside. `byHashtagPost` (`[hashtag, postId]`) qualifies
 — `hashtag` through the agreement, `postId` as the reference;
 `byLiker` (`[$ownerId]`) cannot, since no referenced document determines
 the liker. An `[authorId, postId]` index whose `authorId` agrees with the

@@ -1,5 +1,6 @@
 mod action_fees;
 mod creation;
+mod deletable_document_reference;
 mod deletion;
 mod dpns;
 mod gas_sponsorship;

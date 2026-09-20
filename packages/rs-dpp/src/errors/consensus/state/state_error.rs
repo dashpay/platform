@@ -58,6 +58,7 @@ use crate::consensus::state::document::document_contest_not_joinable_error::Docu
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
 use crate::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
@@ -522,6 +523,11 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractFeeClaimNotAllowedError(ContractFeeClaimNotAllowedError),
+
+    // `refersTo: deletableDocument` (protocol version 14). Appended here,
+    // away from the other reference errors, because the enum is append-only.
+    #[error(transparent)]
+    ReferencedDocumentTypeNotDeletableError(ReferencedDocumentTypeNotDeletableError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -874,6 +880,18 @@ mod tests {
                 ContractFeeClaimNotAllowedError::new(group_id, ContractFeePot::Owner, identity_id)
             )),
             128
+        );
+        // `refersTo: deletableDocument` (protocol version 14): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeNotDeletableError(
+                ReferencedDocumentTypeNotDeletableError::new(
+                    group_id,
+                    "note".to_string(),
+                    "noteId".to_string()
+                )
+            )),
+            129
         );
     }
 }

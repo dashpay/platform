@@ -196,8 +196,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   create state validation to 2, enforcing `refersTo` document references
 ///   and rejecting a non-contested create whose id is already present in the
 ///   contested tree. Document replace state validation 1 enforces the same
-///   reference checks. v13 keeps the v9 table and therefore keeps
-///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
+///   reference checks, re-validates a `refersTo: deletableDocument`
+///   reference on every replace (a dead one must be repointed or cleared),
+///   and lets an `immutable` one be cleared once its target is deleted.
+///   v13 keeps the v9 table and therefore keeps accepting all of these, so
+///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the

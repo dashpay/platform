@@ -3,12 +3,13 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
@@ -44,10 +45,13 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
-/// `permanentDocument`: the referenced contract must exist (the declaring
-/// contract itself when no contract id is named, including when it names its
-/// own id), the referenced document type must exist in it, and that type must
-/// forbid deletion. Self references are checked against the in-flight
+/// `permanentDocument` and `deletableDocument`: the referenced contract must
+/// exist (the declaring contract itself when no contract id is named,
+/// including when it names its own id) and the referenced document type must
+/// exist in it; for `permanentDocument` that type must forbid deletion, for
+/// `deletableDocument` it must allow it.
+/// Every `propertyAgreement` pair is checked for both. Self references are
+/// checked against the in-flight
 /// contract, so a contract may reference its own document types on creation;
 /// foreign contract fetches are billed.
 ///
@@ -117,11 +121,12 @@ pub(super) fn validate_data_contract_references_v0(
                 }
             }
 
-            let DocumentPropertyReferenceTarget::PermanentDocument {
+            let Some(DocumentReferenceDeclaration {
                 contract_id,
                 document_type_name,
                 property_agreement,
-            } = reference_target
+                permanent,
+            }) = reference_target.as_document_reference()
             else {
                 continue;
             };
@@ -166,7 +171,7 @@ pub(super) fn validate_data_contract_references_v0(
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeNotFoundError::new(
                             effective_contract_id,
-                            document_type_name.clone(),
+                            document_type_name.to_string(),
                             declaration_path,
                         )
                         .into(),
@@ -183,18 +188,34 @@ pub(super) fn validate_data_contract_references_v0(
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeNotFoundError::new(
                         effective_contract_id,
-                        document_type_name.clone(),
+                        document_type_name.to_string(),
                         declaration_path,
                     )
                     .into(),
                 ));
             };
 
-            if referenced_document_type.documents_can_be_deleted() {
+            // The two document references are disjoint: a
+            // `permanentDocument` one demands a document type that forbids
+            // deletion, a `deletableDocument` one a document type that
+            // allows it, so the declaration always states which guarantee
+            // the reference carries
+            let target_is_deletable = referenced_document_type.documents_can_be_deleted();
+            if permanent && target_is_deletable {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeDeletableError::new(
                         effective_contract_id,
-                        document_type_name.clone(),
+                        document_type_name.to_string(),
+                        declaration_path,
+                    )
+                    .into(),
+                ));
+            }
+            if !permanent && !target_is_deletable {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ReferencedDocumentTypeNotDeletableError::new(
+                        effective_contract_id,
+                        document_type_name.to_string(),
                         declaration_path,
                     )
                     .into(),

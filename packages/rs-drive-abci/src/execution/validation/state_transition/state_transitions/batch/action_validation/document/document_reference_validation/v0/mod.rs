@@ -17,6 +17,7 @@ use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
 use dpp::document::DocumentV0Getters;
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
@@ -54,6 +55,18 @@ use crate::platform_types::platform::PlatformStateRef;
 /// `DocumentReferenceValidation` dispatcher that selects the version.
 pub(crate) trait DocumentReferenceValidationV0 {
     #[allow(clippy::too_many_arguments)]
+    fn deletable_document_reference_target_is_gone_v0(
+        &self,
+        property: &str,
+        referenced_id: Identifier,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error>;
+
+    #[allow(clippy::too_many_arguments)]
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
@@ -68,6 +81,80 @@ pub(crate) trait DocumentReferenceValidationV0 {
 }
 
 impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
+    fn deletable_document_reference_target_is_gone_v0(
+        &self,
+        property: &str,
+        referenced_id: Identifier,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let contract_fetch_info = self.data_contract_fetch_info();
+        let contract = &contract_fetch_info.contract;
+        let Some(document_type) =
+            contract.document_type_optional_for_name(self.document_type_name())
+        else {
+            return Ok(false);
+        };
+        let Some(DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: referenced_contract_id,
+                document_type_name,
+                ..
+            },
+        )) = document_type
+            .flattened_properties()
+            .get(property)
+            .map(|property| &property.property_type)
+        else {
+            // Not a deletableDocument reference: nothing can be "gone"
+            return Ok(false);
+        };
+
+        let effective_contract_id = referenced_contract_id.unwrap_or(contract.id());
+        let referenced_contract_fetch_info;
+        let referenced_contract = if effective_contract_id == contract.id() {
+            contract
+        } else {
+            let (fee, fetch_info) = platform.drive.get_contract_with_fetch_info_and_fee(
+                effective_contract_id.to_buffer(),
+                Some(&block_info.epoch),
+                false,
+                transaction,
+                platform_version,
+            )?;
+            let fee = fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "fee must exist when fetching a referenced contract with an epoch",
+            )))?;
+            // The cost is added even if the referenced contract does not exist or was cached
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+            let Some(fetch_info) = fetch_info else {
+                return Ok(true);
+            };
+            referenced_contract_fetch_info = fetch_info;
+            &referenced_contract_fetch_info.contract
+        };
+        let Some(referenced_document_type) =
+            referenced_contract.document_type_optional_for_name(document_type_name)
+        else {
+            return Ok(true);
+        };
+
+        let referenced_document = fetch_document_with_id(
+            platform.drive,
+            referenced_contract,
+            referenced_document_type,
+            referenced_id,
+            &block_info.epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        Ok(referenced_document.is_none())
+    }
+
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
@@ -145,6 +232,17 @@ fn validate_document_type_references_v0(
                     is_referring_system_agreement_property(referring_property)
                         || is_changed_field(changed, referring_property)
                 }),
+                // A deletableDocument reference is re-validated on EVERY
+                // replace, touched or not: its target may have been deleted
+                // since the last write, and a referring document is not
+                // allowed to be rewritten around a dead reference. The
+                // replace has to repoint it at a document that exists, or
+                // clear it; leaving it (or pointing it at another missing
+                // document) fails the existence check below. A writer gate
+                // is therefore never evaluated against a missing document:
+                // it is checked against the new target, or not at all once
+                // the reference is cleared.
+                DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
                 DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                     is_changed_field(changed, key_id_property)
                 }
@@ -219,7 +317,16 @@ fn validate_document_type_references_v0(
                 contract_id: referenced_contract_id,
                 document_type_name,
                 property_agreement,
+            }
+            | DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: referenced_contract_id,
+                document_type_name,
+                property_agreement,
             } => {
+                let permanent = matches!(
+                    reference_target,
+                    DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                );
                 // An absent contract id targets the declaring contract itself; the
                 // declaring contract may also name its own id explicitly. Either
                 // way it is already loaded for this transition, so no fetch is
@@ -276,13 +383,28 @@ fn validate_document_type_references_v0(
                     ));
                 };
 
-                // Only document types whose documents can never be deleted may be
-                // referenced: `canBeDeleted` is immutable on contract updates and
-                // document types can not be removed, so a reference validated here
-                // can never dangle
-                if referenced_document_type.documents_can_be_deleted() {
+                // A `permanentDocument` reference admits only document types
+                // whose documents can never be deleted: `canBeDeleted` is
+                // immutable on contract updates and document types can not be
+                // removed, so a reference validated here can never dangle. A
+                // `deletableDocument` reference makes no such promise, and
+                // admits only document types whose documents CAN be deleted:
+                // the referenced document must exist now, and may be deleted
+                // later
+                let target_is_deletable = referenced_document_type.documents_can_be_deleted();
+                if permanent && target_is_deletable {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeDeletableError::new(
+                            effective_contract_id,
+                            document_type_name.clone(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                if !permanent && !target_is_deletable {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeNotDeletableError::new(
                             effective_contract_id,
                             document_type_name.clone(),
                             path.to_string(),
