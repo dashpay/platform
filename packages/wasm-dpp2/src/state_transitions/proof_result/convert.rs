@@ -6,7 +6,10 @@ use super::address_funds::{
     VerifiedAddressInfosWasm, VerifiedIdentityFullWithAddressInfosWasm,
     VerifiedIdentityWithAddressInfosWasm,
 };
-use super::data_contract::{VerifiedContractModerationListStatusesWasm, VerifiedDataContractWasm};
+use super::data_contract::{
+    VerifiedContractFeeClaimWasm, VerifiedContractModerationListStatusesWasm,
+    VerifiedDataContractWasm,
+};
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
     action_status_to_string, build_address_infos_map, build_nullifier_map, doc_to_wasm,
@@ -71,7 +74,8 @@ export type StateTransitionProofResultType =
   | VerifiedShieldedNullifiersWithAddressInfos
   | VerifiedShieldedNullifiersWithWithdrawalDocument
   | VerifiedIdentityWithShieldedNullifiers
-  | VerifiedContractModerationListStatuses;
+  | VerifiedContractModerationListStatuses
+  | VerifiedContractFeeClaim;
 "#;
 
 #[wasm_bindgen]
@@ -350,6 +354,28 @@ pub fn convert_proof_result(
                 lists,
                 banned,
                 suspended_until,
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedContractFeeClaim(
+            contract_id,
+            pot,
+            last_claim_epoch,
+            remaining_credits,
+            balances,
+        ) => {
+            let balances = Map::from_entries(balances.into_iter().map(|(id, credits)| {
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+                let val: JsValue = BigInt::from(credits).into();
+                (key, val)
+            }));
+            VerifiedContractFeeClaimWasm {
+                contract_id: contract_id.into(),
+                pot: pot.to_string(),
+                last_claim_epoch,
+                remaining_credits,
+                balances,
             }
             .into()
         }

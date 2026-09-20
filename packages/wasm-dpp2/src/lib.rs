@@ -41,9 +41,10 @@ pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
 
 pub use data_contract::{
-    ContractBoundsWasm, ContractUserModerationWasm, DataContractCreateTransitionWasm,
-    DataContractUpdateTransitionWasm, DataContractWasm, DocumentPropertyReferenceArrayJs,
-    DocumentPropertyReferenceMapJs, DocumentWasm, tokens_configuration_from_js_value,
+    ContractBoundsWasm, ContractFeeClaimWasm, ContractUserModerationWasm,
+    DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm, DataContractWasm,
+    DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs, DocumentWasm,
+    tokens_configuration_from_js_value,
 };
 pub use epoch::*;
 pub use group::*;
