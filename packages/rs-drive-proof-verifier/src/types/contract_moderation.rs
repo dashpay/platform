@@ -16,13 +16,15 @@ use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
     ContractFeePot as ContractFeePotProto, ContractFeePots as ContractFeePotsProto,
 };
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
+#[cfg(test)]
+use dapi_grpc::platform::v0::ContractModerationDocument as ContractModerationDocumentProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
 use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
 use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
 pub use dpp::data_contract::config::moderation::{
-    ContractBan, ContractDocumentRemoval, ContractModerationList, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
-    ContractSuspension, ContractWarning,
+    ContractBan, ContractDocumentRemoval, ContractModerationDocument, ContractModerationList,
+    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
+    ContractModerationStatus, ContractSuspension, ContractWarning,
 };
 pub use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
@@ -210,17 +212,21 @@ pub fn entries_query_from_request(
 }
 
 /// The reason of an unproved response. Every ban and every suspension carries one, so a
-/// response without it is refused, and so is a code that is not a u16, which no entry of any
-/// version can hold. The length of the text is not checked: its limit belongs to a protocol
-/// version and may be raised by a later one, the proved path reads whatever the proof holds,
-/// and the two must agree on which stored reasons a client can read.
+/// response without it is refused, and so is a code that is not a u16 or a cited document
+/// whose id is not 32 bytes, which no entry of any version can hold. The length of the text
+/// and the number of documents are not checked: their limits belong to a protocol version and
+/// may be raised by a later one, the proved path reads whatever the proof holds, and the two
+/// must agree on which stored reasons a client can read.
 pub fn reason_from_response(
     reason: Option<ContractModerationReasonProto>,
 ) -> Result<ContractModerationReason, Error> {
-    let ContractModerationReasonProto { code, text } =
-        reason.ok_or(Error::ResponseDecodeError {
-            error: "contract moderation entry holds no reason".to_string(),
-        })?;
+    let ContractModerationReasonProto {
+        code,
+        text,
+        documents,
+    } = reason.ok_or(Error::ResponseDecodeError {
+        error: "contract moderation entry holds no reason".to_string(),
+    })?;
     let code = code
         .map(|code| {
             u16::try_from(code).map_err(|_| Error::ResponseDecodeError {
@@ -228,7 +234,28 @@ pub fn reason_from_response(
             })
         })
         .transpose()?;
-    Ok(ContractModerationReason { code, text })
+    let documents = documents
+        .into_iter()
+        .map(|document| {
+            Ok(ContractModerationDocument {
+                document_type_name: document.document_type_name,
+                document_id: Identifier::from_bytes(&document.document_id).map_err(|_| {
+                    Error::ResponseDecodeError {
+                        error: format!(
+                            "a document a contract moderation reason cites has an id of {} \
+                             bytes, not 32",
+                            document.document_id.len()
+                        ),
+                    }
+                })?,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    Ok(ContractModerationReason {
+        code,
+        text,
+        documents,
+    })
 }
 
 /// The warnings of an unproved response, oldest first as the node answers. Every warning
@@ -579,6 +606,7 @@ mod tests {
                 reason: Some(ContractModerationReasonProto {
                     code: None,
                     text: "spam".to_string(),
+                    documents: vec![],
                 }),
                 warnings: vec![],
             },
@@ -588,6 +616,7 @@ mod tests {
                 reason: Some(ContractModerationReasonProto {
                     code: Some(3),
                     text: String::new(),
+                    documents: vec![],
                 }),
                 warnings: vec![],
             },
@@ -601,6 +630,7 @@ mod tests {
                         reason: Some(ContractModerationReasonProto {
                             code: None,
                             text: "first strike".to_string(),
+                            documents: vec![],
                         }),
                     },
                     ContractWarningProto {
@@ -608,6 +638,7 @@ mod tests {
                         reason: Some(ContractModerationReasonProto {
                             code: None,
                             text: "second strike".to_string(),
+                            documents: vec![],
                         }),
                     },
                 ],
@@ -629,6 +660,7 @@ mod tests {
                     reason: ContractModerationReason {
                         code: Some(3),
                         text: String::new(),
+                        documents: vec![],
                     },
                     warnings: vec![],
                 },
@@ -704,6 +736,43 @@ mod tests {
             "got: {err:?}"
         );
 
+        // A reason cites documents by type and 32-byte id; another id length is refused.
+        let cited_reason = |document_id: Vec<u8>| {
+            Some(ContractModerationReasonProto {
+                code: None,
+                text: "spam".to_string(),
+                documents: vec![ContractModerationDocumentProto {
+                    document_type_name: "post".to_string(),
+                    document_id,
+                }],
+            })
+        };
+        let cited = entries_from_response(vec![ContractModerationEntryProto {
+            identity_id: id(1).to_vec(),
+            until: None,
+            reason: cited_reason(id(9).to_vec()),
+            warnings: vec![],
+        }])
+        .expect("expected a cited document to decode");
+        assert_eq!(
+            cited.entries()[0].reason.documents,
+            vec![ContractModerationDocument {
+                document_type_name: "post".to_string(),
+                document_id: id(9),
+            }]
+        );
+        let err = entries_from_response(vec![ContractModerationEntryProto {
+            identity_id: id(1).to_vec(),
+            until: None,
+            reason: cited_reason(vec![9; 5]),
+            warnings: vec![],
+        }])
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+
         // The text is not bounded here: its limit is a protocol version's, and the proved path
         // reads whatever the proof holds
         let long = entries_from_response(vec![ContractModerationEntryProto {
@@ -712,6 +781,7 @@ mod tests {
             reason: Some(ContractModerationReasonProto {
                 code: None,
                 text: "x".repeat(4096),
+                documents: vec![],
             }),
             warnings: vec![],
         }])
@@ -796,6 +866,7 @@ mod tests {
             reason: Some(ContractModerationReasonProto {
                 code: None,
                 text: "spam".to_string(),
+                documents: vec![],
             }),
         }
     }
@@ -940,6 +1011,7 @@ mod tests {
             Some(ContractModerationReasonProto {
                 code: Some(u32::from(u16::MAX) + 1),
                 text: String::new(),
+                documents: vec![],
             }),
         ] {
             let proto = ContractDocumentRemovalProto {

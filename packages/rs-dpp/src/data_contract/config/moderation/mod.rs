@@ -30,7 +30,7 @@ use std::fmt;
 mod document_removal;
 mod reason;
 pub use document_removal::ContractDocumentRemoval;
-pub use reason::ContractModerationReason;
+pub use reason::{ContractModerationDocument, ContractModerationReason};
 
 /// Who may send a `ContractUserModeration` transition for the contract.
 ///

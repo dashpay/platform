@@ -41,6 +41,7 @@ GPBObjCClassDeclaration(CompactedAddressBalanceUpdateEntries);
 GPBObjCClassDeclaration(CompactedBlockAddressBalanceChanges);
 GPBObjCClassDeclaration(ContractGroupDocumentTypeMember);
 GPBObjCClassDeclaration(ContractGroupTokenMember);
+GPBObjCClassDeclaration(ContractModerationDocument);
 GPBObjCClassDeclaration(ContractModerationReason);
 GPBObjCClassDeclaration(ContractWarning);
 GPBObjCClassDeclaration(GPBBytesValue);
@@ -6238,17 +6239,75 @@ void GetContractGroupMembersResponse_GetContractGroupMembersResponseV0_ClearResu
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - ContractModerationDocument
+
+@implementation ContractModerationDocument
+
+@dynamic documentTypeName;
+@dynamic documentId;
+
+typedef struct ContractModerationDocument__storage_ {
+  uint32_t _has_storage_[1];
+  NSString *documentTypeName;
+  NSData *documentId;
+} ContractModerationDocument__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ContractModerationDocument_FieldNumber_DocumentTypeName,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(ContractModerationDocument__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "documentId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ContractModerationDocument_FieldNumber_DocumentId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(ContractModerationDocument__storage_, documentId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[ContractModerationDocument class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(ContractModerationDocument__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - ContractModerationReason
 
 @implementation ContractModerationReason
 
 @dynamic hasCode, code;
 @dynamic text;
+@dynamic documentsArray, documentsArray_Count;
 
 typedef struct ContractModerationReason__storage_ {
   uint32_t _has_storage_[1];
   uint32_t code;
   NSString *text;
+  NSMutableArray *documentsArray;
 } ContractModerationReason__storage_;
 
 // This method is threadsafe because it is initially called
@@ -6274,6 +6333,15 @@ typedef struct ContractModerationReason__storage_ {
         .offset = (uint32_t)offsetof(ContractModerationReason__storage_, text),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "documentsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(ContractModerationDocument),
+        .number = ContractModerationReason_FieldNumber_DocumentsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(ContractModerationReason__storage_, documentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =

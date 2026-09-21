@@ -21,7 +21,7 @@ interface ModerationOptions {
   documentId?: string | null;
   until?: bigint;
   /** `null` leaves the reason out; left undefined, a ban, a suspend and a warn get `REASON` */
-  reason?: { code?: number; text: string } | null;
+  reason?: { code?: number; text: string; documents?: { documentTypeName: string; documentId: string }[] } | null;
   identityContractNonce?: bigint;
   userFeeIncrease?: number;
 }
@@ -153,6 +153,24 @@ describe('ContractUserModeration', () => {
         expect(() => createTransition({ action, identityId: null })).to.throw();
       });
       expect(() => createTransition({ action: 'suspend', until: BigInt(5), identityId: null })).to.throw();
+    });
+
+    it('should cite the documents a reason is about, and leave them out when none', () => {
+      const documents = [
+        { documentTypeName: 'post', documentId: DOCUMENT_ID },
+        { documentTypeName: 'reply', documentId: TARGET_ID },
+      ];
+      const transition = createTransition({ action: 'warn', reason: { text: 'spam', documents } });
+
+      expect(transition.reason).to.deep.equal({ code: null, text: 'spam', documents });
+      expect(transition.toJSON().action.reason).to.deep.equal({ code: null, text: 'spam', documents });
+      expect(wasm.ContractUserModeration.fromBytes(transition.toBytes()).reason).to.deep.equal({
+        code: null,
+        text: 'spam',
+        documents,
+      });
+      // A reason about no document carries no `documents`, as before.
+      expect(createTransition().reason).to.deep.equal({ code: null, text: 'spam' });
     });
 
     it('should keep a reason code as written, and an empty text', () => {

@@ -8,7 +8,6 @@ use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::Identity;
@@ -23,7 +22,8 @@ use dash_sdk::platform::transition::put_contract::PutContract;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::{
-    moderation_action_from_parts, ContractUserModerationActionParts, DataContractWasm,
+    moderation_action_from_parts, ContractModerationReasonInput, ContractUserModerationActionParts,
+    DataContractWasm,
 };
 use wasm_dpp2::identity::{IdentityPublicKeyWasm, IdentityWasm};
 use wasm_dpp2::utils::try_from_options_optional;
@@ -402,7 +402,7 @@ struct ContractModerationOptionsInput {
     #[serde(default)]
     until: Option<u64>,
     #[serde(default)]
-    reason: Option<ContractModerationReason>,
+    reason: Option<ContractModerationReasonInput>,
 }
 
 #[derive(serde::Deserialize)]
@@ -410,7 +410,7 @@ struct ContractModerationOptionsInput {
 struct ContractDeleteDocumentOptionsInput {
     document_type_name: String,
     #[serde(default)]
-    reason: Option<ContractModerationReason>,
+    reason: Option<ContractModerationReasonInput>,
 }
 
 impl WasmSdk {
@@ -441,7 +441,7 @@ impl WasmSdk {
             ContractUserModerationActionParts {
                 identity_id: Some(identity_id),
                 until: parsed.until,
-                reason: parsed.reason,
+                reason: parsed.reason.map(Into::into),
                 ..Default::default()
             },
         )
@@ -607,7 +607,7 @@ impl WasmSdk {
                 parsed.document_type_name.clone(),
                 document_id,
                 // Both parts of a deletion's reason are optional, and so is the reason itself.
-                parsed.reason.unwrap_or_default(),
+                parsed.reason.map(Into::into).unwrap_or_default(),
                 None,
                 signer,
                 settings,

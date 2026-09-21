@@ -19,9 +19,10 @@ use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::config::moderation::{
-    ContractBan, ContractDocumentRemoval, ContractModerationConfig, ContractModerationList,
-    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
-    ContractModerationStatus, ContractModerators, ContractSuspension, ContractWarning,
+    ContractBan, ContractDocumentRemoval, ContractModerationConfig, ContractModerationDocument,
+    ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
+    ContractModerationReason, ContractModerationStatus, ContractModerators, ContractSuspension,
+    ContractWarning,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -72,6 +73,7 @@ use std::collections::BTreeMap;
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
 const CONTRACT_MODERATION_REASON_TOO_LONG: u32 = 10903;
+const INVALID_CONTRACT_MODERATION_REASON_DOCUMENTS: u32 = 10904;
 const OVERFLOW: u32 = 10700;
 const CONTRACT_MODERATION_NOT_ENABLED: u32 = 41100;
 const IDENTITY_NOT_CONTRACT_MODERATOR: u32 = 41101;
@@ -654,6 +656,7 @@ fn suspension_reason() -> ContractModerationReason {
     ContractModerationReason {
         code: Some(7),
         text: "flooding".to_string(),
+        documents: vec![],
     }
 }
 
@@ -1012,6 +1015,107 @@ async fn should_keep_the_warning_list_out_of_bans_and_the_gate() {
             .len(),
         2
     );
+}
+
+#[tokio::test]
+async fn should_store_the_documents_a_reason_cites_without_looking_them_up() {
+    let setup = Setup::new_with_posts(Some(moderation_with_warnings(
+        true,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let max_documents = PlatformVersion::latest()
+        .system_limits
+        .max_contract_moderation_reason_documents;
+    let cite = |seeds: &[u8]| {
+        seeds
+            .iter()
+            .map(|seed| ContractModerationDocument {
+                document_type_name: POST.to_string(),
+                document_id: Identifier::from([*seed; 32]),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    // The user's real post, and one that never existed: neither is looked up.
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let mut documents = cite(&[0xEE]);
+    documents.push(ContractModerationDocument {
+        document_type_name: POST.to_string(),
+        document_id: post.id(),
+    });
+    let reason = ContractModerationReason::from_text("these posts").with_documents(documents);
+    let warn = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Warn {
+                identity_id: user_id,
+                reason: reason.clone(),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&warn, &transaction));
+    assert_eq!(
+        setup
+            .status_on(
+                user_id,
+                &[ContractModerationList::Warnings],
+                Some(&transaction)
+            )
+            .warnings[0]
+            .reason,
+        reason
+    );
+    // A ban cites documents the same way, and its proof carries them.
+    let ban = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Ban {
+                identity_id: user_id,
+                reason: reason.clone(),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    setup.commit(transaction);
+    assert_eq!(
+        setup
+            .assert_execution_proved(&ban)
+            .ban()
+            .flatten()
+            .map(|ban| &ban.reason),
+        Some(&reason)
+    );
+
+    // Too many, or one twice: refused unpaid, in the mempool as in a block.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    for documents in [
+        cite(&(1..=max_documents as u8 + 1).collect::<Vec<u8>>()),
+        cite(&[1, 1]),
+    ] {
+        let refused = setup
+            .moderate(
+                &setup.owner,
+                ContractUserModerationAction::Warn {
+                    identity_id: setup.stranger.id(),
+                    reason: ContractModerationReason::from_text("spam").with_documents(documents),
+                },
+            )
+            .await;
+        assert_eq!(
+            setup.check_tx(&refused)[0].code(),
+            INVALID_CONTRACT_MODERATION_REASON_DOCUMENTS
+        );
+        assert_unpaid_with_code(
+            &setup.process(&refused, &transaction),
+            INVALID_CONTRACT_MODERATION_REASON_DOCUMENTS,
+        );
+    }
 }
 
 #[tokio::test]
@@ -1607,6 +1711,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
     let suspension_reason = ContractModerationReason {
         code: Some(u16::MAX),
         text: "flooding the feed".to_string(),
+        documents: vec![],
     };
     let transaction = setup.platform.drive.grove.start_transaction();
     let suspend = setup
@@ -2043,6 +2148,7 @@ fn deletion_reason() -> ContractModerationReason {
     ContractModerationReason {
         code: Some(3),
         text: "spam".to_string(),
+        documents: vec![],
     }
 }
 

@@ -2768,6 +2768,32 @@ export namespace GetContractGroupMembersResponse {
   }
 }
 
+export class ContractModerationDocument extends jspb.Message {
+  getDocumentTypeName(): string;
+  setDocumentTypeName(value: string): void;
+
+  getDocumentId(): Uint8Array | string;
+  getDocumentId_asU8(): Uint8Array;
+  getDocumentId_asB64(): string;
+  setDocumentId(value: Uint8Array | string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ContractModerationDocument.AsObject;
+  static toObject(includeInstance: boolean, msg: ContractModerationDocument): ContractModerationDocument.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ContractModerationDocument, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ContractModerationDocument;
+  static deserializeBinaryFromReader(message: ContractModerationDocument, reader: jspb.BinaryReader): ContractModerationDocument;
+}
+
+export namespace ContractModerationDocument {
+  export type AsObject = {
+    documentTypeName: string,
+    documentId: Uint8Array | string,
+  }
+}
+
 export class ContractModerationReason extends jspb.Message {
   hasCode(): boolean;
   clearCode(): void;
@@ -2776,6 +2802,11 @@ export class ContractModerationReason extends jspb.Message {
 
   getText(): string;
   setText(value: string): void;
+
+  clearDocumentsList(): void;
+  getDocumentsList(): Array<ContractModerationDocument>;
+  setDocumentsList(value: Array<ContractModerationDocument>): void;
+  addDocuments(value?: ContractModerationDocument, index?: number): ContractModerationDocument;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ContractModerationReason.AsObject;
@@ -2791,6 +2822,7 @@ export namespace ContractModerationReason {
   export type AsObject = {
     code: number,
     text: string,
+    documentsList: Array<ContractModerationDocument.AsObject>,
   }
 }
 

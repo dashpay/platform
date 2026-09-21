@@ -289,6 +289,7 @@ mod test {
         let reason = ContractModerationReason {
             code: Some(4),
             text: "flooding".to_string(),
+            documents: vec![],
         };
         let action = ContractUserModerationAction::Suspend {
             identity_id: target,
@@ -354,6 +355,7 @@ mod test {
         let reason = ContractModerationReason {
             code: Some(2),
             text: "spam".to_string(),
+            documents: vec![],
         };
         let action = ContractUserModerationAction::DeleteDocument {
             document_type_name: "post".to_string(),

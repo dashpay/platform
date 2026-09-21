@@ -142,6 +142,7 @@ fn removal(owner: u8, moderator: u8, text: &str, removed_at: u64) -> ContractDoc
         reason: ContractModerationReason {
             code: Some(7),
             text: text.to_string(),
+            documents: vec![],
         },
         removed_at,
     }
