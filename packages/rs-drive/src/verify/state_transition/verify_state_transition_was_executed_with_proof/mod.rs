@@ -28,6 +28,10 @@ impl Drive {
     /// snapshot (keys derived from the transition, values as of the proof's
     /// block), **not** evidence that the transition executed.
     ///
+    /// A document batch's proof also carries the credit balance of the
+    /// batch's owner, read from the same state as the document; it is a
+    /// snapshot at the proof's block whatever the outcome's guarantee.
+    ///
     /// # Parameters
     ///
     /// - `state_transition`: A reference to the `StateTransition` that needs to be verified.

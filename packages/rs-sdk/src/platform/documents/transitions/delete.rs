@@ -359,7 +359,7 @@ impl Sdk {
             .await?;
 
         match proof_result {
-            StateTransitionProofResult::VerifiedDocuments(documents) => {
+            StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) => {
                 if let Some((document_id, None)) = documents.into_iter().next() {
                     // None indicates the document has been deleted
                     Ok(DocumentDeleteResult::Deleted(document_id))

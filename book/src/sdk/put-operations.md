@@ -255,6 +255,15 @@ The wait includes full proof verification: the SDK verifies a GroveDB proof that
 the state transition was actually applied. This is not just checking a status flag --
 it is cryptographic proof of inclusion.
 
+A document batch's proof also carries the credit balance of the batch's owner,
+read from the same state as the document, so a wallet learns what the write
+left it with without a second query. `VerifiedDocuments` holds the documents
+and that balance; `wait_for_document_and_owner_balance` and
+`put_to_platform_and_wait_for_response_with_owner_balance` hand both back. The
+balance is a snapshot at the proof's block: it may already include later
+transitions of the same identity. A wait that asks for no proof reports the
+same balance, unverified, in the response's `owner_balance` field.
+
 ### Timeout Handling
 
 `wait_for_response` supports an optional timeout:

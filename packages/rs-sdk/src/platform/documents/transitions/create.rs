@@ -257,7 +257,7 @@ impl Sdk {
             .await?;
 
         match proof_result {
-            StateTransitionProofResult::VerifiedDocuments(documents) => {
+            StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) => {
                 if let Some((_, Some(document))) = documents.into_iter().next() {
                     Ok(DocumentCreateResult::Document(document))
                 } else {

@@ -6781,6 +6781,7 @@ typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResu
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof = 2,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 3,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_OwnerBalance = 4,
 };
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase) {
@@ -6804,6 +6805,14 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
 
+/**
+ * The credit balance of the transition's owner after it executed, read
+ * from Drive without a proof. Set for a document batch when no proof was
+ * requested; a proved response carries the balance inside the proof.
+ **/
+@property(nonatomic, readwrite) uint64_t ownerBalance;
+
+@property(nonatomic, readwrite) BOOL hasOwnerBalance;
 @end
 
 /**

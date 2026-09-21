@@ -50489,6 +50489,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.IStateTransitionBroadcastError|null} [error] WaitForStateTransitionResultResponseV0 error
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] WaitForStateTransitionResultResponseV0 proof
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] WaitForStateTransitionResultResponseV0 metadata
+                             * @property {number|Long|null} [ownerBalance] WaitForStateTransitionResultResponseV0 ownerBalance
                              */
 
                             /**
@@ -50529,6 +50530,14 @@ $root.org = (function() {
                              * @instance
                              */
                             WaitForStateTransitionResultResponseV0.prototype.metadata = null;
+
+                            /**
+                             * WaitForStateTransitionResultResponseV0 ownerBalance.
+                             * @member {number|Long} ownerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultResponseV0.prototype.ownerBalance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
@@ -50574,6 +50583,8 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.ownerBalance != null && Object.hasOwnProperty.call(message, "ownerBalance"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.ownerBalance);
                                 return writer;
                             };
 
@@ -50616,6 +50627,9 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.ownerBalance = reader.uint64();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -50676,6 +50690,9 @@ $root.org = (function() {
                                     if (error)
                                         return "metadata." + error;
                                 }
+                                if (message.ownerBalance != null && message.hasOwnProperty("ownerBalance"))
+                                    if (!$util.isInteger(message.ownerBalance) && !(message.ownerBalance && $util.isInteger(message.ownerBalance.low) && $util.isInteger(message.ownerBalance.high)))
+                                        return "ownerBalance: integer|Long expected";
                                 return null;
                             };
 
@@ -50706,6 +50723,15 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
+                                if (object.ownerBalance != null)
+                                    if ($util.Long)
+                                        (message.ownerBalance = $util.Long.fromValue(object.ownerBalance)).unsigned = true;
+                                    else if (typeof object.ownerBalance === "string")
+                                        message.ownerBalance = parseInt(object.ownerBalance, 10);
+                                    else if (typeof object.ownerBalance === "number")
+                                        message.ownerBalance = object.ownerBalance;
+                                    else if (typeof object.ownerBalance === "object")
+                                        message.ownerBalance = new $util.LongBits(object.ownerBalance.low >>> 0, object.ownerBalance.high >>> 0).toNumber(true);
                                 return message;
                             };
 
@@ -50722,8 +50748,14 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.metadata = null;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.ownerBalance = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.ownerBalance = options.longs === String ? "0" : 0;
+                                }
                                 if (message.error != null && message.hasOwnProperty("error")) {
                                     object.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.toObject(message.error, options);
                                     if (options.oneofs)
@@ -50736,6 +50768,11 @@ $root.org = (function() {
                                 }
                                 if (message.metadata != null && message.hasOwnProperty("metadata"))
                                     object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                if (message.ownerBalance != null && message.hasOwnProperty("ownerBalance"))
+                                    if (typeof message.ownerBalance === "number")
+                                        object.ownerBalance = options.longs === String ? String(message.ownerBalance) : message.ownerBalance;
+                                    else
+                                        object.ownerBalance = options.longs === String ? $util.Long.prototype.toString.call(message.ownerBalance) : options.longs === Number ? new $util.LongBits(message.ownerBalance.low >>> 0, message.ownerBalance.high >>> 0).toNumber(true) : message.ownerBalance;
                                 return object;
                             };
 

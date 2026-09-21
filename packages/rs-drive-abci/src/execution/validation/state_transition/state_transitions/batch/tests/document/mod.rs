@@ -9,6 +9,7 @@ mod immutable;
 mod index_only;
 mod keep_history;
 mod nft;
+mod owner_balance_proof;
 mod ranked_group_drain;
 mod replacement;
 mod required_since;

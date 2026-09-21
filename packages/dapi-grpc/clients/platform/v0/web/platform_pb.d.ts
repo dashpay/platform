@@ -6411,6 +6411,11 @@ export namespace WaitForStateTransitionResultResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
+    hasOwnerBalance(): boolean;
+    clearOwnerBalance(): void;
+    getOwnerBalance(): string;
+    setOwnerBalance(value: string): void;
+
     getResultCase(): WaitForStateTransitionResultResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WaitForStateTransitionResultResponseV0.AsObject;
@@ -6427,6 +6432,7 @@ export namespace WaitForStateTransitionResultResponse {
       error?: StateTransitionBroadcastError.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
+      ownerBalance: string,
     }
 
     export enum ResultCase {

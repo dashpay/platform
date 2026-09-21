@@ -3,13 +3,20 @@ use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
+use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::{
-    Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
-    WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
+    GetIdentityBalanceRequest, Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse, get_identity_balance_request,
+    get_identity_balance_response, wait_for_state_transition_result_request,
     wait_for_state_transition_result_response,
 };
 use dapi_grpc::tonic::{Request, Response};
+use dpp::prelude::Identifier;
+use dpp::serialization::PlatformDeserializableUntrusted;
+use dpp::state_transition::StateTransition;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
@@ -143,6 +150,7 @@ impl PlatformServiceImpl {
             wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
                 result: None,
                 metadata: None,
+                owner_balance: None,
             };
 
         // Check if transaction had an error
@@ -168,24 +176,13 @@ impl PlatformServiceImpl {
             return Ok(error.into());
         }
 
-        // No error; generate proof if requested
-        if prove
-            && !tx_response.tx.is_empty()
+        // No error; generate proof if requested, else report what can be read without one
+        if !tx_response.tx.is_empty()
             && let Ok(tx_data) =
                 base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_response.tx)
         {
-            match self.fetch_proof_for_state_transition(tx_data).await {
-                Ok((proof, metadata)) => {
-                    response_v0.result = Some(
-                        wait_for_state_transition_result_response_v0::Result::Proof(proof),
-                    );
-                    response_v0.metadata = Some(metadata);
-                }
-                Err(e) => {
-                    debug!("Failed to fetch proof: {}", e);
-                    // Continue without proof
-                }
-            }
+            self.fill_success_result(&mut response_v0, tx_data, prove)
+                .await;
         }
 
         let body = WaitForStateTransitionResultResponse {
@@ -210,21 +207,13 @@ impl PlatformServiceImpl {
                     wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
                         result: None,
                         metadata: None,
+                        owner_balance: None,
                 };
-                // Success case - generate proof if requested
-                if prove && let Some(tx_bytes) = transaction_event.tx {
-                    match self.fetch_proof_for_state_transition(tx_bytes).await {
-                        Ok((proof, metadata)) => {
-                            response_v0.result = Some(
-                        wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof),
-                    );
-                            response_v0.metadata = Some(metadata);
-                        }
-                        Err(e) => {
-                            debug!("Failed to fetch proof: {}", e);
-                            // Continue without proof
-                        }
-                    }
+                // Success case - generate proof if requested, else report what
+                // can be read without one
+                if let Some(tx_bytes) = transaction_event.tx {
+                    self.fill_success_result(&mut response_v0, tx_bytes, prove)
+                        .await;
                 }
 
                 let body = WaitForStateTransitionResultResponse {
@@ -252,6 +241,83 @@ impl PlatformServiceImpl {
                 let result: Response<WaitForStateTransitionResultResponse> = error.into();
 
                 Ok(result)
+            }
+        }
+    }
+
+    /// Complete a successful wait: with `prove`, the proof of the transition's
+    /// execution (which carries the owner's balance for a document batch);
+    /// without it, the owner's balance of a document batch read from Drive
+    /// unverified. Either read failing leaves the response as it was, which
+    /// still tells the caller the transition succeeded.
+    async fn fill_success_result(
+        &self,
+        response_v0: &mut wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0,
+        tx_bytes: Vec<u8>,
+        prove: bool,
+    ) {
+        if prove {
+            match self.fetch_proof_for_state_transition(tx_bytes).await {
+                Ok((proof, metadata)) => {
+                    response_v0.result = Some(
+                        wait_for_state_transition_result_response_v0::Result::Proof(proof),
+                    );
+                    response_v0.metadata = Some(metadata);
+                }
+                Err(e) => {
+                    debug!("Failed to fetch proof: {}", e);
+                    // Continue without proof
+                }
+            }
+        } else if let Some(owner_id) = document_batch_owner_id(&tx_bytes)
+            && let Some((owner_balance, metadata)) =
+                self.fetch_identity_balance_unproved(owner_id).await
+        {
+            response_v0.owner_balance = Some(owner_balance);
+            response_v0.metadata = Some(metadata);
+        }
+    }
+
+    /// An identity's credit balance as Drive holds it now, without a proof,
+    /// with the metadata of the state it was read from. `None` when Drive
+    /// cannot answer, which is logged and not an error of the wait.
+    async fn fetch_identity_balance_unproved(
+        &self,
+        identity_id: Identifier,
+    ) -> Option<(u64, ResponseMetadata)> {
+        let request = GetIdentityBalanceRequest {
+            version: Some(get_identity_balance_request::Version::V0(
+                GetIdentityBalanceRequestV0 {
+                    id: identity_id.to_vec(),
+                    prove: false,
+                },
+            )),
+        };
+        let mut client = self.drive_client.get_client();
+        let response = match client.get_identity_balance(request).await {
+            Ok(response) => response.into_inner(),
+            Err(e) => {
+                debug!(
+                    "Failed to fetch the transition owner's balance from Drive: {}",
+                    e
+                );
+                return None;
+            }
+        };
+        let Some(get_identity_balance_response::Version::V0(v0)) = response.version else {
+            debug!("Drive returned an identity balance response without a version");
+            return None;
+        };
+        match (v0.result, v0.metadata) {
+            (
+                Some(get_identity_balance_response::get_identity_balance_response_v0::Result::Balance(
+                    balance,
+                )),
+                Some(metadata),
+            ) => Some((balance, metadata)),
+            _ => {
+                debug!("Drive returned no balance for the transition owner");
+                None
             }
         }
     }
@@ -290,6 +356,21 @@ impl PlatformServiceImpl {
                 )))
             }
         }
+    }
+}
+
+/// The owner of a document batch: the identity whose credit balance a wait
+/// without a proof reports back. `None` for every other transition kind, for a
+/// batch of token transitions, and for bytes that do not decode.
+fn document_batch_owner_id(state_transition_bytes: &[u8]) -> Option<Identifier> {
+    let state_transition =
+        StateTransition::deserialize_from_bytes_untrusted(state_transition_bytes).ok()?;
+    let StateTransition::Batch(batch) = &state_transition else {
+        return None;
+    };
+    match batch.first_transition()? {
+        BatchedTransitionRef::Document(_) => state_transition.owner_id(),
+        BatchedTransitionRef::Token(_) => None,
     }
 }
 
@@ -334,6 +415,55 @@ pub(super) fn build_wait_for_state_transition_error_response(
 mod tests {
     use super::*;
     use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
+    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+
+    fn document_batch_bytes(owner_id: Identifier) -> Vec<u8> {
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::new([3u8; 32]),
+            identity_contract_nonce: 1,
+            document_type_name: "note".to_string(),
+            data_contract_id: Identifier::new([4u8; 32]),
+        });
+        StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id,
+            transitions: vec![DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                DocumentDeleteTransitionV0 { base },
+            ))],
+            ..Default::default()
+        }))
+        .serialize_to_bytes()
+        .expect("a document batch serializes")
+    }
+
+    #[test]
+    fn document_batch_owner_is_the_identity_whose_balance_is_reported() {
+        let owner_id = Identifier::new([7u8; 32]);
+        assert_eq!(
+            document_batch_owner_id(&document_batch_bytes(owner_id)),
+            Some(owner_id)
+        );
+    }
+
+    #[test]
+    fn other_transitions_and_undecodable_bytes_report_no_owner() {
+        let transfer = StateTransition::IdentityCreditTransfer(
+            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default()),
+        )
+        .serialize_to_bytes()
+        .expect("a transfer serializes");
+        assert_eq!(document_batch_owner_id(&transfer), None);
+        assert_eq!(document_batch_owner_id(&[0xff; 8]), None);
+        assert_eq!(document_batch_owner_id(&[]), None);
+    }
 
     #[test]
     fn state_transition_hash_must_be_exact_width() {

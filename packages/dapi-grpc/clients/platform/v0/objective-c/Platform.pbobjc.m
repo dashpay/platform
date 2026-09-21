@@ -13773,12 +13773,14 @@ void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTran
 @dynamic error;
 @dynamic proof;
 @dynamic hasMetadata, metadata;
+@dynamic hasOwnerBalance, ownerBalance;
 
 typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_ {
   uint32_t _has_storage_[2];
   StateTransitionBroadcastError *error;
   Proof *proof;
   ResponseMetadata *metadata;
+  uint64_t ownerBalance;
 } WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -13813,6 +13815,15 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
         .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "ownerBalance",
+        .dataTypeSpecific.clazz = Nil,
+        .number = WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_OwnerBalance,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, ownerBalance),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
       },
     };
     GPBDescriptor *localDescriptor =

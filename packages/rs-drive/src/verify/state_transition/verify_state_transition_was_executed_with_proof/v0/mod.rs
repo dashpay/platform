@@ -204,15 +204,16 @@ impl Drive {
                                     documents_batch_transition.owner_id(),
                                     platform_version,
                                 )?;
-                                let (root_hash, mut proved) = grovedb::GroveDb::verify_query(
-                                    proof,
-                                    &path_query,
-                                    &platform_version.drive.grove_version,
-                                )?;
+                                let (root_hash, mut proved) =
+                                    grovedb::GroveDb::verify_subset_query(
+                                        proof,
+                                        &path_query,
+                                        &platform_version.drive.grove_version,
+                                    )?;
                                 let entry_element =
                                     proved.pop().and_then(|(_path, _key, element)| element);
 
-                                let (root_hash, result) = match document_transition {
+                                let (root_hash, documents) = match document_transition {
                                     DocumentTransition::Create(create_transition) => {
                                         let expected_document =
                                             Document::try_from_create_transition(
@@ -304,10 +305,10 @@ impl Drive {
                                         }
                                         (
                                             root_hash,
-                                            VerifiedDocuments(BTreeMap::from([(
+                                            BTreeMap::from([(
                                                 expected_document.id(),
                                                 Some(expected_document),
-                                            )])),
+                                            )]),
                                         )
                                     }
                                     DocumentTransition::IndexOnlyDelete(delete_transition) => {
@@ -319,10 +320,7 @@ impl Drive {
                                         }
                                         (
                                             root_hash,
-                                            VerifiedDocuments(BTreeMap::from([(
-                                                delete_transition.base().id(),
-                                                None,
-                                            )])),
+                                            BTreeMap::from([(delete_transition.base().id(), None)]),
                                         )
                                     }
                                     _ => {
@@ -344,6 +342,14 @@ impl Drive {
                                 // that was already absent — the proof attests
                                 // the resulting STATE (`AffectedState`), not
                                 // the execution.
+                                let owner_balance = Self::verify_document_batch_owner_balance(
+                                    proof,
+                                    owner_id,
+                                    root_hash,
+                                    platform_version,
+                                )?;
+                                let result = VerifiedDocuments(documents, owner_balance);
+
                                 let outcome = if Self::state_transition_proof_binds_execution(
                                     state_transition,
                                     known_contracts_provider_fn,
@@ -378,9 +384,9 @@ impl Drive {
                             contested_status,
                         };
                         let (root_hash, document) =
-                            query.verify_proof(false, proof, document_type, platform_version)?;
+                            query.verify_proof(true, proof, document_type, platform_version)?;
 
-                        match document_transition {
+                        let (root_hash, documents) = match document_transition {
                             DocumentTransition::Create(create_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
                                 let expected_document = Document::try_from_create_transition(
@@ -405,13 +411,7 @@ impl Drive {
                                 )? {
                                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create, got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, create_transition))));
                                 }
-                                Ok((
-                                    root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(
-                                        document.id(),
-                                        Some(document),
-                                    )])),
-                                ))
+                                Ok((root_hash, BTreeMap::from([(document.id(), Some(document))])))
                             }
                             DocumentTransition::Replace(replace_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
@@ -444,13 +444,7 @@ impl Drive {
                                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace, got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, replace_transition))));
                                 }
 
-                                Ok((
-                                    root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(
-                                        document.id(),
-                                        Some(document),
-                                    )])),
-                                ))
+                                Ok((root_hash, BTreeMap::from([(document.id(), Some(document))])))
                             }
                             DocumentTransition::Transfer(transfer_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (transfer)", transfer_transition.base().id()))))?;
@@ -460,13 +454,7 @@ impl Drive {
                                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", transfer_transition.base().id()))));
                                 }
 
-                                Ok((
-                                    root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(
-                                        document.id(),
-                                        Some(document),
-                                    )])),
-                                ))
+                                Ok((root_hash, BTreeMap::from([(document.id(), Some(document))])))
                             }
                             DocumentTransition::Delete(delete_transition) => {
                                 if document.is_some() {
@@ -474,10 +462,7 @@ impl Drive {
                                 }
                                 Ok((
                                     root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(
-                                        delete_transition.base().id(),
-                                        None,
-                                    )])),
+                                    BTreeMap::from([(delete_transition.base().id(), None)]),
                                 ))
                             }
                             DocumentTransition::UpdatePrice(update_price_transition) => {
@@ -486,13 +471,7 @@ impl Drive {
                                 if new_document_price != update_price_transition.price() {
                                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document update of price after price update with id {}", update_price_transition.base().id()))));
                                 }
-                                Ok((
-                                    root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(
-                                        document.id(),
-                                        Some(document),
-                                    )])),
-                                ))
+                                Ok((root_hash, BTreeMap::from([(document.id(), Some(document))])))
                             }
                             DocumentTransition::Purchase(purchase_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (purchase)", purchase_transition.base().id()))))?;
@@ -501,13 +480,7 @@ impl Drive {
                                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", purchase_transition.base().id()))));
                                 }
 
-                                Ok((
-                                    root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(
-                                        document.id(),
-                                        Some(document),
-                                    )])),
-                                ))
+                                Ok((root_hash, BTreeMap::from([(document.id(), Some(document))])))
                             }
                             DocumentTransition::IndexOnlyDelete(_) => {
                                 // Only reachable when the doctype is NOT
@@ -521,7 +494,15 @@ impl Drive {
                                         .to_string(),
                                 )))
                             }
-                        }
+                        }?;
+
+                        let owner_balance = Self::verify_document_batch_owner_balance(
+                            proof,
+                            owner_id,
+                            root_hash,
+                            platform_version,
+                        )?;
+                        Ok((root_hash, VerifiedDocuments(documents, owner_balance)))
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();
@@ -2538,6 +2519,35 @@ impl Drive {
         Ok((root_hash, outcome))
     }
 
+    /// The credit balance of a document batch's owner, which the batch proof
+    /// carries next to the document. Read as a subset of the merged proof and
+    /// required to come from the same state as the document (the same root
+    /// hash). Every identity has a balance entry, so a proof without the
+    /// owner's is not a proof of this batch.
+    fn verify_document_batch_owner_balance(
+        proof: &[u8],
+        owner_id: Identifier,
+        document_root_hash: RootHash,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, Error> {
+        let (balance_root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+            proof,
+            owner_id.into_buffer(),
+            true,
+            platform_version,
+        )?;
+        if balance_root_hash != document_root_hash {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "the document and the owner balance of a document batch proof are read from different states"
+                    .to_string(),
+            )));
+        }
+        balance.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+            "proof did not contain the balance of the document batch owner {}",
+            owner_id
+        ))))
+    }
+
     /// Whether a valid proof for this state transition binds the execution of
     /// this specific transition (`ExecutionProved`) or can only authenticate
     /// the state the transition affects at the committed block
@@ -2799,7 +2809,7 @@ mod tests {
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-    use dpp::document::DocumentV0Getters;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::Identity;
     use dpp::prelude::DataContract;
@@ -3601,10 +3611,29 @@ mod tests {
     // Batch: document delete happy path
     // -----------------------------------------------------------------------
 
+    /// The batch's owner, with the balance every identity has, so the batch
+    /// proof can carry it next to the document.
+    fn add_batch_owner(drive: &Drive, seed: u64, platform_version: &PlatformVersion) -> Identity {
+        let identity = Identity::random_identity(2, Some(seed), platform_version)
+            .expect("expected a random identity");
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the batch owner");
+        identity
+    }
+
     #[test]
     fn verify_batch_document_delete_happy_path() {
         let (drive, contract) = setup_drive_and_contract();
         let platform_version = PlatformVersion::latest();
+        let owner = add_batch_owner(&drive, 7, platform_version);
 
         let document_type = contract
             .document_type_for_name("preorder")
@@ -3649,23 +3678,6 @@ mod tests {
             )
             .expect("expected to delete document");
 
-        // Generate a proof for the now-absent document
-        use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
-        let single_query = SingleDocumentDriveQuery {
-            contract_id: contract.id().to_buffer(),
-            document_type_name: "preorder".to_string(),
-            document_type_keeps_history: document_type.documents_keep_history(),
-            document_id: doc_id.to_buffer(),
-            block_time_ms: None,
-            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
-        };
-        let path_query = single_query
-            .construct_path_query(platform_version)
-            .expect("expected to build path query");
-        let proof = drive
-            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
-            .expect("expected to get proof");
-
         // Build a document delete batch transition
         use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
         use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -3683,12 +3695,19 @@ mod tests {
         });
 
         let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
-            owner_id: Default::default(),
+            owner_id: owner.id(),
             transitions: vec![DocumentTransition::Delete(DocumentDeleteTransition::V0(
                 DocumentDeleteTransitionV0 { base },
             ))],
             ..Default::default()
         }));
+
+        // The prover's proof: the now-absent document and the owner's balance
+        let proof = drive
+            .prove_state_transition(&st, None, platform_version)
+            .expect("expected to prove the delete")
+            .into_data()
+            .expect("expected proof bytes");
 
         let contract_arc = Arc::new(contract.clone());
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(Some(contract_arc.clone()));
@@ -3709,7 +3728,7 @@ mod tests {
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedDocuments(docs),
+                StateTransitionProofResult::VerifiedDocuments(docs, owner_balance),
             ) => {
                 assert_eq!(docs.len(), 1, "expected exactly one document entry");
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
@@ -3718,8 +3737,118 @@ mod tests {
                     maybe_doc.is_none(),
                     "document should be None after deletion"
                 );
+                assert_eq!(owner_balance, owner.balance());
             }
             other => panic!("expected VerifiedDocuments, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: a proof of the document alone is not a batch proof
+    // -----------------------------------------------------------------------
+
+    /// A document batch proof carries the owner's balance next to the
+    /// document. A proof of only the document (the shape before the balance
+    /// joined it) verifies the document but not the batch: GroveDB finds no
+    /// data for the balance query in it, or, when the balance subtree is
+    /// there without the owner's key, the verifier reports the missing
+    /// balance as an incorrect proof.
+    #[test]
+    fn verify_batch_document_proof_without_owner_balance_is_rejected() {
+        let (drive, contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+        let owner = add_batch_owner(&drive, 11, platform_version);
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+
+        let mut document = document_type
+            .random_document(Some(99), platform_version)
+            .expect("expected a random document");
+        document.set_owner_id(owner.id());
+        let doc_id = document.id();
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: Some(owner.id().to_buffer()),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert document");
+
+        // The document alone
+        use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+        let single_query = SingleDocumentDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "preorder".to_string(),
+            document_type_keeps_history: document_type.documents_keep_history(),
+            document_id: doc_id.to_buffer(),
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        };
+        let path_query = single_query
+            .construct_path_query(platform_version)
+            .expect("expected to build path query");
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
+            .expect("expected to get proof");
+
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: doc_id,
+            identity_contract_nonce: 1,
+            document_type_name: "preorder".to_string(),
+            data_contract_id: contract.id(),
+        });
+        let create_transition = DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+            base,
+            entropy: [100u8; 32],
+            data: document.properties().clone(),
+            prefunded_voting_balance: None,
+        });
+        let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: owner.id(),
+            transitions: vec![DocumentTransition::Create(create_transition)],
+            ..Default::default()
+        }));
+
+        let contract_arc = Arc::new(contract.clone());
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(Some(contract_arc.clone()));
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        match result {
+            Err(Error::GroveDB(_)) => {}
+            Err(Error::Proof(ProofError::IncorrectProof(message))) => assert!(
+                message.contains("balance of the document batch owner"),
+                "expected the missing owner balance to be reported, got: {message}"
+            ),
+            other => panic!("expected the proof to be rejected, got {:?}", other),
         }
     }
 
@@ -3731,14 +3860,16 @@ mod tests {
     fn verify_batch_document_create_happy_path() {
         let (drive, contract) = setup_drive_and_contract();
         let platform_version = PlatformVersion::latest();
+        let owner = add_batch_owner(&drive, 5, platform_version);
 
         let document_type = contract
             .document_type_for_name("preorder")
             .expect("expected preorder document type");
 
-        let document = document_type
+        let mut document = document_type
             .random_document(Some(99), platform_version)
             .expect("expected a random document");
+        document.set_owner_id(owner.id());
         let doc_id = document.id();
         let owner_id = document.owner_id();
 
@@ -3763,23 +3894,6 @@ mod tests {
                 None,
             )
             .expect("expected to insert document");
-
-        // Generate a proof for the existing document
-        use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
-        let single_query = SingleDocumentDriveQuery {
-            contract_id: contract.id().to_buffer(),
-            document_type_name: "preorder".to_string(),
-            document_type_keeps_history: document_type.documents_keep_history(),
-            document_id: doc_id.to_buffer(),
-            block_time_ms: None,
-            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
-        };
-        let path_query = single_query
-            .construct_path_query(platform_version)
-            .expect("expected to build path query");
-        let proof = drive
-            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
-            .expect("expected to get proof");
 
         // Build a document create batch transition
         use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -3811,6 +3925,13 @@ mod tests {
             ..Default::default()
         }));
 
+        // The prover's proof: the created document and the owner's balance
+        let proof = drive
+            .prove_state_transition(&st, None, platform_version)
+            .expect("expected to prove the create")
+            .into_data()
+            .expect("expected proof bytes");
+
         let contract_arc = Arc::new(contract.clone());
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(Some(contract_arc.clone()));
 
@@ -3830,12 +3951,13 @@ mod tests {
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedDocuments(docs),
+                StateTransitionProofResult::VerifiedDocuments(docs, owner_balance),
             ) => {
                 assert_eq!(docs.len(), 1, "expected exactly one document entry");
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
                 assert_eq!(returned_id, doc_id);
                 assert!(maybe_doc.is_some(), "document should exist after creation");
+                assert_eq!(owner_balance, owner.balance());
             }
             other => panic!("expected VerifiedDocuments, got {:?}", other),
         }

@@ -108,3 +108,42 @@ pub(super) fn action_status_to_string(
         }
     }
 }
+
+/// Credits in JSON: a number while it is exact in JavaScript, a decimal string past
+/// `Number.MAX_SAFE_INTEGER`, where a number would silently round.
+pub(super) fn json_safe_credits(credits: u64) -> JsValue {
+    const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
+    if credits <= MAX_SAFE_INTEGER {
+        JsValue::from_f64(credits as f64)
+    } else {
+        JsValue::from_str(&credits.to_string())
+    }
+}
+
+/// Read a credits property from an ingested JS value: a `BigInt` (what the
+/// getters hand out), a safe integer number, or the decimal string `toJSON`
+/// emits past `Number.MAX_SAFE_INTEGER`.
+pub(super) fn read_credits_property(value: &JsValue, name: &str) -> WasmDppResult<u64> {
+    let raw = js_sys::Reflect::get(value, &name.into())
+        .map_err(|_| WasmDppError::generic(format!("Missing property: {}", name)))?;
+    let invalid = || {
+        WasmDppError::generic(format!(
+            "Property {} must be a non-negative integer BigInt, number or decimal string",
+            name
+        ))
+    };
+    if let Some(big) = raw.dyn_ref::<BigInt>() {
+        u64::try_from(big.clone()).map_err(|_| invalid())
+    } else if let Some(number) = raw.as_f64() {
+        const MAX_SAFE_INTEGER: f64 = ((1u64 << 53) - 1) as f64;
+        if number.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER).contains(&number) {
+            Ok(number as u64)
+        } else {
+            Err(invalid())
+        }
+    } else if let Some(text) = raw.as_string() {
+        text.parse::<u64>().map_err(|_| invalid())
+    } else {
+        Err(invalid())
+    }
+}

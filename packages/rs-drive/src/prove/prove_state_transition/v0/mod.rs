@@ -143,7 +143,7 @@ impl Drive {
                         // entry its values produce under the proof index —
                         // the same single-entry path query the verifier
                         // rebuilds from the transition.
-                        {
+                        let document_path_query = {
                             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
                             use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
                             if document_type.index_only() {
@@ -206,7 +206,19 @@ impl Drive {
                                 path_query.query.limit = None;
                                 path_query
                             }
-                        }
+                        };
+
+                        // The owner's credit balance after the transition rides
+                        // in the same proof as the document, so a wallet learns
+                        // what the write left it with without a second query.
+                        // The verifier reads the document and the balance as
+                        // subsets of this merged proof and requires one state.
+                        let owner_balance_query =
+                            Drive::identity_balance_query(&owner_id.to_buffer());
+                        PathQuery::merge(
+                            vec![&document_path_query, &owner_balance_query],
+                            &platform_version.drive.grove_version,
+                        )?
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();

@@ -412,24 +412,34 @@ describe('StateTransitionProofResult types', () => {
       // null values represent absent documents
       docsMap.set(id1.toBase58(), null);
 
-      const data = { documents: docsMap };
+      const data = { documents: docsMap, ownerBalance: 123456789n };
       const result = wasm.VerifiedDocuments.fromObject(data);
 
       expect(result.documents).to.be.instanceOf(Map);
       expect(result.documents.size).to.equal(1);
+      expect(result.ownerBalance).to.equal(123456789n);
 
       const obj = result.toObject();
       expect(obj).to.have.property('documents');
+      expect(obj.ownerBalance).to.equal(123456789n);
 
       const roundtrip = wasm.VerifiedDocuments.fromObject(obj);
       expect(roundtrip.documents.size).to.equal(1);
+      expect(roundtrip.ownerBalance).to.equal(123456789n);
     });
 
     it('should handle empty Map', () => {
-      const data = { documents: new Map() };
+      const data = { documents: new Map(), ownerBalance: 0 };
       const result = wasm.VerifiedDocuments.fromObject(data);
 
       expect(result.documents.size).to.equal(0);
+      expect(result.ownerBalance).to.equal(0n);
+    });
+
+    it('should reject a missing or negative owner balance', () => {
+      expect(() => wasm.VerifiedDocuments.fromObject({ documents: new Map() })).to.throw();
+      expect(() => wasm.VerifiedDocuments.fromObject({ documents: new Map(), ownerBalance: -1 }))
+        .to.throw();
     });
 
     it('toJSON() should preserve Map entries through JSON.stringify', () => {
@@ -437,11 +447,21 @@ describe('StateTransitionProofResult types', () => {
       const docsMap = new Map();
       docsMap.set(id1.toBase58(), null);
 
-      const result = wasm.VerifiedDocuments.fromObject({ documents: docsMap });
+      const result = wasm.VerifiedDocuments.fromObject({ documents: docsMap, ownerBalance: 42n });
       const parsed = JSON.parse(JSON.stringify(result.toJSON()));
 
       expect(parsed.documents).to.have.property(id1.toBase58());
       expect(parsed.documents[id1.toBase58()]).to.equal(null);
+      expect(parsed.ownerBalance).to.equal(42);
+    });
+
+    it('toJSON() should carry a balance past MAX_SAFE_INTEGER as a decimal string', () => {
+      const big = 9007199254740993n; // 2^53 + 1
+      const result = wasm.VerifiedDocuments.fromObject({ documents: new Map(), ownerBalance: big });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.ownerBalance).to.equal('9007199254740993');
+      expect(wasm.VerifiedDocuments.fromJSON(parsed).ownerBalance).to.equal(big);
     });
   });
 

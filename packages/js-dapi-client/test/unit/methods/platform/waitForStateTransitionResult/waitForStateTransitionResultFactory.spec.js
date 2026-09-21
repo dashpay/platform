@@ -66,6 +66,7 @@ describe('waitForStateTransitionResultFactory', () => {
 
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.equal(undefined);
+    expect(result.getOwnerBalance()).to.equal(undefined);
 
     const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
     const request = new WaitForStateTransitionResultRequest();
@@ -81,6 +82,17 @@ describe('waitForStateTransitionResultFactory', () => {
       request,
       options,
     );
+  });
+
+  it('should return the owner balance a wait without a proof reports', async () => {
+    options.prove = false;
+    response.getV0().setOwnerBalance('123456789012345678');
+
+    const result = await waitForStateTransitionResult(hash, options);
+
+    expect(result.getError()).to.equal(undefined);
+    expect(result.getProof()).to.equal(undefined);
+    expect(result.getOwnerBalance()).to.equal(BigInt('123456789012345678'));
   });
 
   it('should return response with proof', async () => {

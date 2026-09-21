@@ -54737,7 +54737,8 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStat
   var f, obj = {
     error: (f = msg.getError()) && proto.org.dash.platform.dapi.v0.StateTransitionBroadcastError.toObject(includeInstance, f),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
-    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
+    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f),
+    ownerBalance: jspb.Message.getFieldWithDefault(msg, 4, "0")
   };
 
   if (includeInstance) {
@@ -54788,6 +54789,10 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStat
       var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
       msg.setMetadata(value);
+      break;
+    case 4:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setOwnerBalance(value);
       break;
     default:
       reader.skipField();
@@ -54840,6 +54845,13 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStat
       3,
       f,
       proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
+    );
+  }
+  f = /** @type {string} */ (jspb.Message.getField(message, 4));
+  if (f != null) {
+    writer.writeUint64String(
+      4,
+      f
     );
   }
 };
@@ -54953,6 +54965,42 @@ proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStat
  */
 proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.prototype.hasMetadata = function() {
   return jspb.Message.getField(this, 3) != null;
+};
+
+
+/**
+ * optional uint64 owner_balance = 4;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.prototype.getOwnerBalance = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.prototype.setOwnerBalance = function(value) {
+  return jspb.Message.setField(this, 4, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.prototype.clearOwnerBalance = function() {
+  return jspb.Message.setField(this, 4, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.prototype.hasOwnerBalance = function() {
+  return jspb.Message.getField(this, 4) != null;
 };
 
 

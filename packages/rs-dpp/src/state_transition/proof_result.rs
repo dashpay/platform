@@ -55,7 +55,19 @@ pub enum StateTransitionProofResult {
     ),
     VerifiedPartialIdentity(PartialIdentity),
     VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
-    VerifiedDocuments(BTreeMap<Identifier, Option<Document>>),
+    /// A document batch's execution proof shows the document the transition left (or its
+    /// absence after a delete) and the credit balance of the batch's owner after it, read
+    /// from the same state. The balance is a snapshot at the proof's block, so it may
+    /// already include later transitions of the same identity even when the outcome is
+    /// execution-proved: the document binds the execution, the balance does not.
+    VerifiedDocuments(
+        BTreeMap<Identifier, Option<Document>>,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        Credits,
+    ),
     VerifiedTokenActionWithDocument(Document),
     VerifiedTokenGroupActionWithDocument(GroupSumPower, Option<Document>),
     VerifiedTokenGroupActionWithTokenBalance(
@@ -341,6 +353,35 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         assert_eq!(json["VerifiedTokenBalance"][1], json!("9007199254740993"));
         let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    /// `VerifiedDocuments` carries the owner's balance after the documents;
+    /// past `Number.MAX_SAFE_INTEGER` it serializes as a string.
+    #[test]
+    fn verified_documents_owner_balance_serializes_as_string_past_safe_integer() {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+        use std::collections::BTreeMap;
+        let mut documents: BTreeMap<Identifier, Option<Document>> = BTreeMap::new();
+        documents.insert(Identifier::new([0xab; 32]), None);
+        let original =
+            StateTransitionProofResult::VerifiedDocuments(documents, 9_007_199_254_740_993);
+
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "VerifiedDocuments": [
+                    { "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t": null },
+                    "9007199254740993",
+                ],
+            })
+        );
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+
+        let value = original.to_object().expect("to_object");
+        let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
 

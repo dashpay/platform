@@ -2342,6 +2342,10 @@ message WaitForStateTransitionResultResponse {
           2; // Cryptographic proof for the state transition, if requested
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
+    // The credit balance of the transition's owner after it executed, read
+    // from Drive without a proof. Set for a document batch when no proof was
+    // requested; a proved response carries the balance inside the proof.
+    optional uint64 owner_balance = 4 [ jstype = JS_STRING ];
   }
   oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }

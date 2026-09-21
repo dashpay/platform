@@ -6,6 +6,7 @@ use crate::platform::Fetch;
 use crate::Error;
 use crate::Sdk;
 use dpp::document::Document;
+use dpp::fee::Credits;
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
@@ -53,44 +54,58 @@ impl Waitable for Document {
         state_transition: StateTransition,
         settings: Option<PutSettings>,
     ) -> Result<Self, Error> {
-        let doc_id = if let StateTransition::Batch(transition) = &state_transition {
-            let ids = transition.modified_data_ids();
-            if ids.len() != 1 {
-                return Err(Error::Protocol(
-                    dpp::ProtocolError::InvalidStateTransitionType(format!(
-                        "expected state transition with exactly one document, got {}",
-                        ids.into_iter()
-                            .map(|id| id
-                                .to_string(dpp::platform_value::string_encoding::Encoding::Base58))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )),
-                ));
-            }
-            ids[0]
-        } else {
-            return Err(Error::Protocol(ProtocolError::InvalidStateTransitionType(
-                format!(
-                    "expected state transition to be a DocumentsBatchTransition, got {}",
-                    state_transition.name()
-                ),
-            )));
-        };
-
-        let mut documents: BTreeMap<Identifier, Option<Document>> =
-            state_transition.wait_for_response(sdk, settings).await?;
-
-        let document: Document = documents
-            .remove(&doc_id)
-            .ok_or(Error::InvalidProvedResponse(
-                "did not prove the sent document".to_string(),
-            ))?
-            .ok_or(Error::InvalidProvedResponse(
-                "expected there to actually be a document".to_string(),
-            ))?;
-
-        Ok(document)
+        wait_for_document_and_owner_balance(sdk, state_transition, settings)
+            .await
+            .map(|(document, _owner_balance)| document)
     }
+}
+
+/// Waits for the proof of a document batch and returns the document it left
+/// together with the credit balance of the batch's owner after it: the proof
+/// carries both, read from one state. The balance is a snapshot at the proof's
+/// block, so it may already include later transitions of the same identity.
+pub async fn wait_for_document_and_owner_balance(
+    sdk: &Sdk,
+    state_transition: StateTransition,
+    settings: Option<PutSettings>,
+) -> Result<(Document, Credits), Error> {
+    let doc_id = if let StateTransition::Batch(transition) = &state_transition {
+        let ids = transition.modified_data_ids();
+        if ids.len() != 1 {
+            return Err(Error::Protocol(
+                dpp::ProtocolError::InvalidStateTransitionType(format!(
+                    "expected state transition with exactly one document, got {}",
+                    ids.into_iter()
+                        .map(|id| id
+                            .to_string(dpp::platform_value::string_encoding::Encoding::Base58))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )),
+            ));
+        }
+        ids[0]
+    } else {
+        return Err(Error::Protocol(ProtocolError::InvalidStateTransitionType(
+            format!(
+                "expected state transition to be a DocumentsBatchTransition, got {}",
+                state_transition.name()
+            ),
+        )));
+    };
+
+    let (mut documents, owner_balance): (BTreeMap<Identifier, Option<Document>>, Credits) =
+        state_transition.wait_for_response(sdk, settings).await?;
+
+    let document: Document = documents
+        .remove(&doc_id)
+        .ok_or(Error::InvalidProvedResponse(
+            "did not prove the sent document".to_string(),
+        ))?
+        .ok_or(Error::InvalidProvedResponse(
+            "expected there to actually be a document".to_string(),
+        ))?;
+
+    Ok((document, owner_balance))
 }
 
 #[async_trait::async_trait]
