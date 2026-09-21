@@ -2,13 +2,12 @@ use crate::drive::votes::paths::{
     vote_contested_resource_identity_votes_tree_path_vec,
     vote_identity_contender_identity_votes_tree_path_vec,
 };
-use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::{GroveError, QueryItem};
 use crate::util::grove_operations::BatchDeleteApplyType;
+use crate::verify::bounded_decode::decode_vote_reference;
 use dpp::dashcore::Network;
 use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
@@ -110,19 +109,7 @@ impl Drive {
                     &platform_version.drive,
                 )?;
                 let serialized_reference = vote_to_remove.into_item_bytes()?;
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
-                let reference: ContestedDocumentResourceVoteReferenceStorageForm =
-                    bincode::decode_from_slice(&serialized_reference, bincode_config)
-                        .map_err(|e| {
-                            Error::Drive(DriveError::CorruptedSerialization(format!(
-                                "serialization of reference {} is corrupted: {}",
-                                hex::encode(serialized_reference),
-                                e
-                            )))
-                        })?
-                        .0;
+                let reference = decode_vote_reference(&serialized_reference)?;
                 let mut absolute_path = reference
                     .reference_path_type
                     .absolute_path(vote_path_ref.as_slice(), Some(vote_id.as_slice()))?;

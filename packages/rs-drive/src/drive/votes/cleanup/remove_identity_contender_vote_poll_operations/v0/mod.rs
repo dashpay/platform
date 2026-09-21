@@ -1,5 +1,8 @@
-use crate::drive::votes::paths::{IDENTITY_CONTENDER_INFO_KEY, VOTING_STORAGE_TREE_KEY};
-use crate::drive::votes::resolved::vote_polls::identity_contender_vote_poll::IdentityContenderVotePollPaths;
+use crate::drive::votes::paths::{
+    vote_identity_contender_poll_choice_tree_path_vec,
+    vote_identity_contender_poll_choice_votes_path_vec, vote_identity_contender_poll_tree_path_vec,
+    IDENTITY_CONTENDER_INFO_KEY, VOTING_STORAGE_TREE_KEY,
+};
 use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -22,7 +25,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let poll_path = vote_poll.poll_path_vec()?;
+        // The poll is hashed once for every path below
+        let vote_poll_id = vote_poll.unique_id()?;
+        let poll_path = vote_identity_contender_poll_tree_path_vec(vote_poll_id.as_slice());
         let delete_item = BatchDeleteApplyType::StatefulBatchDelete {
             is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
@@ -32,8 +37,10 @@ impl Drive {
                     "an identity contender vote poll has no lock votes to remove".to_string(),
                 ))));
             }
-            let choice_path = vote_poll.choice_path_vec(choice)?;
-            let votes_path = vote_poll.choice_votes_path_vec(choice)?;
+            let choice_path =
+                vote_identity_contender_poll_choice_tree_path_vec(vote_poll_id.as_slice(), choice);
+            let votes_path =
+                vote_identity_contender_poll_choice_votes_path_vec(vote_poll_id.as_slice(), choice);
             // The votes, then their sum tree, once empty
             for voter in voters {
                 self.batch_delete(

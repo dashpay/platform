@@ -56,21 +56,24 @@ where
             }
         }
 
+        // The identity contender clean-up goes first: it removes only its own end date entries
+        // and leaves a time tree that still holds other entries, while the contested clean-up
+        // removes a time tree whenever its own polls were all of the ones it fetched there.
+        if !identity_contender_polls.is_empty() {
+            self.clean_up_after_identity_contender_vote_polls_end(
+                block_info,
+                identity_contender_polls,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         if !contested_polls.is_empty() {
             // Call the function to clean up contested document resource vote polls
             self.clean_up_after_contested_resources_vote_polls_end(
                 block_info,
                 contested_polls,
                 clean_up_testnet_corrupted_reference_issue,
-                transaction,
-                platform_version,
-            )?;
-        }
-
-        if !identity_contender_polls.is_empty() {
-            self.clean_up_after_identity_contender_vote_polls_end(
-                block_info,
-                identity_contender_polls,
                 transaction,
                 platform_version,
             )?;

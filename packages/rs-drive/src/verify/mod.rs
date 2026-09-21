@@ -50,7 +50,7 @@ pub mod tokens;
 /// Voting proof verification module
 pub mod voting;
 
-mod bounded_decode;
+pub(crate) mod bounded_decode;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];

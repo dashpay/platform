@@ -60,35 +60,55 @@ pub struct IdentityContenderVotePollState {
 impl IdentityContenderVotePollStateQuery {
     /// The path query: the stored info item and the abstain tally at the poll's level, and
     /// under each contender its record and its tally. Two elements per contender, so the
-    /// limit doubles, plus the two of the poll itself.
+    /// limit doubles, plus one for each of the poll's own two keys the range covers.
     pub fn construct_path_query(&self) -> PathQuery {
         let path = vote_identity_contender_poll_tree_path_vec(self.vote_poll_id.as_slice());
         let mut query = Query::new_with_direction(true);
-        let limit = match &self.start_at {
+        let poll_keys = [
+            RESOURCE_STORED_INFO_KEY_U8_32,
+            RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32,
+        ];
+        let poll_keys_in_range = match &self.start_at {
             None => {
                 query.insert_all();
-                query.add_conditional_subquery(
-                    QueryItem::Key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec()),
-                    None,
-                    None,
-                );
-                query.add_conditional_subquery(
-                    QueryItem::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec()),
-                    Some(vec![vec![VOTING_STORAGE_TREE_KEY]]),
-                    None,
-                );
-                self.limit
-                    .map(|limit| limit.saturating_mul(2).saturating_add(2))
+                poll_keys.len()
             }
             Some((start_at_key, start_at_included)) => {
                 let start_at_key = start_at_key.to_vec();
+                let in_range = poll_keys
+                    .iter()
+                    .filter(|key| {
+                        if *start_at_included {
+                            key.as_slice() >= start_at_key.as_slice()
+                        } else {
+                            key.as_slice() > start_at_key.as_slice()
+                        }
+                    })
+                    .count();
                 match start_at_included {
                     true => query.insert_range_from(start_at_key..),
                     false => query.insert_range_after(start_at_key..),
                 }
-                self.limit.map(|limit| limit.saturating_mul(2))
+                in_range
             }
         };
+        // The poll's own keys are read the same way whatever the range: the stored info as
+        // the item it is, the abstain tree as its tally
+        query.add_conditional_subquery(
+            QueryItem::Key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec()),
+            None,
+            None,
+        );
+        query.add_conditional_subquery(
+            QueryItem::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec()),
+            Some(vec![vec![VOTING_STORAGE_TREE_KEY]]),
+            None,
+        );
+        let limit = self.limit.map(|limit| {
+            limit
+                .saturating_mul(2)
+                .saturating_add(poll_keys_in_range as u16)
+        });
         let mut contender_query = Query::new();
         contender_query.insert_keys(vec![
             vec![IDENTITY_CONTENDER_INFO_KEY],

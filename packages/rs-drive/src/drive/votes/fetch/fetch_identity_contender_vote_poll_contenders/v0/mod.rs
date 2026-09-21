@@ -1,3 +1,4 @@
+use crate::drive::votes::paths::RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32;
 use crate::drive::votes::resolved::vote_polls::identity_contender_vote_poll::IdentityContenderWithTally;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -14,10 +15,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<IdentityContenderWithTally>, Error> {
+        // Contenders only: the range starts after the abstain key, so neither the stored info
+        // nor the abstain tally is read
         let query = IdentityContenderVotePollStateQuery {
             vote_poll_id: vote_poll.unique_id()?,
             limit,
-            start_at: None,
+            start_at: Some((RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, false)),
         };
         Ok(query
             .execute_no_proof(self, transaction, &mut vec![], platform_version)?

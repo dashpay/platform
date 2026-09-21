@@ -104,7 +104,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: Some(1),
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed in v14: votes on identity contender vote polls (no Lock, the masternode's previous vote read from the polls' own tree)
             },
             masternode_vote_state_transition_balance_pre_check: 0,
             contract_create_state_transition: DriveAbciStateTransitionValidationVersion {

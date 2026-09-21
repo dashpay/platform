@@ -44,15 +44,20 @@ where
                 )),
             )))?;
 
+        if stored_info.status() == IdentityContenderVotePollStatus::Resolved {
+            return Err(Error::Drive(drive::error::Error::Drive(
+                DriveError::CorruptedDriveState(format!(
+                    "identity contender vote poll {} resolved already but still has an end date",
+                    vote_poll
+                )),
+            )));
+        }
+
+        // Every contender: the ones a vote may go to are the ones the tally, the record and
+        // the clean-up must cover, so the opener bounds how many may join, not this read
         let contenders = self.drive.fetch_identity_contender_vote_poll_contenders(
             vote_poll,
-            Some(
-                platform_version
-                    .drive_abci
-                    .validation_and_processing
-                    .event_constants
-                    .maximum_contenders_to_consider,
-            ),
+            None,
             transaction,
             platform_version,
         )?;
@@ -94,14 +99,7 @@ where
                 contenders.first().map(|contender| contender.identity_id)
             }
             IdentityContenderVotePollStatus::Voting => Self::plurality_winner(&contenders),
-            IdentityContenderVotePollStatus::Resolved => {
-                return Err(Error::Drive(drive::error::Error::Drive(
-                    DriveError::CorruptedDriveState(format!(
-                        "identity contender vote poll {} resolved already but still has an end date",
-                        vote_poll
-                    )),
-                )));
-            }
+            IdentityContenderVotePollStatus::Resolved => None,
         };
 
         // Who voted for what, with every choice present so that the clean-up removes every

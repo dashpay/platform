@@ -51,9 +51,14 @@ impl FromProof<GetIdentityContenderVotePollStateRequest> for IdentityContenderVo
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
-        // A poll that never opened proves as nothing at all
+        // A poll that never opened proves as nothing at all; a page past the last contender
+        // is empty too, and stays a state so the two can be told apart
         let state: IdentityContenderVotePollState = state.into();
-        let state = if state.is_empty() { None } else { Some(state) };
+        let state = if state.is_empty() && v0.start_at_identifier_info.is_none() {
+            None
+        } else {
+            Some(state)
+        };
         Ok((state, metadata, proof))
     }
 }

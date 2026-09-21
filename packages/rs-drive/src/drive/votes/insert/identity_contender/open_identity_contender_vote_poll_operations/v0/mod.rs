@@ -1,11 +1,13 @@
 use crate::drive::constants::AVERAGE_IDENTITY_CONTENDER_VOTE_POLL_STORED_INFO_SIZE;
+use crate::drive::votes::insert::identity_contender::add_estimation_costs_for_identity_contender_polls_tree_levels;
 use crate::drive::votes::paths::{
     vote_identity_contender_active_polls_tree_path_vec,
+    vote_identity_contender_poll_choice_tree_path_vec,
+    vote_identity_contender_poll_choice_votes_path_vec, vote_identity_contender_poll_tree_path_vec,
     vote_identity_contender_polls_tree_path_vec, vote_root_path_vec, ACTIVE_POLLS_TREE_KEY,
-    IDENTITY_CONTENDER_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY, RESOURCE_STORED_INFO_KEY_U8_32,
-    VOTING_STORAGE_TREE_KEY,
+    IDENTITY_CONTENDER_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_STORED_INFO_KEY_U8_32, VOTING_STORAGE_TREE_KEY,
 };
-use crate::drive::votes::resolved::vote_polls::identity_contender_vote_poll::IdentityContenderVotePollPaths;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
@@ -85,43 +87,29 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if join_end_time_ms > vote_end_time_ms {
+        // Strictly before: the vote phase's end date entry is keyed like the join phase's, so
+        // the same time would make the clean-up of the join phase remove the vote phase's entry
+        if join_end_time_ms >= vote_end_time_ms {
             return Err(Error::Protocol(Box::new(ProtocolError::VoteError(format!(
-                "an identity contender vote poll's join phase must end before its vote phase, got join end {} and vote end {}",
+                "an identity contender vote poll's join phase must end strictly before its vote phase, got join end {} and vote end {}",
                 join_end_time_ms, vote_end_time_ms
             )))));
         }
-        let poll_path = vote_poll.poll_path_vec()?;
-        let abstain_path = vote_poll.choice_path_vec(&ResourceVoteChoice::Abstain)?;
+        let vote_poll_id = vote_poll.unique_id()?;
+        let poll_path = vote_identity_contender_poll_tree_path_vec(vote_poll_id.as_slice());
+        let abstain_path = vote_identity_contender_poll_choice_tree_path_vec(
+            vote_poll_id.as_slice(),
+            &ResourceVoteChoice::Abstain,
+        );
+        let abstain_votes_path = vote_identity_contender_poll_choice_votes_path_vec(
+            vote_poll_id.as_slice(),
+            &ResourceVoteChoice::Abstain,
+        );
         let drive_version = &platform_version.drive;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // The branch and its two trees, in case this is the first poll
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_owned_path(vote_root_path_vec()),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: ApproximateElements(4),
-                    estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
-                },
-            );
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_owned_path(vote_identity_contender_polls_tree_path_vec()),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: ApproximateElements(2),
-                    estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
-                },
-            );
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_owned_path(
-                    vote_identity_contender_active_polls_tree_path_vec(),
-                ),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: PotentiallyAtMaxElements,
-                    estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
-                },
+            add_estimation_costs_for_identity_contender_polls_tree_levels(
+                estimated_costs_only_with_layer_info,
             );
             // The poll: its stored info item next to the abstain tree and the contender trees
             estimated_costs_only_with_layer_info.insert(
@@ -152,9 +140,7 @@ impl Drive {
                 },
             );
             estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_owned_path(
-                    vote_poll.choice_votes_path_vec(&ResourceVoteChoice::Abstain)?,
-                ),
+                KeyInfoPath::from_known_owned_path(abstain_votes_path),
                 EstimatedLayerInformation {
                     tree_type: TreeType::SumTree,
                     estimated_layer_count: PotentiallyAtMaxElements,
@@ -203,15 +189,11 @@ impl Drive {
 
         // A poll over a resource path that already has a state, running or resolved, is not
         // reopened: the opener tells its polls apart through the resource path.
-        let (active_polls_path, poll_key) = {
-            let mut poll_path = poll_path.clone();
-            let key = poll_path.pop().ok_or(Error::Protocol(Box::new(
-                ProtocolError::CorruptedCodeExecution("a poll path has a key".to_string()),
-            )))?;
-            (poll_path, key)
-        };
         let inserted_poll_tree = self.batch_insert_empty_tree_if_not_exists(
-            PathKeyInfo::PathKey::<0>((active_polls_path, poll_key)),
+            PathKeyInfo::PathKey::<0>((
+                vote_identity_contender_active_polls_tree_path_vec(),
+                vote_poll_id.to_vec(),
+            )),
             TreeType::NormalTree,
             None,
             tree_apply_type,
@@ -245,7 +227,7 @@ impl Drive {
         )?;
         self.batch_insert::<0>(
             PathKeyElement((
-                poll_path,
+                poll_path.clone(),
                 RESOURCE_STORED_INFO_KEY_U8_32.to_vec(),
                 Element::new_item(stored_info.serialize_consume_to_bytes()?),
             )),
@@ -254,15 +236,11 @@ impl Drive {
         )?;
 
         // The abstain choice and its votes
-        let (poll_path_for_abstain, abstain_key) = {
-            let mut path = abstain_path.clone();
-            let key = path.pop().ok_or(Error::Protocol(Box::new(
-                ProtocolError::CorruptedCodeExecution("a choice path has a key".to_string()),
-            )))?;
-            (path, key)
-        };
         self.batch_insert_empty_tree_if_not_exists(
-            PathKeyInfo::PathKey::<0>((poll_path_for_abstain, abstain_key)),
+            PathKeyInfo::PathKey::<0>((
+                poll_path.clone(),
+                RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec(),
+            )),
             TreeType::NormalTree,
             None,
             tree_apply_type,
@@ -289,5 +267,96 @@ impl Drive {
             transaction,
             platform_version,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::drive::Drive;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::voting::vote_polls::identity_contender_vote_poll::IdentityContenderVotePoll;
+    use platform_version::version::PlatformVersion;
+    use std::collections::HashMap;
+
+    fn poll() -> IdentityContenderVotePoll {
+        IdentityContenderVotePoll::new(vec![vec![7; 32], b"election".to_vec()])
+    }
+
+    #[test]
+    fn should_refuse_a_join_phase_that_does_not_end_strictly_before_the_vote_phase() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        for (join_end, vote_end) in [(1_000, 1_000), (1_000, 999)] {
+            let error = drive
+                .open_identity_contender_vote_poll(
+                    &poll(),
+                    join_end,
+                    vote_end,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect_err("expected the poll to be refused");
+            assert!(
+                error.to_string().contains("strictly before"),
+                "unexpected error {error}"
+            );
+        }
+        drive
+            .open_identity_contender_vote_poll(
+                &poll(),
+                1_000,
+                1_001,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected the poll to open");
+    }
+
+    /// Opening is what a document create transition does for its applicant, whose fee is
+    /// estimated before anything is written: the estimate must come out without state.
+    #[test]
+    fn should_estimate_the_costs_of_opening_a_poll() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let mut estimated_costs_only_with_layer_info = Some(HashMap::new());
+        let mut batch_operations = vec![];
+        drive
+            .open_identity_contender_vote_poll_operations(
+                &poll(),
+                1_000,
+                2_000,
+                &BlockInfo::default(),
+                &mut estimated_costs_only_with_layer_info,
+                &mut None,
+                &mut batch_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected the operations");
+        assert!(!batch_operations.is_empty());
+        let mut drive_operations = vec![];
+        drive
+            .apply_batch_low_level_drive_operations(
+                estimated_costs_only_with_layer_info,
+                None,
+                batch_operations,
+                &mut drive_operations,
+                &platform_version.drive,
+            )
+            .expect("expected the estimated operations to apply");
+        let fee = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &Default::default(),
+            drive.config.epochs_per_era,
+            platform_version,
+            None,
+        )
+        .expect("expected a fee");
+        assert!(fee.storage_fee > 0);
+        assert!(fee.processing_fee > 0);
     }
 }

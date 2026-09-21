@@ -31,28 +31,27 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityContenderVotePollStateResponseV0>, Error> {
-        let config = &self.config.drive;
+        // The limit the proof verifier assumes when the request names none, so proofs verify
+        // whatever this node's default query limit is
+        let max_limit = platform_version.drive_abci.query.max_returned_elements;
         let vote_poll_id: Identifier =
             check_validation_result_with_data!(vote_poll_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
                     "vote_poll_id must be a valid identifier (32 bytes long)".to_string(),
                 )
             }));
-        let limit = check_validation_result_with_data!(count.map_or(
-            Ok(config.default_query_limit),
-            |limit| {
-                let limit = u16::try_from(limit)
-                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))?;
-                if limit == 0 || limit > config.default_query_limit {
-                    Err(QueryError::InvalidArgument(format!(
-                        "limit {} out of bounds of [1, {}]",
-                        limit, config.default_query_limit
-                    )))
-                } else {
-                    Ok(limit)
-                }
+        let limit = check_validation_result_with_data!(count.map_or(Ok(max_limit), |limit| {
+            let limit = u16::try_from(limit)
+                .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))?;
+            if limit == 0 || limit > max_limit {
+                Err(QueryError::InvalidArgument(format!(
+                    "limit {} out of bounds of [1, {}]",
+                    limit, max_limit
+                )))
+            } else {
+                Ok(limit)
             }
-        ));
+        }));
         let start_at = check_validation_result_with_data!(start_at_identifier_info
             .map(|start_at_identifier_info| {
                 Identifier::from_vec(start_at_identifier_info.start_identifier)

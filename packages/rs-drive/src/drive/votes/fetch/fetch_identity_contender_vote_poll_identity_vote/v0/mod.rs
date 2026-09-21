@@ -1,14 +1,13 @@
 use crate::drive::votes::paths::vote_identity_contender_identity_votes_tree_path_for_identity;
-use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::votes::storage_form::identity_contender_vote_storage_form::IdentityContenderVoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use crate::util::grove_operations::DirectQueryType;
+use crate::verify::bounded_decode::decode_vote_reference;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
@@ -51,19 +50,7 @@ impl Drive {
         optional_element
             .map(|element| {
                 let serialized_reference = element.into_item_bytes()?;
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
-                let reference: ContestedDocumentResourceVoteReferenceStorageForm =
-                    bincode::decode_from_slice(&serialized_reference, bincode_config)
-                        .map_err(|e| {
-                            Error::Drive(DriveError::CorruptedSerialization(format!(
-                                "serialization of reference {} is corrupted: {}",
-                                hex::encode(serialized_reference),
-                                e
-                            )))
-                        })?
-                        .0;
+                let reference = decode_vote_reference(&serialized_reference)?;
                 let absolute_path = reference
                     .reference_path_type
                     .absolute_path(path.as_slice(), Some(vote_poll_id.as_slice()))?;

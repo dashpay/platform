@@ -1,7 +1,9 @@
 //! Identity contender vote polls end to end: opening, joining, voting through masternode vote
 //! state transitions, the two phase ends, the record and the clean-up (issue #4874).
 
-use crate::execution::validation::state_transition::state_transitions::tests::setup_masternode_voting_identity;
+use crate::execution::validation::state_transition::state_transitions::tests::{
+    create_dpns_identity_name_contest, setup_masternode_voting_identity,
+};
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
     SuccessfulExecution, UnpaidConsensusError,
@@ -9,6 +11,7 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use assert_matches::assert_matches;
+use dapi_grpc::platform::v0::get_identity_contender_vote_poll_state_request::get_identity_contender_vote_poll_state_request_v0::StartAtIdentifierInfo;
 use dapi_grpc::platform::v0::get_identity_contender_vote_poll_state_request::{
     GetIdentityContenderVotePollStateRequestV0, Version as RequestVersion,
 };
@@ -1052,7 +1055,7 @@ async fn should_serve_the_poll_state_with_and_without_a_proof() {
     };
     let query = IdentityContenderVotePollStateQuery {
         vote_poll_id,
-        limit: Some(platform.config.drive.default_query_limit),
+        limit: Some(platform_version.drive_abci.query.max_returned_elements),
         start_at: None,
     };
     let (root_hash, proved_state) = query
@@ -1095,7 +1098,7 @@ async fn should_serve_the_poll_state_with_and_without_a_proof() {
     };
     let query = IdentityContenderVotePollStateQuery {
         vote_poll_id: unknown,
-        limit: Some(platform.config.drive.default_query_limit),
+        limit: Some(platform_version.drive_abci.query.max_returned_elements),
         start_at: None,
     };
     let (_, proved_state) = query
@@ -1113,4 +1116,174 @@ async fn should_serve_the_poll_state_with_and_without_a_proof() {
         )
         .expect("expected to query");
     assert!(!result.is_valid());
+
+    // A page after Alice holds Bob only: no poll info and no abstain tally, with and without
+    // a proof
+    let paged_request = |prove: bool| GetIdentityContenderVotePollStateRequest {
+        version: Some(RequestVersion::V0(
+            GetIdentityContenderVotePollStateRequestV0 {
+                vote_poll_id: vote_poll_id.to_vec(),
+                start_at_identifier_info: Some(StartAtIdentifierInfo {
+                    start_identifier: alice.to_vec(),
+                    start_identifier_included: false,
+                }),
+                count: Some(10),
+                prove,
+            },
+        )),
+    };
+    let response = platform
+        .query_identity_contender_vote_poll_state(
+            paged_request(false),
+            &platform_state,
+            platform_version,
+        )
+        .expect("expected to query")
+        .into_data()
+        .expect("expected data");
+    let ResponseVersion::V0(response) = response.version.expect("expected a version");
+    let Some(ResultV0::State(page)) = response.result else {
+        panic!("expected the state");
+    };
+    assert_eq!(page.info, None);
+    assert_eq!(page.abstain_vote_tally, None);
+    assert_eq!(
+        page.contenders
+            .iter()
+            .map(|contender| contender.identity_id.clone())
+            .collect::<Vec<_>>(),
+        vec![bob.to_vec()]
+    );
+    let response = platform
+        .query_identity_contender_vote_poll_state(
+            paged_request(true),
+            &platform_state,
+            platform_version,
+        )
+        .expect("expected to query")
+        .into_data()
+        .expect("expected data");
+    let ResponseVersion::V0(response) = response.version.expect("expected a version");
+    let Some(ResultV0::Proof(proof)) = response.result else {
+        panic!("expected a proof");
+    };
+    let (_, proved_page) = IdentityContenderVotePollStateQuery {
+        vote_poll_id,
+        limit: Some(10),
+        start_at: Some((alice.to_buffer(), false)),
+    }
+    .verify_identity_contender_vote_poll_state_proof(&proof.grovedb_proof, platform_version)
+    .expect("expected the paged proof to verify");
+    assert_eq!(proved_page.stored_info, None);
+    assert_eq!(proved_page.abstain_vote_tally, None);
+    assert_eq!(
+        proved_page
+            .contenders
+            .iter()
+            .map(|contender| contender.identity_id)
+            .collect::<Vec<_>>(),
+        vec![bob]
+    );
+    // A page starting at the very first key still reads the poll info and the abstain tally
+    let whole = IdentityContenderVotePollStateQuery {
+        vote_poll_id,
+        limit: Some(10),
+        start_at: Some(([0; 32], true)),
+    }
+    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
+    .expect("expected the state");
+    assert!(whole.stored_info.is_some());
+    assert_eq!(whole.abstain_vote_tally, Some(0));
+    assert_eq!(whole.contenders.len(), 2);
+}
+
+/// A DPNS contest and an identity contender poll ending at the same block time are cleaned
+/// up in one block without either clean-up pulling the end date tree from under the other.
+#[tokio::test]
+async fn should_end_next_to_a_dpns_contest_ending_at_the_same_time() {
+    let (mut platform, platform_version) = setup();
+    let platform_state = platform.state.load();
+    create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        "quantum",
+        platform_version,
+    )
+    .await;
+    let dpns_end = end_date_entries(&platform, platform_version)
+        .into_iter()
+        .find_map(|(time, poll)| match poll {
+            VotePoll::ContestedDocumentResourceVotePoll(_) => Some(time),
+            VotePoll::IdentityContenderVotePoll(_) => None,
+        })
+        .expect("expected the contest's end date");
+    let join_end = dpns_end - 10_000;
+
+    let vote_poll = poll_for(1);
+    platform
+        .drive
+        .open_identity_contender_vote_poll(
+            &vote_poll,
+            join_end,
+            dpns_end,
+            &block(1, 1),
+            None,
+            platform_version,
+        )
+        .expect("expected to open the poll");
+    platform
+        .drive
+        .add_prefunded_specialized_balance(
+            vote_poll
+                .specialized_balance_id()
+                .expect("expected the balance id"),
+            dash_to_credits!(1),
+            None,
+            platform_version,
+        )
+        .expect("expected to fund the poll");
+    let alice = add_contender(
+        &platform,
+        &vote_poll,
+        0xa1,
+        block(10, 2),
+        1,
+        platform_version,
+    );
+    let _bob = add_contender(
+        &platform,
+        &vote_poll,
+        0xb2,
+        block(20, 3),
+        2,
+        platform_version,
+    );
+    end_phases_at(&platform, join_end, 10, platform_version);
+    let mut voter = voter(&mut platform, 1, platform_version);
+    cast_vote(
+        &mut platform,
+        &vote_poll,
+        &mut voter,
+        ResourceVoteChoice::TowardsIdentity(alice),
+        true,
+        platform_version,
+    )
+    .await
+    .expect("expected the vote to be accepted");
+    assert_eq!(end_date_entries(&platform, platform_version).len(), 2);
+
+    // Both end in this block
+    end_phases_at(&platform, dpns_end, 20, platform_version);
+    let stored_info = platform
+        .drive
+        .fetch_identity_contender_vote_poll_stored_info(&vote_poll, None, platform_version)
+        .expect("expected to fetch")
+        .expect("expected the stored info");
+    assert_eq!(
+        stored_info.status(),
+        IdentityContenderVotePollStatus::Resolved
+    );
+    assert_eq!(stored_info.winner(), Some(alice));
+    assert!(end_date_entries(&platform, platform_version).is_empty());
 }

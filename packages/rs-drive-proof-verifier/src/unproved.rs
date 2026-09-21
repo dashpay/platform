@@ -1876,8 +1876,9 @@ impl FromUnproved<platform::GetIdentityContenderVotePollStateRequest>
         let state = match v0.result {
             Some(V0Result::State(state)) => {
                 let state = state_from_response(state)?;
-                // A poll that never opened reads as nothing at all
-                if state.is_empty() {
+                // A poll that never opened reads as nothing at all; a page past the last
+                // contender is empty too, and stays a state so the two can be told apart
+                if state.is_empty() && request_v0.start_at_identifier_info.is_none() {
                     None
                 } else {
                     Some(state)

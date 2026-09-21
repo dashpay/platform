@@ -66,7 +66,7 @@ pub(super) fn decode_proof_data_contract(
     .map_err(Error::from)
 }
 
-pub(super) fn decode_vote_reference(
+pub(crate) fn decode_vote_reference(
     serialized_reference: &[u8],
 ) -> Result<ContestedDocumentResourceVoteReferenceStorageForm, Error> {
     if serialized_reference.len() > MAX_VOTE_REFERENCE_DECODE_BYTES {
