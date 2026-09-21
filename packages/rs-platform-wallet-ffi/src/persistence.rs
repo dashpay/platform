@@ -2229,8 +2229,12 @@ impl PlatformWalletPersistence for FFIPersister {
             self.persist_identity_balance_block_time_callback,
         ) {
             for entry in id_cs.identities.values() {
+                // The restore ABI carries only identities owned by this wallet.
+                // Clear any previous sidecar when ownership is absent or changed;
+                // observed identities must not leave an unrestorable watermark.
                 let stamp = entry
                     .last_updated_balance_block_time
+                    .filter(|_| entry.wallet_id == Some(wallet_id))
                     .map(crate::types::BlockTime::from);
                 let rc = unsafe {
                     cb(
@@ -5799,10 +5803,11 @@ fn build_wallet_start_state(
 
     // Per-wallet identities go straight into the wallet_identities
     // sub-map keyed by registration index. Out-of-wallet identities
-    // are not surfaced here — there's no SwiftData path for them
-    // today (PersistentIdentity always links to a wallet) — so the
-    // out-of-wallet bucket starts empty and is populated only via
-    // runtime DPNS resolution / observation.
+    // are not surfaced by this restore ABI: Swift supplies only identities
+    // linked to the wallet row. Observed SwiftData rows remain unlinked, so
+    // the out-of-wallet bucket starts empty and is populated only via
+    // runtime DPNS resolution / observation. Balance sidecars are likewise
+    // persisted only for wallet-owned identities.
     let bucket = build_wallet_identity_bucket(entry)?;
     let mut wallet_identities = BTreeMap::new();
     if !bucket.is_empty() {
@@ -7284,6 +7289,56 @@ mod tests {
     }
 
     #[test]
+    fn should_persist_balance_watermarks_only_for_the_owning_wallet() {
+        use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+        use std::sync::Mutex;
+
+        unsafe extern "C" fn persist(
+            ctx: *mut c_void,
+            wallet: *const u8,
+            _: *const u8,
+            stamp: *const crate::types::BlockTime,
+        ) -> i32 {
+            assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
+            let stored = &*(ctx as *const Mutex<Option<u64>>);
+            *stored.lock().unwrap() = stamp.as_ref().map(|stamp| stamp.height);
+            0
+        }
+
+        let stored = Mutex::new(None::<u64>);
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&stored as *const Mutex<Option<u64>>).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                ..Default::default()
+            },
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+            PersistenceExtensionCallbacks {
+                persist_identity_balance_block_time: Some(persist),
+                ..Default::default()
+            },
+        );
+        let mut managed = platform_wallet::ManagedIdentity::new_out_of_wallet(
+            dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default()),
+        );
+        managed.last_updated_balance_block_time = Some(platform_wallet::BlockTime::new(42, 7, 99));
+        for owner in [Some([42; 32]), None, Some([42; 32]), Some([43; 32])] {
+            managed.wallet_id = owner;
+            managed.identity_index = owner.map(|_| 0);
+            let mut identities = IdentityChangeSet::default();
+            identities
+                .identities
+                .insert(managed.id(), IdentityEntry::from_managed(&managed));
+            persister.store([42; 32], identities.into()).unwrap();
+            assert_eq!(
+                *stored.lock().unwrap(),
+                (owner == Some([42; 32])).then_some(42)
+            );
+        }
+    }
+
+    #[test]
     fn should_roll_back_failed_identity_balance_watermark_store_and_clear_on_removal() {
         use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
         use std::sync::Mutex;
@@ -7333,6 +7388,7 @@ mod tests {
                 dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default()),
                 0,
             );
+            managed.wallet_id = Some([42; 32]);
             managed.last_updated_balance_block_time = Some(platform_wallet::BlockTime {
                 height: 42,
                 core_height: 7,
