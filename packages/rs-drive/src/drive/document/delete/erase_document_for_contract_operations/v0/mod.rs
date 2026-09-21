@@ -112,6 +112,19 @@ impl Drive {
             );
         }
 
+        // The record exists exactly while a document is deleted or erasing, so
+        // its presence is what proves the document may lose revisions at all.
+        // It is read before anything is emitted: a caller that reaches this
+        // without a delete, or after an erasure has already finished and the
+        // id was reused, would otherwise strip an active document's history.
+        let (record, flags) = self.fetch_lifecycle_record_with_flags(
+            document_id,
+            &lifecycle_path,
+            &mut batch_operations,
+            transaction,
+            platform_version,
+        )?;
+
         let removable = self.enumerate_newest_revision_keys(
             &history_path,
             chunk,
@@ -179,13 +192,6 @@ impl Drive {
                 &platform_version.drive,
             )?;
         } else {
-            let (record, flags) = self.fetch_lifecycle_record_with_flags(
-                document_id,
-                &lifecycle_path,
-                &mut batch_operations,
-                transaction,
-                platform_version,
-            )?;
             if record.is_erasing() {
                 // A continuation: the record already carries the erasure this
                 // chunk is finishing, and nothing but an authorized first chunk
@@ -264,8 +270,10 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(DocumentLifecycleRecord, Option<Vec<u8>>), Error> {
+        // A type nothing has been deleted under has no lifecycle tree at all;
+        // that reads as no record, the same as an id without one.
         let element = self
-            .grove_get_raw(
+            .grove_get_raw_optional(
                 lifecycle_path.into(),
                 document_id.as_slice(),
                 DirectQueryType::StatefulDirectQuery,
@@ -273,8 +281,8 @@ impl Drive {
                 batch_operations,
                 &platform_version.drive,
             )?
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "a document being erased has no lifecycle record".to_string(),
+            .ok_or(Error::Drive(DriveError::InvalidInput(
+                "only a deleted document can be erased: it has no lifecycle record".to_string(),
             )))?;
         let Element::Item(bytes, flags) = element else {
             return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -313,7 +321,7 @@ impl Drive {
     /// The enumeration is priced at one revision more than a chunk removes,
     /// because that is what it reads, and at the full body size, because the
     /// query surface returns bodies whether or not the caller wants them. The
-    /// record read a non-terminal chunk performs is priced too.
+    /// record read every chunk performs first is priced too.
     #[allow(clippy::too_many_arguments)]
     fn estimated_erase_document_operations(
         &self,
@@ -345,7 +353,7 @@ impl Drive {
             )?;
         }
 
-        // A non-terminal chunk reads the record before overwriting it.
+        // Every chunk reads the record first; a non-terminal one overwrites it.
         self.grove_get_raw(
             lifecycle_path.into(),
             document_id.as_slice(),

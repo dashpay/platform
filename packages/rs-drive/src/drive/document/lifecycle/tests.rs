@@ -672,10 +672,9 @@ fn should_reject_an_erase_of_a_document_that_retains_nothing() {
             latest(),
         )
         .expect_err("there is nothing left to erase");
-    assert!(matches!(
-        error,
-        Error::Drive(DriveError::CorruptedDriveState(_))
-    ));
+    // The terminal chunk removed the record along with the revisions, so the
+    // id reads as never deleted and the refusal is the not-deleted one.
+    assert!(matches!(error, Error::Drive(DriveError::InvalidInput(_))));
 }
 
 /// The two record shapes must occupy the same number of bytes: an erase start
@@ -1941,4 +1940,106 @@ fn should_keep_the_contract_fetch_cost_of_a_lifecycle_delete_by_contract_id() {
         borrowed[..],
         "after the fetch cost, the by-id path emits exactly the delete's operations"
     );
+}
+
+/// The erase operation is a public Drive method, reachable without the
+/// transition validation that checks the lifecycle. It has to refuse a
+/// document that is not deleted on its own: a document that was never deleted,
+/// and one whose id was reused after an earlier erasure finished, both keep
+/// every revision.
+#[test]
+fn should_refuse_to_erase_a_document_that_is_not_deleted() {
+    let owner = [49u8; 32];
+    let version = latest();
+    let (drive, contract, id) = setup_history(2, owner);
+    let document_type = document_type_of(&contract);
+    let block_info = BlockInfo::default_with_time(5_000);
+    let attempt = |drive: &Drive| {
+        drive.erase_document_for_contract_operations(
+            id,
+            &contract,
+            document_type,
+            &block_info,
+            &mut None,
+            None,
+            version,
+        )
+    };
+    let revisions_retained = |drive: &Drive| {
+        drive
+            .fetch_document_history(
+                &DocumentHistoryDriveQuery {
+                    contract_id: contract.id().to_buffer(),
+                    document_type_name: "person".into(),
+                    document_id: id.to_buffer(),
+                    filter: DocumentHistoryFilter::StartAtTime(0),
+                    limit: Some(10),
+                },
+                document_type,
+                None,
+                version,
+            )
+            .expect("expected to read the history")
+            .entries
+            .len()
+    };
+
+    // Never deleted.
+    let error = attempt(&drive).expect_err("an active document must not be erasable");
+    assert!(
+        matches!(error, Error::Drive(DriveError::InvalidInput(_))),
+        "got {error:?}"
+    );
+    assert!(matches!(
+        lifecycle_of(&drive, &contract, id),
+        DocumentLifecycleState::Active(_)
+    ));
+    assert_eq!(revisions_retained(&drive), 2);
+
+    // Deleted, fully erased, then the id reused by a fresh document: the
+    // earlier erasure left the per-type lifecycle container behind, and that
+    // must not stand in for a record of this document.
+    delete(&drive, &contract, id, Identifier::new(owner), 6_000);
+    erase(&drive, &contract, id, 7_000);
+    assert!(matches!(
+        lifecycle_of(&drive, &contract, id),
+        DocumentLifecycleState::Absent
+    ));
+    let mut recreated =
+        json_document_to_document(PERSON, Some(owner.into()), document_type, version)
+            .expect("expected a person document");
+    recreated.set_revision(Some(1));
+    assert_eq!(recreated.id(), id, "the fixture reproduces the same id");
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((
+                        &recreated,
+                        Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner)))),
+                    )),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default_with_time(8_000),
+            true,
+            None,
+            version,
+            None,
+        )
+        .expect("expected the id to be free again");
+
+    let error = attempt(&drive).expect_err("a recreated document must not be erasable");
+    assert!(
+        matches!(error, Error::Drive(DriveError::InvalidInput(_))),
+        "got {error:?}"
+    );
+    assert!(matches!(
+        lifecycle_of(&drive, &contract, id),
+        DocumentLifecycleState::Active(_)
+    ));
+    assert_eq!(revisions_retained(&drive), 1);
 }

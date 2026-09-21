@@ -651,6 +651,13 @@ fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
             .unwrap()
             .into_data()
             .unwrap();
+        // A proved response carries the proof and nothing else: there are no
+        // lifecycle fields on the wire for a client to trust, so every value
+        // the verifier returns below is derived from the proof itself.
+        assert!(
+            matches!(response.result, Some(ResponseResult::Proof(_))),
+            "{stage}: a proved response must not carry lifecycle claims"
+        );
         let verify = |response: GetDocumentHistoryResponseV0| {
             DocumentHistory::maybe_from_proof(
                 request.clone(),
