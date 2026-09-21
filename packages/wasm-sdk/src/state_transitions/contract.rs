@@ -9,6 +9,7 @@ use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::DataContract;
+use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -21,6 +22,7 @@ use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUs
 use dash_sdk::platform::transition::put_contract::PutContract;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::data_contract::{
     moderation_action_from_parts, ContractModerationReasonInput, ContractUserModerationActionParts,
     DataContractWasm,
@@ -353,8 +355,10 @@ export interface ContractDeleteDocumentOptions {
 }
 
 /**
- * The record a document deletion left under the contract, as its proof shows it. The document
- * itself is gone, its owner gets no storage refund, and nothing ever deletes the record. Use
+ * The record a document deletion left under the contract, as its proof shows it, or the same
+ * record as a restore marked it. After a deletion the document is gone, its owner gets no
+ * storage refund, and nothing ever deletes the record; the record holds a hash of the
+ * document, so keep the document if the deletion may have to be undone. Use
  * `getContractDocumentRemovals` to read the records later.
  */
 export interface ContractDocumentRemovalResult {
@@ -369,6 +373,45 @@ export interface ContractDocumentRemovalResult {
   reason: ContractModerationReason;
   /** The time of the block that removed the document, in milliseconds */
   removedAt: bigint;
+  /**
+   * A double SHA-256 of the document as it was serialized under its type when it was removed,
+   * as 64 hex characters: what a restore must bring back byte for byte
+   */
+  documentHash: string;
+  /** The contract owner or moderator that restored the document; absent while the removal stands */
+  restoredBy?: Identifier;
+  /** The time of the block that restored it, in milliseconds; absent while the removal stands */
+  restoredAt?: bigint;
+}
+
+/**
+ * Options for restoring, as a moderator, one document a moderator deleted (protocol version
+ * 14): the document as it was, within a week of its deletion. Any current moderator or the
+ * contract owner may restore, whoever deleted. The document goes back through an ordinary
+ * insert, so a unique index value another document took meanwhile refuses it (40105); a
+ * document with no removal record (41119), one restored already (41122), a restore past the
+ * week (41120) or a document that is not the one deleted (41121) are refused too. The signer
+ * pays for the document's storage; the refund of a later deletion stays its owner's. As for
+ * the other moderations, the signer must hold a CRITICAL authentication key without contract
+ * bounds of the moderating identity.
+ */
+export interface ContractRestoreDocumentOptions {
+  /** The moderating identity: the contract owner or a named moderator */
+  identity: Identity;
+  /** The moderated contract */
+  contractId: IdentifierLike;
+  /** The document type of the document */
+  documentTypeName: string;
+  /**
+   * The document to bring back, as it was when it was deleted: the document as fetched before
+   * the deletion. It is serialized under the contract's current document type and must hash
+   * to what its removal record holds.
+   */
+  document: Document;
+  /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
 }
 "#;
 
@@ -394,6 +437,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractDocumentRemovalResult")]
     pub type ContractDocumentRemovalResultJs;
+
+    #[wasm_bindgen(typescript_type = "ContractRestoreDocumentOptions")]
+    pub type ContractRestoreDocumentOptionsJs;
 }
 
 #[derive(serde::Deserialize)]
@@ -411,6 +457,12 @@ struct ContractDeleteDocumentOptionsInput {
     document_type_name: String,
     #[serde(default)]
     reason: Option<ContractModerationReasonInput>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractRestoreDocumentOptionsInput {
+    document_type_name: String,
 }
 
 impl WasmSdk {
@@ -627,6 +679,69 @@ impl WasmSdk {
         )?;
         set("documentId", IdentifierWasm::from(document_id).into())?;
         // The record, with the fields `getContractDocumentRemovals` answers with.
+        set_removal_fields(&result, &removal, |id| IdentifierWasm::from(id).into())?;
+        Ok(JsValue::from(result).into())
+    }
+
+    /// Restores, as a moderator, one document a moderator deleted: the document as it was,
+    /// within a week of its deletion. The document goes back through an ordinary insert, and
+    /// its removal record stays, marked restored. The signer pays for the document's storage;
+    /// the refund of a later deletion stays its owner's.
+    ///
+    /// @param options - The moderating identity, the contract, the document type, the document as it was, and the signer
+    /// @returns The record of the deletion, now marked restored, proved
+    #[wasm_bindgen(js_name = "contractRestoreDocument")]
+    pub async fn contract_restore_document(
+        &self,
+        options: ContractRestoreDocumentOptionsJs,
+    ) -> Result<ContractDocumentRemovalResultJs, WasmSdkError> {
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let contract_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "contractId")?.into();
+        let document: Document = DocumentWasm::try_from_options(&options, "document")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed: ContractRestoreDocumentOptionsInput = deserialize_required_query(
+            options,
+            "Options object is required",
+            "contract document restore options",
+        )?;
+
+        // The document is serialized under the contract's current document type, and the
+        // proof of the restore is verified by decoding it under the same, so the contract is
+        // fetched again, whatever copy is cached, before anything is paid for. The Rust SDK
+        // registers what it is given with its context provider, but that does not reach the
+        // trusted context of this SDK.
+        let contract = self.refresh_contract(contract_id).await?;
+        let document_id = document.id();
+        let removal = identity
+            .restore_contract_document(
+                self.inner_sdk(),
+                &contract,
+                parsed.document_type_name.clone(),
+                &document,
+                None,
+                signer,
+                settings,
+            )
+            .await?;
+
+        let result = js_sys::Object::new();
+        let set = |key: &str, value: JsValue| {
+            js_sys::Reflect::set(&result, &key.into(), &value).map_err(|_| {
+                WasmSdkError::generic(format!("failed to set `{key}` on the removal result"))
+            })
+        };
+        set("contractId", IdentifierWasm::from(contract_id).into())?;
+        set(
+            "documentTypeName",
+            JsValue::from_str(&parsed.document_type_name),
+        )?;
+        set("documentId", IdentifierWasm::from(document_id).into())?;
         set_removal_fields(&result, &removal, |id| IdentifierWasm::from(id).into())?;
         Ok(JsValue::from(result).into())
     }

@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::execution_operation::{ValidationOperation, SHA256_BLOCK_SIZE};
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -9,13 +9,17 @@ use crate::execution::validation::state_transition::state_transitions::batch::fe
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::decode::DecodingError;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::contract_moderation::{
+    ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationTargetNotFoundError, ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
     ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserWarningLimitReachedError, DocumentModerationWindowElapsedError,
+    DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -23,21 +27,27 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
-    ContractModerationConfig, ContractModerationList, ContractModerationStatus,
+    ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
+    ContractModerationList, ContractModerationStatus,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
-use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use dpp::document::DocumentV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::errors::DataContractError;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::{
     ContractUserModerationAction, ContractUserModerationTransition,
 };
 use dpp::state_transition::StateTransitionOwned;
+use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::contract::contract_user_moderation::v0::ContractDocumentDeletionContext;
+use drive::state_transition_action::contract::contract_user_moderation::v0::{
+    ContractDocumentDeletionContext, ContractDocumentRestorationContext,
+};
 use drive::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -60,7 +70,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::contra
 }
 
 impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserModerationTransition {
-    /// A document deletion is checked by `transform_document_deletion_v0`. For the rest:
+    /// A document deletion is checked by `transform_document_deletion_v0` and a document
+    /// restore by `transform_document_restore_v0`. For the rest:
     /// reads the contract and the target's status and checks the moderation: the contract
     /// keeps the list the action edits, the signer is its owner or one of its moderators, the
     /// target is neither and exists, and the action fits the target's status (a warn fits
@@ -139,6 +150,22 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                     &contract_fetch_info,
                     document_type_name,
                     *document_id,
+                    execution_context,
+                    tx,
+                    platform_version,
+                );
+            }
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name,
+                document,
+            } => {
+                return transform_document_restore_v0(
+                    self,
+                    platform,
+                    block_info,
+                    &contract_fetch_info,
+                    document_type_name,
+                    document.as_slice(),
                     execution_context,
                     tx,
                     platform_version,
@@ -348,9 +375,40 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         }
     }
 
-    // The record this deletion leaves is always new: a document id is produced at most once
-    // (it commits to the nonce of its create transition), so no earlier removal can have
-    // recorded this id and nothing has to be read to write it.
+    // What the record commits to: the document as serialized under its type, which a restore
+    // must bring back byte for byte. It is serialized here, from the document as read, rather
+    // than hashed as stored: a document stored under an earlier version of its type or of the
+    // serialization would never re-serialize to its stored bytes, and a client keeping the
+    // document (not the bytes) could never match them.
+    let serialized = document.serialize(document_type, contract, platform_version)?;
+    execution_context.add_operation(ValidationOperation::DoubleSha256(
+        serialized.len() as u16 / SHA256_BLOCK_SIZE,
+    ));
+    let document_hash = hash_double(serialized);
+
+    // A document id is produced at most once (it commits to the nonce of its create
+    // transition), so the only record this id can already have is of a deletion a moderator
+    // restored: the document is live again and this deletion writes a fresh record in its
+    // place. An unrestored record beside a live document is a state no transition produces.
+    let (removal_fee, existing_removal) = platform.drive.fetch_contract_document_removal_with_fee(
+        contract_id,
+        document_type_name,
+        document_id,
+        &block_info.epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(removal_fee));
+    let replaces_restored_record = match existing_removal {
+        None => false,
+        Some(removal) if removal.is_restored() => true,
+        Some(_) => {
+            return Err(Error::Execution(ExecutionError::DriveIncoherence(
+                "a document with an unrestored moderation removal record exists",
+            )))
+        }
+    };
+
     Ok(ConsensusValidationResult::new_with_data(
         ContractUserModerationTransitionAction::from_borrowed_transition_with_document_deletion(
             transition,
@@ -358,6 +416,205 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
                 data_contract_fetch_info: Arc::clone(contract_fetch_info),
                 document_owner_id,
                 removed_at: block_info.time_ms,
+                document_hash,
+                replaces_restored_record,
+            },
+        )
+        .into(),
+    ))
+}
+
+/// A document restore: the document type exists and says moderators may delete its
+/// documents, the signer is the contract's owner or one of its moderators, the bytes decode
+/// under the type, the document has a removal record that is not yet restored, block time is
+/// within the restore window after the removal, the bytes hash to what the record holds, and
+/// no other document holds a value of one of the type's unique indexes. Every refusal is paid
+/// for by bumping the signer's contract nonce.
+///
+/// The action carries the contract, the decoded document and the record marked restored, so
+/// Drive puts the document back and marks the record without reading again. Nothing the
+/// document type prices is charged, neither its creation token cost nor its `actionFees`
+/// creation fee, and no fee agreement is asked: a moderator undoes a moderation, it does not
+/// create content. The document comes back as it was, `$updatedAt` included, so a type's
+/// deletion window (`canBeDeletedByModeratorsFor`) may have run out on it by then.
+#[allow(clippy::too_many_arguments)]
+fn transform_document_restore_v0<C: CoreRPCLike>(
+    transition: &ContractUserModerationTransition,
+    platform: &PlatformRef<C>,
+    block_info: &BlockInfo,
+    contract_fetch_info: &Arc<DataContractFetchInfo>,
+    document_type_name: &str,
+    document_bytes: &[u8],
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    let contract = &contract_fetch_info.contract;
+    let contract_id = contract.id();
+    let moderator_id = transition.owner_id();
+    let bump_action = || {
+        StateTransitionAction::BumpIdentityDataContractNonceAction(
+            BumpIdentityDataContractNonceAction::from_borrowed_contract_user_moderation_transition(
+                transition,
+            ),
+        )
+    };
+    let refuse = |error: ConsensusError| {
+        Ok(ConsensusValidationResult::new_with_data_and_errors(
+            bump_action(),
+            vec![error],
+        ))
+    };
+
+    let Some(document_type) = contract.document_type_optional_for_name(document_type_name) else {
+        return refuse(
+            InvalidDocumentTypeError::new(document_type_name.to_string(), contract_id).into(),
+        );
+    };
+    // Only a type moderators delete from keeps records, so only such a type has anything to
+    // restore.
+    let moderation = contract
+        .config()
+        .moderation()
+        .filter(|_| document_type.documents_can_be_deleted_by_moderators());
+    let Some(moderation) = moderation else {
+        return refuse(
+            DocumentTypeNotDeletableByModeratorsError::new(
+                contract_id,
+                document_type_name.to_string(),
+            )
+            .into(),
+        );
+    };
+
+    let owner_id = contract.owner_id();
+    if !moderation.may_moderate(&owner_id, &moderator_id) {
+        return refuse(IdentityNotContractModeratorError::new(contract_id, moderator_id).into());
+    }
+
+    // The bytes are the moderator's: whatever they fail to decode as is a refusal, never an
+    // execution error, which would fail the block.
+    let decoded =
+        match Document::from_bytes_in_consensus(document_bytes, document_type, platform_version) {
+            Ok(decoded) => decoded,
+            Err(error) => ConsensusValidationResult::new_with_error(ConsensusError::BasicError(
+                BasicError::ContractError(DataContractError::DecodingDocumentError(
+                    DecodingError::new(format!(
+                        "the document to restore does not decode under document type {}: {}",
+                        document_type_name, error
+                    )),
+                )),
+            )),
+        };
+    if !decoded.is_valid() {
+        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+            bump_action(),
+            decoded.errors,
+        ));
+    }
+    let document = decoded.into_data()?;
+    let document_id = document.id();
+
+    let (removal_fee, removal) = platform.drive.fetch_contract_document_removal_with_fee(
+        contract_id,
+        document_type_name,
+        document_id,
+        &block_info.epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(removal_fee));
+    let Some(removal) = removal else {
+        return refuse(
+            ContractDocumentRemovalNotFoundError::new(
+                contract_id,
+                document_type_name.to_string(),
+                document_id,
+            )
+            .into(),
+        );
+    };
+    // A restored record means the document is live: there is nothing to bring back.
+    if let Some(restoration) = &removal.restoration {
+        return refuse(
+            ContractDocumentAlreadyRestoredError::new(
+                contract_id,
+                document_id,
+                restoration.moderator_id,
+                restoration.restored_at,
+            )
+            .into(),
+        );
+    }
+
+    // The window bounds how far back a moderation can be undone: past it the removal stands.
+    // At exactly the removal time plus the window the restore still passes.
+    let window_ms = platform_version
+        .system_limits
+        .contract_document_restore_window_ms;
+    if block_info.time_ms > removal.removed_at.saturating_add(window_ms) {
+        return refuse(
+            DocumentRestoreWindowElapsedError::new(
+                contract_id,
+                document_id,
+                removal.removed_at,
+                window_ms,
+                block_info.time_ms,
+            )
+            .into(),
+        );
+    }
+
+    // The record pins the content: only the document as it was comes back, not an edit of it.
+    // The hash is billed, as the one the record was written with was.
+    execution_context.add_operation(ValidationOperation::DoubleSha256(
+        document_bytes.len() as u16 / SHA256_BLOCK_SIZE,
+    ));
+    let document_hash = hash_double(document_bytes);
+    if document_hash != removal.document_hash {
+        return refuse(
+            DocumentRestoreHashMismatchError::new(
+                contract_id,
+                document_id,
+                removal.document_hash,
+                document_hash,
+            )
+            .into(),
+        );
+    }
+
+    // What the hash does not pin: another document may have taken a value of one of the
+    // type's unique indexes while the document was gone, and would clash with it.
+    if document_type.indexes().values().any(|index| index.unique) {
+        let uniqueness = platform.drive.validate_restored_document_uniqueness(
+            contract,
+            document_type,
+            &document,
+            tx,
+            platform_version,
+        )?;
+        if !uniqueness.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action(),
+                uniqueness.errors,
+            ));
+        }
+    }
+
+    let removal = ContractDocumentRemoval {
+        restoration: Some(ContractDocumentRestoration {
+            moderator_id,
+            restored_at: block_info.time_ms,
+        }),
+        ..removal
+    };
+    Ok(ConsensusValidationResult::new_with_data(
+        ContractUserModerationTransitionAction::from_borrowed_transition_with_document_restoration(
+            transition,
+            ContractDocumentRestorationContext {
+                data_contract_fetch_info: Arc::clone(contract_fetch_info),
+                document,
+                removal,
             },
         )
         .into(),
@@ -378,7 +635,8 @@ fn list_of(action: &ContractUserModerationAction) -> Option<ContractModerationLi
         | ContractUserModerationAction::ClearWarnings { .. } => {
             Some(ContractModerationList::Warnings)
         }
-        ContractUserModerationAction::DeleteDocument { .. } => None,
+        ContractUserModerationAction::DeleteDocument { .. }
+        | ContractUserModerationAction::RestoreDocument { .. } => None,
     }
 }
 
@@ -399,7 +657,8 @@ fn lists_to_read(
         | ContractUserModerationAction::Unsuspend { .. }
         | ContractUserModerationAction::Warn { .. }
         | ContractUserModerationAction::ClearWarnings { .. }
-        | ContractUserModerationAction::DeleteDocument { .. } => vec![list],
+        | ContractUserModerationAction::DeleteDocument { .. }
+        | ContractUserModerationAction::RestoreDocument { .. } => vec![list],
     }
 }
 
@@ -451,6 +710,7 @@ fn refusal_for_status(
         ContractUserModerationAction::ClearWarnings { .. } => (!status.warned())
             .then(|| ContractUserNotWarnedError::new(contract_id, target_id).into()),
         // A document deletion reads no list.
-        ContractUserModerationAction::DeleteDocument { .. } => None,
+        ContractUserModerationAction::DeleteDocument { .. }
+        | ContractUserModerationAction::RestoreDocument { .. } => None,
     }
 }

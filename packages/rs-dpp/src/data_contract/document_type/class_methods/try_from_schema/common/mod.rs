@@ -2083,6 +2083,21 @@ pub(super) fn apply_can_be_deleted_by_moderators(
             name,
         )));
     }
+    // A moderator's restore puts the document back through the ordinary insert, unique
+    // indexes checked; a contested index awards its value by a vote, which no restore can go
+    // through, so such a type would have deletions that can not be undone.
+    if document_type
+        .indices
+        .values()
+        .any(|index| index.contested_index.is_some())
+    {
+        return Err(structure_error(format!(
+            "document type \"{}\" has a contested index and must not set \
+             `canBeDeletedByModerators`: a document a moderator deleted is restored by \
+             an ordinary insert, and a contested index only takes a document through a vote",
+            name,
+        )));
+    }
 
     document_type.documents_can_be_deleted_by_moderators = true;
     Ok(())

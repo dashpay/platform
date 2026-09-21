@@ -20,7 +20,9 @@ use crate::consensus::state::contract_moderation::{
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserSuspendedError, ContractUserWarningLimitReachedError,
-    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
+    ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
+    DocumentModerationWindowElapsedError, DocumentRestoreHashMismatchError,
+    DocumentRestoreWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
     IdentityNotContractModeratorError,
 };
 use crate::consensus::state::contract_group::{
@@ -558,6 +560,18 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractUserWarningLimitReachedError(ContractUserWarningLimitReachedError),
+    // The moderators' restore of a deleted document (protocol version 14).
+    #[error(transparent)]
+    ContractDocumentRemovalNotFoundError(ContractDocumentRemovalNotFoundError),
+
+    #[error(transparent)]
+    DocumentRestoreWindowElapsedError(DocumentRestoreWindowElapsedError),
+
+    #[error(transparent)]
+    DocumentRestoreHashMismatchError(DocumentRestoreHashMismatchError),
+
+    #[error(transparent)]
+    ContractDocumentAlreadyRestoredError(ContractDocumentAlreadyRestoredError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -988,7 +1002,7 @@ mod tests {
             )),
             134
         );
-        // The warning list (protocol version 14): the tail of the enum.
+        // The warning list (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ContractUserNotWarnedError(
                 ContractUserNotWarnedError::new(group_id, identity_id)
@@ -1000,6 +1014,36 @@ mod tests {
                 ContractUserWarningLimitReachedError::new(group_id, identity_id, 16)
             )),
             136
+        );
+        // The moderators' restore of a deleted document (protocol version 14): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractDocumentRemovalNotFoundError(
+                ContractDocumentRemovalNotFoundError::new(
+                    group_id,
+                    "post".to_string(),
+                    identity_id
+                )
+            )),
+            137
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentRestoreWindowElapsedError(
+                DocumentRestoreWindowElapsedError::new(group_id, identity_id, 1, 2, 3)
+            )),
+            138
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentRestoreHashMismatchError(
+                DocumentRestoreHashMismatchError::new(group_id, identity_id, [1; 32], [2; 32])
+            )),
+            139
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractDocumentAlreadyRestoredError(
+                ContractDocumentAlreadyRestoredError::new(group_id, identity_id, identity_id, 4)
+            )),
+            140
         );
     }
 }

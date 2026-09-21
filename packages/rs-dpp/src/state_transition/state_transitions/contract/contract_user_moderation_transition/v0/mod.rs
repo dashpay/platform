@@ -79,6 +79,17 @@ pub enum ContractUserModerationAction {
         /// Why, stored with the removal record.
         reason: ContractModerationReason,
     },
+    /// Brings back a document a moderator deleted, as it was: the document serialized under
+    /// its document type (`Document::serialize`), which must hash to what its removal record
+    /// holds, within `SystemLimits::contract_document_restore_window_ms` of the removal. The
+    /// document's id, owner and content are all inside the bytes. The record stays, marked
+    /// restored; the signer pays for the document's storage, whose refund stays the owner's.
+    RestoreDocument {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
+        document_type_name: String,
+        /// The document as it was serialized when it was removed.
+        document: BinaryData,
+    },
 }
 
 impl Default for ContractUserModerationAction {
@@ -101,12 +112,14 @@ impl ContractUserModerationAction {
             | ContractUserModerationAction::Unsuspend { identity_id }
             | ContractUserModerationAction::Warn { identity_id, .. }
             | ContractUserModerationAction::ClearWarnings { identity_id } => Some(*identity_id),
-            ContractUserModerationAction::DeleteDocument { .. } => None,
+            ContractUserModerationAction::DeleteDocument { .. }
+            | ContractUserModerationAction::RestoreDocument { .. } => None,
         }
     }
 
     /// The document a deletion targets, as its document type name and its id. `None` for an
-    /// action on an identity.
+    /// action on an identity, and for a restore, which carries the document itself: its id is
+    /// only known once the bytes are decoded under the document type.
     pub fn document(&self) -> Option<(&str, Identifier)> {
         match self {
             ContractUserModerationAction::DeleteDocument {
@@ -114,6 +127,32 @@ impl ContractUserModerationAction {
                 document_id,
                 ..
             } => Some((document_type_name.as_str(), *document_id)),
+            _ => None,
+        }
+    }
+
+    /// The document a restore brings back, as its document type name and its serialized
+    /// bytes. `None` for every other action.
+    pub fn restored_document(&self) -> Option<(&str, &[u8])> {
+        match self {
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name,
+                document,
+            } => Some((document_type_name.as_str(), document.as_slice())),
+            _ => None,
+        }
+    }
+
+    /// The document type name a deletion or a restore names, `None` for an action on an
+    /// identity.
+    pub fn document_type_name(&self) -> Option<&str> {
+        match self {
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name, ..
+            }
+            | ContractUserModerationAction::RestoreDocument {
+                document_type_name, ..
+            } => Some(document_type_name.as_str()),
             _ => None,
         }
     }
@@ -136,7 +175,8 @@ impl ContractUserModerationAction {
             | ContractUserModerationAction::DeleteDocument { reason, .. } => Some(reason),
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. }
-            | ContractUserModerationAction::ClearWarnings { .. } => None,
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::RestoreDocument { .. } => None,
         }
     }
 
@@ -150,6 +190,7 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::Warn { .. } => "warn",
             ContractUserModerationAction::ClearWarnings { .. } => "clearWarnings",
             ContractUserModerationAction::DeleteDocument { .. } => "deleteDocument",
+            ContractUserModerationAction::RestoreDocument { .. } => "restoreDocument",
         }
     }
 }
@@ -169,6 +210,17 @@ impl fmt::Display for ContractUserModerationAction {
             } => {
                 write!(f, "delete {} document {}", document_type_name, document_id)
             }
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name,
+                document,
+            } => {
+                write!(
+                    f,
+                    "restore {} document of {} bytes",
+                    document_type_name,
+                    document.len()
+                )
+            }
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
             | ContractUserModerationAction::Unsuspend { identity_id }
@@ -187,7 +239,8 @@ impl fmt::Display for ContractUserModerationAction {
 impl JsonSafeFields for ContractUserModerationAction {}
 
 /// Edits the banlist, the suspension list or the warning list of a moderated data contract,
-/// or deletes a document of one of its document types that moderators may delete. Signed by the
+/// or deletes or restores a document of one of its document types that moderators may
+/// delete. Signed by the
 /// contract owner or a moderator named in the contract's config, with a CRITICAL
 /// authentication key, under the signer's contract-scoped nonce.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
@@ -372,6 +425,38 @@ mod test {
             action.to_string(),
             format!("delete post document {}", document_id)
         );
+    }
+
+    #[test]
+    fn should_name_the_document_of_a_restore_by_its_bytes() {
+        let action = ContractUserModerationAction::RestoreDocument {
+            document_type_name: "post".to_string(),
+            document: BinaryData::new(vec![7; 70]),
+        };
+        // A restore carries the document: whose it is, and which id, is inside the bytes.
+        assert_eq!(action.identity_id(), None);
+        assert_eq!(action.document(), None);
+        assert_eq!(action.restored_document(), Some(("post", &[7u8; 70][..])));
+        assert_eq!(action.document_type_name(), Some("post"));
+        assert_eq!(action.until(), None);
+        assert_eq!(action.reason(), None);
+        assert_eq!(action.name(), "restoreDocument");
+        assert_eq!(action.to_string(), "restore post document of 70 bytes");
+    }
+
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn should_tag_a_restore_on_the_wire() {
+        let action = ContractUserModerationAction::RestoreDocument {
+            document_type_name: "post".to_string(),
+            document: BinaryData::new(vec![7; 70]),
+        };
+        let json = serde_json::to_value(&action).expect("to json");
+        assert_eq!(json["$type"], "restoreDocument");
+        assert_eq!(json["documentTypeName"], "post");
+        assert!(json["document"].is_string(), "the bytes travel as a string");
+        let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
+        assert_eq!(back, action);
     }
 
     #[cfg(feature = "json-conversion")]

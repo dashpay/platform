@@ -346,8 +346,10 @@ fn json_safe_credits(credits: u64) -> JsValue {
 impl_wasm_type_info!(VerifiedContractFeeClaimWasm, VerifiedContractFeeClaim);
 
 /// `VerifiedContractDocumentRemoval` proof-result wrapper: the record a moderator's document
-/// deletion left under the contract. The document itself is gone; the record says whose it
-/// was, who removed it, why and when.
+/// deletion left under the contract, as a deletion or a restore leaves it. After a deletion
+/// the document is gone and the record says whose it was, who removed it, why, when and what
+/// it was (its hash); after a restore the document is live again and the record also says who
+/// brought it back and when.
 #[wasm_bindgen(js_name = "VerifiedContractDocumentRemoval")]
 #[derive(Clone)]
 pub struct VerifiedContractDocumentRemovalWasm {
@@ -368,6 +370,16 @@ pub struct VerifiedContractDocumentRemovalWasm {
     /// The time of the block that removed it, in milliseconds
     #[wasm_bindgen(js_name = "removedAt")]
     pub removed_at: u64,
+    #[wasm_bindgen(skip)]
+    pub document_hash: [u8; 32],
+    /// The contract owner or moderator that restored the document, undefined while the
+    /// removal stands
+    #[wasm_bindgen(getter_with_clone, js_name = "restoredBy")]
+    pub restored_by: Option<IdentifierWasm>,
+    /// The time of the block that restored it, in milliseconds, undefined while the removal
+    /// stands
+    #[wasm_bindgen(js_name = "restoredAt")]
+    pub restored_at: Option<u64>,
 }
 
 #[wasm_bindgen(js_class = VerifiedContractDocumentRemoval)]
@@ -376,6 +388,13 @@ impl VerifiedContractDocumentRemovalWasm {
     #[wasm_bindgen(getter = "reason")]
     pub fn reason(&self) -> ContractModerationReasonJs {
         moderation_reason_to_js(&self.reason).into()
+    }
+
+    /// A double SHA-256 of the document as it was serialized under its type when it was
+    /// removed: what a restore must bring back byte for byte, as 64 hex characters
+    #[wasm_bindgen(getter = "documentHash")]
+    pub fn document_hash(&self) -> String {
+        hex::encode(self.document_hash)
     }
 
     #[wasm_bindgen(js_name = toObject)]
@@ -393,6 +412,21 @@ impl VerifiedContractDocumentRemovalWasm {
             (
                 "removedAt",
                 JsValue::from(js_sys::BigInt::from(self.removed_at)),
+            ),
+            (
+                "documentHash",
+                JsValue::from_str(&hex::encode(self.document_hash)),
+            ),
+            (
+                "restoredBy",
+                self.restored_by
+                    .map_or(JsValue::UNDEFINED, |restored_by| restored_by.into()),
+            ),
+            (
+                "restoredAt",
+                self.restored_at.map_or(JsValue::UNDEFINED, |restored_at| {
+                    JsValue::from(js_sys::BigInt::from(restored_at))
+                }),
             ),
         ]))
     }
@@ -422,6 +456,22 @@ impl VerifiedContractDocumentRemovalWasm {
             ),
             ("reason", moderation_reason_to_js(&self.reason)),
             ("removedAt", JsValue::from_f64(self.removed_at as f64)),
+            (
+                "documentHash",
+                JsValue::from_str(&hex::encode(self.document_hash)),
+            ),
+            (
+                "restoredBy",
+                self.restored_by.map_or(JsValue::UNDEFINED, |restored_by| {
+                    JsValue::from_str(&restored_by.to_base58())
+                }),
+            ),
+            (
+                "restoredAt",
+                self.restored_at.map_or(JsValue::UNDEFINED, |restored_at| {
+                    JsValue::from_f64(restored_at as f64)
+                }),
+            ),
         ]))
     }
 }

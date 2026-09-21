@@ -103,6 +103,7 @@ GPBObjCClassDeclaration(GetContractDocumentRemovalsRequest_Page);
 GPBObjCClassDeclaration(GetContractDocumentRemovalsResponse);
 GPBObjCClassDeclaration(GetContractDocumentRemovalsResponse_ContractDocumentRemoval);
 GPBObjCClassDeclaration(GetContractDocumentRemovalsResponse_ContractDocumentRemovals);
+GPBObjCClassDeclaration(GetContractDocumentRemovalsResponse_ContractDocumentRestoration);
 GPBObjCClassDeclaration(GetContractDocumentRemovalsResponse_GetContractDocumentRemovalsResponseV0);
 GPBObjCClassDeclaration(GetContractFeePotsRequest);
 GPBObjCClassDeclaration(GetContractFeePotsRequest_GetContractFeePotsRequestV0);
@@ -7528,6 +7529,63 @@ void GetContractDocumentRemovalsResponse_ClearVersionOneOfCase(GetContractDocume
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetContractDocumentRemovalsResponse_ContractDocumentRestoration
+
+@implementation GetContractDocumentRemovalsResponse_ContractDocumentRestoration
+
+@dynamic moderatorId;
+@dynamic restoredAt;
+
+typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRestoration__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *moderatorId;
+  uint64_t restoredAt;
+} GetContractDocumentRemovalsResponse_ContractDocumentRestoration__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "moderatorId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber_ModeratorId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRestoration__storage_, moderatorId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "restoredAt",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber_RestoredAt,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRestoration__storage_, restoredAt),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractDocumentRemovalsResponse_ContractDocumentRestoration class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractDocumentRemovalsResponse_ContractDocumentRestoration__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractDocumentRemovalsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetContractDocumentRemovalsResponse_ContractDocumentRemoval
 
 @implementation GetContractDocumentRemovalsResponse_ContractDocumentRemoval
@@ -7537,6 +7595,8 @@ void GetContractDocumentRemovalsResponse_ClearVersionOneOfCase(GetContractDocume
 @dynamic moderatorId;
 @dynamic removedAt;
 @dynamic hasReason, reason;
+@dynamic documentHash;
+@dynamic hasRestoration, restoration;
 
 typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_ {
   uint32_t _has_storage_[1];
@@ -7544,6 +7604,8 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__stor
   NSData *documentOwnerId;
   NSData *moderatorId;
   ContractModerationReason *reason;
+  NSData *documentHash;
+  GetContractDocumentRemovalsResponse_ContractDocumentRestoration *restoration;
   uint64_t removedAt;
 } GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_;
 
@@ -7595,6 +7657,24 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__stor
         .number = GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Reason,
         .hasIndex = 4,
         .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_, reason),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "documentHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_DocumentHash,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_, documentHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "restoration",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractDocumentRemovalsResponse_ContractDocumentRestoration),
+        .number = GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Restoration,
+        .hasIndex = 6,
+        .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_, restoration),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
