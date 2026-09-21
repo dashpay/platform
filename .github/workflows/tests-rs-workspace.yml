@@ -36,7 +36,7 @@ jobs:
       run:
         # Self-hosted macOS runners may keep their work directory on a volume
         # with spaces in its name. Quote the generated script path explicitly.
-        shell: bash -e "{0}"
+        shell: bash --noprofile --norc -eo pipefail "{0}"
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

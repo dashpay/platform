@@ -2144,14 +2144,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return try backgroundContext.fetch(descriptor).first
     }
 
-    /// Predicate matching the `PersistentWallet` row owned by THIS
-    /// handler. A handler is constructed per-network, so when
-    /// `self.network` is set we scope to `(walletId, networkRaw)` —
-    /// otherwise the mainnet handler would find and overwrite the
-    /// devnet row (and vice versa) now that the same `walletId` can
-    /// have one row per network. When `self.network` is `nil` (the
-    /// advanced `configure(sdkPointer:network:nil)` path) we fall
-    /// back to walletId-only matching to preserve that behaviour.
+    /// Match this handler's wallet and, when supplied, its network.
+    /// Wallet IDs are network-scoped and globally unique in the current model;
+    /// checking the network also rejects stale or mismatched rows. Legacy
+    /// `network: nil` handlers retain walletId-only matching.
     private func walletRecordPredicate(walletId: Data) -> Predicate<PersistentWallet> {
         if let network = self.network {
             let networkRaw = network.rawValue
@@ -6344,11 +6340,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 let walletRow = try backgroundContext.fetch(walletDescriptor).first
                 let walletNetwork = walletRow?.network
-                // walletId is network-scoped, and sidecars have no wallet relationship.
-                // Purge them even if a previous deletion already removed the wallet row.
-                let metadata = FetchDescriptor<PersistentIdentityBalanceMetadata>(
-                    predicate: #Predicate { $0.walletId == walletId })
-                for row in try backgroundContext.fetch(metadata) {
+                // Sidecars retain an explicit network key. Preserve other-network
+                // rows even when retrying after this handler's wallet row is gone.
+                let metadataNetwork = self.network ?? walletNetwork
+                let metadata: FetchDescriptor<PersistentIdentityBalanceMetadata>
+                if let raw = metadataNetwork?.rawValue {
+                    metadata = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    metadata = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                // Without a network, only unclaimed sidecars are safe to purge.
+                // Do not infer ownership from an unrelated handler's network.
+                var claimedNetworks = Set<UInt32>()
+                if metadataNetwork == nil {
+                    let owners = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletId })
+                    claimedNetworks = Set(try backgroundContext.fetch(owners).compactMap(\.networkRaw))
+                }
+                for row in try backgroundContext.fetch(metadata)
+                    where !claimedNetworks.contains(row.networkRaw) {
                     backgroundContext.delete(row)
                 }
 

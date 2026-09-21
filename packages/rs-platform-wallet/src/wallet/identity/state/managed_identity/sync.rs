@@ -8,6 +8,19 @@ use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::prelude::TimestampMillis;
 
 impl ManagedIdentity {
+    /// Replay a persisted snapshot selected by the manager's revision policy.
+    /// Its balance and watermark replace the old pair together, including any
+    /// uncommitted snapshot superseded by the accepted persisted entry.
+    pub(crate) fn restore_persisted_balance(
+        &mut self,
+        balance: u64,
+        block_time: Option<BlockTime>,
+    ) {
+        self.identity.set_balance(balance);
+        self.last_updated_balance_block_time = block_time;
+        self.pending_balance_snapshot = None;
+    }
+
     /// The pending balance also rides unrelated scalar snapshots so a later
     /// profile/key-sync write cannot queue the old balance behind a failed flush.
     pub(crate) fn balance_snapshot_for_persistence(&self) -> (u64, Option<BlockTime>) {

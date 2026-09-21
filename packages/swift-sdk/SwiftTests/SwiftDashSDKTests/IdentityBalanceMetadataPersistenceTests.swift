@@ -122,6 +122,8 @@ final class IdentityBalanceMetadataPersistenceTests: XCTestCase {
             if hasWalletRow {
                 context.insert(PersistentWallet(walletId: walletId))
             }
+            // Neither network has a claiming wallet row for this ID.
+            // Both sidecars are orphans; another wallet's rows must survive.
             let otherWalletId = Data(repeating: 43, count: 32)
             for id in [walletId, otherWalletId] {
                 for network in [Network.testnet, .mainnet] {
@@ -140,6 +142,55 @@ final class IdentityBalanceMetadataPersistenceTests: XCTestCase {
             XCTAssertTrue(remaining.allSatisfy { $0.walletId == otherWalletId })
             XCTAssertEqual(Set(remaining.map(\.networkRaw)), Set([Network.testnet.rawValue, Network.mainnet.rawValue]))
         }
+    }
+
+    func testNetworkScopedDeletionPreservesSameIdSidecarsOnOtherNetworks() throws {
+        for walletNetwork in [Network.testnet, .mainnet] {
+            let container = try DashModelContainer.createInMemory()
+            let context = ModelContext(container)
+            // The model has globally unique wallet IDs: use one real wallet row,
+            // including a surviving mainnet row when the testnet row is absent.
+            context.insert(PersistentWallet(walletId: walletId, network: walletNetwork))
+            for network in [Network.testnet, .mainnet] {
+                context.insert(PersistentIdentityBalanceMetadata(
+                    networkRaw: network.rawValue, walletId: walletId, identityId: identityId,
+                    platformHeight: 20, coreHeight: 10, timestampMillis: 999))
+            }
+            try context.save()
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            try handler.deleteWalletData(walletId: walletId)
+            try handler.deleteWalletData(walletId: walletId)
+
+            let readContext = ModelContext(container)
+            let remaining = try readContext.fetch(FetchDescriptor<PersistentIdentityBalanceMetadata>())
+            XCTAssertEqual(remaining.count, 1)
+            XCTAssertEqual(remaining.first?.networkRaw, Network.mainnet.rawValue)
+            let wallets = try readContext.fetch(FetchDescriptor<PersistentWallet>())
+            XCTAssertEqual(wallets.count, walletNetwork == .mainnet ? 1 : 0)
+            if walletNetwork == .mainnet {
+                XCTAssertEqual(wallets.first?.network, .mainnet)
+            }
+        }
+    }
+
+    func testLegacyDeletionUsesWalletNetworkThenPurgesUnclaimedOrphansOnRetry() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .mainnet))
+        for network in [Network.testnet, .mainnet] {
+            context.insert(PersistentIdentityBalanceMetadata(
+                networkRaw: network.rawValue, walletId: walletId, identityId: identityId,
+                platformHeight: 20, coreHeight: 10, timestampMillis: 999))
+        }
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container)
+        try handler.deleteWalletData(walletId: walletId)
+        let remaining = try ModelContext(container).fetch(FetchDescriptor<PersistentIdentityBalanceMetadata>())
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(remaining.first?.networkRaw, Network.testnet.rawValue)
+        // With no wallet row or explicit network left, this row is unclaimed.
+        try handler.deleteWalletData(walletId: walletId)
+        XCTAssertTrue(try ModelContext(container).fetch(FetchDescriptor<PersistentIdentityBalanceMetadata>()).isEmpty)
     }
 
     func testWalletDeletionRemovesMetadata() throws {

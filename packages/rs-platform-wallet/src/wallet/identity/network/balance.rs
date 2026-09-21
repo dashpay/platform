@@ -669,4 +669,81 @@ mod tests {
             .unwrap();
         assert_eq!(reload_balance(&backend, &id), (100, Some(confirmed)));
     }
+
+    #[tokio::test]
+    async fn should_preserve_balance_watermark_and_pending_write_when_replay_revision_is_rejected()
+    {
+        let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+        let mut wm = iw.wallet_manager.write().await;
+        let manager = &mut wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .unwrap()
+            .identity_manager;
+        let managed = manager.wallet_identity_mut(&iw.wallet_id, &id).unwrap();
+        let previous = BlockTime::new(9, 41, 900);
+        managed.last_updated_balance_block_time = Some(previous);
+        let pending = BlockTime::new(10, 42, 1000);
+        backend.fail_store.store(true, Ordering::SeqCst);
+        assert!(iw.persist_refreshed_balance(managed, 100, pending).is_err());
+        let mut entry = IdentityEntry::from_managed(managed);
+        entry.revision = 6;
+        entry.balance = 200;
+        entry.last_updated_balance_block_time = Some(BlockTime::new(20, 50, 2000));
+        manager.apply_identity_entry(entry);
+        let managed = manager.wallet_identity_mut(&iw.wallet_id, &id).unwrap();
+        assert_eq!(managed.identity.balance(), OLD_BALANCE);
+        assert_eq!(managed.identity.revision(), 7);
+        assert_eq!(managed.last_updated_balance_block_time, Some(previous));
+        assert_eq!(
+            managed.balance_snapshot_for_persistence(),
+            (100, Some(pending))
+        );
+        backend.fail_store.store(false, Ordering::SeqCst);
+        managed.retry_pending_balance(&iw.persister).unwrap();
+        assert_eq!(reload_balance(&backend, &id), (100, Some(pending)));
+        // The rejected entry must not poison the gate for a later proven read.
+        let next = BlockTime::new(20, 50, 2000);
+        iw.persist_refreshed_balance(managed, 150, next).unwrap();
+        assert_eq!(reload_balance(&backend, &id), (150, Some(next)));
+    }
+
+    #[tokio::test]
+    async fn should_clear_superseded_pending_balance_when_replaying_an_accepted_entry() {
+        for revision in [7, 8] {
+            for watermark in [
+                None,
+                Some(BlockTime::new(9, 41, 900)),
+                Some(BlockTime::new(11, 43, 1100)),
+            ] {
+                let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+                let mut wm = iw.wallet_manager.write().await;
+                let manager = &mut wm
+                    .get_wallet_info_mut(&iw.wallet_id)
+                    .unwrap()
+                    .identity_manager;
+                let managed = manager.wallet_identity_mut(&iw.wallet_id, &id).unwrap();
+                backend.fail_store.store(true, Ordering::SeqCst);
+                assert!(iw
+                    .persist_refreshed_balance(managed, 100, BlockTime::new(10, 42, 1000))
+                    .is_err());
+                let mut entry = IdentityEntry::from_managed(managed);
+                entry.revision = revision;
+                entry.balance = 200;
+                entry.last_updated_balance_block_time = watermark;
+                manager.apply_identity_entry(entry);
+                let managed = manager.wallet_identity_mut(&iw.wallet_id, &id).unwrap();
+                assert_eq!(managed.identity.balance(), 200);
+                assert_eq!(managed.identity.revision(), revision);
+                assert_eq!(managed.last_updated_balance_block_time, watermark);
+                assert_eq!(managed.balance_snapshot_for_persistence(), (200, watermark));
+                backend.fail_store.store(false, Ordering::SeqCst);
+                managed.retry_pending_balance(&iw.persister).unwrap();
+                assert!(backend.queued.lock().unwrap().is_empty());
+                assert!(backend.committed.lock().unwrap().is_empty());
+                managed.update_keys_sync_block_time(BlockTime::new(30, 60, 3000), &iw.persister);
+                iw.persister.flush().unwrap();
+                assert_eq!(reload_balance(&backend, &id), (200, watermark));
+            }
+        }
+    }
 }
