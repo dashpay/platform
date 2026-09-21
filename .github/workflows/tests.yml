@@ -318,6 +318,7 @@ jobs:
               - .github/workflows/swift-sdk-freeze-release.yml
               - .github/workflows/tests.yml
               - packages/swift-sdk/**
+              - packages/app-connect-contract/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**

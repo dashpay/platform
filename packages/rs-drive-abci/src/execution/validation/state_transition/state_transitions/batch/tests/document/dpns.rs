@@ -33,7 +33,9 @@ mod dpns_tests {
             // inserts touch a cheaper set of nodes (v13 moves by the same amount
             // when the seed reorders its ids). +10_000 per create: the nonce
             // derived id is billed both SHA-256 passes, 4 blocks instead of 2.
-            5_895_280,
+            // The app-connect contract adds one sibling to the genesis contracts tree,
+            // increasing the bytes billed when reading that tree (protocol 14 only).
+            6_049_360,
         )
         .await;
     }
