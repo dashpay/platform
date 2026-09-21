@@ -290,7 +290,13 @@ impl Drive {
                                                 document_type,
                                                 platform_version,
                                             )?;
-                                        if payload != expected_commitment {
+                                        // The commitment is the item's
+                                        // first 32 bytes; a type's entry
+                                        // payload follows it and is covered
+                                        // by the commitment.
+                                        if payload.get(..expected_commitment.len())
+                                            != Some(expected_commitment.as_slice())
+                                        {
                                             return Err(Error::Proof(ProofError::IncorrectProof(format!(
                                                 "the proved indexOnly entry's row commitment does not match the created document {}: the entry belongs to a different row",
                                                 create_transition.base().id()

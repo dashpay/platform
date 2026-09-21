@@ -28,11 +28,14 @@ stores nothing in primary storage. The index entries ARE the rows:
       → Item(<row commitment>, flags)
 ```
 
-The **terminal** — a per-index keyword defaulting to `$ownerId`, or any
-refersTo-typed identifier property (identity, contract, token, permanent
-or deletable document) — is the member key, sitting exactly where a normal non-unique
-index keys by document id; the element is an `Item` instead of a
-`Reference` because there is nothing to point at. The `0` storage marker,
+The **terminal** is the member key, sitting exactly where a normal
+non-unique index keys by document id; the element is an `Item` instead of
+a `Reference` because there is nothing to point at. It is a per-index
+keyword defaulting to `$ownerId`. It may name any schema property a prefix
+position could carry (an identifier with or without a `refersTo`, a
+bounded byte array or string, an integer, a boolean, a date), or an
+ordered **list** of such properties (a *composite* terminal, whose member
+key is their encoded values concatenated). The `0` storage marker,
 value-tree types, and the count/sum/ranked tree derivation are
 byte-identical to the ordinary non-unique layout, which is what lets the
 protocol v14 ranked machinery (see
@@ -40,6 +43,87 @@ protocol v14 ranked machinery (see
 types unchanged: "the five most-liked posts in `#dash`" is an
 O(log n + k) read with an O(log n + k) proof, and Items count in
 count/ranked trees exactly as References do.
+
+The member key is the terminal value's **tree-key encoding**, produced by
+the same functions the prefix levels use (the walkers and probes through
+`get_raw_for_document_type`, queries and executed proofs through
+`serialize_value_for_key`, synthesis through `decode_value_for_tree_keys`),
+so nothing about it is specific to a 32-byte identifier: a 33-byte public
+key, a short string or an integer keys the `0` bucket exactly as it would
+key a prefix level, and fee estimation sizes the member key by the
+terminal property's declared bound (`index_only_terminal_max_key_size`)
+rather than by a fixed 32. Structural uniqueness spans the terminal value:
+one entry per (prefix values, terminal value), so two documents by one
+owner that differ only in a scalar terminal are two entries under the
+same prefix.
+
+**Composite terminals.** `"terminal": ["kind", "$ownerId"]` keys the
+member by `encode(kind) ‖ owner`. Every component but the last must be
+fixed width (a byte array with `minItems == maxItems`, an identifier, an
+integer, a boolean, a date), so equality on the leading components is a
+clean key range and synthesis can split the key back; a string can only
+be the last component; the whole key is capped at 255 bytes. Uniqueness
+spans the whole key. Queries bind the components in order: equality
+clauses on the leading ones, then at most one range or `in` clause on the
+next (ordered by it), nothing on the rest. The lowering pads the bound
+prefix with `0xFF` to the key cap for the upper bound of "every key under
+this prefix", and addresses the key itself when the bound component is
+the last one. After equality-bound components are ignored, `orderBy` must
+start at the first remaining component and follow component order without
+gaps, with the same direction for every listed component. A single member-key
+walk cannot sort by a later component alone or mix ascending and descending
+components.
+
+**Flat indexes.** An index with no `properties` at all is *flat*: its
+entries live directly under a level of their own, keyed by a zero byte
+followed by each terminal component name preceded by a zero byte
+(`"\0appEphemeralPubKeyHash\0$ownerId"`), which no property-name tree can
+collide with since property names never contain a zero byte. This level key,
+including its separators, must also fit within 255 bytes:
+
+```text
+[DataContractDocuments, contract_id, 1, <doctype>, "\0<c1>\0<c2>…", 0, <c1 ‖ c2 ‖ …>]
+      → Item(<row commitment> [‖ <entry payload>], flags)
+```
+
+The flat level is registration-time structure, created with the
+property-name trees and kept when the last entry goes (the prune stops at
+its `0` bucket, as on a preallocated index), so every entry costs the same.
+There is no prefix level for an aggregate, a ranking, a time grid, a skip
+trigger or a preallocation to apply to, so a flat index admits none of
+those keywords. A clause-free query on a type with a flat index scans the
+flat level (every other indexOnly type refuses the by-id shape). Non-proof
+responses require this index to cover every property, including optional
+ones, just as filtered queries do; otherwise use a proved projection.
+
+**The entry payload.** `entryPayload: ["walletEphemeralPubKey",
+"encryptedPayload"]` on the document type names top-level properties that
+live in no index: every entry's item carries them after the 32-byte row
+commitment, each length-framed (`u16` big-endian), in property-name order:
+the type's value slot. Byte arrays store their raw bytes and strings store
+UTF-8; other scalars use their tree-key encoding. The length frame preserves
+empty byte arrays and strings without null sentinels, and distinguishes an
+empty string from a NUL string. A payload
+property must be required, scalar and bounded (the sum of the bounds is
+capped by the field value limit), and appears in no index as a property
+or a terminal component. It is still committed (the commitment hashes
+every present property, a payload value through the uncapped payload
+encoding), so the delete probes and the executed-transition verifier keep
+comparing the item's first 32 bytes only, and synthesis decodes the rest
+of the proved element. With more than one index the payload rides in
+every entry; fee estimation sizes the item by the commitment plus the
+payload bound. Together, a flat composite terminal and an entry payload
+make a key-value table:
+
+```json
+"indices": [{ "name": "byRequest", "terminal": ["appEphemeralPubKeyHash", "$ownerId"] }],
+"entryPayload": ["walletEphemeralPubKey", "encryptedPayload"]
+```
+
+lands at `[…, "\0appEphemeralPubKeyHash\0$ownerId", 0, hash ‖ owner] →
+Item(commitment ‖ len ‖ ciphertext ‖ len ‖ wallet key)`, and a query on
+the hash returns every responder's owner id with the payload decoded off
+the item, as one proof.
 
 **`timeRange` buckets** compose too: a bucketed indexOnly index writes
 one commitment entry per containing bucket under the grid-qualified
@@ -103,7 +187,9 @@ aggregate keywords follow:
 | every non-trigger property appears in ≥ 1 **non-skip** index (prefix or terminal) | only indexed values exist, and a skip index carries no value for trigger-absent documents — covered only there, a property would be validated and committed yet written nowhere |
 | **every index embeds `$ownerId`** (prefix or terminal) | entries are self-authorizing: a delete computed with owner = signer can only ever address the signer's own entries |
 | ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` — the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
-| terminal is `$ownerId` or a single-id refersTo property | the member key must alone be a referable entity id (`identityPublicKey` is compound and rejected) |
+| every terminal component is `$ownerId` or a schema property passing the indexed-shape limits (no arrays or objects; byte arrays ≤ 255 bytes, strings ≤ 63 characters); every component but the last is fixed width; the whole key ≤ 255 bytes | the member key is the components' tree-key encodings concatenated, derived by the same functions the prefix levels use; a leading component must be splittable back and rangeable; grovedb caps keys at 255 bytes; other system properties are refused because the `$createdAt` rules walk the prefix properties |
+| a flat index (no `properties`) admits no countable / summable / ranked / `timeRange` / `skipIfAbsent` / `preallocated` keyword | there is no prefix level for them to apply to |
+| every `entryPayload` property is a required, bounded, top-level scalar in no index | the entry value has no representation for an absent property, estimation sizes the item by the bounds, and a property is either a key or a value |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
 | non-unique, non-contested, `nullSearchable` default | v1 scope |

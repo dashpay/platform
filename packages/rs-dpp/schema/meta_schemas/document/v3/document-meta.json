@@ -721,10 +721,25 @@
             "description": "Buckets the first index property's timestamp into fixed-length, regularly-spaced (possibly overlapping) time ranges. The window parameters (`range`, `step`, `phase`) are declared in seconds, since a bucket is selected from block time and the target block interval is five seconds; the stored key is the range start as a u64 millisecond timestamp, so it stays directly comparable to the source timestamp it buckets. Enables trending/leaderboard queries within the newest/oldest active range. A system-timestamp source must be listed in the document type's required fields. Several indexes may bucket the same timestamp with different grids — each grid gets its own index subtree, keyed by the property name qualified with the grid parameters. Available from protocol version 14."
           },
           "terminal": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256,
-            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or an identifier property carrying a refersTo declaration (identity, contract, token, permanentDocument, or deletableDocument). Must not repeat one of the index's listed properties. Available from protocol version 14."
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true
+              }
+            ],
+            "description": "Only on indexOnly document types: the property, or the ordered list of properties (a composite terminal), whose encoded values, concatenated, are this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Each component is \"$ownerId\" (the default when the keyword is omitted) or any schema property a prefix position could carry (no arrays or objects; byte arrays of at most 255 bytes, strings of at most 63 characters); every component but the last must be fixed width (a byte array with minItems equal to maxItems, an identifier, an integer, a boolean or a date), and the whole key at most 255 bytes. One entry exists per (prefix values, terminal values). No other system property may be a component, and none may repeat one of the index's listed properties. An index with no properties is a flat index keyed by its terminal alone, admitting no aggregate, ranking, timeRange, skipIfAbsent or preallocated keyword. Available from protocol version 14."
           },
           "preallocated": {
             "type": "boolean",
@@ -736,7 +751,6 @@
           }
         },
         "required": [
-          "properties",
           "name"
         ],
         "dependentRequired": {
@@ -902,6 +916,18 @@
     "indexOnly": {
       "type": "boolean",
       "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index (except a `skipIfAbsent` index's optional first property), $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
+    },
+    "entryPayload": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "description": "Only on indexOnly document types: the top-level properties stored in every entry's value, after the 32-byte row commitment, instead of in a key — the type's value slot. Each is length-framed in property-name order and recovered by decoding the proved element: raw bytes for byte arrays, UTF-8 for strings, and tree-key encoding for other scalars. Empty byte arrays and strings remain distinct from null, and an empty string remains distinct from a NUL string. Listed properties must be required, bounded (maxItems on byte arrays, maxLength on strings), scalar, and must not appear in any index as a property or a terminal component; their summed bounds are capped by the field value limit. With more than one index the payload rides in every entry. Fixed when the document type is created. Available from protocol version 14."
     },
     "actionFees": {
       "type": "object",

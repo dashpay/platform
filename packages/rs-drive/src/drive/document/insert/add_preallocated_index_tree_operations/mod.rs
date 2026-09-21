@@ -41,9 +41,10 @@ use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, terminal_member_tree_type,
     terminal_value_tree_type,
 };
+use crate::drive::document::index_only::index_only_terminal_max_key_size;
+use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::document::unique_event_id;
-use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -65,6 +66,9 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
+
+#[cfg(test)]
+mod tests;
 
 impl Drive {
     /// For every preallocated index (on any indexOnly document type of the
@@ -467,10 +471,21 @@ impl Drive {
             // Same per-entry padding (and sum-item worst case) the
             // entry-insert terminal claims for this layer — see
             // `add_index_only_terminal_item_operations`.
+            let referring_type = contract
+                .document_type_for_name(referring_type_name)
+                .map_err(|e| Error::Protocol(Box::new(dpp::ProtocolError::DataContractError(e))))?;
+            let estimated_item_value_size =
+                index_only_item_estimated_value_size(referring_type, platform_version)?;
+            let member_key_max_size = match level_info.terminal.as_deref() {
+                Some(terminal) => {
+                    index_only_terminal_max_key_size(referring_type, terminal, platform_version)?
+                }
+                None => DEFAULT_HASH_SIZE_U8,
+            };
             let estimated_value_size = if level_info.summable.is_some() {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+                estimated_item_value_size + 10
             } else {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+                estimated_item_value_size
             };
             estimated_costs_only_with_layer_info.insert(
                 path_info.convert_to_key_info_path(),
@@ -478,7 +493,7 @@ impl Drive {
                     tree_type: member_tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
-                        DEFAULT_HASH_SIZE_U8,
+                        member_key_max_size,
                         estimated_value_size,
                         storage_flags.map(|s| s.serialized_size()),
                     ),

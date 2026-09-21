@@ -561,6 +561,39 @@ impl DocumentPropertyType {
         }
     }
 
+    /// The width every value of this type encodes to as a tree key
+    /// ([`Self::encode_value_for_tree_keys`]), when that width is fixed:
+    /// the integer, float, boolean, date and identifier encodings, and a
+    /// byte array whose bounds pin one size. `None` for strings (their
+    /// bound counts characters), unbounded or variable-size byte arrays,
+    /// objects and arrays. The one width the composite indexOnly terminal
+    /// rules, the walkers and synthesis all split member keys by.
+    pub fn fixed_tree_key_width(&self) -> Option<u16> {
+        match self {
+            DocumentPropertyType::U128 | DocumentPropertyType::I128 => Some(16),
+            DocumentPropertyType::U64
+            | DocumentPropertyType::I64
+            | DocumentPropertyType::F64
+            | DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::U32 | DocumentPropertyType::I32 => Some(4),
+            DocumentPropertyType::U16 | DocumentPropertyType::I16 => Some(2),
+            DocumentPropertyType::U8 | DocumentPropertyType::I8 | DocumentPropertyType::Boolean => {
+                Some(1)
+            }
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
+                (Some(min), Some(max)) if min == max && min > 0 => Some(min),
+                _ => None,
+            },
+            DocumentPropertyType::String(_)
+            | DocumentPropertyType::Object(_)
+            | DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_) => None,
+        }
+    }
+
     /// The middle size rounded down halfway between min and max size
     pub fn middle_size(&self, platform_version: &PlatformVersion) -> Option<u16> {
         let min_size = self.min_size()?;

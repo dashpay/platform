@@ -390,6 +390,22 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // The entry payload is part of every stored entry's value layout:
+        // adding, dropping or renaming a payload property would leave the
+        // existing entries undecodable (and their commitments unrecomputable).
+        if new_document_type.entry_payload() != self.entry_payload() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    "document type can not change its entryPayload: the listed properties are \
+                     the value layout of every stored entry"
+                        .to_string(),
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 
@@ -1358,6 +1374,118 @@ mod tests {
                     StateError::DocumentTypeUpdateError(e)
                 )] if e.additional_message() == "document type can not change whether it is indexOnly: changing from true to false"
             );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_entry_payload_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "note";
+
+            // Both types are valid indexOnly types over the same properties:
+            // one keeps `body` in every entry's value slot, the other keys
+            // by it as the terminal's last component. Every other config
+            // flag is equal, so `validate_config` reaches the payload check.
+            let payload_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                    },
+                    "body": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 16,
+                        "position": 1,
+                    }
+                },
+                "required": ["postId", "body"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                    }
+                ],
+                "entryPayload": ["body"],
+                "additionalProperties": false,
+            });
+            let keyed_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                    },
+                    "body": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 16,
+                        "position": 1,
+                    }
+                },
+                "required": ["postId", "body"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                        "terminal": ["$ownerId", "body"],
+                    }
+                ],
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let make_document_type = |schema: platform_value::Value| {
+                DocumentType::try_from_schema(
+                    data_contract_id,
+                    1,
+                    config.version(),
+                    document_type_name,
+                    schema,
+                    None,
+                    &BTreeMap::new(),
+                    &config,
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("document type should parse")
+            };
+
+            let old_document_type = make_document_type(payload_schema);
+            let new_document_type = make_document_type(keyed_schema);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message().starts_with("document type can not change its entryPayload")
+            );
+
+            // The unchanged pair passes the same check.
+            let result = old_document_type
+                .as_ref()
+                .validate_config(old_document_type.as_ref());
+            assert!(result.errors.is_empty(), "{:?}", result.errors);
         }
 
         #[test]
