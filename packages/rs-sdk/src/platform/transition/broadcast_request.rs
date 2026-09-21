@@ -80,6 +80,8 @@ impl BroadcastRequestForStateTransition for StateTransition {
             version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
                 state_transition_hash: self.transaction_id()?.to_vec(),
                 prove: true,
+                // The proof carries the owner's balance for a document batch.
+                request_user_balance: false,
             })),
         })
     }

@@ -136,7 +136,6 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
         let message = WaitForStateTransitionResultResponse {
             version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
                 metadata: None,
-                owner_balance: None,
                 result: Some(wait_for_state_transition_result_response_v0::Result::Error(
                     st_error,
                 )),

@@ -1169,9 +1169,9 @@ pub struct StateTransitionResultWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub error: Option<String>,
     /// The credit balance of the transition's owner after it executed, as
-    /// DAPI read it without a proof. Present for a document batch when the
-    /// SDK did not ask for a proof; a proved wait carries the balance inside
-    /// the proof instead.
+    /// DAPI read it without a proof. Present when the SDK did not ask for a
+    /// proof (it then asks for the balance); a proved wait carries the balance
+    /// inside the proof of a document batch instead.
     pub owner_balance: Option<u64>,
 }
 
@@ -1567,6 +1567,8 @@ impl WasmSdk {
             version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
                 state_transition_hash: hash_bytes,
                 prove: self.prove(),
+                // Without a proof, ask for the owner's balance instead.
+                request_user_balance: !self.prove(),
             })),
         };
 
@@ -1586,27 +1588,27 @@ impl WasmSdk {
         };
 
         let (status, error, owner_balance) = match response.inner.version {
-            Some(ResponseVersion::V0(v0)) => {
-                let owner_balance = v0.owner_balance;
-                match v0.result {
-                    Some(V0Result::Error(e)) => {
-                        let error_message = format!("Code: {}, Message: {}", e.code, e.message);
-                        ("ERROR".to_string(), Some(error_message), None)
-                    }
-                    Some(V0Result::Proof(_)) => {
-                        // State transition was successful
-                        ("SUCCESS".to_string(), None, owner_balance)
-                    }
-                    // A wait without a proof answers success with no result
-                    // (and, for a document batch, the owner's balance).
-                    None if !self.prove() => ("SUCCESS".to_string(), None, owner_balance),
-                    None => (
-                        "UNKNOWN".to_string(),
-                        Some("No result returned".to_string()),
-                        None,
-                    ),
+            Some(ResponseVersion::V0(v0)) => match v0.result {
+                Some(V0Result::Error(e)) => {
+                    let error_message = format!("Code: {}, Message: {}", e.code, e.message);
+                    ("ERROR".to_string(), Some(error_message), None)
                 }
-            }
+                Some(V0Result::Proof(_)) => {
+                    // State transition was successful
+                    ("SUCCESS".to_string(), None, None)
+                }
+                // A wait that asked for the owner's balance without a proof
+                Some(V0Result::UnprovedWithOwnerBalance(unproved)) => {
+                    ("SUCCESS".to_string(), None, Some(unproved.owner_balance))
+                }
+                // A wait without a proof answers success with no result
+                None if !self.prove() => ("SUCCESS".to_string(), None, None),
+                None => (
+                    "UNKNOWN".to_string(),
+                    Some("No result returned".to_string()),
+                    None,
+                ),
+            },
             None => (
                 "UNKNOWN".to_string(),
                 Some("No version in response".to_string()),

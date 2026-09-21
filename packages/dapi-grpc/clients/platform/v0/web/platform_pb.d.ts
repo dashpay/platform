@@ -6388,6 +6388,9 @@ export namespace WaitForStateTransitionResultRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    getRequestUserBalance(): boolean;
+    setRequestUserBalance(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WaitForStateTransitionResultRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: WaitForStateTransitionResultRequestV0): WaitForStateTransitionResultRequestV0.AsObject;
@@ -6402,6 +6405,7 @@ export namespace WaitForStateTransitionResultRequest {
     export type AsObject = {
       stateTransitionHash: Uint8Array | string,
       prove: boolean,
+      requestUserBalance: boolean,
     }
   }
 
@@ -6433,6 +6437,26 @@ export namespace WaitForStateTransitionResultResponse {
     v0?: WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.AsObject,
   }
 
+  export class UnprovedResultWithOwnerBalance extends jspb.Message {
+    getOwnerBalance(): string;
+    setOwnerBalance(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): UnprovedResultWithOwnerBalance.AsObject;
+    static toObject(includeInstance: boolean, msg: UnprovedResultWithOwnerBalance): UnprovedResultWithOwnerBalance.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: UnprovedResultWithOwnerBalance, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): UnprovedResultWithOwnerBalance;
+    static deserializeBinaryFromReader(message: UnprovedResultWithOwnerBalance, reader: jspb.BinaryReader): UnprovedResultWithOwnerBalance;
+  }
+
+  export namespace UnprovedResultWithOwnerBalance {
+    export type AsObject = {
+      ownerBalance: string,
+    }
+  }
+
   export class WaitForStateTransitionResultResponseV0 extends jspb.Message {
     hasError(): boolean;
     clearError(): void;
@@ -6444,15 +6468,15 @@ export namespace WaitForStateTransitionResultResponse {
     getProof(): Proof | undefined;
     setProof(value?: Proof): void;
 
+    hasUnprovedWithOwnerBalance(): boolean;
+    clearUnprovedWithOwnerBalance(): void;
+    getUnprovedWithOwnerBalance(): WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance | undefined;
+    setUnprovedWithOwnerBalance(value?: WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance): void;
+
     hasMetadata(): boolean;
     clearMetadata(): void;
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
-
-    hasOwnerBalance(): boolean;
-    clearOwnerBalance(): void;
-    getOwnerBalance(): string;
-    setOwnerBalance(value: string): void;
 
     getResultCase(): WaitForStateTransitionResultResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
@@ -6469,14 +6493,15 @@ export namespace WaitForStateTransitionResultResponse {
     export type AsObject = {
       error?: StateTransitionBroadcastError.AsObject,
       proof?: Proof.AsObject,
+      unprovedWithOwnerBalance?: WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.AsObject,
       metadata?: ResponseMetadata.AsObject,
-      ownerBalance: string,
     }
 
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       ERROR = 1,
       PROOF = 2,
+      UNPROVED_WITH_OWNER_BALANCE = 4,
     }
   }
 

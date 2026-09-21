@@ -45,6 +45,7 @@ describe('waitForStateTransitionResultFactory', () => {
       timeout: 1000,
       throwDeadlineExceeded: true,
       retry: 0,
+      requestUserBalance: false,
     };
 
     waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransportMock);
@@ -73,7 +74,8 @@ describe('waitForStateTransitionResultFactory', () => {
     request.setV0(
       new WaitForStateTransitionResultRequestV0()
         .setStateTransitionHash(hash)
-        .setProve(false),
+        .setProve(false)
+        .setRequestUserBalance(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
@@ -86,7 +88,11 @@ describe('waitForStateTransitionResultFactory', () => {
 
   it('should return the owner balance a wait without a proof reports', async () => {
     options.prove = false;
-    response.getV0().setOwnerBalance('123456789012345678');
+    options.requestUserBalance = true;
+    response.getV0().setUnprovedWithOwnerBalance(
+      new WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance()
+        .setOwnerBalance('123456789012345678'),
+    );
 
     const result = await waitForStateTransitionResult(hash, options);
 
@@ -135,7 +141,8 @@ describe('waitForStateTransitionResultFactory', () => {
     request.setV0(
       new WaitForStateTransitionResultRequestV0()
         .setStateTransitionHash(hash)
-        .setProve(true),
+        .setProve(true)
+        .setRequestUserBalance(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
@@ -190,7 +197,8 @@ describe('waitForStateTransitionResultFactory', () => {
     request.setV0(
       new WaitForStateTransitionResultRequestV0()
         .setStateTransitionHash(hash)
-        .setProve(true),
+        .setProve(true)
+        .setRequestUserBalance(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(

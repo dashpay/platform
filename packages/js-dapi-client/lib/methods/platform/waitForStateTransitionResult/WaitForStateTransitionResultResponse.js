@@ -26,8 +26,9 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
 
   /**
    * The credit balance of the transition's owner after it executed, as DAPI
-   * read it without a proof. Set for a document batch when no proof was
-   * requested; a proved response carries the balance inside the proof.
+   * read it without a proof. Set when the request asked for the user's
+   * balance and for no proof; a proved response carries the balance inside
+   * the proof of a document batch.
    *
    * @returns {bigint|undefined}
    */
@@ -65,8 +66,9 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
       ? new Metadata(proto.getV0().getMetadata().toObject()) : null;
 
     let ownerBalance;
-    if (proto.getV0().hasOwnerBalance()) {
-      ownerBalance = BigInt(proto.getV0().getOwnerBalance());
+    const unprovedWithOwnerBalance = proto.getV0().getUnprovedWithOwnerBalance();
+    if (unprovedWithOwnerBalance) {
+      ownerBalance = BigInt(unprovedWithOwnerBalance.getOwnerBalance());
     }
 
     return new WaitForStateTransitionResultResponse(

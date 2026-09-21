@@ -359,6 +359,7 @@ CF_EXTERN_C_BEGIN
 @class SpecificKeys;
 @class StateTransitionBroadcastError;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
+@class WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -6770,6 +6771,7 @@ void WaitForStateTransitionResultRequest_ClearVersionOneOfCase(WaitForStateTrans
 typedef GPB_ENUM(WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber) {
   WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_StateTransitionHash = 1,
   WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_Prove = 2,
+  WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_RequestUserBalance = 3,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0 : GPBMessage
@@ -6779,6 +6781,14 @@ GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionR
 
 /** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
+
+/**
+ * Flag to request, without a proof, the credit balance of the identity
+ * that owns the transition after it executed. Ignored when a proof is
+ * requested: from protocol version 14 a document batch's proof carries
+ * the owner's balance itself.
+ **/
+@property(nonatomic, readwrite) BOOL requestUserBalance;
 
 @end
 
@@ -6806,19 +6816,39 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse : GPBMessage
  **/
 void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTransitionResultResponse *message);
 
+#pragma mark - WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance
+
+typedef GPB_ENUM(WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance_FieldNumber) {
+  WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance_FieldNumber_OwnerBalance = 1,
+};
+
+/**
+ * The result of a wait that asked for the owner's balance and for no proof
+ **/
+GPB_FINAL @interface WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance : GPBMessage
+
+/**
+ * The credit balance of the identity that owns the transition after it
+ * executed, read from a Drive state at or past the block that executed it
+ **/
+@property(nonatomic, readwrite) uint64_t ownerBalance;
+
+@end
+
 #pragma mark - WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber) {
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof = 2,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 3,
-  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_OwnerBalance = 4,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_UnprovedWithOwnerBalance = 4,
 };
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase) {
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Proof = 2,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_UnprovedWithOwnerBalance = 4,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 : GPBMessage
@@ -6831,19 +6861,17 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 /** Cryptographic proof for the state transition, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/**
+ * The owner's balance, unproved, when the request asked for it and
+ * for no proof
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance *unprovedWithOwnerBalance;
+
 /** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
 
-/**
- * The credit balance of the transition's owner after it executed, read
- * from Drive without a proof. Set for a document batch when no proof was
- * requested; a proved response carries the balance inside the proof.
- **/
-@property(nonatomic, readwrite) uint64_t ownerBalance;
-
-@property(nonatomic, readwrite) BOOL hasOwnerBalance;
 @end
 
 /**

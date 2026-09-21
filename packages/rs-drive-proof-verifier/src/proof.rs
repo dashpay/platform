@@ -4096,7 +4096,6 @@ mod tests {
             version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
                 result: Some(V0Result::Proof(Proof::default())),
                 metadata: Some(ResponseMetadata::default()),
-                owner_balance: None,
             })),
         };
         let provider = unreachable_provider();
@@ -6290,7 +6289,6 @@ mod tests {
             version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
                 result: Some(V0Result::Proof(Proof::default())),
                 metadata: None, // missing — would trigger EmptyResponseMetadata if reached
-                owner_balance: None,
             })),
         };
         let provider = unreachable_provider();

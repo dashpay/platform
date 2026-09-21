@@ -262,9 +262,11 @@ wallet learns what the write left it with without a second query.
 made at an earlier version); `wait_for_document_and_owner_balance` and
 `put_to_platform_and_wait_for_response_with_owner_balance` hand both back. The
 balance is a snapshot at the proof's block: it may already include later
-transitions of the same identity. A wait that asks for no proof reports the
-same balance, unverified, in the response's `owner_balance` field, read from a
-Drive state at or past the block that executed the write.
+transitions of the same identity. A wait that asks for no proof but sets
+`request_user_balance` gets the owner's balance back unverified, as the
+response's `unproved_with_owner_balance` result, read from a Drive state at or
+past the block that executed the write; that works for any transition with an
+owner.
 
 ### Timeout Handling
 
