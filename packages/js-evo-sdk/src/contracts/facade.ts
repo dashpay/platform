@@ -177,6 +177,23 @@ export class ContractsFacade {
   }
 
   /**
+   * Restores, as a moderator, one document a moderator deleted: `options.document` is the
+   * document as it was (as fetched before the deletion), which must hash to what its removal
+   * record holds, and the restore must come within a week of the deletion (41120). Any current
+   * moderator or the contract owner may restore, whoever deleted. The document goes back
+   * through an ordinary insert, so a unique index value another document took meanwhile
+   * refuses it (40105). Signed like the other moderations. Resolves with the record of the
+   * deletion, now marked restored (`restoredBy`, `restoredAt`); the signer paid for the
+   * document's storage, whose refund stays its owner's.
+   */
+  async moderatorRestoreDocument(
+    options: wasm.ContractRestoreDocumentOptions,
+  ): Promise<wasm.ContractDocumentRemovalResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractRestoreDocument(options);
+  }
+
+  /**
    * One identity's status on a moderated contract: whether it is banned, until when it is
    * suspended, and the warnings it carries. Every list named must be one the contract keeps.
    */

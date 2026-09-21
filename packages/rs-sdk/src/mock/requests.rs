@@ -28,7 +28,7 @@ use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
-    ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
+    ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
     ContractModerationEntry, ContractModerationListStatus,
     ContractModerationListStatuses, ContractModerationReason, ContractWarning,
 };
@@ -487,13 +487,16 @@ impl MockResponse for ContractModerationEntries {
 }
 
 /// One removal record as a fixture holds it: the document id, its owner, the moderator, when
-/// the removal happened and why. `ContractDocumentRemoval` has no bincode encoding of its own.
+/// the removal happened, why, what the document hashed to, and who restored it and when if
+/// anyone did.
 type EncodedContractDocumentRemoval = (
     Identifier,
     Identifier,
     Identifier,
     u64,
     ContractModerationReason,
+    [u8; 32],
+    Option<(Identifier, u64)>,
 );
 
 impl MockResponse for ContractDocumentRemovals {
@@ -508,6 +511,12 @@ impl MockResponse for ContractDocumentRemovals {
                     entry.removal.moderator_id,
                     entry.removal.removed_at,
                     entry.removal.reason.clone(),
+                    entry.removal.document_hash,
+                    entry
+                        .removal
+                        .restoration
+                        .as_ref()
+                        .map(|restoration| (restoration.moderator_id, restoration.restored_at)),
                 )
             })
             .collect();
@@ -525,7 +534,15 @@ impl MockResponse for ContractDocumentRemovals {
             removals
                 .into_iter()
                 .map(
-                    |(document_id, document_owner_id, moderator_id, removed_at, reason)| {
+                    |(
+                        document_id,
+                        document_owner_id,
+                        moderator_id,
+                        removed_at,
+                        reason,
+                        document_hash,
+                        restoration,
+                    )| {
                         ContractDocumentRemovalEntry {
                             document_id,
                             removal: ContractDocumentRemoval {
@@ -533,6 +550,13 @@ impl MockResponse for ContractDocumentRemovals {
                                 moderator_id,
                                 reason,
                                 removed_at,
+                                document_hash,
+                                restoration: restoration.map(|(moderator_id, restored_at)| {
+                                    ContractDocumentRestoration {
+                                        moderator_id,
+                                        restored_at,
+                                    }
+                                }),
                             },
                         }
                     },

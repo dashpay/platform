@@ -19,11 +19,11 @@ use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::config::moderation::{
-    ContractBan, ContractDocumentRemoval, ContractModerationConfig, ContractModerationDocument,
-    ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
-    ContractModerationReason, ContractModerationStatus, ContractModerators, ContractSuspension,
-    ContractWarning, ElectedModerators, InterimModerators, ModerationAbility,
-    DEFAULT_ELECTION_WINDOW_SECONDS,
+    ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
+    ContractModerationDocument, ContractModerationList, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
+    ContractModerators, ContractSuspension, ContractWarning, ElectedModerators, InterimModerators,
+    ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -33,12 +33,13 @@ use dpp::data_contract::document_type::random_document::{
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
+use dpp::platform_value::{platform_value, BinaryData, Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -57,13 +58,16 @@ use dpp::state_transition::proof_result::{
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract;
+use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
 };
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
+use drive::query::DriveDocumentQuery;
 use drive::util::storage_flags::StorageFlags;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -93,6 +97,12 @@ const DOCUMENT_MODERATION_WINDOW_ELAPSED: u32 = 41116;
 const CONTRACT_USER_NOT_WARNED: u32 = 41117;
 const CONTRACT_USER_WARNING_LIMIT_REACHED: u32 = 41118;
 const CONTRACT_MODERATED_DOCUMENT_TYPE_NOT_YET_USABLE: u32 = 41200;
+const CONTRACT_DOCUMENT_REMOVAL_NOT_FOUND: u32 = 41119;
+const DOCUMENT_RESTORE_WINDOW_ELAPSED: u32 = 41120;
+const DOCUMENT_RESTORE_HASH_MISMATCH: u32 = 41121;
+const CONTRACT_DOCUMENT_ALREADY_RESTORED: u32 = 41122;
+const DECODING_DOCUMENT: u32 = 10223;
+const DUPLICATE_UNIQUE_INDEX: u32 = 40105;
 const INVALID_DOCUMENT_TYPE: u32 = 10406;
 const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
 const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
@@ -420,6 +430,42 @@ impl Setup {
             .map(|entry| entry.removal)
     }
 
+    /// The document of `document_type_name` stored at `document_id`, if there is one
+    fn stored_document(
+        &self,
+        document_type_name: &str,
+        document_id: Identifier,
+        transaction: Option<&Transaction>,
+    ) -> Option<Document> {
+        let document_type = self
+            .contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type");
+        let query = DriveDocumentQuery::new_primary_key_single_item_query(
+            &self.contract,
+            document_type,
+            document_id,
+        );
+        self.platform
+            .drive
+            .query_documents(query, None, false, transaction, None)
+            .expect("expected to query the document")
+            .documents_owned()
+            .pop()
+    }
+
+    /// `document` serialized under its type: what a restore carries, and what a removal
+    /// record hashes
+    fn document_bytes(&self, document_type_name: &str, document: &Document) -> Vec<u8> {
+        let document_type = self
+            .contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type");
+        document
+            .serialize(document_type, &self.contract, PlatformVersion::latest())
+            .expect("expected to serialize the document")
+    }
+
     fn balance(&self, identity_id: Identifier, transaction: Option<&Transaction>) -> Credits {
         self.platform
             .drive
@@ -432,8 +478,10 @@ impl Setup {
             .expect("expected the identity to have a balance")
     }
 
-    /// Proves the committed state for a document deletion and checks the proof shows its
-    /// record.
+    /// Proves the committed state for a document deletion or restore and checks the proof
+    /// shows its record. A restore's verifier reads the document's id out of the bytes under
+    /// the contract's document type, so it is given the contract, as a client holding it is;
+    /// a deletion's needs none.
     fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
         let platform_version = PlatformVersion::latest();
         let proof = self
@@ -443,11 +491,13 @@ impl Setup {
             .expect("expected to prove the state transition")
             .into_data()
             .expect("expected proof bytes");
+        let known_contracts: BTreeMap<Identifier, DataContract> =
+            BTreeMap::from([(self.contract.id(), self.contract.clone())]);
         let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             transition,
             &BlockInfo::default(),
             &proof,
-            &|_| Ok(None),
+            &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
             platform_version,
         )
         .expect("expected the proof to verify");
@@ -2156,6 +2206,13 @@ fn delete_action(
     }
 }
 
+fn restore_action(document_type_name: &str, document: Vec<u8>) -> ContractUserModerationAction {
+    ContractUserModerationAction::RestoreDocument {
+        document_type_name: document_type_name.to_string(),
+        document: BinaryData::new(document),
+    }
+}
+
 fn deletion_reason() -> ContractModerationReason {
     ContractModerationReason {
         code: Some(3),
@@ -2179,6 +2236,12 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
     assert_success(&setup.process(&create, &transaction));
     setup.commit(transaction);
     let balance_before = setup.balance(user_id, None);
+    // What the record will commit to: the post as stored, timestamps the block gave it
+    // included, serialized under its type.
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let document_hash = hash_double(setup.document_bytes(POST, &stored));
 
     let delete = setup
         .moderate(&setup.moderator, delete_action(POST, post.id()))
@@ -2216,12 +2279,14 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
     );
     drop(transaction);
 
-    // Its record says whose it was, who removed it, why and when.
+    // Its record says whose it was, who removed it, why and when, and what it was.
     let expected = ContractDocumentRemoval {
         document_owner_id: user_id,
         moderator_id: setup.moderator.id(),
         reason: deletion_reason(),
         removed_at: BLOCK_TIME_MS,
+        document_hash,
+        restoration: None,
     };
     assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
     assert_eq!(setup.assert_removal_proved(&delete), expected);
@@ -3314,4 +3379,358 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
         &setup.process(&update, &transaction),
         "entering elected moderation",
     );
+}
+/// How long after a moderator's deletion a document can be restored: the protocol's week.
+fn restore_window_ms() -> TimestampMillis {
+    PlatformVersion::latest()
+        .system_limits
+        .contract_document_restore_window_ms
+}
+
+#[tokio::test]
+async fn should_let_any_moderator_restore_a_deleted_post_within_a_week_and_delete_it_again() {
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    // The post as stored is what comes back: a client keeps it, or its bytes, before deleting.
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+    let removal = setup
+        .post_removal(post.id(), None)
+        .expect("expected the record");
+    assert_eq!(removal.document_hash, hash_double(&bytes));
+    assert_eq!(removal.restoration, None);
+    assert_eq!(setup.stored_document(POST, post.id(), None), None);
+
+    // Restored by the contract owner, not the moderator that deleted it, to the millisecond
+    // the window ends on. The mempool takes it, as it does a ban.
+    let restored_at = BLOCK_TIME_MS + restore_window_ms();
+    let author_before = setup.balance(user_id, None);
+    let owner_before = setup.balance(setup.owner.id(), None);
+    let restore = setup
+        .moderate(&setup.owner, restore_action(POST, bytes.clone()))
+        .await;
+    assert!(setup.check_tx(&restore).is_empty());
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process_at(&restore, restored_at, &transaction));
+    setup.commit(transaction);
+
+    // The post is back as it was, and its record says who brought it back and when.
+    assert_eq!(setup.stored_document(POST, post.id(), None), Some(stored));
+    let expected = ContractDocumentRemoval {
+        restoration: Some(ContractDocumentRestoration {
+            moderator_id: setup.owner.id(),
+            restored_at,
+        }),
+        ..removal.clone()
+    };
+    assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
+    assert_eq!(setup.assert_removal_proved(&restore), expected);
+    // The owner paid for the post's storage; its author paid nothing and got nothing.
+    assert!(setup.balance(setup.owner.id(), None) < owner_before);
+    assert_eq!(setup.balance(user_id, None), author_before);
+
+    // Deleted again: a fresh record in place of the restored one, the author refunded nothing.
+    let removed_again_at = restored_at + 1;
+    let delete_again = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process_at(&delete_again, removed_again_at, &transaction));
+    setup.commit(transaction);
+    assert_eq!(
+        setup.post_removal(post.id(), None),
+        Some(ContractDocumentRemoval {
+            removed_at: removed_again_at,
+            restoration: None,
+            ..removal
+        })
+    );
+    assert_eq!(setup.stored_document(POST, post.id(), None), None);
+    assert_eq!(setup.balance(user_id, None), author_before);
+}
+
+#[tokio::test]
+async fn should_refund_the_author_who_deletes_a_restored_post() {
+    // The restored post's storage flags name its author, as they did before: the refund of the
+    // author's own deletion is the author's, though a moderator paid to put the post back.
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process_at(&restore, BLOCK_TIME_MS + 1, &transaction));
+    setup.commit(transaction);
+
+    let author_before = setup.balance(user_id, None);
+    let moderator_before = setup.balance(setup.moderator.id(), None);
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let own_delete = own_post_deletion(&setup, &setup.user, stored).await;
+    assert_success(&setup.process(&own_delete, &transaction));
+    setup.commit(transaction);
+    assert!(
+        setup.balance(user_id, None) > author_before,
+        "the storage refund outweighs the deletion's processing fee"
+    );
+    assert_eq!(setup.balance(setup.moderator.id(), None), moderator_before);
+    // The author's deletion is no moderation: the record stays as the restore left it.
+    assert_eq!(
+        setup
+            .post_removal(post.id(), None)
+            .and_then(|removal| removal.restoration)
+            .map(|restoration| restoration.moderator_id),
+        Some(setup.moderator.id())
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_document_restore_that_breaks_a_rule() {
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let (nice_document, create) = setup.create_document_keeping_it(&setup.user).await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    // Nothing to restore: the post is live and has no record.
+    let live = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes.clone()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&live, &transaction),
+        CONTRACT_DOCUMENT_REMOVAL_NOT_FOUND,
+    );
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // Nobody but the owner and the moderators, the post's author included.
+    for actor in [&setup.stranger, &setup.user] {
+        let by_other = setup
+            .moderate(actor, restore_action(POST, bytes.clone()))
+            .await;
+        assert_paid_with_code(
+            &setup.process(&by_other, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+
+    // Only a document type that says so, and one that exists.
+    let nice_stored = setup
+        .stored_document(DOCUMENT_TYPE, nice_document.id(), Some(&transaction))
+        .expect("expected the document to be stored");
+    let of_another_type = setup
+        .moderate(
+            &setup.moderator,
+            restore_action(
+                DOCUMENT_TYPE,
+                setup.document_bytes(DOCUMENT_TYPE, &nice_stored),
+            ),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_another_type, &transaction),
+        DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS,
+    );
+    let of_no_type = setup
+        .moderate(&setup.moderator, restore_action("comment", bytes.clone()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_no_type, &transaction),
+        INVALID_DOCUMENT_TYPE,
+    );
+
+    // Bytes that do not decode under the type: a paid refusal, never an execution error.
+    let garbage = setup
+        .moderate(&setup.moderator, restore_action(POST, vec![]))
+        .await;
+    assert_paid_with_code(&setup.process(&garbage, &transaction), DECODING_DOCUMENT);
+
+    // The post as it was, not an edit of it: the same post with other text decodes, and is
+    // refused by its hash.
+    let mut edited = stored.clone();
+    edited.set("text", Value::Text("something else".to_string()));
+    let of_an_edit = setup
+        .moderate(
+            &setup.moderator,
+            restore_action(POST, setup.document_bytes(POST, &edited)),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_an_edit, &transaction),
+        DOCUMENT_RESTORE_HASH_MISMATCH,
+    );
+
+    // Not past the window, whoever asks.
+    let past_the_window = BLOCK_TIME_MS + restore_window_ms() + 1;
+    for actor in [&setup.moderator, &setup.owner] {
+        let too_late = setup
+            .moderate(actor, restore_action(POST, bytes.clone()))
+            .await;
+        assert_paid_with_code(
+            &setup.process_at(&too_late, past_the_window, &transaction),
+            DOCUMENT_RESTORE_WINDOW_ELAPSED,
+        );
+    }
+
+    // None of it brought the post back or touched its record.
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        None
+    );
+    assert_eq!(
+        setup
+            .post_removal(post.id(), Some(&transaction))
+            .map(|removal| removal.restoration),
+        Some(None)
+    );
+
+    // Once restored, restored: the record says so.
+    let restore = setup
+        .moderate(&setup.owner, restore_action(POST, bytes.clone()))
+        .await;
+    assert_success(&setup.process_at(&restore, BLOCK_TIME_MS + restore_window_ms(), &transaction));
+    let twice = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&twice, &transaction),
+        CONTRACT_DOCUMENT_ALREADY_RESTORED,
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_to_restore_a_post_whose_unique_value_another_post_took_meanwhile() {
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "indices": [
+                        { "name": "byText", "properties": [{ "text": "asc" }], "unique": true },
+                    ],
+                })),
+            )
+        },
+    )
+    .await;
+    let text = Value::Text("first!".to_string());
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("text", text.clone())
+        })
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // The value is free while the post is gone, and a stranger takes it.
+    let (_, create_other) = setup
+        .create_document_of_type_with(&setup.stranger, POST, |document| {
+            document.set("text", text.clone())
+        })
+        .await;
+    assert_success(&setup.process(&create_other, &transaction));
+
+    // The post can not come back beside it, and the refusal is paid.
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&restore, BLOCK_TIME_MS + 1, &transaction),
+        DUPLICATE_UNIQUE_INDEX,
+    );
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        None
+    );
+}
+
+#[tokio::test]
+async fn should_bring_a_post_back_settled_when_its_deletion_window_ran_out_meanwhile() {
+    // A restored post is the post as it was, `$updatedAt` included: the type's deletion
+    // window, measured from that, may have run out on it while it was gone. The author can
+    // still delete it; the moderators can not, until the author edits it.
+    let setup = setup_with_a_moderation_window().await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // Restored after the deletion window, within the restore window.
+    let restored_at = BLOCK_TIME_MS + MODERATION_WINDOW_MS + 1;
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process_at(&restore, restored_at, &transaction));
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        Some(stored.clone())
+    );
+
+    let delete_again = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&delete_again, restored_at + 1, &transaction),
+        DOCUMENT_MODERATION_WINDOW_ELAPSED,
+    );
+    let own_delete = own_post_deletion(&setup, &setup.user, stored).await;
+    assert_success(&setup.process_at(&own_delete, restored_at + 1, &transaction));
 }

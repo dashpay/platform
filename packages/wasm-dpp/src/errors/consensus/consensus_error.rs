@@ -104,7 +104,9 @@ use dpp::consensus::state::contract_moderation::{
     ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
     ContractUserNotSuspendedError, ContractUserNotWarnedError, ContractUserSuspendedError,
-    ContractUserWarningLimitReachedError, DocumentModerationWindowElapsedError,
+    ContractUserWarningLimitReachedError, ContractDocumentAlreadyRestoredError,
+    ContractDocumentRemovalNotFoundError, DocumentModerationWindowElapsedError,
+    DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::contract_group::{
@@ -655,6 +657,18 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentModerationWindowElapsedError(e) => {
             generic_consensus_error!(DocumentModerationWindowElapsedError, e).into()
+        }
+        StateError::ContractDocumentRemovalNotFoundError(e) => {
+            generic_consensus_error!(ContractDocumentRemovalNotFoundError, e).into()
+        }
+        StateError::DocumentRestoreWindowElapsedError(e) => {
+            generic_consensus_error!(DocumentRestoreWindowElapsedError, e).into()
+        }
+        StateError::DocumentRestoreHashMismatchError(e) => {
+            generic_consensus_error!(DocumentRestoreHashMismatchError, e).into()
+        }
+        StateError::ContractDocumentAlreadyRestoredError(e) => {
+            generic_consensus_error!(ContractDocumentAlreadyRestoredError, e).into()
         }
         StateError::ContractUserNotWarnedError(e) => {
             generic_consensus_error!(ContractUserNotWarnedError, e).into()

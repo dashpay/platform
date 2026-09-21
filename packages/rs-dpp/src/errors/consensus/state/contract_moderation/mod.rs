@@ -1,3 +1,5 @@
+mod contract_document_already_restored_error;
+mod contract_document_removal_not_found_error;
 mod contract_fee_claim_not_allowed_error;
 mod contract_fees_already_claimed_this_epoch_error;
 mod contract_fees_nothing_to_claim_error;
@@ -16,9 +18,13 @@ mod contract_user_not_warned_error;
 mod contract_user_suspended_error;
 mod contract_user_warning_limit_reached_error;
 mod document_moderation_window_elapsed_error;
+mod document_restore_hash_mismatch_error;
+mod document_restore_window_elapsed_error;
 mod document_type_not_deletable_by_moderators_error;
 mod identity_not_contract_moderator_error;
 
+pub use contract_document_already_restored_error::*;
+pub use contract_document_removal_not_found_error::*;
 pub use contract_fee_claim_not_allowed_error::*;
 pub use contract_fees_already_claimed_this_epoch_error::*;
 pub use contract_fees_nothing_to_claim_error::*;
@@ -37,5 +43,7 @@ pub use contract_user_not_warned_error::*;
 pub use contract_user_suspended_error::*;
 pub use contract_user_warning_limit_reached_error::*;
 pub use document_moderation_window_elapsed_error::*;
+pub use document_restore_hash_mismatch_error::*;
+pub use document_restore_window_elapsed_error::*;
 pub use document_type_not_deletable_by_moderators_error::*;
 pub use identity_not_contract_moderator_error::*;

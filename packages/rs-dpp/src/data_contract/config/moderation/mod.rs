@@ -36,7 +36,7 @@ use std::fmt;
 mod document_removal;
 pub mod elected;
 mod reason;
-pub use document_removal::ContractDocumentRemoval;
+pub use document_removal::{ContractDocumentRemoval, ContractDocumentRestoration};
 pub use elected::{
     ElectedModerators, InterimModerators, ModerationAbility, ModeratorsActionFeeMaximums,
     DEFAULT_ELECTION_WINDOW_SECONDS,

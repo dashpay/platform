@@ -463,9 +463,32 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     whose epoch's multiplier rose beyond the tolerance (40134), so a
 ///     contract whose fees change cannot make a signed transition pay them.
 ///
-/// 21. **Elected moderation teams, the declaration and the interim**: a data
+/// 21. **Document restore by moderators**: the removal record a moderator's
+///     deletion leaves (19) also holds a double SHA-256 of the document as
+///     serialized under its type at the deletion (`ContractDocumentRemoval::
+///     document_hash`), and `ContractUserModeration` gains the
+///     `RestoreDocument` action: the owner or any current moderator brings
+///     the document back, as it was, within
+///     `SystemLimits::contract_document_restore_window_ms` (a week) of the
+///     removal. The bytes must decode under the type and hash to what the
+///     record holds; refused otherwise, or without a record (41119), past the
+///     window (41120), on a hash mismatch (41121), once restored (41122), or
+///     when another document took a value of one of the type's unique indexes
+///     meanwhile (40105). The document goes back through the ordinary insert,
+///     its storage flags naming its owner (the signer pays, the owner keeps
+///     the refund of a later deletion), and the record is marked restored in
+///     place (`ContractDocumentRemoval::restoration`: who, when) rather than
+///     deleted; a restored document deleted again gets a fresh record in place
+///     of the marked one, which the deletion transform reads to know. Neither
+///     the type's creation token cost nor its `actionFees` creation fee is
+///     charged, and no fee agreement is asked. `canBeDeletedByModerators` is
+///     now also refused on a type with a contested index, whose deletions
+///     could never be undone. The record grows on the wire
+///     (`getContractDocumentRemovals`: `document_hash`, `restoration`).
+///
+/// 22. **Elected moderation teams, the declaration and the interim**: a data
 ///     contract may declare, when it is created, that its moderators are a team
-///     elected by masternodes (`ContractModerators::Elected`, a third kind
+///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
 ///     declaration is frozen: the join and vote windows (one day to four weeks,
 ///     one week by default) and the challenge cool-down (two weeks to three
@@ -549,7 +572,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
@@ -579,7 +602,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity and max_contract_moderation_reason_documents
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

@@ -1,9 +1,10 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
-use crate::state_transition_action::contract::contract_user_moderation::v0::ContractDocumentDeletionContext;
-use crate::state_transition_action::contract::contract_user_moderation::v0::ContractUserModerationTransitionActionV0;
-use crate::state_transition_action::contract::contract_user_moderation::v0::ContractWarningContext;
+use crate::state_transition_action::contract::contract_user_moderation::v0::{
+    ContractDocumentDeletionContext, ContractDocumentRestorationContext,
+    ContractUserModerationTransitionActionV0, ContractWarningContext,
+};
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use crate::util::batch::DriveOperation::{
     ContractModerationOperation, DocumentOperation, IdentityOperation,
@@ -11,16 +12,20 @@ use crate::util::batch::DriveOperation::{
 use crate::util::batch::{
     ContractModerationOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
-use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
+use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::config::moderation::{ContractDocumentRemoval, ContractWarning};
+use dpp::document::DocumentV0Getters;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::version::PlatformVersion;
+use std::borrow::Cow;
 
 impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
-        _epoch: &Epoch,
+        epoch: &Epoch,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         match platform_version
@@ -40,6 +45,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         target_is_suspended,
                         warning,
                         document_deletion,
+                        document_restoration,
                         ..
                     },
                 ) = self;
@@ -148,6 +154,8 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             data_contract_fetch_info,
                             document_owner_id,
                             removed_at,
+                            document_hash,
+                            replaces_restored_record,
                         } =
                             document_deletion
                                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
@@ -155,9 +163,10 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             )))?;
                         // The deletion of the document, which keeps every index and aggregate
                         // of its type right and does not ask `canBeDeleted` (that is the
-                        // owner's rule, not the moderators'), then its record. The marker makes
-                        // the batch refund nobody: the document's owner forfeits the storage
-                        // fee.
+                        // owner's rule, not the moderators'), then its record: a fresh one, or
+                        // in place of the restored one a document deleted before carries. The
+                        // marker makes the batch refund nobody: the document's owner forfeits
+                        // the storage fee.
                         operations.push(DocumentOperation(
                             DocumentOperationType::DeleteDocumentByModerator {
                                 document_id,
@@ -179,11 +188,65 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                     moderator_id,
                                     reason,
                                     removed_at,
+                                    document_hash,
+                                    restoration: None,
                                 },
+                                replaces_existing: replaces_restored_record,
+                                moderator_id,
                             },
                         ));
                         operations.push(ContractModerationOperation(
                             ContractModerationOperationType::ForfeitStorageRefunds,
+                        ));
+                    }
+                    ContractUserModerationAction::RestoreDocument {
+                        document_type_name, ..
+                    } => {
+                        let ContractDocumentRestorationContext {
+                            data_contract_fetch_info,
+                            document,
+                            removal,
+                        } = document_restoration.ok_or(Error::Drive(
+                            DriveError::CorruptedCodeExecution(
+                                "a document restore action must carry what its validation read",
+                            ),
+                        ))?;
+                        let document_id = document.id();
+                        let owner_id = document.owner_id();
+                        // The document goes back the way a create puts it in, every index and
+                        // aggregate of its type included. Its storage flags name its owner, as
+                        // they did before the deletion: the moderator pays for the bytes, and
+                        // the refund of a later deletion is the owner's, as it always was. Then
+                        // the record, marked restored in place: two operations on one key
+                        // would fail the batch, so it is replaced rather than deleted and
+                        // written again, and it is never deleted.
+                        let storage_flags =
+                            StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
+                        operations.push(DocumentOperation(DocumentOperationType::AddDocument {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentOwnedInfo((
+                                    document,
+                                    Some(Cow::Owned(storage_flags)),
+                                )),
+                                owner_id: Some(owner_id.to_buffer()),
+                            },
+                            contract_info: DataContractInfo::DataContractFetchInfo(
+                                data_contract_fetch_info,
+                            ),
+                            document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                document_type_name.clone(),
+                            ),
+                            override_document: false,
+                        }));
+                        operations.push(ContractModerationOperation(
+                            ContractModerationOperationType::AddDocumentRemoval {
+                                contract_id,
+                                document_type_name,
+                                document_id,
+                                removal,
+                                replaces_existing: true,
+                                moderator_id,
+                            },
                         ));
                     }
                 }
@@ -218,6 +281,7 @@ mod tests {
             target_is_suspended,
             warning: None,
             document_deletion: None,
+            document_restoration: None,
             user_fee_increase: 0,
         })
     }
