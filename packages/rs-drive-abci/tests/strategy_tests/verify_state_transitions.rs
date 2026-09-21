@@ -507,9 +507,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             //         .to_string(Encoding::Base58)
                             // );
 
+                            // The batch proof carries the owner's balance next
+                            // to the document, so each is one subset of it.
                             let (root_hash, document) = query
                                 .verify_proof(
-                                    false,
+                                    true,
                                     &response_proof.grovedb_proof,
                                     document_type,
                                     platform_version,
@@ -521,6 +523,32 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 expected_root_hash,
                                 "state last block info {:?}",
                                 platform.state.last_committed_block_info()
+                            );
+
+                            let owner_id = batch_transition.owner_id();
+                            let (balance_root_hash, proved_owner_balance) =
+                                Drive::verify_identity_balance_for_identity_id(
+                                    &response_proof.grovedb_proof,
+                                    owner_id.into_buffer(),
+                                    true,
+                                    platform_version,
+                                )
+                                .expect("expected to verify the owner's balance");
+                            assert_eq!(
+                                balance_root_hash, root_hash,
+                                "the document and the owner's balance come from one state"
+                            );
+                            let stored_owner_balance = platform
+                                .drive
+                                .fetch_identity_balance(
+                                    owner_id.into_buffer(),
+                                    None,
+                                    platform_version,
+                                )
+                                .expect("expected to fetch the owner's balance");
+                            assert_eq!(
+                                proved_owner_balance, stored_owner_balance,
+                                "the proved owner balance is the stored one"
                             );
 
                             match document_action {
