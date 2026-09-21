@@ -68,6 +68,16 @@ nonblocking store lock and rechecks the journal; lock contention skips cleanup
 without failing an ordinary open. Known stores without attempt directories do
 not create a bridge lock file. Failed opens and pending migrations never trigger
 cleanup. Cleanup failures do not prevent opening the wallet.
+Explicit wallet deletion has a stricter contract:
+`PlatformWalletPersistenceHandler.deleteCompletedMigrationSnapshots()` removes
+completed copies under the same store lock and propagates cleanup errors.
+`deleteWalletData` and the manager's wallet deletion invoke it before deleting
+SDK keys or live rows. Call it for a full-store wipe even when no wallet rows
+remain, and do so for every affected network store. Pending recovery is preserved
+and blocks deletion. Because a snapshot contains the whole historical database,
+removing one wallet discards the whole completed snapshot, while unrelated live
+wallets and other stores remain untouched. A cached container does not bypass
+this deletion boundary. This is separate from best-effort startup cleanup.
 The `active.json` journal records an interrupted installation and a fingerprint
 of the validated final data; the next open reconciles it before exposing a
 container, even if scratch copies were removed. Older journals still require
@@ -192,6 +202,17 @@ branch-only push workflows and do not trigger product release publishing.
 
 ## Developing the next schema
 
+Keep `schema-models.json` complete for models and their stored value types.
+Run `freeze_schema_models.py --check-inventory` before capture; the iOS capture
+workflow does this automatically, and snapshot rendering validates the historical
+source inventory again. Validation follows explicit fields and enum payloads,
+including nested optional/array/set/dictionary values. Missing user-defined
+types and unsupported storage declarations fail instead of silently binding to
+live definitions. The validator uses a restricted Swift declaration grammar;
+standard Swift/Foundation names are assumed not to be shadowed by application
+types. It does not prove custom encoding or helper-method behavior, so native
+captured-store hash/index checks and code review remain required.
+
 A released snapshot has its own namespace, for example `DashSchemaSnapshotV2`.
 It is not automatically registered alongside identical current models. When
 changing the structure after a release, explicitly register the historical
@@ -217,7 +238,10 @@ and never contain user wallet material.
   The worker merges current development into the branch, preserves human edits,
   and pushes without force. Resolve merge conflicts manually before retrying.
 - A push that succeeds before PR creation fails is recovered on the next run.
-  If the PR was closed without merge, reopen it deliberately before retrying.
+  If an unregistered release's PR was closed without merge, reopen it deliberately
+  before retrying. Already-registered releases are validated against the merged
+  registry first; a later rejected association for another release on the shared
+  schema branch does not prevent their source-tag validation or repair.
 - A missing build record, changed digest, conflicting schema number or
   rewritten release association stops processing. Restore the correct original
   record through the release-data recovery process; never guess a source SHA.
@@ -236,6 +260,7 @@ Run the automation tests with:
 ```sh
 python3 -m unittest discover -s packages/swift-sdk/scripts -p 'test_*.py'
 python3 packages/swift-sdk/scripts/freeze_schema_models.py --check
+python3 packages/swift-sdk/scripts/freeze_schema_models.py --check-inventory
 python3 packages/swift-sdk/scripts/historical_schema_fixture.py --check
 ```
 

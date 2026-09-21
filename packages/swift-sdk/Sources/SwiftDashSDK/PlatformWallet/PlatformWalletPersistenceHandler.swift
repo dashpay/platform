@@ -6261,7 +6261,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Wipe a wallet's SwiftData footprint.
+    /// Discard completed legacy-migration snapshots for this store before an
+    /// explicit wallet deletion, even when there are no live wallet rows left.
+    /// Full snapshots can contain multiple wallets; their removal leaves all
+    /// current live rows intact. Pending recovery and cleanup errors are fatal.
+    /// Call before removing associated keys so failures remain retryable.
+    public func deleteCompletedMigrationSnapshots() throws {
+        try onQueue { try deleteCompletedMigrationSnapshotsOnQueue() }
+    }
+
+    private func deleteCompletedMigrationSnapshotsOnQueue() throws {
+        let urls = Set(modelContainer.configurations
+            .filter { !$0.isStoredInMemoryOnly }.map(\.url))
+        for url in urls.sorted(by: { $0.path < $1.path }) {
+            try DashLegacySchemaBridge.deleteCompletedSnapshots(at: url)
+        }
+    }
+
+    /// Wipe a wallet's SwiftData footprint, including completed store snapshots.
     public func deleteWalletData(walletId: Data) throws {
         SDKLogger.event(
             "persistence_wallet_delete_started",
@@ -6270,6 +6287,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         try onQueue {
             do {
+                // Run before the first saved deletion, including retries where
+                // the wallet row is already absent. Stay on the handler queue.
+                try deleteCompletedMigrationSnapshotsOnQueue()
                 let walletDescriptor = FetchDescriptor<PersistentWallet>(
                     predicate: walletRecordPredicate(walletId: walletId)
                 )

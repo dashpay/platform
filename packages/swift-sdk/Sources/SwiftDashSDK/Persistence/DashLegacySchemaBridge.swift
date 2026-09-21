@@ -223,11 +223,35 @@ enum DashLegacySchemaBridge {
         return true
     }
 
+    /// Privacy boundary for explicit wallet deletion, including cached stores.
+    /// A snapshot contains the whole old database, so deleting one wallet must
+    /// discard the completed snapshots rather than edit their historical graph.
+    /// This never touches live rows, another store's copies, or a pending journal.
+    static func deleteCompletedSnapshots(at url: URL) throws {
+        let root = backupDirectory(for: url)
+        guard FileManager.default.fileExists(atPath: root.path) else { return }
+        let lock = try StoreLock(url: url)
+        defer { lock.close() }
+        guard !FileManager.default.fileExists(atPath: root.appendingPathComponent("active.json").path) else {
+            throw SQLite.Failure.unsupported("Wallet deletion cannot discard pending migration recovery. Reopen the store successfully before deleting wallets.")
+        }
+        let attributes = try root.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard attributes.isDirectory == true, attributes.isSymbolicLink != true else {
+            throw SQLite.Failure.unsupported("The migration snapshot directory is not a local directory")
+        }
+        for directory in try attemptDirectories(at: root) {
+            // Unlike opportunistic startup cleanup, explicit deletion must
+            // report any failure rather than leave a separately readable copy.
+            try FileManager.default.removeItem(at: directory)
+        }
+        try synchronizeDirectory(root)
+    }
+
     /// Cleanup is optional after an ordinary open. Never make known/current
     /// stores fail because a legacy opener holds the lock, and do not create a
     /// lock file unless there are actual attempt directories to reclaim.
     private static func reclaimAfterSuccessfulOpen(at url: URL, root: URL) {
-        guard !attemptDirectories(at: root).isEmpty,
+        guard let directories = try? attemptDirectories(at: root), !directories.isEmpty,
               let lock = try? StoreLock(url: url) else { return }
         defer { lock.close() }
         reclaimInactiveAttempts(at: root, holding: lock)
@@ -238,20 +262,23 @@ enum DashLegacySchemaBridge {
     /// open; the successful migration/recovery launch retains its own backup.
     private static func reclaimInactiveAttempts(at root: URL, holding _: StoreLock) {
         guard !FileManager.default.fileExists(atPath: root.appendingPathComponent("active.json").path) else { return }
-        for directory in attemptDirectories(at: root) {
+        for directory in (try? attemptDirectories(at: root)) ?? [] {
             // Failure only affects disk usage. Preflight measures the actual
             // remaining free capacity after these attempts, not estimated savings.
             try? FileManager.default.removeItem(at: directory)
         }
     }
 
-    private static func attemptDirectories(at root: URL) -> [URL] {
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return [] }
-        return entries.filter { entry in
-            guard UUID(uuidString: entry.lastPathComponent) != nil,
-                  let attributes = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return false }
-            return attributes.isDirectory == true && attributes.isSymbolicLink != true
+    private static func attemptDirectories(at root: URL) throws -> [URL] {
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        return try entries.filter { entry in
+            guard UUID(uuidString: entry.lastPathComponent) != nil else { return false }
+            let attributes = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard attributes.isSymbolicLink != true else {
+                throw SQLite.Failure.unsupported("A migration snapshot is a symbolic link; refusing to follow it")
+            }
+            return attributes.isDirectory == true
         }
     }
 

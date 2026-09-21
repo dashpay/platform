@@ -342,6 +342,109 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
+    func testWalletDeletionRemovesMigrationSnapshotsWithoutReopeningCachedContainer() throws {
+        try withStore { url in
+            let survivorId = Data(repeating: 0x63, count: 32)
+            // Seed a second wallet into the actual historical fixture before
+            // migrating. Both wallet rows must be present in the retained copy.
+            try autoreleasepool {
+                let connection = try DashLegacyStoreSQLite.Connection(url, writable: true)
+                var columns: [String] = []
+                try connection.query("PRAGMA table_info(ZPERSISTENTWALLET)") {
+                    columns.append(String(cString: sqlite3_column_text($0, 1)))
+                }
+                let names = columns.map { "\"\($0)\"" }.joined(separator: ",")
+                let values = columns.map { column in
+                    switch column {
+                    case "Z_PK": return "Z_PK + 1"
+                    case "ZWALLETID": return "X'" + survivorId.map { String(format: "%02x", $0) }.joined() + "'"
+                    case "ZNAME": return "'surviving wallet'"
+                    default: return "\"\(column)\""
+                    }
+                }.joined(separator: ",")
+                try connection.execute("INSERT INTO ZPERSISTENTWALLET (\(names)) SELECT \(values) FROM ZPERSISTENTWALLET LIMIT 1")
+                try connection.execute("UPDATE Z_PRIMARYKEY SET Z_MAX=(SELECT MAX(Z_PK) FROM ZPERSISTENTWALLET) WHERE Z_NAME='PersistentWallet'")
+            }
+            let container = try DashModelContainer.create(url: url)
+            let snapshot = try XCTUnwrap(operationDirectories(url).first).appendingPathComponent("original.store")
+            var originalWalletCount: Int64 = 0
+            try DashLegacyStoreSQLite.Connection(snapshot, writable: false).query("SELECT COUNT(*) FROM ZPERSISTENTWALLET") {
+                originalWalletCount = sqlite3_column_int64($0, 0)
+            }
+            XCTAssertEqual(originalWalletCount, 2)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            try handler.deleteWalletData(walletId: Data(repeating: 0x61, count: 32))
+            XCTAssertTrue(try operationDirectories(url).isEmpty)
+            let rows = try ModelContext(container).fetch(FetchDescriptor<PersistentWallet>())
+            XCTAssertEqual(rows.map(\.walletId), [survivorId])
+            XCTAssertEqual(rows.first?.name, "surviving wallet")
+        }
+    }
+
+    func testDeleteAllClearsSnapshotsForEmptyInactiveStoreWithoutTouchingAnotherStore() throws {
+        try withStore { activeURL in
+            try withStore { inactiveURL in
+                let active = try DashModelContainer.create(url: activeURL)
+                let inactive = try DashModelContainer.create(url: inactiveURL)
+                let activeSnapshots = try operationDirectories(activeURL)
+                XCTAssertEqual(activeSnapshots.count, 1)
+                // Reproduce an earlier deletion path that removed rows while
+                // leaving a snapshot, without reopening the cached container.
+                let context = ModelContext(inactive)
+                for wallet in try context.fetch(FetchDescriptor<PersistentWallet>()) { context.delete(wallet) }
+                try context.save()
+                let handler = PlatformWalletPersistenceHandler(modelContainer: inactive, network: .testnet)
+                XCTAssertTrue(handler.restorableWalletIds().isEmpty)
+                try handler.deleteCompletedMigrationSnapshots()
+                XCTAssertTrue(try operationDirectories(inactiveURL).isEmpty)
+                XCTAssertEqual(try operationDirectories(activeURL), activeSnapshots)
+                XCTAssertEqual(try ModelContext(active).fetchCount(FetchDescriptor<PersistentWallet>()), 1)
+                XCTAssertEqual(try ModelContext(inactive).fetchCount(FetchDescriptor<PersistentWallet>()), 0)
+            }
+        }
+    }
+
+    func testSnapshotDeletionFailurePreservesLiveWalletAndCanBeRetried() throws {
+        try withStore { url in
+            let container = try DashModelContainer.create(url: url)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            let root = DashLegacySchemaBridge.backupDirectory(for: url)
+            let snapshots = try operationDirectories(url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path) }
+            XCTAssertThrowsError(try handler.deleteWalletData(walletId: Data(repeating: 0x61, count: 32)))
+            XCTAssertEqual(try operationDirectories(url), snapshots)
+            XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentWallet>()), 1)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+            try handler.deleteWalletData(walletId: Data(repeating: 0x61, count: 32))
+            XCTAssertTrue(try operationDirectories(url).isEmpty)
+            XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentWallet>()), 0)
+        }
+    }
+
+    func testSnapshotDeletionRefusesPendingRecoveryBeforeDeletingLiveRows() throws {
+        try withStore { url in
+            XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, _ in
+                if phase == .afterCommit { throw Injected.stop }
+            })))
+            let root = DashLegacySchemaBridge.backupDirectory(for: url)
+            let marker = root.appendingPathComponent("active.json")
+            let evidence = try Data(contentsOf: marker)
+            let snapshots = try operationDirectories(url)
+            // Bypass factory recovery only to exercise the deletion boundary
+            // when a cached container and a pending recovery marker coexist.
+            let schema = DashModelContainer.schema
+            let container = try ModelContainer(for: schema, migrationPlan: DashMigrationPlan.self,
+                configurations: [ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)])
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            XCTAssertThrowsError(try handler.deleteWalletData(walletId: Data(repeating: 0x61, count: 32)))
+            XCTAssertThrowsError(try handler.deleteCompletedMigrationSnapshots())
+            XCTAssertEqual(try Data(contentsOf: marker), evidence)
+            XCTAssertEqual(try operationDirectories(url), snapshots)
+            XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentWallet>()), 1)
+        }
+    }
+
     func testCommittedWALDataIsIncludedAndConcurrentWriterIsLockedOutAtPromotion() throws {
         try withStore { url in
             let connection = try DashLegacyStoreSQLite.Connection(url, writable: true)
