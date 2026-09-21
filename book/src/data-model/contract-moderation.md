@@ -275,10 +275,13 @@ pub struct ElectedModerators {
     pub vote_window: u32,                 // the same
     pub challenge_cool_down: u32,         // seconds; 2 weeks to 3 years, always declared
     pub moderated_document_types: BTreeMap<DocumentName, ModeratedDocumentType>,
-    //  ModeratedDocumentType { abilities: BTreeSet<ModerationAbility>,   // DeleteDocuments, Ban, Suspend, Warn
-    //                          moderators_action_fee_maximums: Option<ModeratorsActionFeeMaximums> }
     pub interim: InterimModerators,       // ContractOwner, AppointedModerators(set), NotYetUsable, NoModeration
     pub owner_protected: bool,            // false by default
+}
+
+pub struct ModeratedDocumentType {
+    pub abilities: BTreeSet<ModerationAbility>,                             // non-empty: DeleteDocuments, Ban, Suspend, Warn
+    pub moderators_action_fee_maximums: Option<ModeratorsActionFeeMaximums>, // None: a charter charges nothing on the type
 }
 ```
 
