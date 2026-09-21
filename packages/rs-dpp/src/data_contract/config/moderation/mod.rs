@@ -103,7 +103,7 @@ impl ContractModerators {
 
     /// Whether `identity_id` may moderate a contract owned by `owner_id`. Under an elected
     /// declaration, whether it may during the interim: the owner alone, the owner and the
-    /// appointed interim set, or nobody while the moderated types are not yet usable.
+    /// appointed interim set, or nobody, the moderated types unusable or unmoderated meanwhile.
     pub fn may_moderate(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
         match self {
             ContractModerators::ContractOwner | ContractModerators::AppointedModerators(_) => {
@@ -172,7 +172,7 @@ impl Serialize for ContractModerators {
                 m.end()
             }
             ContractModerators::Elected(elected) => {
-                let mut m = serializer.serialize_map(Some(9))?;
+                let mut m = serializer.serialize_map(Some(8))?;
                 m.serialize_entry("$type", "elected")?;
                 m.serialize_entry(elected_names::JOIN_WINDOW, &elected.join_window)?;
                 m.serialize_entry(elected_names::VOTE_WINDOW, &elected.vote_window)?;
@@ -184,7 +184,6 @@ impl Serialize for ContractModerators {
                     elected_names::MODERATED_DOCUMENT_TYPES,
                     &elected.moderated_document_types,
                 )?;
-                m.serialize_entry(elected_names::ABILITIES, &elected.abilities)?;
                 m.serialize_entry(
                     elected_names::MODERATORS_ACTION_FEE_MAXIMUMS,
                     &elected.moderators_action_fee_maximums,
@@ -209,7 +208,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
             elected_names::VOTE_WINDOW,
             elected_names::CHALLENGE_COOL_DOWN,
             elected_names::MODERATED_DOCUMENT_TYPES,
-            elected_names::ABILITIES,
             elected_names::MODERATORS_ACTION_FEE_MAXIMUMS,
             elected_names::INTERIM,
             elected_names::OWNER_PROTECTED,
@@ -221,8 +219,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
             join_window: Option<u32>,
             vote_window: Option<u32>,
             challenge_cool_down: Option<u32>,
-            moderated_document_types: Option<BTreeSet<DocumentName>>,
-            abilities: Option<BTreeSet<ModerationAbility>>,
+            moderated_document_types: Option<BTreeMap<DocumentName, BTreeSet<ModerationAbility>>>,
             moderators_action_fee_maximums:
                 Option<BTreeMap<DocumentName, ModeratorsActionFeeMaximums>>,
             interim: Option<InterimModerators>,
@@ -235,7 +232,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
                     || self.vote_window.is_some()
                     || self.challenge_cool_down.is_some()
                     || self.moderated_document_types.is_some()
-                    || self.abilities.is_some()
                     || self.moderators_action_fee_maximums.is_some()
                     || self.interim.is_some()
                     || self.owner_protected.is_some()
@@ -300,9 +296,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             elected_names::MODERATED_DOCUMENT_TYPES,
                             &mut elected.moderated_document_types,
                         )?,
-                        elected_names::ABILITIES => {
-                            read_once(&mut map, elected_names::ABILITIES, &mut elected.abilities)?
-                        }
                         elected_names::MODERATORS_ACTION_FEE_MAXIMUMS => read_once(
                             &mut map,
                             elected_names::MODERATORS_ACTION_FEE_MAXIMUMS,
@@ -363,9 +356,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             moderated_document_types: elected
                                 .moderated_document_types
                                 .ok_or_else(required(elected_names::MODERATED_DOCUMENT_TYPES))?,
-                            abilities: elected
-                                .abilities
-                                .ok_or_else(required(elected_names::ABILITIES))?,
                             moderators_action_fee_maximums: elected
                                 .moderators_action_fee_maximums
                                 .unwrap_or_default(),
@@ -598,14 +588,11 @@ impl ContractModerationConfig {
                 );
             }
         }
-        if let Some(reason) = self.moderators.elected().and_then(|elected| {
-            elected.validation_error(
-                self,
-                has_document_type_deletable_by_moderators,
-                document_schemas,
-                platform_version,
-            )
-        }) {
+        if let Some(reason) = self
+            .moderators
+            .elected()
+            .and_then(|elected| elected.validation_error(self, document_schemas, platform_version))
+        {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidContractModerationConfigError::new(format!("elected moderation: {reason}"))
                     .into(),

@@ -210,8 +210,10 @@ mod tests {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             challenge_cool_down: 1_209_600,
-            moderated_document_types: BTreeSet::from(["post".to_string()]),
-            abilities: BTreeSet::from([ModerationAbility::Ban]),
+            moderated_document_types: BTreeMap::from([(
+                "post".to_string(),
+                BTreeSet::from([ModerationAbility::Ban]),
+            )]),
             moderators_action_fee_maximums: BTreeMap::new(),
             interim: InterimModerators::ContractOwner,
             owner_protected: false,
@@ -242,10 +244,14 @@ mod tests {
             ("vote window", |d| d.vote_window += 1),
             ("challenge cool-down", |d| d.challenge_cool_down += 1),
             ("moderated set", |d| {
-                d.moderated_document_types.insert("like".to_string());
+                d.moderated_document_types
+                    .insert("like".to_string(), BTreeSet::from([ModerationAbility::Ban]));
             }),
             ("abilities", |d| {
-                d.abilities.insert(ModerationAbility::Suspend);
+                d.moderated_document_types
+                    .get_mut("post")
+                    .expect("post is moderated")
+                    .insert(ModerationAbility::Suspend);
             }),
             ("fee maximums", |d| {
                 d.moderators_action_fee_maximums.insert(

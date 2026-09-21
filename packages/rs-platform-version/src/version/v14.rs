@@ -470,20 +470,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaration is frozen: the join and vote windows (one day to four weeks,
 ///     one week by default) and the challenge cool-down (two weeks to three
 ///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; the document
-///     types the team moderates; the abilities a charter may claim and the most
-///     it may charge the moderators part of each document action, by type; who
-///     moderates until the first team is seated (the owner, an appointed set,
-///     or nobody with the moderated types not yet usable); and whether the
-///     owner is protected from the team. `validate_moderation_config` v0 checks
+///     types the team moderates, each with the abilities a charter may claim on
+///     it; the most it may charge the moderators part of each document action,
+///     by type; who moderates until the first team is seated (the owner, an
+///     appointed set, or nobody, with the moderated types not yet usable or
+///     used unmoderated meanwhile); and whether the owner is protected from the
+///     team. `validate_moderation_config` v0 checks
 ///     it against the contract's document types (10900), and
 ///     `validate_config_update` 2 refuses every change to it, and entering or
 ///     leaving elected moderation, with `DataContractConfigUpdateError`. The
 ///     interim moderators moderate and claim the pot as the merged kinds do;
-///     with nobody named, `contract_moderation_gate` v0 refuses, paid, every
-///     document transition of a moderated type
-///     (`ContractModeratedDocumentTypeNotYetUsableError`, 41200) and nobody may
-///     claim the moderators pot, which accumulates for the team to come. No
-///     election exists yet.
+///     with nobody named, nobody may claim the moderators pot, which
+///     accumulates for the team to come, and with the types not yet usable
+///     `contract_moderation_gate` v0 refuses, paid, every document transition
+///     of a moderated type (`ContractModeratedDocumentTypeNotYetUsableError`,
+///     41200). No election exists yet.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

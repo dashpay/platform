@@ -2,15 +2,17 @@
 //! masternodes and evonodes instead of by the contract owner (protocol version 14).
 //!
 //! The declaration is fixed at the contract's creation and never changes: the election
-//! parameters, the document types the team moderates, the envelope a charter must fit in
-//! (the abilities it may claim and the most it may charge the moderators part of each
-//! document action), who moderates until the first team is seated, and whether the owner is
-//! protected from the team. No election exists yet: until one does, the contract is in its
-//! **interim**, moderated by the interim moderators the declaration names, or, with the
-//! moderated types not yet usable, by nobody.
+//! parameters, the document types the team moderates with the abilities a charter may claim
+//! on each, the most a charter may charge the moderators part of each document action, who
+//! moderates until the first team is seated, and whether the owner is protected from the
+//! team. No election exists yet: until one does, the contract is in its **interim**,
+//! moderated by the interim moderators the declaration names, or by nobody: with the
+//! moderated types not yet usable, or usable and unmoderated meanwhile.
 
 use crate::balances::credits::{Credits, MAX_CREDITS};
-use crate::data_contract::config::moderation::ContractModerationConfig;
+use crate::data_contract::config::moderation::{
+    document_schema_lets_moderators_delete, ContractModerationConfig,
+};
 use crate::data_contract::DocumentName;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
@@ -35,10 +37,8 @@ pub mod property_names {
     pub const VOTE_WINDOW: &str = "voteWindow";
     /// The challenge cool-down, in seconds
     pub const CHALLENGE_COOL_DOWN: &str = "challengeCoolDown";
-    /// The moderated document type names
+    /// The moderated document types, each with the abilities a charter may claim on it
     pub const MODERATED_DOCUMENT_TYPES: &str = "moderatedDocumentTypes";
-    /// The abilities a charter may claim
-    pub const ABILITIES: &str = "abilities";
     /// The moderators action fee maximums, by document type
     pub const MODERATORS_ACTION_FEE_MAXIMUMS: &str = "moderatorsActionFeeMaximums";
     /// The interim moderators
@@ -52,7 +52,8 @@ pub mod property_names {
 }
 
 /// What a moderation team may do to a contract's users and content. The contract declares
-/// which of these a charter may claim; a seated team has what its charter claims.
+/// which of these a charter may claim on each moderated document type; a seated team has
+/// what its charter claims.
 ///
 /// Append-only: the discriminant is stored in every declaration.
 #[derive(
@@ -72,15 +73,17 @@ pub mod property_names {
 )]
 #[serde(rename_all = "camelCase")]
 pub enum ModerationAbility {
-    /// Delete documents of the document types flagged `canBeDeletedByModerators`, within
-    /// each type's window. Needs such a type.
+    /// Delete documents of the type, within its `canBeDeletedByModeratorsFor` window. Needs
+    /// the type flagged `canBeDeletedByModerators`.
     DeleteDocuments,
-    /// Put identities on the banlist and take them off it. Needs the banlist.
+    /// Put identities on the banlist and take them off it, over their documents of the
+    /// type. Needs the banlist.
     Ban,
-    /// Put identities on the suspension list and take them off it. Needs the suspension
-    /// list.
+    /// Put identities on the suspension list and take them off it, over their documents of
+    /// the type. Needs the suspension list.
     Suspend,
-    /// Warn identities and clear their warnings. Needs the warning list.
+    /// Warn identities and clear their warnings, over their documents of the type. Needs
+    /// the warning list.
     Warn,
 }
 
@@ -105,10 +108,11 @@ impl fmt::Display for ModerationAbility {
 /// Who moderates an elected contract until its first team is seated.
 ///
 /// The first two are the merged kinds of [`ContractModerators`](super::ContractModerators),
-/// with the same authority: the owner alone, or the owner and a fixed set. The third names
-/// nobody: the moderated document types can not be used until a team is seated (their
-/// transitions are refused), and nothing else is moderated in the meantime. A contract that
-/// never attracts a team keeps those types unusable for good.
+/// with the same authority: the owner alone, or the owner and a fixed set. The other two
+/// name nobody, so nothing is moderated in the meantime and nobody claims the moderators
+/// pot: under `NotYetUsable` the moderated document types can not be used until a team is
+/// seated (their transitions are refused), and a contract that never attracts a team keeps
+/// them unusable for good; under `NoModeration` they are used unmoderated until then.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub enum InterimModerators {
     /// Only the contract owner moderates until a team is seated.
@@ -120,6 +124,9 @@ pub enum InterimModerators {
     /// Nobody moderates until a team is seated, and the moderated document types can not be
     /// used until then.
     NotYetUsable,
+    /// Nobody moderates until a team is seated, and the moderated document types are used
+    /// unmoderated until then.
+    NoModeration,
 }
 
 impl InterimModerators {
@@ -127,7 +134,9 @@ impl InterimModerators {
     pub fn identity_ids(&self) -> Option<&BTreeSet<Identifier>> {
         match self {
             InterimModerators::AppointedModerators(ids) => Some(ids),
-            InterimModerators::ContractOwner | InterimModerators::NotYetUsable => None,
+            InterimModerators::ContractOwner
+            | InterimModerators::NotYetUsable
+            | InterimModerators::NoModeration => None,
         }
     }
 
@@ -138,18 +147,18 @@ impl InterimModerators {
             InterimModerators::AppointedModerators(ids) => {
                 owner_id == identity_id || ids.contains(identity_id)
             }
-            InterimModerators::NotYetUsable => false,
+            InterimModerators::NotYetUsable | InterimModerators::NoModeration => false,
         }
     }
 
     /// The interim team of a contract owned by `owner_id`: who shares its moderators fee pot
-    /// until a team is seated. Nobody under [`InterimModerators::NotYetUsable`]: the pot
-    /// accumulates for the team that gets seated.
+    /// until a team is seated. Nobody under [`InterimModerators::NotYetUsable`] or
+    /// [`InterimModerators::NoModeration`]: the pot accumulates for the team that gets seated.
     pub fn team(&self, owner_id: &Identifier) -> BTreeSet<Identifier> {
         match self {
             InterimModerators::ContractOwner => BTreeSet::from([*owner_id]),
             InterimModerators::AppointedModerators(ids) => ids.clone(),
-            InterimModerators::NotYetUsable => BTreeSet::new(),
+            InterimModerators::NotYetUsable | InterimModerators::NoModeration => BTreeSet::new(),
         }
     }
 
@@ -164,12 +173,14 @@ impl InterimModerators {
             InterimModerators::ContractOwner => "contractOwner",
             InterimModerators::AppointedModerators(_) => "appointedModerators",
             InterimModerators::NotYetUsable => "notYetUsable",
+            InterimModerators::NoModeration => "noModeration",
         }
     }
 }
 
 // The wire shape is the moderators' own: a flat `{"$type": "contractOwner"}`,
-// `{"$type": "appointedModerators", "identities": [...]}` or `{"$type": "notYetUsable"}` map.
+// `{"$type": "appointedModerators", "identities": [...]}`, `{"$type": "notYetUsable"}` or
+// `{"$type": "noModeration"}` map.
 impl Serialize for InterimModerators {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
@@ -196,8 +207,8 @@ impl<'de> Deserialize<'de> for InterimModerators {
                 f.write_str(
                     "InterimModerators as a map with a `$type` discriminator, \
                      e.g. {\"$type\": \"contractOwner\"}, \
-                     {\"$type\": \"appointedModerators\", \"identities\": [\"<base58>\"]} or \
-                     {\"$type\": \"notYetUsable\"}",
+                     {\"$type\": \"appointedModerators\", \"identities\": [\"<base58>\"]}, \
+                     {\"$type\": \"notYetUsable\"} or {\"$type\": \"noModeration\"}",
                 )
             }
 
@@ -243,6 +254,7 @@ impl<'de> Deserialize<'de> for InterimModerators {
                 match variant.as_str() {
                     "contractOwner" => without_identities(InterimModerators::ContractOwner),
                     "notYetUsable" => without_identities(InterimModerators::NotYetUsable),
+                    "noModeration" => without_identities(InterimModerators::NoModeration),
                     "appointedModerators" => {
                         let ids = identities
                             .ok_or_else(|| de::Error::missing_field(property_names::IDENTITIES))?;
@@ -250,7 +262,12 @@ impl<'de> Deserialize<'de> for InterimModerators {
                     }
                     other => Err(de::Error::unknown_variant(
                         other,
-                        &["contractOwner", "appointedModerators", "notYetUsable"],
+                        &[
+                            "contractOwner",
+                            "appointedModerators",
+                            "notYetUsable",
+                            "noModeration",
+                        ],
                     )),
                 }
             }
@@ -273,6 +290,12 @@ impl fmt::Display for InterimModerators {
             }
             InterimModerators::NotYetUsable => {
                 write!(f, "nobody, its moderated document types not yet usable")
+            }
+            InterimModerators::NoModeration => {
+                write!(
+                    f,
+                    "nobody, its moderated document types unmoderated meanwhile"
+                )
             }
         }
     }
@@ -367,14 +390,14 @@ pub struct ElectedModerators {
     /// `SystemLimits::max_contract_moderation_challenge_cool_down_seconds` (two weeks to
     /// three years), always declared.
     pub challenge_cool_down: u32,
-    /// The document types the team moderates: non-empty, each a document type of the
-    /// contract. A type here need not be flagged `canBeDeletedByModerators`; deletions
-    /// reach only the flagged ones. Bans and suspensions are contract-wide whatever this
-    /// set says; it bounds deletions and the interim block.
-    pub moderated_document_types: BTreeSet<DocumentName>,
-    /// The abilities a charter may claim: non-empty, each backed by the contract (a list it
-    /// keeps, or a document type moderators may delete from).
-    pub abilities: BTreeSet<ModerationAbility>,
+    /// The document types the team moderates, each with the abilities a charter may claim
+    /// on it: non-empty, each type a document type of the contract, each ability set
+    /// non-empty and backed by the contract (`Ban`, `Suspend` and `Warn` by the list the
+    /// contract keeps, `DeleteDocuments` by the type being flagged
+    /// `canBeDeletedByModerators`). The lists themselves stay contract-wide: an ability on
+    /// a type is what a team may do over the documents of that type. The set also bounds
+    /// the interim block.
+    pub moderated_document_types: BTreeMap<DocumentName, BTreeSet<ModerationAbility>>,
     /// The most a charter may charge the moderators part of each document action, by
     /// document type. A type left out lets a charter charge nothing on it. The owner part
     /// of every action stays what the type's `actionFees` declare.
@@ -391,12 +414,15 @@ pub struct ElectedModerators {
 impl ElectedModerators {
     /// Whether the team moderates the document type
     pub fn moderates_document_type(&self, document_type_name: &str) -> bool {
-        self.moderated_document_types.contains(document_type_name)
+        self.moderated_document_types
+            .contains_key(document_type_name)
     }
 
-    /// Whether a charter may claim the ability
-    pub fn allows(&self, ability: ModerationAbility) -> bool {
-        self.abilities.contains(&ability)
+    /// Whether a charter may claim the ability on the document type
+    pub fn allows(&self, document_type_name: &str, ability: ModerationAbility) -> bool {
+        self.moderated_document_types
+            .get(document_type_name)
+            .is_some_and(|abilities| abilities.contains(&ability))
     }
 
     /// The most a charter may charge the moderators part of `action` on the documents of
@@ -422,15 +448,14 @@ impl ElectedModerators {
 
     /// The pure-data rules of the declaration beyond those every moderator kind shares (a
     /// named set non-empty and within the limit, checked on the interim set by the caller):
-    /// the windows and the cool-down within the limits, the moderated set non-empty and
-    /// naming document types of the contract, the envelope non-empty and each ability backed
-    /// by the contract, and every fee maximum naming a document type of the contract,
+    /// the windows and the cool-down within the limits, the moderated set non-empty, each
+    /// of its types a document type of the contract with a non-empty ability set the
+    /// contract backs, and every fee maximum naming a document type of the contract,
     /// pricing at least one action, and non-zero within `MAX_CREDITS`. The first rule broken
     /// is the reason returned.
     pub(super) fn validation_error(
         &self,
         config: &ContractModerationConfig,
-        has_document_type_deletable_by_moderators: bool,
         document_schemas: &BTreeMap<DocumentName, Value>,
         platform_version: &PlatformVersion,
     ) -> Option<String> {
@@ -459,39 +484,42 @@ impl ElectedModerators {
         if self.moderated_document_types.is_empty() {
             return Some("the moderated document type set is empty".to_string());
         }
-        if let Some(unknown) = self
-            .moderated_document_types
-            .iter()
-            .find(|name| !document_schemas.contains_key(*name))
-        {
-            return Some(format!(
-                "the moderated document type \"{unknown}\" is not a document type of the contract"
-            ));
-        }
-
-        if self.abilities.is_empty() {
-            return Some("the ability envelope is empty".to_string());
-        }
-        for ability in &self.abilities {
-            let unbacked = match ability {
-                ModerationAbility::Ban if !config.banlist => {
-                    Some("bans, but the contract keeps no banlist")
-                }
-                ModerationAbility::Suspend if !config.suspensions => {
-                    Some("suspensions, but the contract keeps no suspension list")
-                }
-                ModerationAbility::Warn if !config.warnings => {
-                    Some("warnings, but the contract keeps no warning list")
-                }
-                ModerationAbility::DeleteDocuments
-                    if !has_document_type_deletable_by_moderators =>
-                {
-                    Some("document deletions, but no document type can be deleted by moderators")
-                }
-                _ => None,
+        for (document_type_name, abilities) in &self.moderated_document_types {
+            let Some(schema) = document_schemas.get(document_type_name) else {
+                return Some(format!(
+                    "the moderated document type \"{document_type_name}\" is not a document \
+                     type of the contract"
+                ));
             };
-            if let Some(unbacked) = unbacked {
-                return Some(format!("the ability envelope allows {unbacked}"));
+            if abilities.is_empty() {
+                return Some(format!(
+                    "the ability set of the moderated document type \"{document_type_name}\" \
+                     is empty"
+                ));
+            }
+            for ability in abilities {
+                let unbacked = match ability {
+                    ModerationAbility::Ban if !config.banlist => {
+                        Some("bans, but the contract keeps no banlist")
+                    }
+                    ModerationAbility::Suspend if !config.suspensions => {
+                        Some("suspensions, but the contract keeps no suspension list")
+                    }
+                    ModerationAbility::Warn if !config.warnings => {
+                        Some("warnings, but the contract keeps no warning list")
+                    }
+                    ModerationAbility::DeleteDocuments
+                        if !document_schema_lets_moderators_delete(schema) =>
+                    {
+                        Some("document deletions, but the type can not be deleted by moderators")
+                    }
+                    _ => None,
+                };
+                if let Some(unbacked) = unbacked {
+                    return Some(format!(
+                        "the moderated document type \"{document_type_name}\" allows {unbacked}"
+                    ));
+                }
             }
         }
 
@@ -576,12 +604,25 @@ mod tests {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             challenge_cool_down: 1_209_600,
-            moderated_document_types: BTreeSet::from(["post".to_string()]),
-            abilities: BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]),
+            moderated_document_types: BTreeMap::from([(
+                "post".to_string(),
+                BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]),
+            )]),
             moderators_action_fee_maximums: BTreeMap::new(),
             interim: InterimModerators::ContractOwner,
             owner_protected: false,
         }
+    }
+
+    /// The ability set of a moderated type, to edit
+    fn abilities_of<'a>(
+        declaration: &'a mut ElectedModerators,
+        name: &str,
+    ) -> &'a mut BTreeSet<ModerationAbility> {
+        declaration
+            .moderated_document_types
+            .get_mut(name)
+            .expect("the type is moderated")
     }
 
     fn config(elected: ElectedModerators) -> ContractModerationConfig {
@@ -669,26 +710,28 @@ mod tests {
             .contains("moderated document type set is empty"));
 
         let mut unknown = elected();
-        unknown
-            .moderated_document_types
-            .insert("comment".to_string());
+        unknown.moderated_document_types.insert(
+            "comment".to_string(),
+            BTreeSet::from([ModerationAbility::Ban]),
+        );
         assert!(refusal(&config(unknown))
             .expect("refused")
             .contains("\"comment\" is not a document type"));
 
         // A moderated type need not be deletable by moderators.
         let mut not_deletable = elected();
-        not_deletable.moderated_document_types = BTreeSet::from(["like".to_string()]);
+        not_deletable.moderated_document_types =
+            BTreeMap::from([("like".to_string(), BTreeSet::from([ModerationAbility::Ban]))]);
         assert_eq!(refusal(&config(not_deletable)), None);
     }
 
     #[test]
     fn should_require_a_non_empty_envelope_the_contract_can_back() {
         let mut empty = elected();
-        empty.abilities.clear();
+        abilities_of(&mut empty, "post").clear();
         assert!(refusal(&config(empty))
             .expect("refused")
-            .contains("ability envelope is empty"));
+            .contains("ability set of the moderated document type \"post\" is empty"));
 
         let mut bans_without_banlist = config(elected());
         bans_without_banlist.banlist = false;
@@ -704,7 +747,7 @@ mod tests {
             .contains("keeps no suspension list"));
 
         let mut warnings = elected();
-        warnings.abilities.insert(ModerationAbility::Warn);
+        abilities_of(&mut warnings, "post").insert(ModerationAbility::Warn);
         let mut warnings_without_list = config(warnings);
         assert!(refusal(&warnings_without_list)
             .expect("refused")
@@ -712,20 +755,19 @@ mod tests {
         warnings_without_list.warnings = true;
         assert_eq!(refusal(&warnings_without_list), None);
 
-        // Deletions are backed by `post`; without it they are not.
+        // Deletions on `post` are backed by its flag; on `like` they are not.
         let mut deletions = elected();
-        deletions.abilities = BTreeSet::from([ModerationAbility::DeleteDocuments]);
-        let with_post = config(deletions);
-        assert_eq!(refusal(&with_post), None);
-        let no_deletable_type = with_post
-            .validate(
-                &BTreeMap::from([("like".to_string(), platform_value!({ "type": "object" }))]),
-                PlatformVersion::latest(),
-            )
-            .expect("validate");
-        assert!(!no_deletable_type.is_valid());
-        // The moderated set is checked first: `post` is not in that contract.
-        assert!(rendered(&no_deletable_type.errors).contains("\"post\" is not a document type"));
+        *abilities_of(&mut deletions, "post") =
+            BTreeSet::from([ModerationAbility::DeleteDocuments]);
+        assert_eq!(refusal(&config(deletions)), None);
+        let mut deletions_on_like = elected();
+        deletions_on_like.moderated_document_types.insert(
+            "like".to_string(),
+            BTreeSet::from([ModerationAbility::DeleteDocuments]),
+        );
+        assert!(refusal(&config(deletions_on_like))
+            .expect("refused")
+            .contains("\"like\" allows document deletions, but the type can not be deleted"));
     }
 
     #[test]
@@ -854,8 +896,10 @@ mod tests {
         let json = serde_json::to_value(&moderators).expect("serialize");
         assert_eq!(json["$type"], "elected");
         assert_eq!(json["joinWindow"], 604_800);
-        assert_eq!(json["moderatedDocumentTypes"], serde_json::json!(["post"]));
-        assert_eq!(json["abilities"], serde_json::json!(["ban", "suspend"]));
+        assert_eq!(
+            json["moderatedDocumentTypes"],
+            serde_json::json!({ "post": ["ban", "suspend"] })
+        );
         assert_eq!(json["interim"]["$type"], "appointedModerators");
         assert_eq!(
             json["interim"]["identities"].as_array().map(|a| a.len()),
@@ -894,8 +938,7 @@ mod tests {
         let minimal = serde_json::json!({
             "$type": "elected",
             "challengeCoolDown": 1_209_600,
-            "moderatedDocumentTypes": ["post"],
-            "abilities": ["ban"],
+            "moderatedDocumentTypes": { "post": ["ban"] },
             "interim": { "$type": "notYetUsable" },
         });
         let parsed: ContractModerators = serde_json::from_value(minimal).expect("deserialize");
@@ -905,21 +948,27 @@ mod tests {
         assert!(!elected.owner_protected);
         assert!(elected.moderators_action_fee_maximums.is_empty());
         assert_eq!(elected.interim, InterimModerators::NotYetUsable);
+        let no_moderation: InterimModerators =
+            serde_json::from_value(serde_json::json!({ "$type": "noModeration" }))
+                .expect("deserialize");
+        assert_eq!(no_moderation, InterimModerators::NoModeration);
+        assert_eq!(
+            serde_json::to_value(&no_moderation).expect("serialize"),
+            serde_json::json!({ "$type": "noModeration" })
+        );
 
         let refused = [
             // The cool-down has no default.
             serde_json::json!({
                 "$type": "elected",
-                "moderatedDocumentTypes": ["post"],
-                "abilities": ["ban"],
+                "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner" },
             }),
             // A misspelled key is refused, not dropped.
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": ["post"],
-                "abilities": ["ban"],
+                "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner" },
                 "ownerProtcted": true,
             }),
@@ -927,31 +976,35 @@ mod tests {
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": ["post"],
-                "abilities": ["ban"],
+                "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner", "identity": [] },
             }),
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": ["post"],
-                "abilities": ["ban"],
+                "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "seatedTeam" },
             }),
             // An unknown ability, and an unknown fee action.
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": ["post"],
-                "abilities": ["silence"],
+                "moderatedDocumentTypes": { "post": ["silence"] },
                 "interim": { "$type": "contractOwner" },
             }),
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
+                "moderatedDocumentTypes": { "post": ["ban"] },
+                "moderatorsActionFeeMaximums": { "post": { "updatePrice": 1 } },
+                "interim": { "$type": "contractOwner" },
+            }),
+            // The abilities live under each moderated type, not beside them.
+            serde_json::json!({
+                "$type": "elected",
+                "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": ["post"],
                 "abilities": ["ban"],
-                "moderatorsActionFeeMaximums": { "post": { "updatePrice": 1 } },
                 "interim": { "$type": "contractOwner" },
             }),
             // The elected keys under another kind, and `identities` under elected.
@@ -959,8 +1012,7 @@ mod tests {
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": ["post"],
-                "abilities": ["ban"],
+                "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner" },
                 "identities": [],
             }),
@@ -986,9 +1038,30 @@ mod tests {
             "an elected moderation team, in its interim moderated by nobody, its moderated \
              document types not yet usable"
         );
+        declaration.interim = InterimModerators::NoModeration;
+        assert_eq!(
+            declaration.to_string(),
+            "an elected moderation team, in its interim moderated by nobody, its moderated \
+             document types unmoderated meanwhile"
+        );
         assert_eq!(
             ModerationAbility::DeleteDocuments.to_string(),
             "deleteDocuments"
         );
+    }
+
+    #[test]
+    fn should_leave_the_moderated_types_usable_and_unmoderated_under_no_moderation() {
+        let mut declaration = elected();
+        declaration.interim = InterimModerators::NoModeration;
+        let owner = Identifier::from([9u8; 32]);
+        assert!(!declaration.interim_blocks_document_type("post"));
+        assert!(!declaration.interim.may_moderate(&owner, &owner));
+        assert!(declaration.interim.team(&owner).is_empty());
+        assert_eq!(declaration.interim.identity_ids(), None);
+        assert!(declaration.allows("post", ModerationAbility::Ban));
+        assert!(!declaration.allows("post", ModerationAbility::Warn));
+        assert!(!declaration.allows("like", ModerationAbility::Ban));
+        assert_eq!(refusal(&config(declaration)), None);
     }
 }

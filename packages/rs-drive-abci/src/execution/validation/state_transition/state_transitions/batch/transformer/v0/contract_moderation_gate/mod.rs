@@ -438,8 +438,10 @@ mod tests {
                     join_window: 604_800,
                     vote_window: 604_800,
                     challenge_cool_down: 1_209_600,
-                    moderated_document_types: BTreeSet::from(["niceDocument".to_string()]),
-                    abilities: BTreeSet::from([ModerationAbility::Ban]),
+                    moderated_document_types: BTreeMap::from([(
+                        "niceDocument".to_string(),
+                        BTreeSet::from([ModerationAbility::Ban]),
+                    )]),
                     moderators_action_fee_maximums: BTreeMap::new(),
                     interim: InterimModerators::NotYetUsable,
                     owner_protected: false,

@@ -69,7 +69,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
@@ -232,7 +232,9 @@ impl Setup {
                 ContractModerators::AppointedModerators(ids) => Some(ids),
                 ContractModerators::Elected(elected) => match &mut elected.interim {
                     InterimModerators::AppointedModerators(ids) => Some(ids),
-                    InterimModerators::ContractOwner | InterimModerators::NotYetUsable => None,
+                    InterimModerators::ContractOwner
+                    | InterimModerators::NotYetUsable
+                    | InterimModerators::NoModeration => None,
                 },
                 ContractModerators::ContractOwner => None,
             };
@@ -2980,9 +2982,14 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             challenge_cool_down: 1_209_600,
-            moderated_document_types: moderated.iter().map(|name| name.to_string()).collect(),
-            abilities: [ModerationAbility::Ban, ModerationAbility::Suspend]
-                .into_iter()
+            moderated_document_types: moderated
+                .iter()
+                .map(|name| {
+                    (
+                        name.to_string(),
+                        BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]),
+                    )
+                })
                 .collect(),
             moderators_action_fee_maximums: BTreeMap::new(),
             interim,
@@ -3186,6 +3193,34 @@ async fn should_block_the_moderated_types_of_an_elected_contract_until_a_team_is
         .is_empty());
 }
 
+/// Under a `noModeration` interim the moderated types are used, unmoderated: nobody may
+/// moderate, the owner included, and nobody claims the pot.
+#[tokio::test]
+async fn should_leave_the_moderated_types_usable_and_unmoderated_under_no_moderation() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::NoModeration,
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    let post = setup.create_document(&setup.user).await;
+    assert!(setup.check_tx(&post).is_empty());
+    assert_success(&setup.process(&post, &transaction));
+
+    for actor in [&setup.owner, &setup.moderator] {
+        let ban = setup.moderate(actor, ban_action(setup.user.id())).await;
+        assert_paid_with_code(
+            &setup.process(&ban, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    assert!(ContractFeePot::Moderators
+        .recipients(&setup.contract)
+        .is_empty());
+}
+
 /// A declaration outside a bound or naming a type the contract does not have is refused,
 /// unpaid, at the create; a contract that was not born elected can not become so.
 #[tokio::test]
@@ -3214,15 +3249,29 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
             "a cool-down over three years",
         ),
         (
-            with(|d| d.moderated_document_types = ["comment".to_string()].into()),
+            with(|d| {
+                d.moderated_document_types = BTreeMap::from([(
+                    "comment".to_string(),
+                    BTreeSet::from([ModerationAbility::Ban]),
+                )]);
+            }),
             "an unknown moderated type",
         ),
-        (with(|d| d.abilities.clear()), "an empty envelope"),
         (
             with(|d| {
-                d.abilities.insert(ModerationAbility::DeleteDocuments);
+                d.moderated_document_types
+                    .insert(DOCUMENT_TYPE.to_string(), BTreeSet::new());
             }),
-            "deletions without a deletable type",
+            "an empty ability set",
+        ),
+        (
+            with(|d| {
+                d.moderated_document_types
+                    .get_mut(DOCUMENT_TYPE)
+                    .expect("moderated")
+                    .insert(ModerationAbility::DeleteDocuments);
+            }),
+            "deletions on a type moderators can not delete from",
         ),
     ] {
         setup

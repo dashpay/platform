@@ -127,8 +127,9 @@ export interface DataContractConfig {
  *
  * An elected declaration is fixed when the contract is created and never changes. Until a
  * team is seated (no election exists yet) the contract is moderated by its `interim`
- * moderators, or by nobody, in which case every document transition of a moderated
- * document type is refused. Windows and the cool-down are in seconds: the windows one day
+ * moderators, or by nobody: with the moderated document types not yet usable (every
+ * document transition of one is refused) or used unmoderated meanwhile. Windows and the
+ * cool-down are in seconds: the windows one day
  * to four weeks (one week when left out), the cool-down two weeks to three years.
  */
 export type ContractModerators =
@@ -139,10 +140,13 @@ export type ContractModerators =
       joinWindow?: number;
       voteWindow?: number;
       challengeCoolDown: number;
-      /** Non-empty document type names of the contract; bans stay contract-wide. */
-      moderatedDocumentTypes: string[];
-      /** Non-empty, each backed by a list the contract keeps or a deletable type. */
-      abilities: ModerationAbility[];
+      /**
+       * The moderated document types of the contract, each with the non-empty abilities a
+       * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
+       * keeps, `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay
+       * contract-wide.
+       */
+      moderatedDocumentTypes: Record<string, ModerationAbility[]>;
       /**
        * The most a charter may charge the moderators part of each action, by document type,
        * in the units of the type's `actionFees`. A type or an action left out allows nothing.
@@ -160,7 +164,8 @@ export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn";
 export type InterimModerators =
   | { $type: "contractOwner" }
   | { $type: "appointedModerators"; identities: string[] }
-  | { $type: "notYetUsable" };
+  | { $type: "notYetUsable" }
+  | { $type: "noModeration" };
 
 /** Per-action ceilings on the moderators part, in credits; the keys of `actionFees`. */
 export interface ModeratorsActionFeeMaximums {
