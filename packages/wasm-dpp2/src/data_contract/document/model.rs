@@ -20,7 +20,7 @@ use dpp::document::serialization_traits::{
 // are imported inline at the call sites.
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::identifier::Identifier;
-use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
+use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::encode;
 use dpp::platform_value::{Value, ValueMapHelper};
 use dpp::prelude::IdentityNonce;
@@ -50,8 +50,11 @@ export interface DocumentOptions {
   revision?: bigint;
   /**
    * Document ID. Derived when not provided (see `identityContractNonce`).
-   * Whatever is given here is replaced by `new DocumentCreateTransition(...)`,
-   * which can only carry the id consensus recomputes.
+   * Together with `identityContractNonce` it must equal the derived id, or
+   * the constructor throws: the nonce fixes the id, and a different explicit
+   * one could only be referenced, never created. Whatever is given here is
+   * replaced by `new DocumentCreateTransition(...)`, which can only carry the
+   * id consensus recomputes.
    */
   id?: IdentifierLike;
   /** Entropy bytes (32 bytes, auto-generated if not provided) */
@@ -282,15 +285,36 @@ impl DocumentWasm {
         )?;
 
         let doc_id: Identifier = match (id, identity_contract_nonce) {
-            (Some(id), _) => id.into(),
-            (None, Some(identity_contract_nonce)) => Document::generate_document_id(
-                &data_contract_id,
-                &owner_id,
-                &document_type_name,
-                &entropy,
-                identity_contract_nonce,
-                &platform_version,
-            )?,
+            // The nonce fixes the id: it is the one the create transition
+            // will carry. An explicit id may only restate it; one that
+            // differs would let the caller reference (from another document
+            // in the batch, say) an id no transition ever creates.
+            (id, Some(identity_contract_nonce)) => {
+                let derived = Document::generate_document_id(
+                    &data_contract_id,
+                    &owner_id,
+                    &document_type_name,
+                    &entropy,
+                    identity_contract_nonce,
+                    &platform_version,
+                )?;
+
+                if let Some(id) = id {
+                    let id: Identifier = id.into();
+                    if id != derived {
+                        return Err(WasmDppError::invalid_argument(format!(
+                            "id {} does not match the id {} derived from the document's entropy \
+                             and identityContractNonce {}: pass one or the other",
+                            id.to_string(Base58),
+                            derived.to_string(Base58),
+                            identity_contract_nonce,
+                        )));
+                    }
+                }
+
+                derived
+            }
+            (Some(id), None) => id.into(),
             // Without the nonce of the create transition the id can only be
             // the entropy-only one, which from protocol version 14 is a
             // placeholder: `DocumentCreateTransition` replaces it.

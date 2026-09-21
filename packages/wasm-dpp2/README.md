@@ -43,5 +43,6 @@ const ready = new Document({ properties, documentTypeName, dataContractId, owner
 Each of these takes an optional `platformVersion` (latest by default); before
 protocol version 14 the derivation ignores the nonce. Whatever id a `Document`
 carried before it is passed to `DocumentCreateTransition` is replaced: the
-transition can only carry the id consensus recomputes. No app needs to
-reimplement the hash.
+transition can only carry the id consensus recomputes. For the same reason
+`new Document({...})` refuses an explicit `id` that disagrees with the one its
+`identityContractNonce` derives. No app needs to reimplement the hash.

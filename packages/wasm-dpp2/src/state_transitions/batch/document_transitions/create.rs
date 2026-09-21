@@ -83,13 +83,6 @@ impl DocumentCreateTransitionWasm {
                 .unwrap_or_default()
                 .into();
 
-        // The id a document carries before its nonce is known is a
-        // placeholder: derive the one consensus will recompute, on the
-        // caller's own object so `document.id` matches `transition.base.id`,
-        // as `DocumentCreateTransitionV0::from_document` does in dpp.
-        let mut document = try_from_options_mut::<DocumentWasm>(&options, "document", "Document")?;
-        document.set_id_for_creation(identity_contract_nonce, &platform_version)?;
-
         let prefunded_voting_balance: Option<PrefundedVotingBalanceWasm> =
             try_from_options_optional(&options, "prefundedVotingBalance")?;
 
@@ -98,6 +91,19 @@ impl DocumentCreateTransitionWasm {
 
         let action_fee_agreement: Option<DocumentActionFeeAgreementWasm> =
             try_from_options_optional(&options, "actionFeeAgreement")?;
+
+        // The id a document carries before its nonce is known is a
+        // placeholder: derive the one consensus will recompute, on the
+        // caller's own object so `document.id` matches `transition.base.id`,
+        // as `DocumentCreateTransitionV0::from_document` does in dpp.
+        //
+        // Every other property is read above, before this borrow: a JS
+        // getter on the options bag could re-enter the same `Document`, and
+        // wasm-bindgen reports a second borrow of a mutably borrowed object
+        // as an unrecoverable runtime error, not as a result. From here on
+        // nothing calls back into JavaScript.
+        let mut document = try_from_options_mut::<DocumentWasm>(&options, "document", "Document")?;
+        document.set_id_for_creation(identity_contract_nonce, &platform_version)?;
 
         let rs_create_transition = generate_create_transition(
             &document,

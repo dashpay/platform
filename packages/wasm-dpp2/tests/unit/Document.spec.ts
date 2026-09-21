@@ -117,6 +117,42 @@ describe('Document', () => {
         createDocument({ entropy: fixedEntropy }).id.toBytes(),
       );
     });
+
+    it('should accept an explicit id that equals the one derived from the nonce', () => {
+      const derived = wasm.Document.generateId(
+        documentTypeName,
+        ownerId,
+        dataContractId,
+        fixedEntropy,
+        BigInt(5),
+      );
+
+      const documentInstance = new wasm.Document({
+        properties: document,
+        documentTypeName,
+        dataContractId,
+        ownerId,
+        entropy: fixedEntropy,
+        id: derived,
+        identityContractNonce: BigInt(5),
+      });
+
+      expect(documentInstance.id.toBytes()).to.deep.equal(derived);
+    });
+
+    it('should reject an explicit id that differs from the one derived from the nonce', () => {
+      // the nonce fixes the id; an explicit id that disagrees could be
+      // referenced by another document but never created
+      expect(() => new wasm.Document({
+        properties: document,
+        documentTypeName,
+        dataContractId,
+        ownerId,
+        entropy: fixedEntropy,
+        id,
+        identityContractNonce: BigInt(5),
+      })).to.throw(/does not match the id .* derived .* identityContractNonce 5/);
+    });
   });
 
   describe('toBytes()', () => {
