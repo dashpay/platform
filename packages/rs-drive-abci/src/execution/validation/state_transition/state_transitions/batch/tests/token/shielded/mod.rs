@@ -2340,6 +2340,38 @@ mod token_pool_mint_burn_claim_purchase_tests {
             }]
         );
         assert_eq!(pool_balance(&platform, token_id), 3);
+
+        // A buyer whose credits cover the fee but not the price is refused before execution:
+        // the agreed price is part of the batch's required balance, so the shortfall is a
+        // consensus rejection and never reaches the balance removal.
+        let (poor_buyer, poor_signer, poor_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.02));
+        let unaffordable = BatchTransition::new_token_direct_purchase_to_pool_transition(
+            token_id,
+            poor_buyer.id(),
+            contract.id(),
+            0,
+            3,
+            dash_to_credits!(0.03),
+            build_shield_bundle(3, 29),
+            &poor_key,
+            1,
+            0,
+            &poor_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token direct purchase to pool transition");
+        let result = process(&platform, &unaffordable);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_))
+            )]
+        );
+        assert_eq!(pool_balance(&platform, token_id), 3);
+        assert_tokens_conserved(&platform);
     }
 }
 

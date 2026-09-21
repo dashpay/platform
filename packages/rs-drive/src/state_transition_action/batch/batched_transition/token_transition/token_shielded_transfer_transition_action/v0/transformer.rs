@@ -3,9 +3,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_shielded_transfer_transition_action::{TokenShieldedTransferTransitionAction, TokenShieldedTransferTransitionActionV0};
-use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::{bump_with_errors, TokenTransitionAction};
 use crate::state_transition_action::batch::BatchedTransitionAction;
-use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::shielded::compute_shielded_verification_fee;
@@ -82,20 +81,11 @@ impl TokenShieldedTransferTransitionActionV0 {
         let (base_action, _change_note) = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
-                let bump_action =
-                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                        base,
-                        owner_id,
-                        user_fee_increase,
-                    );
-                let batched_action =
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                return Ok((
-                    ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action,
-                        base_action_validation_result.errors,
-                    ),
+                return Ok(bump_with_errors(
+                    base,
+                    owner_id,
+                    user_fee_increase,
+                    base_action_validation_result.errors,
                     fee_result,
                 ));
             }

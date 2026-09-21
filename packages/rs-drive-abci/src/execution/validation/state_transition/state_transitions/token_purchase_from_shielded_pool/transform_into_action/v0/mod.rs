@@ -2,6 +2,8 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::token_pool_paid_common::{
     resolve_pooled_token, validate_credit_pool_fee_spend,
 };
+use dpp::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::token::{TokenMintPastMaxSupplyError, TokenNotForDirectSale};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -102,7 +104,16 @@ impl TokenPurchaseFromShieldedPoolStateTransitionTransformIntoActionValidationV0
         }
         // The credit bundle carries the price plus the fee; the fee was pinned by the
         // minimum-fee validation and the price by the schedule, so the split is exact.
-        let fee_amount = v0.credit_amount - v0.total_agreed_price;
+        let Some(fee_amount) = v0.credit_amount.checked_sub(v0.total_agreed_price) else {
+            return Ok(ConsensusValidationResult::new_with_error(
+                BasicError::ShieldedInvalidValueBalanceError(
+                    ShieldedInvalidValueBalanceError::new(
+                        "the credits leaving the pool must cover the agreed price".to_string(),
+                    ),
+                )
+                .into(),
+            ));
+        };
         let fee_nullifiers: Vec<[u8; 32]> = v0.fee_actions.iter().map(|a| a.nullifier).collect();
         let current_credit_pool_balance = match validate_credit_pool_fee_spend(
             drive,

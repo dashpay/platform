@@ -4,9 +4,8 @@ use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::{TokenClaimToPoolTransitionAction, TokenClaimToPoolTransitionActionV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::resolve_token_claim;
-use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::{bump_with_errors, TokenTransitionAction};
 use crate::state_transition_action::batch::BatchedTransitionAction;
-use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::InvalidTokenClaimPropertyMismatch;
@@ -92,20 +91,11 @@ impl TokenClaimToPoolTransitionActionV0 {
         let (base_action, _change_note) = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
-                let bump_action =
-                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                        base,
-                        owner_id,
-                        user_fee_increase,
-                    );
-                let batched_action =
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                return Ok((
-                    ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action,
-                        base_action_validation_result.errors,
-                    ),
+                return Ok(bump_with_errors(
+                    base,
+                    owner_id,
+                    user_fee_increase,
+                    base_action_validation_result.errors,
                     fee_result,
                 ));
             }
@@ -114,26 +104,18 @@ impl TokenClaimToPoolTransitionActionV0 {
         // A perpetual claim into the pool must name the moment it claims up to: the bundle
         // proves an exact amount, which only a pinned moment makes predictable.
         if matches!(distribution_type, TokenDistributionType::Perpetual) && claim_up_to.is_none() {
-            let bump_action =
-                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                    base,
-                    owner_id,
-                    user_fee_increase,
-                );
-            let batched_action =
-                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-            return Ok((
-                ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action,
-                    vec![ConsensusError::StateError(
-                        StateError::InvalidTokenClaimPropertyMismatch(
-                            InvalidTokenClaimPropertyMismatch::new(
-                                "claim up to moment",
-                                base.token_id(),
-                            ),
+            return Ok(bump_with_errors(
+                base,
+                owner_id,
+                user_fee_increase,
+                vec![ConsensusError::StateError(
+                    StateError::InvalidTokenClaimPropertyMismatch(
+                        InvalidTokenClaimPropertyMismatch::new(
+                            "claim up to moment",
+                            base.token_id(),
                         ),
-                    )],
-                ),
+                    ),
+                )],
                 fee_result,
             ));
         }
@@ -151,19 +133,11 @@ impl TokenClaimToPoolTransitionActionV0 {
         )? {
             Ok(resolved) => resolved,
             Err(consensus_error) => {
-                let bump_action =
-                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                        base,
-                        owner_id,
-                        user_fee_increase,
-                    );
-                let batched_action =
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-                return Ok((
-                    ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action,
-                        vec![consensus_error],
-                    ),
+                return Ok(bump_with_errors(
+                    base,
+                    owner_id,
+                    user_fee_increase,
+                    vec![consensus_error],
                     fee_result,
                 ));
             }

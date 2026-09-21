@@ -63,8 +63,9 @@ balances, a token with `hasShieldedPool` must disable them permanently: `freezeR
 `unfreezeRules` and `destroyFrozenFundsRules` must each authorize no one to take the action and
 have no admin action takers, so no later configuration update can switch them on. Contract
 create and update reject anything else with `TokenShieldedPoolIncompatibleRulesError` (10278).
-Pausing still works: shield, unshield and shielded transfer are all rejected while the token is
-paused. A pooled token can never freeze an account, so the pool validators read and bill no
+Pausing still works: every pool operation, inflows included (shield, mint, claim and purchase
+into the pool) and outflows (unshield, shielded transfer, burn from the pool), is rejected while
+the token is paused. A pooled token can never freeze an account, so the pool validators read and bill no
 frozen-account check.
 
 ## Batch transitions
@@ -167,12 +168,19 @@ Structure validation checks the amount bounds, the action count against
 `SystemLimits::max_shielded_transition_actions`, the encrypted note sizes, a non-empty proof and
 a non-zero anchor.
 
+Unlike the credit pool, which refuses an outgoing spend until it holds
+`minimum_pool_notes_for_outgoing` (250) notes, a token pool has no such floor:
+`minimum_token_pool_notes_for_outgoing` is 0, so a pool with a single note lets that note be
+spent at once. The floor was left out so that a small token's pool is usable from its first
+note; the price is that a spend from a nearly empty pool is linkable to the shield that filled
+it. The constant lives in the event constants and can be raised by a later protocol version.
+
 State validation runs in this order, and the first failure is returned:
 
 1. The token base transition (contract exists, position valid, nonce).
 2. `hasShieldedPool` on the token's configuration, else `TokenShieldedPoolNotEnabledError`.
-3. Shield: the owner holds `amount` and the token is not paused. Unshield: the token is
-   not paused and the recipient identity exists. Shielded transfer: the token is not paused.
+3. The token is not paused, for every operation. Shield: the owner holds `amount`. Unshield:
+   the recipient identity exists.
    Mint to pool: the configuration lets the minter choose the destination
    (`mintingAllowChoosingDestination`), the minting rules authorize the identity (or group)
    and the max supply is not exceeded. Burn from pool: the burning rules authorize

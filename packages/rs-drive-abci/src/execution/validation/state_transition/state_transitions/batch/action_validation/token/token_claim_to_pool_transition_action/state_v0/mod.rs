@@ -11,7 +11,7 @@ use drive::query::TransactionArg;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_pool_common::{
-    validate_token_shielded_pool_enabled, verify_token_pool_bundle,
+    validate_token_not_paused, validate_token_shielded_pool_enabled, verify_token_pool_bundle,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::FLAGS_OUTPUTS_ONLY;
 use dpp::consensus::state::state_error::StateError;
@@ -70,6 +70,18 @@ impl TokenClaimToPoolTransitionActionStateValidationV0 for TokenClaimToPoolTrans
         }
 
         let token_id = self.token_id();
+
+        let validation_result = validate_token_not_paused(
+            platform,
+            token_id,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
 
         let contract = &self.data_contract_fetch_info_ref().contract;
         let token_configuration = contract.expected_token_configuration(self.token_position())?;

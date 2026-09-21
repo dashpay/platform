@@ -113,6 +113,12 @@ impl Drive {
 
         let apply = estimated_costs_only_with_layer_info.is_none();
 
+        // The total is read from state and written back as an absolute value, so two pool
+        // operations on the same token in one batch would each start from the pre-batch
+        // total and the second write would discard the first. Every state transition applies
+        // in its own batch, and `SystemLimits::max_transitions_in_documents_batch` is 1, so a
+        // batch holds at most one pool operation (a document paid from the pool counts as
+        // one). If that cap is ever raised, this must become a delta on the sum item.
         let new_total_balance = match balance_change {
             TokenPoolBalanceChange::Unchanged => None,
             TokenPoolBalanceChange::Add(amount) => {

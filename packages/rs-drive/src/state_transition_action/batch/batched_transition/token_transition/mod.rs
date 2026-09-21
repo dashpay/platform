@@ -271,3 +271,32 @@ impl TokenTransitionAction {
         }
     }
 }
+
+/// The batched action a token transition becomes when it fails its transform: a bump of the
+/// owner's contract nonce carrying `errors`, returned with the fee accrued so far so the
+/// failure is paid.
+pub(crate) fn bump_with_errors(
+    base: &dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition,
+    owner_id: dpp::identifier::Identifier,
+    user_fee_increase: dpp::prelude::UserFeeIncrease,
+    errors: Vec<dpp::consensus::ConsensusError>,
+    fee_result: dpp::fee::fee_result::FeeResult,
+) -> (
+    dpp::prelude::ConsensusValidationResult<
+        crate::state_transition_action::batch::BatchedTransitionAction,
+    >,
+    dpp::fee::fee_result::FeeResult,
+) {
+    let bump_action = crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+        base,
+        owner_id,
+        user_fee_increase,
+    );
+    (
+        dpp::prelude::ConsensusValidationResult::new_with_data_and_errors(
+            crate::state_transition_action::batch::BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+            errors,
+        ),
+        fee_result,
+    )
+}
