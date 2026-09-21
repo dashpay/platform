@@ -61,14 +61,16 @@ impl Waitable for Document {
 }
 
 /// Waits for the proof of a document batch and returns the document it left
-/// together with the credit balance of the batch's owner after it: the proof
-/// carries both, read from one state. The balance is a snapshot at the proof's
-/// block, so it may already include later transitions of the same identity.
+/// together with the credit balance of the batch's owner after it: from
+/// protocol version 14 the proof carries both, read from one state; a proof
+/// made at an earlier version carries only the document and the balance is
+/// `None`. The balance is a snapshot at the proof's block, so it may already
+/// include later transitions of the same identity.
 pub async fn wait_for_document_and_owner_balance(
     sdk: &Sdk,
     state_transition: StateTransition,
     settings: Option<PutSettings>,
-) -> Result<(Document, Credits), Error> {
+) -> Result<(Document, Option<Credits>), Error> {
     let doc_id = if let StateTransition::Batch(transition) = &state_transition {
         let ids = transition.modified_data_ids();
         if ids.len() != 1 {
@@ -93,7 +95,7 @@ pub async fn wait_for_document_and_owner_balance(
         )));
     };
 
-    let (mut documents, owner_balance): (BTreeMap<Identifier, Option<Document>>, Credits) =
+    let (mut documents, owner_balance): (BTreeMap<Identifier, Option<Document>>, Option<Credits>) =
         state_transition.wait_for_response(sdk, settings).await?;
 
     let document: Document = documents

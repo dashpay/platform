@@ -76,6 +76,19 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
+        self.prove_state_transition_internal(state_transition, transaction, false, platform_version)
+    }
+
+    /// The proof of a state transition's execution, shared by every version of
+    /// `prove_state_transition`. With `document_batch_carries_owner_balance` (from
+    /// version 1) a document batch's proof also carries the owner's credit balance.
+    pub(in crate::prove::prove_state_transition) fn prove_state_transition_internal(
+        &self,
+        state_transition: &StateTransition,
+        transaction: TransactionArg,
+        document_batch_carries_owner_balance: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
         let path_query = match state_transition {
             StateTransition::DataContractCreate(st) => {
                 if st.data_contract().config().keeps_history() {
@@ -210,17 +223,21 @@ impl Drive {
                             }
                         };
 
-                        // The owner's credit balance after the transition rides
-                        // in the same proof as the document, so a wallet learns
-                        // what the write left it with without a second query.
-                        // The verifier reads the document and the balance as
-                        // subsets of this merged proof and requires one state.
-                        let owner_balance_query =
-                            Drive::identity_balance_query(&owner_id.to_buffer());
-                        PathQuery::merge(
-                            vec![&document_path_query, &owner_balance_query],
-                            &platform_version.drive.grove_version,
-                        )?
+                        if document_batch_carries_owner_balance {
+                            // The owner's credit balance after the transition
+                            // rides in the same proof as the document, so a
+                            // wallet learns what the write left it with without
+                            // a second query. The verifier rebuilds this merged
+                            // query and verifies it strictly.
+                            let owner_balance_query =
+                                Drive::identity_balance_query(&owner_id.to_buffer());
+                            PathQuery::merge(
+                                vec![&document_path_query, &owner_balance_query],
+                                &platform_version.drive.grove_version,
+                            )?
+                        } else {
+                            document_path_query
+                        }
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();

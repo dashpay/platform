@@ -1598,8 +1598,8 @@ impl WasmSdk {
                         ("SUCCESS".to_string(), None, owner_balance)
                     }
                     // A wait without a proof answers success with no result
-                    // and, for a document batch, the owner's balance.
-                    None if owner_balance.is_some() => ("SUCCESS".to_string(), None, owner_balance),
+                    // (and, for a document batch, the owner's balance).
+                    None if !self.prove() => ("SUCCESS".to_string(), None, owner_balance),
                     None => (
                         "UNKNOWN".to_string(),
                         Some("No result returned".to_string()),

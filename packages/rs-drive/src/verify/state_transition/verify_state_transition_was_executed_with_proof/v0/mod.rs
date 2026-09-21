@@ -1,4 +1,7 @@
 use std::collections::BTreeMap;
+use crate::drive::balances::balance_path_vec;
+use grovedb::query_result_type::PathKeyOptionalElementTrio;
+use grovedb::PathQuery;
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
@@ -84,6 +87,29 @@ impl Drive {
         block_info: &BlockInfo,
         proof: &[u8],
         known_contracts_provider_fn: &ContractLookupFn,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        Self::verify_state_transition_was_executed_with_proof_internal(
+            state_transition,
+            block_info,
+            proof,
+            known_contracts_provider_fn,
+            false,
+            platform_version,
+        )
+    }
+
+    /// The verification shared by every version of
+    /// `verify_state_transition_was_executed_with_proof`. With
+    /// `document_batch_carries_owner_balance` (from version 1) a document batch's
+    /// proof is the prover's merged query of the document and the owner's credit
+    /// balance, verified strictly as one, and the result carries the balance.
+    pub(in crate::verify::state_transition::verify_state_transition_was_executed_with_proof) fn verify_state_transition_was_executed_with_proof_internal(
+        state_transition: &StateTransition,
+        block_info: &BlockInfo,
+        proof: &[u8],
+        known_contracts_provider_fn: &ContractLookupFn,
+        document_batch_carries_owner_balance: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         let (root_hash, result) = match state_transition {
@@ -206,14 +232,46 @@ impl Drive {
                                     documents_batch_transition.owner_id(),
                                     platform_version,
                                 )?;
-                                let (root_hash, mut proved) =
-                                    grovedb::GroveDb::verify_subset_query(
-                                        proof,
-                                        &path_query,
-                                        &platform_version.drive.grove_version,
-                                    )?;
-                                let entry_element =
-                                    proved.pop().and_then(|(_path, _key, element)| element);
+                                let (root_hash, entry_element, owner_balance) =
+                                    if document_batch_carries_owner_balance {
+                                        // One strict verification of the prover's
+                                        // merged query: the entry and the owner's
+                                        // balance, and nothing else.
+                                        let owner_balance_query =
+                                            Drive::identity_balance_query(&owner_id.to_buffer());
+                                        let merged_query = PathQuery::merge(
+                                            vec![&path_query, &owner_balance_query],
+                                            &platform_version.drive.grove_version,
+                                        )?;
+                                        let (root_hash, proved) = grovedb::GroveDb::verify_query(
+                                            proof,
+                                            &merged_query,
+                                            &platform_version.drive.grove_version,
+                                        )?;
+                                        let (mut entries, owner_balance) =
+                                            Self::split_document_batch_proof_entries(
+                                                proved, owner_id,
+                                            )?;
+                                        (
+                                            root_hash,
+                                            entries
+                                                .pop()
+                                                .and_then(|(_path, _key, element)| element),
+                                            Some(owner_balance),
+                                        )
+                                    } else {
+                                        let (root_hash, mut proved) =
+                                            grovedb::GroveDb::verify_query(
+                                                proof,
+                                                &path_query,
+                                                &platform_version.drive.grove_version,
+                                            )?;
+                                        (
+                                            root_hash,
+                                            proved.pop().and_then(|(_path, _key, element)| element),
+                                            None,
+                                        )
+                                    };
 
                                 let (root_hash, documents) = match document_transition {
                                     DocumentTransition::Create(create_transition) => {
@@ -344,12 +402,6 @@ impl Drive {
                                 // that was already absent — the proof attests
                                 // the resulting STATE (`AffectedState`), not
                                 // the execution.
-                                let owner_balance = Self::verify_document_batch_owner_balance(
-                                    proof,
-                                    owner_id,
-                                    root_hash,
-                                    platform_version,
-                                )?;
                                 let result = VerifiedDocuments(documents, owner_balance);
 
                                 let outcome = if Self::state_transition_proof_binds_execution(
@@ -385,8 +437,62 @@ impl Drive {
                             block_time_ms: None, //None because we want latest
                             contested_status,
                         };
-                        let (root_hash, document) =
-                            query.verify_proof(true, proof, document_type, platform_version)?;
+                        let (root_hash, document, owner_balance) =
+                            if document_batch_carries_owner_balance {
+                                // One strict verification of the prover's merged query:
+                                // the document (present or proven absent) and the
+                                // owner's balance, and nothing else.
+                                let mut document_path_query =
+                                    query.construct_path_query(platform_version)?;
+                                document_path_query.query.limit = None;
+                                let owner_balance_query =
+                                    Drive::identity_balance_query(&owner_id.to_buffer());
+                                let mut merged_query = PathQuery::merge(
+                                    vec![&document_path_query, &owner_balance_query],
+                                    &platform_version.drive.grove_version,
+                                )?;
+                                // An absence proof needs a bound: the document
+                                // (one element, a keeps-history type keeps its
+                                // latest revision under one key) and the balance.
+                                merged_query.query.limit = Some(2);
+                                let (root_hash, proved) =
+                                    grovedb::GroveDb::verify_query_with_absence_proof(
+                                        proof,
+                                        &merged_query,
+                                        &platform_version.drive.grove_version,
+                                    )?;
+                                let (mut entries, owner_balance) =
+                                    Self::split_document_batch_proof_entries(proved, owner_id)?;
+                                if entries.len() != 1 {
+                                    return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                                        "we should always get back one document element, we got {}",
+                                        entries.len()
+                                    ))));
+                                }
+                                let document = entries
+                                    .remove(0)
+                                    .2
+                                    .map(|element| element.into_item_bytes().map_err(Error::from))
+                                    .transpose()?
+                                    .map(|serialized| {
+                                        Document::from_bytes(
+                                            serialized.as_slice(),
+                                            document_type,
+                                            platform_version,
+                                        )
+                                        .map_err(Error::from)
+                                    })
+                                    .transpose()?;
+                                (root_hash, document, Some(owner_balance))
+                            } else {
+                                let (root_hash, document) = query.verify_proof(
+                                    false,
+                                    proof,
+                                    document_type,
+                                    platform_version,
+                                )?;
+                                (root_hash, document, None)
+                            };
 
                         let (root_hash, documents) = match document_transition {
                             DocumentTransition::Create(create_transition) => {
@@ -497,13 +603,6 @@ impl Drive {
                                 )))
                             }
                         }?;
-
-                        let owner_balance = Self::verify_document_batch_owner_balance(
-                            proof,
-                            owner_id,
-                            root_hash,
-                            platform_version,
-                        )?;
                         Ok((root_hash, VerifiedDocuments(documents, owner_balance)))
                     }
                     BatchedTransitionRef::Token(token_transition) => {
@@ -2533,33 +2632,38 @@ impl Drive {
         Ok((root_hash, outcome))
     }
 
-    /// The credit balance of a document batch's owner, which the batch proof
-    /// carries next to the document. Read as a subset of the merged proof and
-    /// required to come from the same state as the document (the same root
-    /// hash). Every identity has a balance entry, so a proof without the
-    /// owner's is not a proof of this batch.
-    fn verify_document_batch_owner_balance(
-        proof: &[u8],
+    /// Splits the entries one strict verification of a document batch's merged
+    /// query returned into the document's entries and the owner's credit
+    /// balance. Every identity has a balance entry, so a proof that shows none
+    /// for the owner is not a proof of this batch.
+    fn split_document_batch_proof_entries(
+        proved: Vec<PathKeyOptionalElementTrio>,
         owner_id: Identifier,
-        document_root_hash: RootHash,
-        platform_version: &PlatformVersion,
-    ) -> Result<Credits, Error> {
-        let (balance_root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
-            proof,
-            owner_id.into_buffer(),
-            true,
-            platform_version,
-        )?;
-        if balance_root_hash != document_root_hash {
-            return Err(Error::Proof(ProofError::CorruptedProof(
-                "the document and the owner balance of a document batch proof are read from different states"
-                    .to_string(),
-            )));
+    ) -> Result<(Vec<PathKeyOptionalElementTrio>, Credits), Error> {
+        let balances_path = balance_path_vec();
+        let mut owner_balance = None;
+        let mut document_entries = Vec::with_capacity(proved.len());
+        for (path, key, element) in proved {
+            if path == balances_path && key == owner_id.as_slice() {
+                owner_balance = element;
+            } else if path == balances_path {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "a document batch proof carries only the owner's balance".to_string(),
+                )));
+            } else {
+                document_entries.push((path, key, element));
+            }
         }
-        balance.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
-            "proof did not contain the balance of the document batch owner {}",
-            owner_id
-        ))))
+        let owner_balance = owner_balance
+            .ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                "proof did not contain the balance of the document batch owner {}",
+                owner_id
+            ))))?
+            .as_sum_item_value()
+            .map_err(Error::from)?
+            .try_into()
+            .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("value size is incorrect")))?;
+        Ok((document_entries, owner_balance))
     }
 
     /// Whether a valid proof for this state transition binds the execution of
@@ -3818,7 +3922,7 @@ mod tests {
                     maybe_doc.is_none(),
                     "document should be None after deletion"
                 );
-                assert_eq!(owner_balance, owner.balance());
+                assert_eq!(owner_balance, Some(owner.balance()));
             }
             other => panic!("expected VerifiedDocuments, got {:?}", other),
         }
@@ -3830,10 +3934,8 @@ mod tests {
 
     /// A document batch proof carries the owner's balance next to the
     /// document. A proof of only the document (the shape before the balance
-    /// joined it) verifies the document but not the batch: GroveDB finds no
-    /// data for the balance query in it, or, when the balance subtree is
-    /// there without the owner's key, the verifier reports the missing
-    /// balance as an incorrect proof.
+    /// joined it) verifies the document alone but not the batch: the strict
+    /// verification of the merged query finds no data for the balance in it.
     #[test]
     fn verify_batch_document_proof_without_owner_balance_is_rejected() {
         let (drive, contract) = setup_drive_and_contract();
@@ -3886,6 +3988,13 @@ mod tests {
             .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
             .expect("expected to get proof");
 
+        // The proof does prove the document: the rejection below is for the
+        // missing balance alone.
+        let (_, proved_document) = single_query
+            .verify_proof(false, &proof, document_type, platform_version)
+            .expect("the document alone verifies");
+        assert_eq!(proved_document.map(|document| document.id()), Some(doc_id));
+
         use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
         use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
         use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
@@ -3923,14 +4032,31 @@ mod tests {
             platform_version,
         );
 
-        match result {
-            Err(Error::GroveDB(_)) => {}
-            Err(Error::Proof(ProofError::IncorrectProof(message))) => assert!(
-                message.contains("balance of the document batch owner"),
-                "expected the missing owner balance to be reported, got: {message}"
-            ),
-            other => panic!("expected the proof to be rejected, got {:?}", other),
-        }
+        // GroveDB reports the merged query's balance part as not covered.
+        assert!(
+            matches!(result, Err(Error::GroveDB(_))),
+            "expected the document-only proof to be rejected for its missing balance, got {:?}",
+            result
+        );
+
+        // The same transition verifies against the prover's proof, with the balance.
+        let proof = drive
+            .prove_state_transition(&st, None, platform_version)
+            .expect("expected to prove the create")
+            .into_data()
+            .expect("expected proof bytes");
+        let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        )
+        .expect("the prover's proof verifies");
+        assert!(matches!(
+            outcome.into_result(),
+            StateTransitionProofResult::VerifiedDocuments(_, Some(_))
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -4038,7 +4164,7 @@ mod tests {
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
                 assert_eq!(returned_id, doc_id);
                 assert!(maybe_doc.is_some(), "document should exist after creation");
-                assert_eq!(owner_balance, owner.balance());
+                assert_eq!(owner_balance, Some(owner.balance()));
             }
             other => panic!("expected VerifiedDocuments, got {:?}", other),
         }

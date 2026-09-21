@@ -56,17 +56,19 @@ pub enum StateTransitionProofResult {
     VerifiedPartialIdentity(PartialIdentity),
     VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
     /// A document batch's execution proof shows the document the transition left (or its
-    /// absence after a delete) and the credit balance of the batch's owner after it, read
-    /// from the same state. The balance is a snapshot at the proof's block, so it may
-    /// already include later transitions of the same identity even when the outcome is
-    /// execution-proved: the document binds the execution, the balance does not.
+    /// absence after a delete) and, from protocol version 14, the credit balance of the
+    /// batch's owner after it, read from the same state; a proof made at an earlier
+    /// protocol version carries only the document and the balance is `None`. The balance
+    /// is a snapshot at the proof's block, so it may already include later transitions of
+    /// the same identity even when the outcome is execution-proved: the document binds the
+    /// execution, the balance does not.
     VerifiedDocuments(
         BTreeMap<Identifier, Option<Document>>,
         #[cfg_attr(
             feature = "json-conversion",
-            serde(with = "crate::serialization::json_safe_u64")
+            serde(with = "crate::serialization::json_safe_option_u64")
         )]
-        Credits,
+        Option<Credits>,
     ),
     VerifiedTokenActionWithDocument(Document),
     VerifiedTokenGroupActionWithDocument(GroupSumPower, Option<Document>),
@@ -364,8 +366,10 @@ mod json_convertible_tests {
         use std::collections::BTreeMap;
         let mut documents: BTreeMap<Identifier, Option<Document>> = BTreeMap::new();
         documents.insert(Identifier::new([0xab; 32]), None);
-        let original =
-            StateTransitionProofResult::VerifiedDocuments(documents, 9_007_199_254_740_993);
+        let original = StateTransitionProofResult::VerifiedDocuments(
+            documents.clone(),
+            Some(9_007_199_254_740_993),
+        );
 
         let json = original.to_json().expect("to_json");
         assert_eq!(
@@ -383,6 +387,13 @@ mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+
+        // A proof made before protocol version 14 carries no balance.
+        let without_balance = StateTransitionProofResult::VerifiedDocuments(documents, None);
+        let json = without_balance.to_json().expect("to_json");
+        assert_eq!(json["VerifiedDocuments"][1], serde_json::Value::Null);
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(without_balance, recovered);
     }
 
     #[test]

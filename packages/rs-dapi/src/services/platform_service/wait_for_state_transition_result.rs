@@ -181,8 +181,13 @@ impl PlatformServiceImpl {
             && let Ok(tx_data) =
                 base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_response.tx)
         {
-            self.fill_success_result(&mut response_v0, tx_data, prove)
-                .await;
+            self.fill_success_result(
+                &mut response_v0,
+                tx_data,
+                prove,
+                u64::try_from(tx_response.height).unwrap_or(0),
+            )
+            .await;
         }
 
         let body = WaitForStateTransitionResultResponse {
@@ -212,8 +217,13 @@ impl PlatformServiceImpl {
                 // Success case - generate proof if requested, else report what
                 // can be read without one
                 if let Some(tx_bytes) = transaction_event.tx {
-                    self.fill_success_result(&mut response_v0, tx_bytes, prove)
-                        .await;
+                    self.fill_success_result(
+                        &mut response_v0,
+                        tx_bytes,
+                        prove,
+                        transaction_event.height,
+                    )
+                    .await;
                 }
 
                 let body = WaitForStateTransitionResultResponse {
@@ -248,13 +258,16 @@ impl PlatformServiceImpl {
     /// Complete a successful wait: with `prove`, the proof of the transition's
     /// execution (which carries the owner's balance for a document batch);
     /// without it, the owner's balance of a document batch read from Drive
-    /// unverified. Either read failing leaves the response as it was, which
-    /// still tells the caller the transition succeeded.
+    /// unverified, and only from a state at or past `executed_at_height`, the
+    /// block that executed the transition. Either read failing leaves the
+    /// response as it was, which still tells the caller the transition
+    /// succeeded.
     async fn fill_success_result(
         &self,
         response_v0: &mut wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0,
         tx_bytes: Vec<u8>,
         prove: bool,
+        executed_at_height: u64,
     ) {
         if prove {
             match self.fetch_proof_for_state_transition(tx_bytes).await {
@@ -273,6 +286,14 @@ impl PlatformServiceImpl {
             && let Some((owner_balance, metadata)) =
                 self.fetch_identity_balance_unproved(owner_id).await
         {
+            if metadata.height < executed_at_height {
+                debug!(
+                    balance_height = metadata.height,
+                    executed_at_height,
+                    "Drive's state predates the block that executed the transition; not reporting the owner's balance"
+                );
+                return;
+            }
             response_v0.owner_balance = Some(owner_balance);
             response_v0.metadata = Some(metadata);
         }

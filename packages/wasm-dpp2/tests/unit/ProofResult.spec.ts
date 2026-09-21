@@ -436,8 +436,16 @@ describe('StateTransitionProofResult types', () => {
       expect(result.ownerBalance).to.equal(0n);
     });
 
-    it('should reject a missing or negative owner balance', () => {
-      expect(() => wasm.VerifiedDocuments.fromObject({ documents: new Map() })).to.throw();
+    it('should carry no owner balance for a proof made before protocol version 14', () => {
+      const result = wasm.VerifiedDocuments.fromObject({ documents: new Map() });
+      expect(result.ownerBalance).to.equal(undefined);
+      expect(result.toObject().ownerBalance).to.equal(undefined);
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+      expect(parsed.ownerBalance).to.equal(null);
+      expect(wasm.VerifiedDocuments.fromJSON(parsed).ownerBalance).to.equal(undefined);
+    });
+
+    it('should reject a negative owner balance', () => {
       expect(() => wasm.VerifiedDocuments.fromObject({ documents: new Map(), ownerBalance: -1 }))
         .to.throw();
     });

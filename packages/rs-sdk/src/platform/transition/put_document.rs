@@ -51,7 +51,8 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform, waits for the confirmation proof and
     /// returns the confirmed document together with the credit balance of the
     /// document's owner after the write, which the proof carries next to the
-    /// document (a snapshot at the proof's block).
+    /// document from protocol version 14 (a snapshot at the proof's block;
+    /// `None` for a proof made at an earlier version).
     #[allow(clippy::too_many_arguments)]
     async fn put_to_platform_and_wait_for_response_with_owner_balance(
         &self,
@@ -62,7 +63,21 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(Document, Credits), Error>;
+    ) -> Result<(Document, Option<Credits>), Error> {
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                document_type,
+                document_state_transition_entropy,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
+
+        wait_for_document_and_owner_balance(sdk, state_transition, settings).await
+    }
 }
 
 #[async_trait::async_trait]
@@ -191,31 +206,6 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
             .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
-    }
-
-    async fn put_to_platform_and_wait_for_response_with_owner_balance(
-        &self,
-        sdk: &Sdk,
-        document_type: DocumentType,
-        document_state_transition_entropy: Option<[u8; 32]>,
-        identity_public_key: IdentityPublicKey,
-        token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<(Document, Credits), Error> {
-        let state_transition = self
-            .put_to_platform(
-                sdk,
-                document_type,
-                document_state_transition_entropy,
-                identity_public_key,
-                token_payment_info,
-                signer,
-                settings,
-            )
-            .await?;
-
-        wait_for_document_and_owner_balance(sdk, state_transition, settings).await
     }
 }
 

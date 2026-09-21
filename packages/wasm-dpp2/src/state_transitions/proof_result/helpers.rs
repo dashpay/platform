@@ -147,3 +147,18 @@ pub(super) fn read_credits_property(value: &JsValue, name: &str) -> WasmDppResul
         Err(invalid())
     }
 }
+
+/// Read an optional credits property: `None` when the property is absent,
+/// `undefined` or `null`, otherwise as [`read_credits_property`].
+pub(super) fn read_optional_credits_property(
+    value: &JsValue,
+    name: &str,
+) -> WasmDppResult<Option<u64>> {
+    let raw = js_sys::Reflect::get(value, &name.into())
+        .map_err(|_| WasmDppError::generic(format!("Missing property: {}", name)))?;
+    if raw.is_undefined() || raw.is_null() {
+        Ok(None)
+    } else {
+        read_credits_property(value, name).map(Some)
+    }
+}

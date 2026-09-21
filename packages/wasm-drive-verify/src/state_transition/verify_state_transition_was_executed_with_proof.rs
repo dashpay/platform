@@ -215,13 +215,16 @@ fn convert_proof_result_to_js(
             })?;
             Reflect::set(&obj, &JsValue::from_str("documents"), &documents_js)
                 .map_err(|_| JsValue::from_str("Failed to set documents"))?;
-            // Credits as a decimal string, as identity balances are elsewhere here
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("ownerBalance"),
-                &JsValue::from_str(&owner_balance.to_string()),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set ownerBalance"))?;
+            // Credits as a decimal string, as identity balances are elsewhere
+            // here; absent for a proof made before protocol version 14
+            if let Some(owner_balance) = owner_balance {
+                Reflect::set(
+                    &obj,
+                    &JsValue::from_str("ownerBalance"),
+                    &JsValue::from_str(&owner_balance.to_string()),
+                )
+                .map_err(|_| JsValue::from_str("Failed to set ownerBalance"))?;
+            }
         }
         StateTransitionProofResult::VerifiedPartialIdentity(_partial_identity) => {
             Reflect::set(

@@ -1541,9 +1541,9 @@ mod index_only_executed_proof_tests {
             .fetch_identity_balance(alice.id().to_buffer(), None, platform_version)
             .expect("expected to fetch alice's balance")
             .expect("alice has a balance");
-        assert_eq!(owner_balance, alice_balance);
+        assert_eq!(owner_balance, Some(alice_balance));
         assert!(
-            owner_balance < dash_to_credits!(1.0),
+            alice_balance < dash_to_credits!(1.0),
             "the create cost credits"
         );
         let (_, verified_like) = documents.into_iter().next().expect("one document");
@@ -1605,7 +1605,6 @@ mod index_only_executed_proof_tests {
                 .drive
                 .fetch_identity_balance(alice.id().to_buffer(), None, platform_version)
                 .expect("expected to fetch alice's balance")
-                .expect("alice has a balance")
         );
         let (_, absent) = documents.into_iter().next().expect("one entry");
         assert!(absent.is_none(), "the unliked entry must be proven absent");
