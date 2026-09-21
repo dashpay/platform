@@ -214,6 +214,7 @@ mod tests {
             reason: ContractModerationReason {
                 code: Some(seed as u16),
                 text: "spam".to_string(),
+                documents: vec![],
             },
             removed_at: 1_000 + seed as u64,
         }
@@ -276,6 +277,7 @@ mod tests {
             reason: Some(ContractModerationReasonProto {
                 code: Some(seed as u32),
                 text: "spam".to_string(),
+                documents: vec![],
             }),
         }
     }

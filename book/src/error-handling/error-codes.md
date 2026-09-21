@@ -60,7 +60,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10700-10700 | General | `OverflowError` (10700) |
 | 10800-10818 | Address | `TransitionOverMaxInputsError` (10800), `WithdrawalBelowMinAmountError` (10818) |
 | 10819-10827 | Shielded | `ShieldedNoActionsError` (10819), `ShieldedTooManyActionsError` (10825), `ShieldedImplicitFeeCapExceededError` (10826), `ShieldedInvalidDenominationError` (10827 — `IdentityCreateFromShieldedPool` exit amount not a member of the versioned denomination set) |
-| 10900-10949 | Contract Moderation | `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901), `DocumentActionFeesWithoutModerationError` (10902), `ContractModerationReasonTooLongError` (10903) |
+| 10900-10949 | Contract Moderation | `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901), `DocumentActionFeesWithoutModerationError` (10902), `ContractModerationReasonTooLongError` (10903), `InvalidContractModerationReasonDocumentsError` (10904) |
 
 ### SignatureError codes (20000-20012)
 

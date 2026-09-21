@@ -336,9 +336,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `SystemLimits::max_contract_suspension_until`) and unsuspends one
 ///     identity, signed by the owner or a moderator with a CRITICAL key; a
 ///     ban and a suspension carry a reason, stored with the entry: a text of
-///     at most `SystemLimits::max_contract_moderation_reason_length` bytes and
+///     at most `SystemLimits::max_contract_moderation_reason_length` bytes,
 ///     an optional code nothing checks, reserved for ban codes a contract may
-///     declare in a later version. A contract may also keep a warning list
+///     declare in a later version, and up to
+///     `SystemLimits::max_contract_moderation_reason_documents` documents the
+///     reason is about, named by type and id and not looked up. A contract may also keep a warning list
 ///     (`[64, contract, 2] / 224`): a warn appends a warning, the block time and
 ///     a reason, to the identity's entry, at most
 ///     `SystemLimits::max_contract_warnings_per_identity` at a time, and a
@@ -554,7 +556,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length and max_contract_warnings_per_identity
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity and max_contract_moderation_reason_documents
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

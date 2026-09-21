@@ -273,6 +273,7 @@ mod tests {
             Some(ContractModerationReasonProto {
                 code: None,
                 text: WARNING_REASON.to_string(),
+                documents: vec![],
             })
         };
         assert_eq!(page.entries.len(), 2);
@@ -368,6 +369,7 @@ mod tests {
             Some(ContractModerationReasonProto {
                 code: None,
                 text: BAN_REASON.to_string(),
+                documents: vec![],
             })
         };
 
@@ -399,6 +401,7 @@ mod tests {
                 Some(ContractModerationReasonProto {
                     code: Some(SUSPENSION_REASON_CODE as u32),
                     text: SUSPENSION_REASON.to_string(),
+                    documents: vec![],
                 })
             )]
         );

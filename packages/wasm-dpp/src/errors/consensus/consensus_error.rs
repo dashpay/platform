@@ -91,7 +91,7 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::basic::contract_moderation::{
-    ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
+    ContractModerationReasonTooLongError, InvalidContractModerationReasonDocumentsError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError,
     InvalidContractModerationConfigError,
 };
@@ -1235,6 +1235,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ContractModerationReasonTooLongError(e) => {
             generic_consensus_error!(ContractModerationReasonTooLongError, e).into()
+        }
+        BasicError::InvalidContractModerationReasonDocumentsError(e) => {
+            generic_consensus_error!(InvalidContractModerationReasonDocumentsError, e).into()
         }
     }
 }

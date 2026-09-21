@@ -952,6 +952,7 @@ fn should_charge_a_ban_by_the_length_of_its_reason() {
     let longest = ContractModerationReason {
         code: Some(u16::MAX),
         text: "x".repeat(max_length),
+        documents: vec![],
     };
     let estimated = ban(0x62, &longest, false);
     let full = ban(0x62, &longest, true);

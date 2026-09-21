@@ -6,7 +6,9 @@ use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
     try_from_options, try_from_options_optional, try_to_u16, try_to_u32, try_to_u64,
 };
-use dpp::data_contract::config::moderation::{ContractModerationReason, ContractWarning};
+use dpp::data_contract::config::moderation::{
+    ContractModerationDocument, ContractModerationReason, ContractWarning,
+};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -27,10 +29,19 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_USER_MODERATION_TS: &str = r#"
+/** A document a moderation reason is about. */
+export interface ContractModerationDocument {
+    /** The document type of the document, on the moderated contract. */
+    documentTypeName: string;
+    /** The document's id, as a base58 string. */
+    documentId: string;
+}
+
 /**
  * Why a moderator banned, suspended or warned an identity, or deleted a document. Every ban,
  * every suspension, every warning and every document deletion carries one, and it is stored
- * with the entry or the removal record. Nothing checks what a moderator writes.
+ * with the entry or the removal record. Nothing checks what a moderator writes, and the
+ * documents a reason cites are not looked up.
  */
 export interface ContractModerationReason {
     /**
@@ -41,6 +52,11 @@ export interface ContractModerationReason {
     code?: number | null;
     /** Free text, at most 1024 bytes of UTF-8. May be empty. */
     text: string;
+    /**
+     * The documents the reason is about: the posts a warning or a ban is for. At most 16,
+     * none twice. A reason read back carries it only when there are any.
+     */
+    documents?: ContractModerationDocument[];
 }
 
 /** One warning an identity carries on a contract's warning list. */
@@ -152,15 +168,34 @@ extern "C" {
     pub type ContractWarningsJs;
 }
 
-/// A reason as the plain object JavaScript reads: `code`, `null` when there is none, and
-/// `text`. The shape `toJSON()` and `toObject()` give the reason inside a transition, so a
-/// reason compares equal whichever call produced it.
+/// A reason as the plain object JavaScript reads: `code`, `null` when there is none, `text`,
+/// and `documents` when it cites any, each with its type name and its id as a base58 string.
+/// The shape `toJSON()` and `toObject()` give the reason inside a transition, so a reason
+/// compares equal whichever call produced it.
 pub fn moderation_reason_to_js(reason: &ContractModerationReason) -> JsValue {
     let object = js_sys::Object::new();
     // Setting a property on a fresh plain object cannot fail.
     let code = reason.code.map_or(JsValue::NULL, JsValue::from);
     let _ = js_sys::Reflect::set(&object, &"code".into(), &code);
     let _ = js_sys::Reflect::set(&object, &"text".into(), &JsValue::from_str(&reason.text));
+    if !reason.documents.is_empty() {
+        let documents = js_sys::Array::new();
+        for document in &reason.documents {
+            let entry = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(
+                &entry,
+                &"documentTypeName".into(),
+                &JsValue::from_str(&document.document_type_name),
+            );
+            let _ = js_sys::Reflect::set(
+                &entry,
+                &"documentId".into(),
+                &JsValue::from_str(&IdentifierWasm::from(document.document_id).to_base58()),
+            );
+            documents.push(&entry);
+        }
+        let _ = js_sys::Reflect::set(&object, &"documents".into(), &documents);
+    }
     object.into()
 }
 
@@ -188,6 +223,44 @@ pub fn moderation_warnings_to_js(warnings: &[ContractWarning], as_json: bool) ->
     array.into()
 }
 
+/// A document a reason cites, as the options of the JavaScript surfaces carry it: the id is
+/// an `IdentifierLike`, which serde alone would not read from a base58 string.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContractModerationDocumentInput {
+    document_type_name: String,
+    document_id: IdentifierWasm,
+}
+
+/// A reason as the options of the JavaScript surfaces carry it. See
+/// [`ContractModerationDocumentInput`] for why it is not the reason itself.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContractModerationReasonInput {
+    #[serde(default)]
+    code: Option<u16>,
+    text: String,
+    #[serde(default)]
+    documents: Vec<ContractModerationDocumentInput>,
+}
+
+impl From<ContractModerationReasonInput> for ContractModerationReason {
+    fn from(input: ContractModerationReasonInput) -> Self {
+        ContractModerationReason {
+            code: input.code,
+            text: input.text,
+            documents: input
+                .documents
+                .into_iter()
+                .map(|document| ContractModerationDocument {
+                    document_type_name: document.document_type_name,
+                    document_id: document.document_id.into(),
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Serde struct for the primitive fields of the options
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,7 +272,7 @@ struct ContractUserModerationOptionsInput {
     #[serde(default)]
     until: Option<u64>,
     #[serde(default)]
-    reason: Option<ContractModerationReason>,
+    reason: Option<ContractModerationReasonInput>,
     /// `undefined` reaches serde as a unit value, so the fee is read as an option and defaulted
     #[serde(default)]
     user_fee_increase: Option<UserFeeIncrease>,
@@ -347,7 +420,7 @@ impl ContractUserModerationWasm {
                 document_type_name: input.document_type_name,
                 document_id: document_id.map(Into::into),
                 until: input.until,
-                reason: input.reason,
+                reason: input.reason.map(Into::into),
             },
         )?;
 

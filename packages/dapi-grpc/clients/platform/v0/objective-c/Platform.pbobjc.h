@@ -41,6 +41,7 @@ CF_EXTERN_C_BEGIN
 @class CompactedBlockAddressBalanceChanges;
 @class ContractGroupDocumentTypeMember;
 @class ContractGroupTokenMember;
+@class ContractModerationDocument;
 @class ContractModerationReason;
 @class ContractWarning;
 @class GPBBytesValue;
@@ -2977,16 +2978,38 @@ GPB_FINAL @interface GetContractGroupMembersResponse_GetContractGroupMembersResp
  **/
 void GetContractGroupMembersResponse_GetContractGroupMembersResponseV0_ClearResultOneOfCase(GetContractGroupMembersResponse_GetContractGroupMembersResponseV0 *message);
 
+#pragma mark - ContractModerationDocument
+
+typedef GPB_ENUM(ContractModerationDocument_FieldNumber) {
+  ContractModerationDocument_FieldNumber_DocumentTypeName = 1,
+  ContractModerationDocument_FieldNumber_DocumentId = 2,
+};
+
+/**
+ * A document a moderation reason is about.
+ **/
+GPB_FINAL @interface ContractModerationDocument : GPBMessage
+
+/** The document type, on the moderated contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+/** The 32-byte id of the document */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@end
+
 #pragma mark - ContractModerationReason
 
 typedef GPB_ENUM(ContractModerationReason_FieldNumber) {
   ContractModerationReason_FieldNumber_Code = 1,
   ContractModerationReason_FieldNumber_Text = 2,
+  ContractModerationReason_FieldNumber_DocumentsArray = 3,
 };
 
 /**
- * Why a moderator banned, suspended or warned an identity. Nothing checks
- * what a moderator writes.
+ * Why a moderator banned, suspended or warned an identity, or deleted a
+ * document. Nothing checks what a moderator writes, and the documents cited
+ * are not looked up.
  **/
 GPB_FINAL @interface ContractModerationReason : GPBMessage
 
@@ -2996,6 +3019,11 @@ GPB_FINAL @interface ContractModerationReason : GPBMessage
 @property(nonatomic, readwrite) BOOL hasCode;
 /** protocol version; a u16, expected unset today, never checked */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *text;
+
+/** The documents the reason is about, at most 16, none twice */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractModerationDocument*> *documentsArray;
+/** The number of items in @c documentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger documentsArray_Count;
 
 @end
 
