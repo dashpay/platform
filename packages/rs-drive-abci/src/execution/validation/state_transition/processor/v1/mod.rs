@@ -343,7 +343,9 @@ pub(super) fn process_state_transition_v1<'a, C: CoreRPCLike>(
     // The fund is checked last, once state validation has found the poll and seen it open.
     // Settling a poll deletes its fund, so a check ahead of state validation would report a
     // missing fund for every vote that arrives after the poll ended and hide the poll's real
-    // status from the voter.
+    // status from the voter. The price of that order is the transform's and state validation's
+    // reads, spent before an unpaid refusal where v0's position spent one balance read; the
+    // signature check, which dominates, is spent on every refused vote either way.
     if result.is_valid() && state_transition.uses_prefunded_specialized_balance_for_payment() {
         let fund_result = state_transition
             .validate_minimum_prefunded_specialized_balance_pre_check(
@@ -360,6 +362,11 @@ pub(super) fn process_state_transition_v1<'a, C: CoreRPCLike>(
         }
     }
 
+    // A result that carries errors together with an action becomes a paid-invalid event. For a
+    // masternode vote that event is a `PaidFixedCost` with errors, which execution does not pay
+    // and the block reports as an internal error, so a vote's transform and state validation
+    // return their errors without an action, and any later generation of them must keep doing
+    // so.
     result.map_result(|action| {
         ExecutionEvent::create_from_state_transition_action(
             action,
@@ -374,7 +381,8 @@ pub(super) fn process_state_transition_v1<'a, C: CoreRPCLike>(
 #[cfg(test)]
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::tests::{
-        create_dpns_identity_name_contest, setup_masternode_voting_identity,
+        create_dpns_identity_name_contest, dpns_name_vote_poll, serialized_dpns_name_vote,
+        setup_masternode_voting_identity,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
@@ -383,23 +391,12 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::platform_value::Value;
     use dpp::prelude::DataContract;
-    use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
-    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-    use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::version::PlatformVersion;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-    use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-    use dpp::voting::vote_polls::VotePoll;
-    use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
-    use dpp::voting::votes::resource_vote::ResourceVote;
-    use dpp::voting::votes::Vote;
     use simple_signer::signer::SimpleSigner;
     use std::sync::Arc;
 
@@ -422,25 +419,6 @@ mod tests {
         voting_key: IdentityPublicKey,
     }
 
-    fn vote_poll(dpns_contract: &DataContract) -> ContestedDocumentResourceVotePoll {
-        vote_poll_for(dpns_contract, NAME)
-    }
-
-    fn vote_poll_for(
-        dpns_contract: &DataContract,
-        name: &str,
-    ) -> ContestedDocumentResourceVotePoll {
-        ContestedDocumentResourceVotePoll {
-            contract_id: dpns_contract.id(),
-            document_type_name: "domain".to_string(),
-            index_name: "parentNameAndLabel".to_string(),
-            index_values: vec![
-                Value::Text("dash".to_string()),
-                Value::Text(convert_to_homograph_safe_chars(name)),
-            ],
-        }
-    }
-
     async fn contest_at(platform_version: &PlatformVersion) -> Contest {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(platform_version.protocol_version)
@@ -455,22 +433,33 @@ mod tests {
             platform_version,
         )
         .await;
-        let fund_id = vote_poll(&dpns_contract)
+        let fund_id = dpns_name_vote_poll(&dpns_contract, NAME)
             .specialized_balance_id()
             .expect("expected the poll's prefunded balance id");
-        let (pro_tx_hash, identity, signer, voting_key) =
-            setup_masternode_voting_identity(&mut platform, 29, platform_version);
+        let voter = Voter::new(&mut platform, 29, platform_version);
         Contest {
             platform,
             dpns_contract,
             contender,
             fund_id,
-            voter: Voter {
+            voter,
+        }
+    }
+
+    impl Voter {
+        fn new(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            seed: u64,
+            platform_version: &PlatformVersion,
+        ) -> Self {
+            let (pro_tx_hash, identity, signer, voting_key) =
+                setup_masternode_voting_identity(platform, seed, platform_version);
+            Voter {
                 pro_tx_hash,
                 identity,
                 signer,
                 voting_key,
-            },
+            }
         }
     }
 
@@ -504,29 +493,33 @@ mod tests {
             assert_eq!(self.fund(platform_version), Some(credits));
         }
 
-        /// Casts the voter's vote for the contender through block processing, as a proposer
-        /// or a validator would, and returns how the block treated it
-        async fn vote(
-            &mut self,
-            platform_version: &PlatformVersion,
-        ) -> StateTransitionExecutionResult {
-            self.vote_on(NAME, platform_version).await
-        }
-
-        /// The same vote on the poll of another name
+        /// Casts the voter's vote for the contender on the poll of `name` through block
+        /// processing, as a proposer or a validator would, and returns how the block treated it
         async fn vote_on(
             &mut self,
             name: &str,
             platform_version: &PlatformVersion,
         ) -> StateTransitionExecutionResult {
-            let serialized_transition = self.serialized_vote(name, platform_version).await;
+            let serialized_transition = self
+                .serialized_vote_by(&self.voter, name, platform_version)
+                .await;
+            self.process_block(vec![serialized_transition], platform_version)
+                .remove(0)
+        }
+
+        /// Processes the transitions as one block and returns how the block treated each
+        fn process_block(
+            &mut self,
+            serialized_transitions: Vec<Vec<u8>>,
+            platform_version: &PlatformVersion,
+        ) -> Vec<StateTransitionExecutionResult> {
             let platform_state = self.platform.state.load();
             let transaction = self.platform.drive.grove.start_transaction();
             let processing_result = self
                 .platform
                 .platform
                 .process_raw_state_transitions(
-                    &[serialized_transition],
+                    &serialized_transitions,
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -534,46 +527,42 @@ mod tests {
                     false,
                     None,
                 )
-                .expect("expected to process the vote");
+                .expect("expected to process the votes");
             self.platform
                 .drive
                 .grove
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit the transaction");
-            processing_result.into_execution_results().remove(0)
+            processing_result.into_execution_results()
         }
 
-        /// The voter's signed vote for the contender on the poll of `name`, as broadcast
-        async fn serialized_vote(&self, name: &str, platform_version: &PlatformVersion) -> Vec<u8> {
-            let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-                vote_poll: VotePoll::ContestedDocumentResourceVotePoll(vote_poll_for(
-                    &self.dpns_contract,
-                    name,
-                )),
-                resource_vote_choice: ResourceVoteChoice::TowardsIdentity(self.contender.id()),
-            }));
-            MasternodeVoteTransition::try_from_vote_with_signer(
-                vote,
-                &self.voter.signer,
-                self.voter.pro_tx_hash,
-                &self.voter.voting_key,
+        /// `voter`'s signed vote for the contender on the poll of `name`, as broadcast
+        async fn serialized_vote_by(
+            &self,
+            voter: &Voter,
+            name: &str,
+            platform_version: &PlatformVersion,
+        ) -> Vec<u8> {
+            serialized_dpns_name_vote(
+                &self.dpns_contract,
+                ResourceVoteChoice::TowardsIdentity(self.contender.id()),
+                name,
+                &voter.signer,
+                voter.pro_tx_hash,
+                &voter.voting_key,
                 1,
                 platform_version,
-                None,
             )
             .await
-            .expect("expected to make the vote")
-            .serialize_to_bytes()
-            .expect("expected to serialize the vote")
         }
 
-        /// The voter's identity nonce: 0 until an executed vote bumps it
-        fn voter_nonce(&self, platform_version: &PlatformVersion) -> Option<u64> {
+        /// `voter`'s identity nonce: 0 until an executed vote bumps it
+        fn nonce_of(&self, voter: &Voter, platform_version: &PlatformVersion) -> Option<u64> {
             self.platform
                 .drive
                 .fetch_identity_nonce(
-                    self.voter.identity.id().to_buffer(),
+                    voter.identity.id().to_buffer(),
                     true,
                     None,
                     platform_version,
@@ -588,7 +577,7 @@ mod tests {
         let mut contest = contest_at(platform_version).await;
         contest.remove_fund(platform_version);
 
-        let result = contest.vote(platform_version).await;
+        let result = contest.vote_on(NAME, platform_version).await;
 
         assert_matches!(
             result,
@@ -597,7 +586,7 @@ mod tests {
             )) if *error.balance_id() == contest.fund_id
         );
         // Nothing of the vote reached the state
-        assert_eq!(contest.voter_nonce(platform_version), Some(0));
+        assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(0));
         assert_eq!(contest.fund(platform_version), None);
     }
 
@@ -626,7 +615,7 @@ mod tests {
         );
         contest.set_fund(single_vote_cost - 1, platform_version);
 
-        let result = contest.vote(platform_version).await;
+        let result = contest.vote_on(NAME, platform_version).await;
 
         assert_matches!(
             result,
@@ -636,7 +625,7 @@ mod tests {
                 && error.balance() == single_vote_cost - 1
                 && error.required_balance() == single_vote_cost
         );
-        assert_eq!(contest.voter_nonce(platform_version), Some(0));
+        assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(0));
         assert_eq!(contest.fund(platform_version), Some(single_vote_cost - 1));
     }
 
@@ -647,13 +636,49 @@ mod tests {
         let single_vote_cost = single_vote_cost(platform_version);
         contest.set_fund(single_vote_cost, platform_version);
 
-        let result = contest.vote(platform_version).await;
+        let result = contest.vote_on(NAME, platform_version).await;
 
         assert_matches!(
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
-        assert_eq!(contest.voter_nonce(platform_version), Some(1));
+        assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(1));
+        assert_eq!(contest.fund(platform_version), Some(0));
+    }
+
+    /// The fund is read through the block's transaction: a fund that covers exactly one vote
+    /// lets the first vote of a block in, and the second, whose pre-check sees that deduction,
+    /// is refused for the credits the first one took.
+    #[tokio::test]
+    async fn should_refuse_the_second_vote_of_a_block_once_the_first_took_the_fund() {
+        let platform_version = PlatformVersion::latest();
+        let mut contest = contest_at(platform_version).await;
+        let single_vote_cost = single_vote_cost(platform_version);
+        contest.set_fund(single_vote_cost, platform_version);
+        let second_voter = Voter::new(&mut contest.platform, 31, platform_version);
+        let first_vote = contest
+            .serialized_vote_by(&contest.voter, NAME, platform_version)
+            .await;
+        let second_vote = contest
+            .serialized_vote_by(&second_voter, NAME, platform_version)
+            .await;
+
+        let results = contest.process_block(vec![first_vote, second_vote], platform_version);
+
+        assert_matches!(
+            results[0],
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            &results[1],
+            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+                StateError::PrefundedSpecializedBalanceInsufficientError(error)
+            )) if *error.balance_id() == contest.fund_id
+                && error.balance() == 0
+                && error.required_balance() == single_vote_cost
+        );
+        assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(1));
+        assert_eq!(contest.nonce_of(&second_voter, platform_version), Some(0));
         assert_eq!(contest.fund(platform_version), Some(0));
     }
 
@@ -672,7 +697,7 @@ mod tests {
                 StateError::VotePollNotFoundError(_)
             ))
         );
-        assert_eq!(contest.voter_nonce(platform_version), Some(0));
+        assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(0));
     }
 
     /// v0, selected by every protocol version before 14, ignores the pre-check: the vote fails
@@ -684,14 +709,14 @@ mod tests {
         let mut contest = contest_at(platform_version).await;
         contest.remove_fund(platform_version);
 
-        let result = contest.vote(platform_version).await;
+        let result = contest.vote_on(NAME, platform_version).await;
 
         assert_matches!(
             result,
             StateTransitionExecutionResult::InternalError(message)
                 if message.contains("prefunded specialized balance does not exist")
         );
-        assert_eq!(contest.voter_nonce(platform_version), Some(0));
+        assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(0));
         assert_eq!(contest.fund(platform_version), None);
     }
 }

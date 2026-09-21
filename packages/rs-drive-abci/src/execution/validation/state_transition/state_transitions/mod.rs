@@ -2188,6 +2188,57 @@ pub(in crate::execution) mod tests {
         assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
+    /// The vote poll of the DPNS name contest on `name`
+    pub(in crate::execution) fn dpns_name_vote_poll(
+        dpns_contract: &DataContract,
+        name: &str,
+    ) -> ContestedDocumentResourceVotePoll {
+        ContestedDocumentResourceVotePoll {
+            contract_id: dpns_contract.id(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text("dash".to_string()),
+                Value::Text(convert_to_homograph_safe_chars(name)),
+            ],
+        }
+    }
+
+    /// A masternode's signed vote on the DPNS name contest on `name`, serialized as broadcast
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::execution) async fn serialized_dpns_name_vote(
+        dpns_contract: &DataContract,
+        resource_vote_choice: ResourceVoteChoice,
+        name: &str,
+        signer: &SimpleSigner,
+        pro_tx_hash: Identifier,
+        voting_key: &IdentityPublicKey,
+        nonce: IdentityNonce,
+        platform_version: &PlatformVersion,
+    ) -> Vec<u8> {
+        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(
+                dpns_contract,
+                name,
+            )),
+            resource_vote_choice,
+        }));
+
+        MasternodeVoteTransition::try_from_vote_with_signer(
+            vote,
+            signer,
+            pro_tx_hash,
+            voting_key,
+            nonce,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to make transition vote")
+        .serialize_to_bytes()
+        .expect("expected to serialize the masternode vote")
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) async fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -2202,38 +2253,17 @@ pub(in crate::execution) mod tests {
         expect_error: Option<&str>,
         platform_version: &PlatformVersion,
     ) {
-        // Let's vote for contender 1
-
-        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
-                ContestedDocumentResourceVotePoll {
-                    contract_id: dpns_contract.id(),
-                    document_type_name: "domain".to_string(),
-                    index_name: "parentNameAndLabel".to_string(),
-                    index_values: vec![
-                        Value::Text("dash".to_string()),
-                        Value::Text(convert_to_homograph_safe_chars(name)),
-                    ],
-                },
-            ),
+        let masternode_vote_serialized_transition = serialized_dpns_name_vote(
+            dpns_contract,
             resource_vote_choice,
-        }));
-
-        let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
-            vote,
+            name,
             signer,
             pro_tx_hash,
             voting_key,
             nonce,
             platform_version,
-            None,
         )
-        .await
-        .expect("expected to make transition vote");
-
-        let masternode_vote_serialized_transition = masternode_vote_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
+        .await;
 
         // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
         // cfg(test) that it never mutates committed grovedb state, so every valid vote
