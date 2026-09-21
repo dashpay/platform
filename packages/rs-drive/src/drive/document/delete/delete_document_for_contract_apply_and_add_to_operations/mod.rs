@@ -6,8 +6,6 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
@@ -63,26 +61,10 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
-            // This signature carries only the block time. Generation 1 records
-            // a lifecycle entry for a keep-history document with the block and
-            // deleter that authored the delete, which only the
-            // `_with_lifecycle` entry point receives, so it serves the types
-            // that keep no history and refuses the rest instead of recording a
-            // fabricated block.
-            1 if contract
-                .document_type_for_name(document_type_name)?
-                .documents_keep_history() =>
-            {
-                Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "deleting a keep-history document needs the block and deleter that authored it",
-                )))
-            }
             1 => self.delete_document_for_contract_apply_and_add_to_operations_v1(
                 document_id,
                 contract,
                 document_type_name,
-                &BlockInfo::default_with_time(block_time_ms),
-                None,
                 estimated_costs_only_with_layer_info,
                 block_time_ms,
                 transaction,
@@ -133,7 +115,7 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
-            1 => self.delete_document_for_contract_apply_and_add_to_operations_v1(
+            1 => self.delete_document_for_contract_apply_and_add_to_operations_with_lifecycle_v1(
                 document_id,
                 contract,
                 document_type_name,

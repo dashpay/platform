@@ -18,10 +18,47 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Prepares the operations for deleting a document.
+    /// Prepares the operations for deleting a document named by its type
+    /// through the entry point that carries only the block time.
+    ///
+    /// Generation 1 records a lifecycle entry for a keep-history document. That
+    /// entry names the deletion time, which this signature carries, and credits
+    /// the record's bytes to the deleter, which it does not: an entry written
+    /// through here belongs to nobody, as with the fee-applying wrappers, and
+    /// refunds nobody when erased.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn delete_document_for_contract_with_named_type_operations_v1(
+        &self,
+        document_id: Identifier,
+        contract: &DataContract,
+        document_type_name: &str,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.delete_document_for_contract_with_named_type_operations_with_lifecycle_v1(
+            document_id,
+            contract,
+            document_type_name,
+            &BlockInfo::default_with_time(block_time_ms),
+            None,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_time_ms,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Prepares the operations for deleting a document.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn delete_document_for_contract_with_named_type_operations_with_lifecycle_v1(
         &self,
         document_id: Identifier,
         contract: &DataContract,

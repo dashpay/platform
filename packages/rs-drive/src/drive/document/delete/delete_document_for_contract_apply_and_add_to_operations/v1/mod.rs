@@ -11,10 +11,47 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Deletes a document.
+    /// Deletes a document and adds the operations through the entry point that
+    /// carries only the block time.
+    ///
+    /// Generation 1 records a lifecycle entry for a keep-history document. That
+    /// entry names the deletion time, which this signature carries, and credits
+    /// the record's bytes to the deleter, which it does not: an entry written
+    /// through here belongs to nobody, as with the fee-applying wrappers, and
+    /// refunds nobody when erased.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn delete_document_for_contract_apply_and_add_to_operations_v1(
+        &self,
+        document_id: Identifier,
+        contract: &DataContract,
+        document_type_name: &str,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.delete_document_for_contract_apply_and_add_to_operations_with_lifecycle_v1(
+            document_id,
+            contract,
+            document_type_name,
+            &BlockInfo::default_with_time(block_time_ms),
+            None,
+            estimated_costs_only_with_layer_info,
+            block_time_ms,
+            transaction,
+            drive_operations,
+            platform_version,
+        )
+    }
+
+    /// Deletes a document.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn delete_document_for_contract_apply_and_add_to_operations_with_lifecycle_v1(
         &self,
         document_id: Identifier,
         contract: &DataContract,

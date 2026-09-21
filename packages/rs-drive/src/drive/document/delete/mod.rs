@@ -1395,157 +1395,173 @@ mod tests {
         );
     }
 
-    /// A delete entry point that carries only the block time cannot author the
-    /// lifecycle entry of a keep-history document, so at the lifecycle
-    /// generation it must refuse such a document loudly instead of recording a
-    /// fabricated block, while the entry points that carry the block still
-    /// delete it.
+    /// A delete entry point that carries only the block time still records the
+    /// lifecycle entry of a keep-history document at the lifecycle generation:
+    /// the entry needs the deletion time, which every entry point carries, and
+    /// a deleter only to credit the record's bytes, which these carry no more
+    /// than the fee-applying wrappers do.
     #[test]
-    fn should_refuse_a_keep_history_delete_through_entry_points_without_a_block() {
+    fn should_record_a_keep_history_delete_through_entry_points_without_a_deleter() {
         use crate::drive::document::lifecycle::DocumentLifecycleState;
         use dpp::document::DocumentV0Getters;
 
-        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-        let contract = setup_contract(
-            &drive,
-            "tests/supporting_files/contract/family/family-contract-with-history.json",
-            None,
-            None,
-            None::<fn(&mut DataContract)>,
-            None,
-            None,
-        );
+        let setup = || {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let contract = setup_contract(
+                &drive,
+                "tests/supporting_files/contract/family/family-contract-with-history.json",
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                None,
+            );
+            let document_type = contract
+                .document_type_for_name("person")
+                .expect("expected to get document type");
+            let owner_id = rand::thread_rng().gen::<[u8; 32]>();
+            let person_document = json_document_to_document(
+                "tests/supporting_files/contract/family/person0.json",
+                Some(owner_id.into()),
+                document_type,
+                platform_version,
+            )
+            .expect("expected to get document");
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &person_document,
+                                Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to insert a document successfully");
+            (drive, contract, person_document.id())
+        };
+        let assert_deleted_at = |drive: &Drive, contract: &DataContract, document_id| {
+            let document_type = contract
+                .document_type_for_name("person")
+                .expect("expected to get document type");
+            assert!(
+                matches!(
+                    drive
+                        .fetch_document_lifecycle(
+                            contract,
+                            document_type,
+                            document_id,
+                            None,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to read the lifecycle")
+                        .0,
+                    DocumentLifecycleState::Deleted(_)
+                ),
+                "the delete must record the lifecycle entry"
+            );
+            let (_, record) = drive
+                .fetch_document_history(
+                    &crate::query::document_history_drive_query::DocumentHistoryDriveQuery {
+                        contract_id: contract.id().to_buffer(),
+                        document_type_name: "person".to_string(),
+                        document_id: document_id.to_buffer(),
+                        filter: crate::query::document_history_drive_query::DocumentHistoryFilter::StartAtTime(0),
+                        limit: Some(1),
+                    },
+                    document_type,
+                    None,
+                    platform_version,
+                )
+                .map(|history| (history.entries.len(), history.lifecycle))
+                .expect("expected to read the history");
+            assert_eq!(
+                record
+                    .expect("the lifecycle is authenticated")
+                    .times
+                    .deleted_at_ms,
+                1_000,
+                "the entry carries the deletion time the entry point was given"
+            );
+        };
+
+        let (drive, contract, document_id) = setup();
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get document type");
-        let owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let person_document = json_document_to_document(
-            "tests/supporting_files/contract/family/person0.json",
-            Some(owner_id.into()),
-            document_type,
-            platform_version,
-        )
-        .expect("expected to get document");
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((
-                            &person_document,
-                            Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
-                        )),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
+        let operations = drive
+            .delete_document_for_contract_operations(
+                document_id,
+                &contract,
+                document_type,
+                None,
+                &mut None,
+                1_000,
                 None,
                 platform_version,
-                None,
             )
-            .expect("expected to insert a document successfully");
-        let document_id = person_document.id();
-
-        let is_refusal = |error: Error| {
-            assert!(
-                matches!(
-                    &error,
-                    Error::Drive(DriveError::CorruptedCodeExecution(message))
-                        if message.contains("needs the block and deleter")
-                ),
-                "expected the keep-history refusal, got {error:?}"
-            );
-        };
-        is_refusal(
-            drive
-                .delete_document_for_contract_operations(
-                    document_id,
-                    &contract,
-                    document_type,
-                    None,
-                    &mut None,
-                    1_000,
-                    None,
-                    platform_version,
-                )
-                .expect_err("a delete without a block must refuse a keep-history document"),
-        );
-        is_refusal(
-            drive
-                .delete_document_for_contract_with_named_type_operations(
-                    document_id,
-                    &contract,
-                    "person",
-                    None,
-                    &mut None,
-                    1_000,
-                    None,
-                    platform_version,
-                )
-                .expect_err("a delete without a block must refuse a keep-history document"),
-        );
-        is_refusal(
-            drive
-                .delete_document_for_contract_apply_and_add_to_operations(
-                    document_id,
-                    &contract,
-                    "person",
-                    None,
-                    1_000,
-                    None,
-                    &mut vec![],
-                    platform_version,
-                )
-                .expect_err("a delete without a block must refuse a keep-history document"),
-        );
-        assert!(
-            matches!(
-                drive
-                    .fetch_document_lifecycle(
-                        &contract,
-                        document_type,
-                        document_id,
-                        None,
-                        None,
-                        platform_version,
-                    )
-                    .expect("expected to read the lifecycle")
-                    .0,
-                DocumentLifecycleState::Active(_)
-            ),
-            "a refused delete leaves the document untouched"
-        );
-
+            .expect("expected the delete to build");
         drive
-            .delete_document_for_contract(
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the delete to apply");
+        assert_deleted_at(&drive, &contract, document_id);
+
+        let (drive, contract, document_id) = setup();
+        let operations = drive
+            .delete_document_for_contract_with_named_type_operations(
                 document_id,
                 &contract,
                 "person",
-                BlockInfo::default_with_time(2_000),
-                true,
+                None,
+                &mut None,
+                1_000,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
-            .expect("the entry point that carries the block deletes the document");
-        assert!(matches!(
-            drive
-                .fetch_document_lifecycle(
-                    &contract,
-                    document_type,
-                    document_id,
-                    None,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to read the lifecycle")
-                .0,
-            DocumentLifecycleState::Deleted(_)
-        ));
+            .expect("expected the delete to build");
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the delete to apply");
+        assert_deleted_at(&drive, &contract, document_id);
+
+        let (drive, contract, document_id) = setup();
+        drive
+            .delete_document_for_contract_apply_and_add_to_operations(
+                document_id,
+                &contract,
+                "person",
+                None,
+                1_000,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected the delete to apply");
+        assert_deleted_at(&drive, &contract, document_id);
     }
 
     // ---------- Error-path tests (added for coverage) ----------
