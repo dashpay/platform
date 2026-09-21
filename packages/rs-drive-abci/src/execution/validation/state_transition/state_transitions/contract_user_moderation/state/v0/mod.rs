@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::execution_operation::{ValidationOperation, SHA256_BLOCK_SIZE};
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -380,8 +380,11 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     // than hashed as stored: a document stored under an earlier version of its type or of the
     // serialization would never re-serialize to its stored bytes, and a client keeping the
     // document (not the bytes) could never match them.
-    let document_hash =
-        hash_double(document.serialize(document_type, contract, platform_version)?);
+    let serialized = document.serialize(document_type, contract, platform_version)?;
+    execution_context.add_operation(ValidationOperation::DoubleSha256(
+        serialized.len() as u16 / SHA256_BLOCK_SIZE,
+    ));
+    let document_hash = hash_double(serialized);
 
     // A document id is produced at most once (it commits to the nonce of its create
     // transition), so the only record this id can already have is of a deletion a moderator
@@ -563,6 +566,10 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
     }
 
     // The record pins the content: only the document as it was comes back, not an edit of it.
+    // The hash is billed, as the one the record was written with was.
+    execution_context.add_operation(ValidationOperation::DoubleSha256(
+        document_bytes.len() as u16 / SHA256_BLOCK_SIZE,
+    ));
     let document_hash = hash_double(document_bytes);
     if document_hash != removal.document_hash {
         return refuse(
