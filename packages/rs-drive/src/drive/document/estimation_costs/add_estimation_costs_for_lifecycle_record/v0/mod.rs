@@ -11,11 +11,11 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::TreeType;
 
-use crate::drive::document::lifecycle::DOCUMENT_LIFECYCLE_RECORD_SIZE;
 use crate::drive::document::paths::{contract_document_type_path_vec, document_lifecycle_path};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::storage_flags::StorageFlags;
+use dpp::document::lifecycle::DOCUMENT_LIFECYCLE_RECORD_MAX_SIZE;
 
 impl Drive {
     /// Registers the layers a lifecycle record write or removal touches: the
@@ -53,7 +53,7 @@ impl Drive {
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
-                estimated_layer_sizes: AllItems(32, DOCUMENT_LIFECYCLE_RECORD_SIZE, flags_size),
+                estimated_layer_sizes: AllItems(32, DOCUMENT_LIFECYCLE_RECORD_MAX_SIZE, flags_size),
             },
         );
         Ok(())

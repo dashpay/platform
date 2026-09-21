@@ -16,7 +16,6 @@ use grovedb::{
     TreeType,
 };
 
-use crate::drive::document::lifecycle::{DocumentLifecycleRecord, DOCUMENT_LIFECYCLE_RECORD_SIZE};
 use crate::drive::document::paths::{document_history_path, document_lifecycle_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -29,6 +28,8 @@ use crate::util::grove_operations::BatchDeleteApplyType::{
 use crate::util::grove_operations::{DirectQueryType, QueryTarget};
 use crate::util::object_size_info::PathKeyElementInfo::{PathKeyElement, PathKeyElementSize};
 use crate::util::storage_flags::StorageFlags;
+use dpp::document::lifecycle::{DocumentLifecycleRecord, DOCUMENT_LIFECYCLE_RECORD_MAX_SIZE};
+use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 
 /// Length of a revision key: a block timestamp followed by a history sequence.
 const REVISION_KEY_LENGTH: usize = 16;
@@ -199,8 +200,10 @@ impl Drive {
                 return Ok(batch_operations);
             }
             let (time_ms, revision) = Self::decode_revision_key(&removable[0])?;
-            // Equal in size to the record it replaces, and carrying the same
-            // flags, so the deleter stays the beneficiary of its bytes.
+            // Written with the flags of the record it replaces, so the deleter
+            // stays the beneficiary of the bytes it paid for; any bytes the new
+            // fields add are charged to this erase and flagged as such by the
+            // batch apply.
             self.batch_insert::<0>(
                 PathKeyElement((
                     lifecycle_path,
@@ -208,7 +211,7 @@ impl Drive {
                     Element::Item(
                         record
                             .starting_erase_at(block_info.time_ms, time_ms, revision)
-                            .serialize(),
+                            .serialize_to_bytes()?,
                         flags,
                     ),
                 )),
@@ -289,7 +292,10 @@ impl Drive {
                 "a lifecycle record is not an item",
             )));
         };
-        Ok((DocumentLifecycleRecord::deserialize(&bytes)?, flags))
+        Ok((
+            DocumentLifecycleRecord::deserialize_from_bytes_trusted(&bytes)?,
+            flags,
+        ))
     }
 
     /// Splits a revision key into the block time and history sequence it
@@ -359,7 +365,7 @@ impl Drive {
             document_id.as_slice(),
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                query_target: QueryTarget::QueryTargetValue(DOCUMENT_LIFECYCLE_RECORD_SIZE),
+                query_target: QueryTarget::QueryTargetValue(DOCUMENT_LIFECYCLE_RECORD_MAX_SIZE),
             },
             transaction,
             &mut batch_operations,
@@ -398,7 +404,7 @@ impl Drive {
                 KeyInfoPath::from_known_owned_path(lifecycle_path.to_vec()),
                 KeyInfo::KnownKey(document_id.to_vec()),
                 Element::Item(
-                    vec![0u8; DOCUMENT_LIFECYCLE_RECORD_SIZE as usize],
+                    vec![0u8; DOCUMENT_LIFECYCLE_RECORD_MAX_SIZE as usize],
                     Some(vec![0u8; flags_len]),
                 ),
             )),

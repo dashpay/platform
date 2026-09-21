@@ -6,7 +6,6 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use std::collections::HashMap;
 
 use crate::drive::constants::{DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE, STORAGE_FLAGS_SIZE};
-use crate::drive::document::lifecycle::DocumentLifecycleRecord;
 use crate::drive::document::paths::{
     contract_documents_primary_key_path, document_history_path, document_lifecycle_path,
     DOCUMENT_LIFECYCLE_TREE_KEY,
@@ -16,6 +15,8 @@ use crate::util::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
 use crate::util::storage_flags::StorageFlags;
+use dpp::document::lifecycle::DocumentLifecycleRecord;
+use dpp::serialization::PlatformSerializable;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
@@ -349,13 +350,13 @@ impl Drive {
         batch_operations.append(&mut container_operations);
 
         // The record's content is fully known whether or not this is a dry
-        // run: it is a fixed-width encoding of the deletion time, and the
-        // deleter it is flagged to is an input to the delete.
+        // run: the deletion time and the revision counts come from the delete
+        // itself, and the deleter it is flagged to is an input to the delete.
         self.batch_insert::<0>(
             PathKeyElement((
                 lifecycle_path,
                 document_id.to_vec(),
-                Element::Item(record.serialize(), element_flags),
+                Element::Item(record.serialize_to_bytes()?, element_flags),
             )),
             batch_operations,
             &platform_version.drive,

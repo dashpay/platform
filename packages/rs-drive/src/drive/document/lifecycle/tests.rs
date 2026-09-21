@@ -3,7 +3,6 @@
 //! from one transition to the next.
 
 use super::fetch::DocumentLifecycleState;
-use super::DocumentLifecycleRecord;
 use crate::drive::document::paths::{document_history_path, document_lifecycle_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -24,8 +23,10 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
+use dpp::document::lifecycle::DocumentLifecycleRecord;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 use dpp::version::PlatformVersion;
 use grovedb::{MaybeTree, TransactionArg, TreeType};
@@ -125,7 +126,10 @@ fn record_of(
             &latest().drive,
         )
         .expect("expected to read the lifecycle tree")
-        .map(|bytes| DocumentLifecycleRecord::deserialize(&bytes).expect("expected a valid record"))
+        .map(|bytes| {
+            DocumentLifecycleRecord::deserialize_from_bytes_untrusted(&bytes)
+                .expect("expected a valid record")
+        })
 }
 
 fn visible_document_count(drive: &Drive, contract: &DataContract) -> usize {
@@ -716,11 +720,7 @@ fn should_keep_the_deleter_as_the_records_beneficiary_across_an_erase_start() {
     else {
         panic!("a lifecycle record is an item");
     };
-    assert_eq!(
-        before.len(),
-        after.len(),
-        "the overwrite must be the same size"
-    );
+    assert_ne!(before, after, "the erase start rewrote the record");
     assert_eq!(
         before_flags, after_flags,
         "the deleter must stay the beneficiary of the record's bytes"

@@ -12,7 +12,6 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
 use crate::drive::document::lifecycle::fetch::DocumentLifecycleState;
-use crate::drive::document::lifecycle::DocumentLifecycleRecord;
 use crate::drive::document::paths::{
     contract_documents_primary_key_path, document_history_path, document_lifecycle_path,
 };
@@ -21,6 +20,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{DirectQueryType, QueryType};
+use dpp::document::lifecycle::DocumentLifecycleRecord;
+use dpp::serialization::PlatformDeserializableTrusted;
 
 impl Drive {
     #[inline(always)]
@@ -121,7 +122,7 @@ impl Drive {
         let Some(record_bytes) = record_bytes else {
             return Ok(DocumentLifecycleState::Absent);
         };
-        let record = DocumentLifecycleRecord::deserialize(&record_bytes)?;
+        let record = DocumentLifecycleRecord::deserialize_from_bytes_trusted(&record_bytes)?;
         if record.is_erasing() {
             return Ok(DocumentLifecycleState::Erasing);
         }

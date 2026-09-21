@@ -1,7 +1,6 @@
 //! A page of a document's retained revisions with its lifecycle, read from
 //! whichever history layout the protocol version stores.
 
-use crate::drive::document::lifecycle::DocumentLifecycleRecord;
 use crate::drive::document::paths::{
     contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY, DOCUMENT_LIFECYCLE_TREE_KEY,
 };
@@ -12,8 +11,10 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use dpp::document::lifecycle::DocumentLifecycleRecord;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
@@ -279,7 +280,9 @@ impl DocumentHistoryDriveQuery {
                     return Err(corrupt("a lifecycle record is not an item"));
                 };
                 if record
-                    .replace(DocumentLifecycleRecord::deserialize(&bytes)?)
+                    .replace(DocumentLifecycleRecord::deserialize_from_bytes_untrusted(
+                        &bytes,
+                    )?)
                     .is_some()
                 {
                     return Err(corrupt("duplicate lifecycle record"));
