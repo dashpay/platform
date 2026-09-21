@@ -11,6 +11,8 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::util::hash::hash_double;
 use dpp::document::property_names::PRICE;
 use dpp::fee::Credits;
 use dpp::group::group_action_status::GroupActionStatus;
@@ -1165,10 +1167,21 @@ impl Drive {
             {
                 verify_contract_document_deletion_execution(proof, transition, platform_version)
             }
+            StateTransition::ContractUserModeration(transition)
+                if transition.action().restored_document().is_some() =>
+            {
+                verify_contract_document_restore_execution(
+                    proof,
+                    transition,
+                    known_contracts_provider_fn,
+                    platform_version,
+                )
+            }
             StateTransition::ContractUserModeration(transition) => {
                 // The proof holds the entries of the lists the moderation touched, present or
-                // absent, and nothing more. A ban touched both lists the contract keeps (it
-                // removes a suspension too), so the contract's config says which to expect.
+                // absent, and nothing more. A ban touched every barring list the contract
+                // keeps (it removes a suspension too), so the contract's config says which to
+                // expect; the warning list is never among them.
                 let contract_id = transition.data_contract_id();
                 let identity_id = transition.target_identity_id().ok_or(Error::Proof(
                     ProofError::CorruptedProof(
@@ -1186,7 +1199,7 @@ impl Drive {
                         contract
                             .config()
                             .moderation()
-                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                            .map(|moderation| moderation.barring_lists().collect::<Vec<_>>())
                             .unwrap_or_else(|| vec![ContractModerationList::Banlist])
                     }
                     ContractUserModerationAction::Unban { .. } => {
@@ -1196,9 +1209,14 @@ impl Drive {
                     | ContractUserModerationAction::Unsuspend { .. } => {
                         vec![ContractModerationList::Suspensions]
                     }
-                    ContractUserModerationAction::DeleteDocument { .. } => {
+                    ContractUserModerationAction::Warn { .. }
+                    | ContractUserModerationAction::ClearWarnings { .. } => {
+                        vec![ContractModerationList::Warnings]
+                    }
+                    ContractUserModerationAction::DeleteDocument { .. }
+                    | ContractUserModerationAction::RestoreDocument { .. } => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
-                            "a document deletion is verified above".to_string(),
+                            "a document deletion or restore is verified above".to_string(),
                         )))
                     }
                 };
@@ -1230,7 +1248,17 @@ impl Drive {
                     ContractUserModerationAction::Unsuspend { .. } => {
                         statuses.suspended_until() == Some(None)
                     }
-                    ContractUserModerationAction::DeleteDocument { .. } => false,
+                    // The latest warning is the transition's: its reason, on the warning
+                    // list. Its block time is the block's, which the verifier does not know.
+                    ContractUserModerationAction::Warn { reason, .. } => statuses
+                        .warnings()
+                        .and_then(<[_]>::last)
+                        .is_some_and(|warning| warning.reason == *reason),
+                    ContractUserModerationAction::ClearWarnings { .. } => {
+                        statuses.warnings().is_some_and(<[_]>::is_empty)
+                    }
+                    ContractUserModerationAction::DeleteDocument { .. }
+                    | ContractUserModerationAction::RestoreDocument { .. } => false,
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -2763,6 +2791,73 @@ fn verify_contract_document_deletion_execution(
                     contract_id,
                     document_type_name.clone(),
                     *document_id,
+                    entry.removal,
+                ),
+            ))
+        }
+        _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
+            "proof of state transition execution does not show the {} on contract {} by {}",
+            transition.action(),
+            contract_id,
+            transition.owner_id()
+        )))),
+    }
+}
+
+/// A moderator's document restore is proved by the document's removal record, now marked
+/// restored by the transition's signer, and holding the hash of the bytes the transition
+/// brought back. The document itself is not in the proof: the record says it is live again,
+/// and the hash says it is the document the transition carries. The id is inside those bytes,
+/// read under the contract's document type, which the verifier resolves through the provider.
+fn verify_contract_document_restore_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    known_contracts_provider_fn: &ContractLookupFn,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let Some((document_type_name, document_bytes)) = transition.action().restored_document() else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only a document restore is verified by its marked removal record".to_string(),
+        )));
+    };
+    let contract = known_contracts_provider_fn(&contract_id)?.ok_or(Error::Proof(
+        ProofError::UnknownContract(format!(
+            "unknown contract with id {} in contract document restore verification",
+            contract_id
+        )),
+    ))?;
+    let document_type = contract.document_type_for_name(document_type_name)?;
+    let document = Document::from_bytes(document_bytes, document_type, platform_version)?;
+    let document_id = document.id();
+    let document_hash = hash_double(document_bytes);
+    let (root_hash, mut entries) = Drive::verify_contract_document_removals(
+        proof,
+        contract_id,
+        &ContractDocumentRemovalsQuery {
+            document_type_name: document_type_name.to_string(),
+            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![document_id]),
+        },
+        platform_version,
+    )?;
+    match (entries.pop(), entries.is_empty()) {
+        (Some(entry), true)
+            if entry.document_id == document_id
+                && entry.removal.document_hash == document_hash
+                && entry
+                    .removal
+                    .restoration
+                    .as_ref()
+                    .is_some_and(|restoration| {
+                        restoration.moderator_id == transition.owner_id()
+                    }) =>
+        {
+            Ok((
+                root_hash,
+                VerifiedContractDocumentRemoval(
+                    contract_id,
+                    document_type_name.to_string(),
+                    document_id,
                     entry.removal,
                 ),
             ))

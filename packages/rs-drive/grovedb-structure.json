@@ -3175,6 +3175,50 @@
                         "children": []
                       }
                     ]
+                  },
+                  {
+                    "id": "contracts.contract.other.warnings",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "e0",
+                      "label": "Warnings",
+                      "constant": "CONTRACT_WARNINGS_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The identities warned on the contract, and why. Created with the contract, and only when its config declares a warning list. A warning bars nothing, so no document transition reads it and its depth does not matter: above 192, it leaves the banlist on top in the likely combinations of lists.",
+                    "children": [
+                      {
+                        "id": "contracts.contract.other.warnings.identity",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "identity_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "identifier32",
+                          "description": "The warned identity's id"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "flags": [
+                          "EpochOwned"
+                        ],
+                        "flags_note": "The owner is the moderator who added the entry. They pay for it, and are refunded when it is removed. A suspension replaced with a longer reason passes to the moderator who replaced it, who pays for the added bytes; replaced with a shorter or an equally long one it stays the first moderator's, who is refunded the removed bytes.",
+                        "value": "one or more warnings, oldest first, each: the block time in milliseconds of the warning, u64 big endian, the length of its reason, u16 big endian, then the moderator's reason as in a banlist entry",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "The warnings one identity carries. Each warn rewrites the item one warning longer, so it belongs to the moderator that warned last; a clearing deletes it.",
+                        "children": []
+                      }
+                    ]
                   }
                 ]
               }

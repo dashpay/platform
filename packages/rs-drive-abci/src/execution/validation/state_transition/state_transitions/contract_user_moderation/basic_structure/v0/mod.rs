@@ -20,7 +20,7 @@ impl ContractUserModerationStateTransitionStructureValidationV0
     for ContractUserModerationTransition
 {
     /// An identity can not moderate itself, a suspension ends within the JSON-safe range, and
-    /// the text of the reason a ban, a suspension or a document deletion carries fits
+    /// the text of the reason a ban, a suspension, a warning or a document deletion carries fits
     /// `SystemLimits::max_contract_moderation_reason_length`; the reason's code is not checked.
     /// A document deletion names a document, not an identity: whose it is, and so whether the
     /// moderator may delete it, is only known once the state is read.

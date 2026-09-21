@@ -13,9 +13,11 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// The operations recording that a moderator deleted a document: the record under the
-    /// document's type, keyed by the document's id. A document id is produced at most once
-    /// (it commits to the nonce of its create transition), so the record is always new.
+    /// The operations writing the record of a moderator's deletion of a document: the record
+    /// under the document's type, keyed by the document's id. A fresh record, or with
+    /// `replaces_existing` the replacement of the one the document has: a restore marks the
+    /// record restored, and the deletion of a restored document writes a fresh record in its
+    /// place. `moderator_id` pays for the record, or for the bytes a replacement adds.
     #[allow(clippy::too_many_arguments)]
     pub fn add_contract_document_removal_operations(
         &self,
@@ -23,6 +25,8 @@ impl Drive {
         document_type_name: &str,
         document_id: Identifier,
         removal: &ContractDocumentRemoval,
+        replaces_existing: bool,
+        moderator_id: Identifier,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -42,6 +46,8 @@ impl Drive {
                 document_type_name,
                 document_id,
                 removal,
+                replaces_existing,
+                moderator_id,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

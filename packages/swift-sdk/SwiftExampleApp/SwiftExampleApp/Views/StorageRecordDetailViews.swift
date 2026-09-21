@@ -63,6 +63,29 @@ private func jsonString(_ data: Data?) -> String? {
     return str
 }
 
+// MARK: - PersistentIdentityBalanceMetadata
+
+struct IdentityBalanceMetadataStorageDetailView: View {
+    let record: PersistentIdentityBalanceMetadata
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Identity ID", value: hexString(record.identityId))
+            }
+            Section("Balance Freshness") {
+                FieldRow(label: "Platform Height", value: String(UInt64(bitPattern: record.platformHeight)))
+                FieldRow(label: "Core Height", value: String(record.coreHeight))
+                FieldRow(label: "Timestamp (ms)", value: String(UInt64(bitPattern: record.timestampMillis)))
+            }
+        }
+        .navigationTitle("Balance Metadata")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentIdentity
 
 struct IdentityStorageDetailView: View {

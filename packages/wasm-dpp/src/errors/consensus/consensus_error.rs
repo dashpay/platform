@@ -91,21 +91,23 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::basic::contract_moderation::{
-    ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
+    ContractModerationReasonTooLongError, InvalidContractModerationReasonDocumentsError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError,
     InvalidContractModerationConfigError,
 };
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
-    ContractFeesNothingToClaimError,
+    ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, ContractUserSuspendedError,
-    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
-    IdentityNotContractModeratorError,
+    ContractUserNotSuspendedError, ContractUserNotWarnedError, ContractUserSuspendedError,
+    ContractUserWarningLimitReachedError, ContractDocumentAlreadyRestoredError,
+    ContractDocumentRemovalNotFoundError, DocumentModerationWindowElapsedError,
+    DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::contract_group::{
     ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -663,6 +665,27 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentModerationWindowElapsedError(e) => {
             generic_consensus_error!(DocumentModerationWindowElapsedError, e).into()
+        }
+        StateError::ContractDocumentRemovalNotFoundError(e) => {
+            generic_consensus_error!(ContractDocumentRemovalNotFoundError, e).into()
+        }
+        StateError::DocumentRestoreWindowElapsedError(e) => {
+            generic_consensus_error!(DocumentRestoreWindowElapsedError, e).into()
+        }
+        StateError::DocumentRestoreHashMismatchError(e) => {
+            generic_consensus_error!(DocumentRestoreHashMismatchError, e).into()
+        }
+        StateError::ContractDocumentAlreadyRestoredError(e) => {
+            generic_consensus_error!(ContractDocumentAlreadyRestoredError, e).into()
+        }
+        StateError::ContractUserNotWarnedError(e) => {
+            generic_consensus_error!(ContractUserNotWarnedError, e).into()
+        }
+        StateError::ContractUserWarningLimitReachedError(e) => {
+            generic_consensus_error!(ContractUserWarningLimitReachedError, e).into()
+        }
+        StateError::ContractModeratedDocumentTypeNotYetUsableError(e) => {
+            generic_consensus_error!(ContractModeratedDocumentTypeNotYetUsableError, e).into()
         }
     }
 }
@@ -1237,6 +1260,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ContractModerationReasonTooLongError(e) => {
             generic_consensus_error!(ContractModerationReasonTooLongError, e).into()
+        }
+        BasicError::InvalidContractModerationReasonDocumentsError(e) => {
+            generic_consensus_error!(InvalidContractModerationReasonDocumentsError, e).into()
         }
     }
 }

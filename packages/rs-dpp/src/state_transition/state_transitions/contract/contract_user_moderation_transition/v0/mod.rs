@@ -54,6 +54,20 @@ pub enum ContractUserModerationAction {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
         identity_id: Identifier,
     },
+    /// Adds a warning, with the block time and `reason`, to the identity's entry on the
+    /// warning list, which bars it from nothing. Refused once the entry holds
+    /// `SystemLimits::max_contract_warnings_per_identity` warnings.
+    Warn {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
+        identity_id: Identifier,
+        /// Why, stored with the warning.
+        reason: ContractModerationReason,
+    },
+    /// Takes the identity off the warning list: every warning it carries goes.
+    ClearWarnings {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
+        identity_id: Identifier,
+    },
     /// Deletes a document of a document type that sets `canBeDeletedByModerators`, whoever
     /// owns it, except the contract owner and the moderators. The document's owner gets no
     /// storage refund, and a `ContractDocumentRemoval` stays under the contract.
@@ -64,6 +78,17 @@ pub enum ContractUserModerationAction {
         document_id: Identifier,
         /// Why, stored with the removal record.
         reason: ContractModerationReason,
+    },
+    /// Brings back a document a moderator deleted, as it was: the document serialized under
+    /// its document type (`Document::serialize`), which must hash to what its removal record
+    /// holds, within `SystemLimits::contract_document_restore_window_ms` of the removal. The
+    /// document's id, owner and content are all inside the bytes. The record stays, marked
+    /// restored; the signer pays for the document's storage, whose refund stays the owner's.
+    RestoreDocument {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
+        document_type_name: String,
+        /// The document as it was serialized when it was removed.
+        document: BinaryData,
     },
 }
 
@@ -84,13 +109,17 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
             | ContractUserModerationAction::Suspend { identity_id, .. }
-            | ContractUserModerationAction::Unsuspend { identity_id } => Some(*identity_id),
-            ContractUserModerationAction::DeleteDocument { .. } => None,
+            | ContractUserModerationAction::Unsuspend { identity_id }
+            | ContractUserModerationAction::Warn { identity_id, .. }
+            | ContractUserModerationAction::ClearWarnings { identity_id } => Some(*identity_id),
+            ContractUserModerationAction::DeleteDocument { .. }
+            | ContractUserModerationAction::RestoreDocument { .. } => None,
         }
     }
 
     /// The document a deletion targets, as its document type name and its id. `None` for an
-    /// action on an identity.
+    /// action on an identity, and for a restore, which carries the document itself: its id is
+    /// only known once the bytes are decoded under the document type.
     pub fn document(&self) -> Option<(&str, Identifier)> {
         match self {
             ContractUserModerationAction::DeleteDocument {
@@ -98,6 +127,32 @@ impl ContractUserModerationAction {
                 document_id,
                 ..
             } => Some((document_type_name.as_str(), *document_id)),
+            _ => None,
+        }
+    }
+
+    /// The document a restore brings back, as its document type name and its serialized
+    /// bytes. `None` for every other action.
+    pub fn restored_document(&self) -> Option<(&str, &[u8])> {
+        match self {
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name,
+                document,
+            } => Some((document_type_name.as_str(), document.as_slice())),
+            _ => None,
+        }
+    }
+
+    /// The document type name a deletion or a restore names, `None` for an action on an
+    /// identity.
+    pub fn document_type_name(&self) -> Option<&str> {
+        match self {
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name, ..
+            }
+            | ContractUserModerationAction::RestoreDocument {
+                document_type_name, ..
+            } => Some(document_type_name.as_str()),
             _ => None,
         }
     }
@@ -110,15 +165,18 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The reason a ban, a suspend or a document deletion carries, `None` for an action that
-    /// takes an identity off a list.
+    /// The reason a ban, a suspend, a warn or a document deletion carries, `None` for an
+    /// action that takes an identity off a list.
     pub fn reason(&self) -> Option<&ContractModerationReason> {
         match self {
             ContractUserModerationAction::Ban { reason, .. }
             | ContractUserModerationAction::Suspend { reason, .. }
+            | ContractUserModerationAction::Warn { reason, .. }
             | ContractUserModerationAction::DeleteDocument { reason, .. } => Some(reason),
             ContractUserModerationAction::Unban { .. }
-            | ContractUserModerationAction::Unsuspend { .. } => None,
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::RestoreDocument { .. } => None,
         }
     }
 
@@ -129,7 +187,10 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::Unban { .. } => "unban",
             ContractUserModerationAction::Suspend { .. } => "suspend",
             ContractUserModerationAction::Unsuspend { .. } => "unsuspend",
+            ContractUserModerationAction::Warn { .. } => "warn",
+            ContractUserModerationAction::ClearWarnings { .. } => "clearWarnings",
             ContractUserModerationAction::DeleteDocument { .. } => "deleteDocument",
+            ContractUserModerationAction::RestoreDocument { .. } => "restoreDocument",
         }
     }
 }
@@ -149,9 +210,22 @@ impl fmt::Display for ContractUserModerationAction {
             } => {
                 write!(f, "delete {} document {}", document_type_name, document_id)
             }
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name,
+                document,
+            } => {
+                write!(
+                    f,
+                    "restore {} document of {} bytes",
+                    document_type_name,
+                    document.len()
+                )
+            }
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
-            | ContractUserModerationAction::Unsuspend { identity_id } => {
+            | ContractUserModerationAction::Unsuspend { identity_id }
+            | ContractUserModerationAction::Warn { identity_id, .. }
+            | ContractUserModerationAction::ClearWarnings { identity_id } => {
                 write!(f, "{} {}", self.name(), identity_id)
             }
         }
@@ -164,8 +238,9 @@ impl fmt::Display for ContractUserModerationAction {
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractUserModerationAction {}
 
-/// Edits the banlist or the suspension list of a moderated data contract, or deletes a
-/// document of one of its document types that moderators may delete. Signed by the
+/// Edits the banlist, the suspension list or the warning list of a moderated data contract,
+/// or deletes or restores a document of one of its document types that moderators may
+/// delete. Signed by the
 /// contract owner or a moderator named in the contract's config, with a CRITICAL
 /// authentication key, under the signer's contract-scoped nonce.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
@@ -267,6 +342,7 @@ mod test {
         let reason = ContractModerationReason {
             code: Some(4),
             text: "flooding".to_string(),
+            documents: vec![],
         };
         let action = ContractUserModerationAction::Suspend {
             identity_id: target,
@@ -286,11 +362,53 @@ mod test {
     }
 
     #[test]
+    fn should_name_the_target_of_a_warning_and_of_its_clearing() {
+        let target = Identifier::random();
+        let reason = ContractModerationReason::from_text("first strike");
+        let warn = ContractUserModerationAction::Warn {
+            identity_id: target,
+            reason: reason.clone(),
+        };
+        assert_eq!(warn.identity_id(), Some(target));
+        assert_eq!(warn.document(), None);
+        assert_eq!(warn.until(), None);
+        assert_eq!(warn.reason(), Some(&reason));
+        assert_eq!(warn.name(), "warn");
+        assert_eq!(warn.to_string(), format!("warn {}", target));
+        let clear = ContractUserModerationAction::ClearWarnings {
+            identity_id: target,
+        };
+        assert_eq!(clear.identity_id(), Some(target));
+        assert_eq!(clear.reason(), None);
+        assert_eq!(clear.name(), "clearWarnings");
+    }
+
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn should_tag_a_warning_on_the_wire() {
+        let action = ContractUserModerationAction::Warn {
+            identity_id: Identifier::from([7; 32]),
+            reason: ContractModerationReason::from_text("spam"),
+        };
+        let json = serde_json::to_value(&action).expect("to json");
+        assert_eq!(json["$type"], "warn");
+        let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
+        assert_eq!(back, action);
+        let clear = ContractUserModerationAction::ClearWarnings {
+            identity_id: Identifier::from([7; 32]),
+        };
+        let json = serde_json::to_value(&clear).expect("to json");
+        assert_eq!(json["$type"], "clearWarnings");
+        assert!(json.get("reason").is_none());
+    }
+
+    #[test]
     fn should_name_the_document_of_a_deletion() {
         let document_id = Identifier::random();
         let reason = ContractModerationReason {
             code: Some(2),
             text: "spam".to_string(),
+            documents: vec![],
         };
         let action = ContractUserModerationAction::DeleteDocument {
             document_type_name: "post".to_string(),
@@ -307,6 +425,38 @@ mod test {
             action.to_string(),
             format!("delete post document {}", document_id)
         );
+    }
+
+    #[test]
+    fn should_name_the_document_of_a_restore_by_its_bytes() {
+        let action = ContractUserModerationAction::RestoreDocument {
+            document_type_name: "post".to_string(),
+            document: BinaryData::new(vec![7; 70]),
+        };
+        // A restore carries the document: whose it is, and which id, is inside the bytes.
+        assert_eq!(action.identity_id(), None);
+        assert_eq!(action.document(), None);
+        assert_eq!(action.restored_document(), Some(("post", &[7u8; 70][..])));
+        assert_eq!(action.document_type_name(), Some("post"));
+        assert_eq!(action.until(), None);
+        assert_eq!(action.reason(), None);
+        assert_eq!(action.name(), "restoreDocument");
+        assert_eq!(action.to_string(), "restore post document of 70 bytes");
+    }
+
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn should_tag_a_restore_on_the_wire() {
+        let action = ContractUserModerationAction::RestoreDocument {
+            document_type_name: "post".to_string(),
+            document: BinaryData::new(vec![7; 70]),
+        };
+        let json = serde_json::to_value(&action).expect("to json");
+        assert_eq!(json["$type"], "restoreDocument");
+        assert_eq!(json["documentTypeName"], "post");
+        assert!(json["document"].is_string(), "the bytes travel as a string");
+        let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
+        assert_eq!(back, action);
     }
 
     #[cfg(feature = "json-conversion")]

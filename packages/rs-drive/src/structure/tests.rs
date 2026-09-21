@@ -322,7 +322,7 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{
         ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
-        ContractModerators,
+        ContractModerators, ContractWarning,
     };
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
@@ -679,6 +679,7 @@ mod fixtures {
                         banlist: false,
                         suspensions: false,
                         moderators: ContractModerators::ContractOwner,
+                        warnings: false,
                     },
                 )));
                 // After the config: the keyword is refused on a contract without moderation.
@@ -714,7 +715,11 @@ mod fixtures {
                             moderator_id: contract.owner_id(),
                             reason: ContractModerationReason::from_text("spam"),
                             removed_at: 1_000,
+                            document_hash: [0x25; 32],
+                            restoration: None,
                         },
+                        replaces_existing: false,
+                        moderator_id: contract.owner_id(),
                     },
                 )],
                 true,
@@ -727,7 +732,7 @@ mod fixtures {
         conformance_of(&drive, "contract_with_document_removals", run);
     }
 
-    /// A contract that keeps both moderation lists, with one ban and one suspension
+    /// A contract that keeps both barring lists, with one ban and one suspension
     fn moderated_contract(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -742,6 +747,7 @@ mod fixtures {
                         banlist: true,
                         suspensions: true,
                         moderators: ContractModerators::ContractOwner,
+                        warnings: false,
                     },
                 )))
             }),
@@ -809,6 +815,54 @@ mod fixtures {
             )
             .expect("expected to fill and claim the fee pots");
         conformance_of(&drive, "moderated_contract", run);
+    }
+
+    /// A contract that keeps the banlist and the warning list, with one identity carrying two
+    /// warnings
+    fn warned_contract(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            Some([10; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: true,
+                        suspensions: false,
+                        warnings: true,
+                        moderators: ContractModerators::ContractOwner,
+                    },
+                )))
+            }),
+            None,
+            Some(platform_version),
+        );
+        drive
+            .add_contract_warning(
+                contract.id(),
+                Identifier::from([0x23; 32]),
+                &[
+                    ContractWarning {
+                        warned_at: 1_000,
+                        reason: ContractModerationReason::from_text("first strike"),
+                    },
+                    ContractWarning {
+                        warned_at: 2_000,
+                        reason: ContractModerationReason::from_text("second strike"),
+                    },
+                ],
+                false,
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to warn");
+        conformance_of(&drive, "warned_contract", run);
     }
 
     fn tokens_and_group_actions(run: &mut FixtureRun) {
@@ -1511,6 +1565,7 @@ mod fixtures {
         identities(&mut run);
         contracts_with_documents(&mut run);
         moderated_contract(&mut run);
+        warned_contract(&mut run);
         contract_with_document_removals(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);

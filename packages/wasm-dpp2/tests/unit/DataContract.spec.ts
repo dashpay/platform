@@ -246,7 +246,8 @@ describe('DataContract', () => {
 
       dataContract.setConfig({ ...dataContract.config, moderation }, new PlatformVersion(14));
 
-      expect(dataContract.config.moderation).to.deep.equal(moderation);
+      // A declaration that says nothing about the warning list keeps none.
+      expect(dataContract.config.moderation).to.deep.equal({ ...moderation, warnings: false });
     });
 
     it('should leave an unmoderated config without the key', () => {

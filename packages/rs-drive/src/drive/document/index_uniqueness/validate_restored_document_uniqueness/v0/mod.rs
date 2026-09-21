@@ -1,0 +1,41 @@
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
+use crate::drive::Drive;
+use crate::error::Error;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+use dpp::document::{Document, DocumentV0Getters};
+use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
+
+impl Drive {
+    /// Validate that a restored document would be unique in the state
+    #[inline(always)]
+    pub(super) fn validate_restored_document_uniqueness_v0(
+        &self,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        document: &Document,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        let request = UniquenessOfDataRequestV0 {
+            contract,
+            document_type,
+            owner_id: document.owner_id(),
+            document_id: document.id(),
+            allow_original: false,
+            created_at: document.created_at(),
+            updated_at: document.updated_at(),
+            transferred_at: document.transferred_at(),
+            created_at_block_height: document.created_at_block_height(),
+            updated_at_block_height: document.updated_at_block_height(),
+            transferred_at_block_height: document.transferred_at_block_height(),
+            created_at_core_block_height: document.created_at_core_block_height(),
+            updated_at_core_block_height: document.updated_at_core_block_height(),
+            transferred_at_core_block_height: document.transferred_at_core_block_height(),
+            data: document.properties(),
+        };
+        self.validate_uniqueness_of_data(request.into(), transaction, platform_version)
+    }
+}

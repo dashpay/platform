@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the layer information of a contract's other tree (`[64, id, 2]`: the version item
-    /// and up to two moderation list trees), and of the contract's root subtree above it when
+    /// and up to three moderation list trees), and of the contract's root subtree above it when
     /// nothing in the batch described that one yet. The root subtree's entry is left alone
     /// when it is there: a document or contract operation of the same batch describes it
     /// better than this does.
@@ -42,7 +42,7 @@ impl Drive {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: Mix {
-                    subtrees_size: Some((1, NoSumTrees, flags_size, 2)),
+                    subtrees_size: Some((1, NoSumTrees, flags_size, 3)),
                     items_size: Some((1, CONTRACT_VERSION_ITEM_SIZE as u32, flags_size, 1)),
                     items_with_sum_item_size: None,
                     references_size: None,

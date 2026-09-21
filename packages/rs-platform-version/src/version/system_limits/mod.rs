@@ -115,10 +115,36 @@ pub struct SystemLimits {
     /// to clients. Read by the `ContractUserModeration` basic structure validation v0
     /// (protocol version 14) and never reached before.
     pub max_contract_suspension_until: u64,
-    /// Maximum length, in bytes of UTF-8, of the text of the reason a ban or a suspension
-    /// carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
+    /// Maximum length, in bytes of UTF-8, of the text of the reason a ban, a suspension, a
+    /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
+    /// Maximum number of warnings one identity may carry on a contract's warning list at a
+    /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
+    /// the `ContractUserModeration` state validation v0 (protocol version 14) and never
+    /// reached before.
+    pub max_contract_warnings_per_identity: u16,
+    /// Maximum number of documents a contract moderation reason may cite
+    /// (`ContractModerationReason::documents`). Read by the reason's validation (protocol
+    /// version 14) and never reached before.
+    pub max_contract_moderation_reason_documents: u16,
+    /// Shortest join window and vote window, in seconds, an elected moderation team
+    /// declaration (`ContractModerators::Elected`) may set: one day. Read by the contract's
+    /// `validate_moderation_config` v0 (protocol version 14) and never reached before.
+    pub min_contract_moderation_election_window_seconds: u32,
+    /// Longest join window and vote window, in seconds, such a declaration may set: four
+    /// weeks.
+    pub max_contract_moderation_election_window_seconds: u32,
+    /// Shortest challenge cool-down, in seconds, such a declaration may set: two weeks. The
+    /// cool-down is how long a seated team is safe from a challenge after a seat change.
+    pub min_contract_moderation_challenge_cool_down_seconds: u32,
+    /// Longest challenge cool-down, in seconds, such a declaration may set: three years.
+    pub max_contract_moderation_challenge_cool_down_seconds: u32,
+    /// How long after a moderator's deletion of a document, in milliseconds of block time,
+    /// the contract's moderators may restore it (`ContractUserModeration`'s `RestoreDocument`
+    /// action): a week. Read by the `ContractUserModeration` state validation v0 (protocol
+    /// version 14) and never reached before.
+    pub contract_document_restore_window_ms: u64,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

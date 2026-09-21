@@ -143,6 +143,23 @@ export class ContractsFacade {
   }
 
   /**
+   * Warns an identity on a moderated contract: adds a warning, stamped with the block time,
+   * to the warnings it carries on the contract's warning list. A warning bars nothing; the
+   * warnings accumulate, at most 16 at a time, until they are cleared, and anyone can read
+   * them. `options.reason` is required, as for a ban.
+   */
+  async warnUser(options: wasm.ContractWarnOptions): Promise<wasm.ContractModerationResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractWarnUser(options);
+  }
+
+  /** Takes an identity off a moderated contract's warning list: every warning it carries goes. */
+  async clearUserWarnings(options: wasm.ContractModerationOptions): Promise<wasm.ContractModerationResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractClearUserWarnings(options);
+  }
+
+  /**
    * Deletes one document on a moderated contract as a moderator, whoever owns it, except the
    * contract owner and the moderators. The document type must set `canBeDeletedByModerators`;
    * when it also sets `canBeDeletedByModeratorsFor`, the deletion passes up to and including
@@ -160,8 +177,25 @@ export class ContractsFacade {
   }
 
   /**
-   * One identity's status on a moderated contract: whether it is banned, and until when it is
-   * suspended. Every list named must be one the contract keeps.
+   * Restores, as a moderator, one document a moderator deleted: `options.document` is the
+   * document as it was (as fetched before the deletion), which must hash to what its removal
+   * record holds, and the restore must come within a week of the deletion (41120). Any current
+   * moderator or the contract owner may restore, whoever deleted. The document goes back
+   * through an ordinary insert, so a unique index value another document took meanwhile
+   * refuses it (40105). Signed like the other moderations. Resolves with the record of the
+   * deletion, now marked restored (`restoredBy`, `restoredAt`); the signer paid for the
+   * document's storage, whose refund stays its owner's.
+   */
+  async moderatorRestoreDocument(
+    options: wasm.ContractRestoreDocumentOptions,
+  ): Promise<wasm.ContractDocumentRemovalResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractRestoreDocument(options);
+  }
+
+  /**
+   * One identity's status on a moderated contract: whether it is banned, until when it is
+   * suspended, and the warnings it carries. Every list named must be one the contract keeps.
    */
   async moderationStatus(query: wasm.ContractModerationStatusQuery): Promise<wasm.ContractModerationStatus> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -176,8 +210,9 @@ export class ContractsFacade {
   }
 
   /**
-   * One page of a moderated contract's banlist or suspension list, in identity id order. Pass
-   * the page's `nextStartAfter` as the next query's `startAfter`; a page without one (it holds fewer entries than the limit) is the last.
+   * One page of a moderated contract's banlist, suspension list or warning list, in identity
+   * id order. Pass the page's `nextStartAfter` as the next query's `startAfter`; a page
+   * without one (it holds fewer entries than the limit) is the last.
    */
   async moderationEntries(query: wasm.ContractModerationEntriesQuery): Promise<wasm.ContractModerationEntriesPage> {
     const w = await this.sdk.getWasmSdkConnected();

@@ -40,6 +40,11 @@ jobs:
       || github.event.pull_request.head.repo.full_name == github.repository
       || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
     timeout-minutes: 90
+    defaults:
+      run:
+        # Self-hosted macOS runners may keep their work directory on a volume
+        # with spaces in its name. Quote the generated script path explicitly.
+        shell: bash --noprofile --norc -eo pipefail "{0}"
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

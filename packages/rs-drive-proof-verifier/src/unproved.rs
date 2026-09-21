@@ -5,9 +5,10 @@ use crate::types::contract_groups::{
 };
 use crate::types::contract_moderation::{
     entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
-    reason_from_response, removals_from_response, removals_query_from_request, ContractBan,
-    ContractDocumentRemovals, ContractFeePots, ContractModerationEntries, ContractModerationList,
-    ContractModerationListStatuses, ContractModerationStatus, ContractSuspension,
+    reason_from_response, removals_from_response, removals_query_from_request,
+    warnings_from_response, ContractBan, ContractDocumentRemovals, ContractFeePots,
+    ContractModerationEntries, ContractModerationList, ContractModerationListStatuses,
+    ContractModerationStatus, ContractSuspension,
 };
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
@@ -953,9 +954,20 @@ impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractMode
                             .map(|reason| ContractSuspension { until, reason })
                     })
                     .transpose()?;
+                // The warnings are read only when the warning list was asked for: an empty
+                // list on the wire says "none" for a list read and nothing for one not read.
+                let warnings = if lists.contains(&ContractModerationList::Warnings) {
+                    warnings_from_response(status.warnings)?
+                } else {
+                    vec![]
+                };
                 Some(ContractModerationListStatuses::from_status(
                     &lists,
-                    &ContractModerationStatus { ban, suspension },
+                    &ContractModerationStatus {
+                        ban,
+                        suspension,
+                        warnings,
+                    },
                 ))
             }
             Some(V0Result::Proof(_)) => {
@@ -1513,12 +1525,14 @@ mod contract_moderation_tests {
         GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
     };
     use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
+    use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
     use dapi_grpc::platform::v0::ResponseMetadata;
     use dpp::dashcore::Network;
     use dpp::version::PlatformVersion;
 
     const BANLIST: i32 = 1;
     const SUSPENSIONS: i32 = 2;
+    const WARNINGS: i32 = 3;
 
     fn status(
         requested: Vec<i32>,
@@ -1562,11 +1576,14 @@ mod contract_moderation_tests {
                 ban_reason: Some(ContractModerationReasonProto {
                     code: None,
                     text: "spam".to_string(),
+                    documents: vec![],
                 }),
                 suspension_reason: Some(ContractModerationReasonProto {
                     code: Some(9),
                     text: "flooding".to_string(),
+                    documents: vec![],
                 }),
+                warnings: vec![],
             },
         )
         .expect("expected the status to convert")
@@ -1574,6 +1591,8 @@ mod contract_moderation_tests {
 
         assert_eq!(statuses.banned(), Some(true));
         assert_eq!(statuses.suspended_until(), Some(Some(7)));
+        // The warning list was not asked for, so nothing is said about it.
+        assert_eq!(statuses.warnings(), None);
         assert_eq!(
             statuses.ban().flatten().map(|ban| &ban.reason),
             Some(&ContractModerationReason::from_text("spam"))
@@ -1583,6 +1602,7 @@ mod contract_moderation_tests {
             Some(&ContractModerationReason {
                 code: Some(9),
                 text: "flooding".to_string(),
+                documents: vec![],
             })
         );
     }
@@ -1607,6 +1627,7 @@ mod contract_moderation_tests {
                 suspension_reason: Some(ContractModerationReasonProto {
                     code: Some(u16::MAX as u32 + 1),
                     text: String::new(),
+                    documents: vec![],
                 }),
                 ..Default::default()
             },
@@ -1626,6 +1647,59 @@ mod contract_moderation_tests {
         .expect("expected a status");
         assert_eq!(clean.ban(), Some(None));
         assert_eq!(clean.suspension(), Some(None));
+    }
+
+    #[test]
+    fn should_read_the_warnings_when_the_warning_list_was_asked_for() {
+        let warning = |warned_at: u64, text: &str| ContractWarningProto {
+            warned_at,
+            reason: Some(ContractModerationReasonProto {
+                code: None,
+                text: text.to_string(),
+                documents: vec![],
+            }),
+        };
+        let warned = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                warnings: vec![warning(5, "first strike"), warning(6, "second strike")],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        let warnings = warned.warnings().expect("expected the warning list");
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings[1].warned_at, 6);
+        assert_eq!(warnings[1].reason.text, "second strike");
+        assert_eq!(warned.banned(), None);
+
+        // No warnings on a list that was read: none, not unknown.
+        let clean = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        assert_eq!(clean.warnings(), Some(&[][..]));
+
+        // A warning without a reason is refused like an entry without one.
+        let no_reason = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                warnings: vec![ContractWarningProto {
+                    warned_at: 5,
+                    reason: None,
+                }],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(no_reason, Err(Error::ResponseDecodeError { .. })));
     }
 
     #[test]
@@ -1691,9 +1765,12 @@ mod contract_moderation_tests {
             document_owner_id: vec![seed + 0x10; 32],
             moderator_id: vec![0x77; 32],
             removed_at: 1_000 + u64::from(seed),
+            document_hash: vec![seed + 0x20; 32],
+            restoration: None,
             reason: Some(ContractModerationReasonProto {
                 code: None,
                 text: "spam".to_string(),
+                documents: vec![],
             }),
         }
     }

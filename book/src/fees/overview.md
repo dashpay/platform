@@ -317,9 +317,12 @@ judged in the batch's advanced structure validation
 (`BatchTransitionAction::validate_action_fee_agreements`), off the action
 alone: the base action carries the declaration beside the agreement, and the
 batch action the multiplier its transformer read. The mempool runs the same
-check. A client builds the agreement from the contract it showed its user
-with `DocumentActionFeeAgreement::for_document_type_action`, never from a
-contract fetched behind their back at signing time.
+check when a transition arrives and again on every recheck, so a transition
+whose agreement no longer holds leaves the mempool with the same error instead
+of failing in the block that would have refused it. A client builds the
+agreement from the contract it showed its user with
+`DocumentActionFeeAgreement::for_document_type_action`, never from a contract
+fetched behind their back at signing time.
 
 **The amounts do not change yet.** A contract update may not add, change or
 remove the `actionFees` of an existing document type, nor switch their pricing

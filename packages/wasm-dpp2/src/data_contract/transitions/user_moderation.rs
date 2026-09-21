@@ -4,9 +4,11 @@ use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    try_from_options, try_from_options_optional, try_to_u16, try_to_u32, try_to_u64,
+    try_from_options, try_from_options_optional, try_to_bytes, try_to_u16, try_to_u32, try_to_u64,
 };
-use dpp::data_contract::config::moderation::ContractModerationReason;
+use dpp::data_contract::config::moderation::{
+    ContractModerationDocument, ContractModerationReason, ContractWarning,
+};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -27,10 +29,19 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_USER_MODERATION_TS: &str = r#"
+/** A document a moderation reason is about. */
+export interface ContractModerationDocument {
+    /** The document type of the document, on the moderated contract. */
+    documentTypeName: string;
+    /** The document's id, as a base58 string. */
+    documentId: string;
+}
+
 /**
- * Why a moderator banned or suspended an identity, or deleted a document. Every ban, every
- * suspension and every document deletion carries one, and it is stored with the entry or the
- * removal record. Nothing checks what a moderator writes.
+ * Why a moderator banned, suspended or warned an identity, or deleted a document. Every ban,
+ * every suspension, every warning and every document deletion carries one, and it is stored
+ * with the entry or the removal record. Nothing checks what a moderator writes, and the
+ * documents a reason cites are not looked up.
  */
 export interface ContractModerationReason {
     /**
@@ -41,6 +52,19 @@ export interface ContractModerationReason {
     code?: number | null;
     /** Free text, at most 1024 bytes of UTF-8. May be empty. */
     text: string;
+    /**
+     * The documents the reason is about: the posts a warning or a ban is for. At most 16,
+     * none twice. A reason read back carries it only when there are any.
+     */
+    documents?: ContractModerationDocument[];
+}
+
+/** One warning an identity carries on a contract's warning list. */
+export interface ContractWarning {
+    /** The time of the block that issued it, in milliseconds. */
+    warnedAt: bigint;
+    /** Why, as the moderator wrote it. */
+    reason: ContractModerationReason;
 }
 
 /**
@@ -52,11 +76,16 @@ export type ContractUserModerationActionJSON =
   | { $type: "unban"; identityId: string }
   | { $type: "suspend"; identityId: string; until: number | string; reason: ContractModerationReason }
   | { $type: "unsuspend"; identityId: string }
-  | { $type: "deleteDocument"; documentTypeName: string; documentId: string; reason: ContractModerationReason };
+  | { $type: "warn"; identityId: string; reason: ContractModerationReason }
+  | { $type: "clearWarnings"; identityId: string }
+  | { $type: "deleteDocument"; documentTypeName: string; documentId: string; reason: ContractModerationReason }
+  | { $type: "restoreDocument"; documentTypeName: string; document: string };
 
 /**
- * Bans, unbans, suspends or unsuspends one identity on a moderated data contract, or deletes
- * one document of a document type that sets `canBeDeletedByModerators` (protocol version 14).
+ * Bans, unbans, suspends, unsuspends, warns or clears the warnings of one identity on a
+ * moderated data contract, or deletes one document of a document type that sets
+ * `canBeDeletedByModerators`, or restores one such document a moderator deleted (protocol
+ * version 14).
  * Signed by the contract owner or a moderator its config names, with a CRITICAL
  * authentication key, under the signer's contract-scoped nonce.
  */
@@ -68,21 +97,29 @@ export interface ContractUserModerationTransitionOptions {
     /** The signer's nonce for the contract */
     identityContractNonce: bigint;
     /** What is done */
-    action: "ban" | "unban" | "suspend" | "unsuspend" | "deleteDocument";
+    action: "ban" | "unban" | "suspend" | "unsuspend" | "warn" | "clearWarnings" | "deleteDocument" | "restoreDocument";
     /**
-     * The identity the action targets. Needed by every action but a deleteDocument, which
-     * names a document instead and refuses it.
+     * The identity the action targets. Needed by every action but a deleteDocument and a
+     * restoreDocument, which name a document instead and refuse it.
      */
     identityId?: IdentifierLike;
-    /** For a deleteDocument, which needs it: the document type of the document. Refused beside another action. */
+    /** For a deleteDocument or a restoreDocument, which need it: the document type of the document. Refused beside another action. */
     documentTypeName?: string;
     /** For a deleteDocument, which needs it: the document. Refused beside another action. */
     documentId?: IdentifierLike;
+    /**
+     * For a restoreDocument, which needs it: the document as it was serialized under its
+     * document type when it was deleted (`Document.toBytes()` of the document as fetched
+     * before the deletion), which must hash to what its removal record holds. Refused beside
+     * another action.
+     */
+    document?: Uint8Array;
     /** For a suspend: the block time, in milliseconds, at which the suspension lapses */
     until?: bigint;
     /**
-     * Why. A ban and a suspend both need one. A deleteDocument may leave it out, which stores
-     * no code and an empty text. Refused beside an unban or an unsuspend.
+     * Why. A ban, a suspend and a warn each need one. A deleteDocument may leave it out, which
+     * stores no code and an empty text. Refused beside an unban, an unsuspend or a
+     * clearWarnings.
      */
     reason?: ContractModerationReason;
     userFeeIncrease?: number;
@@ -100,6 +137,7 @@ export interface ContractUserModerationObject {
         identityId?: Uint8Array;
         documentTypeName?: string;
         documentId?: Uint8Array;
+        document?: Uint8Array;
         until?: bigint;
         reason?: ContractModerationReason;
     };
@@ -135,18 +173,102 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractModerationReason")]
     pub type ContractModerationReasonJs;
+
+    #[wasm_bindgen(typescript_type = "ContractWarning[]")]
+    pub type ContractWarningsJs;
 }
 
-/// A reason as the plain object JavaScript reads: `code`, `null` when there is none, and
-/// `text`. The shape `toJSON()` and `toObject()` give the reason inside a transition, so a
-/// reason compares equal whichever call produced it.
+/// A reason as the plain object JavaScript reads: `code`, `null` when there is none, `text`,
+/// and `documents` when it cites any, each with its type name and its id as a base58 string.
+/// The shape `toJSON()` and `toObject()` give the reason inside a transition, so a reason
+/// compares equal whichever call produced it.
 pub fn moderation_reason_to_js(reason: &ContractModerationReason) -> JsValue {
     let object = js_sys::Object::new();
     // Setting a property on a fresh plain object cannot fail.
     let code = reason.code.map_or(JsValue::NULL, JsValue::from);
     let _ = js_sys::Reflect::set(&object, &"code".into(), &code);
     let _ = js_sys::Reflect::set(&object, &"text".into(), &JsValue::from_str(&reason.text));
+    if !reason.documents.is_empty() {
+        let documents = js_sys::Array::new();
+        for document in &reason.documents {
+            let entry = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(
+                &entry,
+                &"documentTypeName".into(),
+                &JsValue::from_str(&document.document_type_name),
+            );
+            let _ = js_sys::Reflect::set(
+                &entry,
+                &"documentId".into(),
+                &JsValue::from_str(&IdentifierWasm::from(document.document_id).to_base58()),
+            );
+            documents.push(&entry);
+        }
+        let _ = js_sys::Reflect::set(&object, &"documents".into(), &documents);
+    }
     object.into()
+}
+
+/// Warnings as the plain objects JavaScript reads, oldest first: `warnedAt` as a BigInt in
+/// `toObject()` and as a number in `toJSON()`, and the reason as [`moderation_reason_to_js`]
+/// gives it.
+pub fn moderation_warnings_to_js(warnings: &[ContractWarning], as_json: bool) -> JsValue {
+    let array = js_sys::Array::new();
+    for warning in warnings {
+        let object = js_sys::Object::new();
+        let warned_at = if as_json {
+            JsValue::from_f64(warning.warned_at as f64)
+        } else {
+            JsValue::from(js_sys::BigInt::from(warning.warned_at))
+        };
+        // Setting a property on a fresh plain object cannot fail.
+        let _ = js_sys::Reflect::set(&object, &"warnedAt".into(), &warned_at);
+        let _ = js_sys::Reflect::set(
+            &object,
+            &"reason".into(),
+            &moderation_reason_to_js(&warning.reason),
+        );
+        array.push(&object);
+    }
+    array.into()
+}
+
+/// A document a reason cites, as the options of the JavaScript surfaces carry it: the id is
+/// an `IdentifierLike`, which serde alone would not read from a base58 string.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContractModerationDocumentInput {
+    document_type_name: String,
+    document_id: IdentifierWasm,
+}
+
+/// A reason as the options of the JavaScript surfaces carry it. See
+/// [`ContractModerationDocumentInput`] for why it is not the reason itself.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContractModerationReasonInput {
+    #[serde(default)]
+    code: Option<u16>,
+    text: String,
+    #[serde(default)]
+    documents: Vec<ContractModerationDocumentInput>,
+}
+
+impl From<ContractModerationReasonInput> for ContractModerationReason {
+    fn from(input: ContractModerationReasonInput) -> Self {
+        ContractModerationReason {
+            code: input.code,
+            text: input.text,
+            documents: input
+                .documents
+                .into_iter()
+                .map(|document| ContractModerationDocument {
+                    document_type_name: document.document_type_name,
+                    document_id: document.document_id.into(),
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Serde struct for the primitive fields of the options
@@ -160,7 +282,7 @@ struct ContractUserModerationOptionsInput {
     #[serde(default)]
     until: Option<u64>,
     #[serde(default)]
-    reason: Option<ContractModerationReason>,
+    reason: Option<ContractModerationReasonInput>,
     /// `undefined` reaches serde as a unit value, so the fee is read as an option and defaulted
     #[serde(default)]
     user_fee_increase: Option<UserFeeIncrease>,
@@ -188,21 +310,24 @@ impl From<ContractUserModerationWasm> for ContractUserModerationTransition {
 /// [`moderation_action_from_parts`].
 #[derive(Default)]
 pub struct ContractUserModerationActionParts {
-    /// The identity a ban, an unban, a suspend or an unsuspend targets
+    /// The identity a ban, an unban, a suspend, an unsuspend, a warn or a clearWarnings targets
     pub identity_id: Option<Identifier>,
     /// The document type of the document a deleteDocument targets
     pub document_type_name: Option<String>,
     /// The document a deleteDocument targets
     pub document_id: Option<Identifier>,
+    /// The document a restoreDocument brings back, as it was serialized when it was deleted
+    pub document: Option<Vec<u8>>,
     /// The end of a suspend
     pub until: Option<u64>,
-    /// Why: needed by a ban and a suspend, optional for a deleteDocument
+    /// Why: needed by a ban, a suspend and a warn, optional for a deleteDocument
     pub reason: Option<ContractModerationReason>,
 }
 
 /// The action for a name and its parts: an identity for the actions on an identity, with
-/// `until` for a suspend and `reason` for a ban and a suspend, and a document type name and a
-/// document id for a deleteDocument, with or without a `reason`.
+/// `until` for a suspend and `reason` for a ban, a suspend and a warn, a document type
+/// name and a document id for a deleteDocument, with or without a `reason`, and a document
+/// type name and the document's bytes for a restoreDocument.
 pub fn moderation_action_from_parts(
     action: &str,
     parts: ContractUserModerationActionParts,
@@ -211,6 +336,7 @@ pub fn moderation_action_from_parts(
         identity_id,
         document_type_name,
         document_id,
+        document,
         until,
         reason,
     } = parts;
@@ -223,25 +349,41 @@ pub fn moderation_action_from_parts(
     }
     // The same goes for a reason: only an action that adds an entry or a removal record stores
     // one.
-    let stores_a_reason = matches!(action, "ban" | "suspend" | "deleteDocument");
+    let stores_a_reason = matches!(action, "ban" | "suspend" | "warn" | "deleteDocument");
     if reason.is_some() && !stores_a_reason {
         return Err(WasmDppError::invalid_argument(format!(
-            "`reason` is only valid for a ban, a suspend or a deleteDocument action, not for `{action}`"
+            "`reason` is only valid for a ban, a suspend, a warn or a deleteDocument action, not for `{action}`"
         )));
     }
-    // And for the target: a deletion names a document and every other action an identity. A
-    // target of the other kind is refused rather than dropped, or a caller that mixed the two
-    // up would sign something it did not mean.
-    if action == "deleteDocument" {
-        if identity_id.is_some() {
-            return Err(WasmDppError::invalid_argument(
-                "`identityId` is not valid for a deleteDocument action, which names a document",
-            ));
+    // And for the target: a deletion and a restore name a document and every other action an
+    // identity. A target of the other kind is refused rather than dropped, or a caller that
+    // mixed the two up would sign something it did not mean. A deletion names its document by
+    // id, a restore carries it.
+    match action {
+        "deleteDocument" | "restoreDocument" => {
+            if identity_id.is_some() {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "`identityId` is not valid for a {action} action, which names a document"
+                )));
+            }
         }
-    } else if document_type_name.is_some() || document_id.is_some() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "`documentTypeName` and `documentId` are only valid for a deleteDocument action, not for `{action}`"
-        )));
+        _ => {
+            if document_type_name.is_some() || document_id.is_some() || document.is_some() {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "`documentTypeName`, `documentId` and `document` are only valid for a deleteDocument or a restoreDocument action, not for `{action}`"
+                )));
+            }
+        }
+    }
+    if action == "deleteDocument" && document.is_some() {
+        return Err(WasmDppError::invalid_argument(
+            "`document` is only valid for a restoreDocument action: a deleteDocument names its document by `documentId`",
+        ));
+    }
+    if action == "restoreDocument" && document_id.is_some() {
+        return Err(WasmDppError::invalid_argument(
+            "`documentId` is only valid for a deleteDocument action: a restoreDocument carries its document in `document`",
+        ));
     }
     // What an action that lacks one of its parts is refused with.
     let needs =
@@ -262,6 +404,13 @@ pub fn moderation_action_from_parts(
         "unsuspend" => Ok(ContractUserModerationAction::Unsuspend {
             identity_id: identity_id.ok_or_else(|| needs("an `identityId`"))?,
         }),
+        "warn" => Ok(ContractUserModerationAction::Warn {
+            identity_id: identity_id.ok_or_else(|| needs("an `identityId`"))?,
+            reason: reason.ok_or_else(|| needs("a `reason`"))?,
+        }),
+        "clearWarnings" => Ok(ContractUserModerationAction::ClearWarnings {
+            identity_id: identity_id.ok_or_else(|| needs("an `identityId`"))?,
+        }),
         "deleteDocument" => Ok(ContractUserModerationAction::DeleteDocument {
             document_type_name: document_type_name.ok_or_else(|| needs("a `documentTypeName`"))?,
             document_id: document_id.ok_or_else(|| needs("a `documentId`"))?,
@@ -269,8 +418,12 @@ pub fn moderation_action_from_parts(
             // left out, the removal record stores no code and an empty text.
             reason: reason.unwrap_or_default(),
         }),
+        "restoreDocument" => Ok(ContractUserModerationAction::RestoreDocument {
+            document_type_name: document_type_name.ok_or_else(|| needs("a `documentTypeName`"))?,
+            document: BinaryData::new(document.ok_or_else(|| needs("a `document`"))?),
+        }),
         other => Err(WasmDppError::invalid_argument(format!(
-            "unknown moderation action `{other}`: expected ban, unban, suspend, unsuspend or deleteDocument"
+            "unknown moderation action `{other}`: expected ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument or restoreDocument"
         ))),
     }
 }
@@ -288,6 +441,15 @@ impl ContractUserModerationWasm {
             try_from_options_optional(&options, "identityId")?;
         let document_id: Option<IdentifierWasm> =
             try_from_options_optional(&options, "documentId")?;
+        let document = {
+            let value = js_sys::Reflect::get(&options, &"document".into())
+                .map_err(|_| WasmDppError::invalid_argument("failed to read `document`"))?;
+            if value.is_undefined() || value.is_null() {
+                None
+            } else {
+                Some(try_to_bytes(value, "document")?)
+            }
+        };
 
         // Deserialize primitive fields via serde last (consumes options)
         let input: ContractUserModerationOptionsInput =
@@ -300,8 +462,9 @@ impl ContractUserModerationWasm {
                 identity_id: identity_id.map(Into::into),
                 document_type_name: input.document_type_name,
                 document_id: document_id.map(Into::into),
+                document,
                 until: input.until,
-                reason: input.reason,
+                reason: input.reason.map(Into::into),
             },
         )?;
 
@@ -429,26 +592,36 @@ impl ContractUserModerationWasm {
         self.0.identity_contract_nonce()
     }
 
-    /// The action's name: ban, unban, suspend, unsuspend or deleteDocument
+    /// The action's name: ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument or restoreDocument
     #[wasm_bindgen(getter = "action")]
     pub fn action(&self) -> String {
         self.0.action().name().to_string()
     }
 
-    /// The identity the action targets, undefined for a deleteDocument: it names a document,
-    /// and whose it is is only known once the document is read
+    /// The identity the action targets, undefined for a deleteDocument and a restoreDocument:
+    /// they name a document, and whose it is is only known once the document is read
     #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> Option<IdentifierWasm> {
         self.0.target_identity_id().map(Into::into)
     }
 
-    /// For a deleteDocument, the document type of the document it deletes
+    /// For a deleteDocument or a restoreDocument, the document type of its document
     #[wasm_bindgen(getter = "documentTypeName")]
     pub fn document_type_name(&self) -> Option<String> {
         self.0
             .action()
-            .document()
-            .map(|(document_type_name, _)| document_type_name.to_string())
+            .document_type_name()
+            .map(ToString::to_string)
+    }
+
+    /// For a restoreDocument, the document it brings back, as it was serialized when it was
+    /// deleted
+    #[wasm_bindgen(getter = "document")]
+    pub fn document(&self) -> Option<Vec<u8>> {
+        self.0
+            .action()
+            .restored_document()
+            .map(|(_, document)| document.to_vec())
     }
 
     /// For a deleteDocument, the document it deletes
@@ -466,7 +639,7 @@ impl ContractUserModerationWasm {
         self.0.action().until()
     }
 
-    /// For a ban, a suspend and a deleteDocument, why
+    /// For a ban, a suspend, a warn and a deleteDocument, why
     #[wasm_bindgen(getter = "reason")]
     pub fn reason(&self) -> Option<ContractModerationReasonJs> {
         self.0

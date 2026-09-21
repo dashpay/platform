@@ -269,6 +269,7 @@ impl ErrorWithCode for BasicError {
             Self::ContractModerationSelfTargetError(_) => 10901,
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
             Self::ContractModerationReasonTooLongError(_) => 10903,
+            Self::InvalidContractModerationReasonDocumentsError(_) => 10904,
         }
     }
 }
@@ -469,6 +470,15 @@ impl ErrorWithCode for StateError {
             Self::ContractModerationCounterpartyBarredError(_) => 41114,
             Self::DocumentTypeNotDeletableByModeratorsError(_) => 41115,
             Self::DocumentModerationWindowElapsedError(_) => 41116,
+            Self::ContractUserNotWarnedError(_) => 41117,
+            Self::ContractUserWarningLimitReachedError(_) => 41118,
+            Self::ContractDocumentRemovalNotFoundError(_) => 41119,
+            Self::DocumentRestoreWindowElapsedError(_) => 41120,
+            Self::DocumentRestoreHashMismatchError(_) => 41121,
+            Self::ContractDocumentAlreadyRestoredError(_) => 41122,
+
+            // Contract moderation team errors: 41200-41299
+            Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
         }
     }
 }

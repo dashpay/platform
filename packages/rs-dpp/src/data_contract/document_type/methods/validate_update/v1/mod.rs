@@ -506,6 +506,7 @@ mod tests {
                 banlist: true,
                 suspensions: false,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             }));
 
         let make_document_type = |schema: platform_value::Value| {
@@ -565,6 +566,7 @@ mod tests {
                 banlist: true,
                 suspensions: false,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             }));
         let make_document_type = |window: Option<u32>| {
             let mut schema = platform_value!({

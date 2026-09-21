@@ -159,6 +159,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1,
             validate_document_purchase_transition_action_uniqueness: 1,
             validate_document_update_price_transition_action_uniqueness: 1,
+            validate_restored_document_uniqueness: 0,
         },
         // Unchanged from V3 — see V3's comment for the v12-gated
         // count/sum composition rationale.

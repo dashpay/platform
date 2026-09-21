@@ -20,6 +20,7 @@
 //! `SpvBroadcaster` so most call sites don't need to name it.
 
 // Core handle + identity-lifecycle operations.
+mod balance;
 mod contract;
 mod discovery;
 mod document;

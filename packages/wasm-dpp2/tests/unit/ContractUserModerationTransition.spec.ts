@@ -12,40 +12,50 @@ const DOCUMENT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const DOCUMENT_TYPE_NAME = 'post';
 
 interface ModerationOptions {
-  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'deleteDocument';
-  /** `null` leaves the identity out; left undefined, every action but a deleteDocument gets `TARGET_ID` */
+  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument';
+  /** `null` leaves the identity out; left undefined, every action but a deleteDocument or a restoreDocument gets `TARGET_ID` */
   identityId?: string | null;
-  /** `null` leaves it out; left undefined, a deleteDocument gets `DOCUMENT_TYPE_NAME` */
+  /** `null` leaves it out; left undefined, a deleteDocument or a restoreDocument gets `DOCUMENT_TYPE_NAME` */
   documentTypeName?: string | null;
   /** `null` leaves it out; left undefined, a deleteDocument gets `DOCUMENT_ID` */
   documentId?: string | null;
+  /** `null` leaves it out; left undefined, a restoreDocument gets `DOCUMENT_BYTES` */
+  document?: Uint8Array | null;
   until?: bigint;
-  /** `null` leaves the reason out; left undefined, a ban and a suspend get `REASON` */
-  reason?: { code?: number; text: string } | null;
+  /** `null` leaves the reason out; left undefined, a ban, a suspend and a warn get `REASON` */
+  reason?: { code?: number; text: string; documents?: { documentTypeName: string; documentId: string }[] } | null;
   identityContractNonce?: bigint;
   userFeeIncrease?: number;
 }
 
 const REASON = { text: 'spam' };
+/** What a restore carries: the document as it was serialized when it was deleted */
+const DOCUMENT_BYTES = new Uint8Array(70).fill(7);
 
 function createTransition(options: ModerationOptions = {}) {
   const action = options.action ?? 'ban';
-  const addsAnEntry = action === 'ban' || action === 'suspend';
+  const addsAnEntry = action === 'ban' || action === 'suspend' || action === 'warn';
   let { reason } = options;
   if (reason === undefined && addsAnEntry) {
     reason = REASON;
   }
-  // A deletion names a document and every other action an identity.
+  // A deletion and a restore name a document and every other action an identity.
   const deletesADocument = action === 'deleteDocument';
-  let { identityId, documentTypeName, documentId } = options;
-  if (identityId === undefined && !deletesADocument) {
+  const restoresADocument = action === 'restoreDocument';
+  let {
+    identityId, documentTypeName, documentId, document,
+  } = options;
+  if (identityId === undefined && !deletesADocument && !restoresADocument) {
     identityId = TARGET_ID;
   }
-  if (documentTypeName === undefined && deletesADocument) {
+  if (documentTypeName === undefined && (deletesADocument || restoresADocument)) {
     documentTypeName = DOCUMENT_TYPE_NAME;
   }
   if (documentId === undefined && deletesADocument) {
     documentId = DOCUMENT_ID;
+  }
+  if (document === undefined && restoresADocument) {
+    document = DOCUMENT_BYTES;
   }
 
   return new wasm.ContractUserModeration({
@@ -56,6 +66,7 @@ function createTransition(options: ModerationOptions = {}) {
     identityId: identityId ?? undefined,
     documentTypeName: documentTypeName ?? undefined,
     documentId: documentId ?? undefined,
+    document: document ?? undefined,
     until: options.until,
     reason: reason ?? undefined,
     userFeeIncrease: options.userFeeIncrease,
@@ -114,10 +125,57 @@ describe('ContractUserModeration', () => {
       expect(() => createTransition({ action: 'deleteDocument', until: BigInt(5) })).to.throw();
     });
 
+    it('should create a document restore, which carries the document and names no identity', () => {
+      const transition = createTransition({ action: 'restoreDocument' });
+
+      expect(transition.action).to.equal('restoreDocument');
+      expect(transition.documentTypeName).to.equal(DOCUMENT_TYPE_NAME);
+      expect(transition.document).to.deep.equal(DOCUMENT_BYTES);
+      expect(transition.documentId).to.equal(undefined);
+      expect(transition.identityId).to.equal(undefined);
+      expect(transition.until).to.equal(undefined);
+      expect(transition.reason).to.equal(undefined);
+    });
+
+    it('should refuse a document restore without its document type or its document', () => {
+      expect(() => createTransition({ action: 'restoreDocument', documentTypeName: null })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', document: null })).to.throw();
+    });
+
+    it('should refuse on a document restore what it does not carry', () => {
+      expect(() => createTransition({ action: 'restoreDocument', identityId: TARGET_ID })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', documentId: DOCUMENT_ID })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', reason: REASON })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', until: BigInt(5) })).to.throw();
+      expect(() => createTransition({ action: 'deleteDocument', document: DOCUMENT_BYTES })).to.throw();
+    });
+
+    it('should create a warning and its clearing, which name an identity', () => {
+      const warn = createTransition({ action: 'warn', reason: { code: 1, text: 'first strike' } });
+
+      expect(warn.action).to.equal('warn');
+      expect(warn.identityId?.toString()).to.equal(TARGET_ID);
+      expect(warn.until).to.equal(undefined);
+      expect(warn.reason).to.deep.equal({ code: 1, text: 'first strike' });
+
+      const clear = createTransition({ action: 'clearWarnings' });
+
+      expect(clear.action).to.equal('clearWarnings');
+      expect(clear.identityId?.toString()).to.equal(TARGET_ID);
+      expect(clear.reason).to.equal(undefined);
+      expect(clear.toJSON().action).to.deep.equal({ $type: 'clearWarnings', identityId: TARGET_ID });
+    });
+
+    it('should refuse a warning without a reason, and a reason on a clearing', () => {
+      expect(() => createTransition({ action: 'warn', reason: null })).to.throw();
+      expect(() => createTransition({ action: 'clearWarnings', reason: REASON })).to.throw();
+    });
+
     it('should refuse a document on an action that targets an identity', () => {
-      (['ban', 'unban', 'unsuspend'] as const).forEach((action) => {
+      (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings'] as const).forEach((action) => {
         expect(() => createTransition({ action, documentTypeName: DOCUMENT_TYPE_NAME })).to.throw();
         expect(() => createTransition({ action, documentId: DOCUMENT_ID })).to.throw();
+        expect(() => createTransition({ action, document: DOCUMENT_BYTES })).to.throw();
       });
       expect(() => createTransition({
         action: 'suspend',
@@ -128,10 +186,28 @@ describe('ContractUserModeration', () => {
     });
 
     it('should refuse an action on an identity without the identity', () => {
-      (['ban', 'unban', 'unsuspend'] as const).forEach((action) => {
+      (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings'] as const).forEach((action) => {
         expect(() => createTransition({ action, identityId: null })).to.throw();
       });
       expect(() => createTransition({ action: 'suspend', until: BigInt(5), identityId: null })).to.throw();
+    });
+
+    it('should cite the documents a reason is about, and leave them out when none', () => {
+      const documents = [
+        { documentTypeName: 'post', documentId: DOCUMENT_ID },
+        { documentTypeName: 'reply', documentId: TARGET_ID },
+      ];
+      const transition = createTransition({ action: 'warn', reason: { text: 'spam', documents } });
+
+      expect(transition.reason).to.deep.equal({ code: null, text: 'spam', documents });
+      expect(transition.toJSON().action.reason).to.deep.equal({ code: null, text: 'spam', documents });
+      expect(wasm.ContractUserModeration.fromBytes(transition.toBytes()).reason).to.deep.equal({
+        code: null,
+        text: 'spam',
+        documents,
+      });
+      // A reason about no document carries no `documents`, as before.
+      expect(createTransition().reason).to.deep.equal({ code: null, text: 'spam' });
     });
 
     it('should keep a reason code as written, and an empty text', () => {
@@ -169,7 +245,7 @@ describe('ContractUserModeration', () => {
 
     it('should refuse an end on anything but a suspension', () => {
       // Dropped, a caller asking for a timed ban would sign a permanent one.
-      (['ban', 'unban', 'unsuspend'] as const).forEach((action) => {
+      (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings'] as const).forEach((action) => {
         expect(() => createTransition({ action, until: BigInt(1800000000000) })).to.throw();
       });
     });
@@ -192,6 +268,8 @@ describe('ContractUserModeration', () => {
         createTransition({ action: 'unban' }),
         createTransition({ action: 'suspend', until: BigInt(5) }),
         createTransition({ action: 'unsuspend', userFeeIncrease: 3 }),
+        createTransition({ action: 'warn', reason: { code: 9, text: 'first strike' } }),
+        createTransition({ action: 'clearWarnings' }),
         createTransition({ action: 'deleteDocument', reason: { code: 9, text: 'spam' } }),
         createTransition({ action: 'deleteDocument' }),
       ]) {

@@ -462,13 +462,14 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             transaction,
             platform_version,
         )?;
-        // A barred signer keeps its deletions: only they carry on, next to the refusal.
+        // What the gate lets through carries on next to the refusal: a barred signer's
+        // deletions, and everything on the types an elected contract's interim does not block.
         let (refused, document_transitions) = match refusal {
-            Some(ContractModerationRefusal { refused, deletions }) => {
-                if deletions.is_empty() {
+            Some(ContractModerationRefusal { refused, passed }) => {
+                if passed.is_empty() {
                     return Ok(refused);
                 }
-                (Some(refused), Cow::Owned(deletions))
+                (Some(refused), Cow::Owned(passed))
             }
             None => (None, Cow::Borrowed(document_transitions)),
         };

@@ -12,14 +12,18 @@ use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
+    ContractModeratedDocumentTypeNotYetUsableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
     ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
-    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
-    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
+    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
+    ContractUserSuspendedError, ContractUserWarningLimitReachedError,
+    ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
+    DocumentModerationWindowElapsedError, DocumentRestoreHashMismatchError,
+    DocumentRestoreWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
     IdentityNotContractModeratorError,
 };
 use crate::consensus::state::contract_group::{
@@ -553,6 +557,29 @@ pub enum StateError {
     #[error(transparent)]
     DocumentModerationWindowElapsedError(DocumentModerationWindowElapsedError),
 
+    // The warning list (protocol version 14).
+    #[error(transparent)]
+    ContractUserNotWarnedError(ContractUserNotWarnedError),
+
+    #[error(transparent)]
+    ContractUserWarningLimitReachedError(ContractUserWarningLimitReachedError),
+    // The moderators' restore of a deleted document (protocol version 14).
+    #[error(transparent)]
+    ContractDocumentRemovalNotFoundError(ContractDocumentRemovalNotFoundError),
+
+    #[error(transparent)]
+    DocumentRestoreWindowElapsedError(DocumentRestoreWindowElapsedError),
+
+    #[error(transparent)]
+    DocumentRestoreHashMismatchError(DocumentRestoreHashMismatchError),
+
+    #[error(transparent)]
+    ContractDocumentAlreadyRestoredError(ContractDocumentAlreadyRestoredError),
+
+    // Elected moderation teams (protocol version 14).
+    #[error(transparent)]
+    ContractModeratedDocumentTypeNotYetUsableError(ContractModeratedDocumentTypeNotYetUsableError),
+
     // Identity contender vote polls (protocol version 14).
     #[error(transparent)]
     VoteChoiceNotAllowedForVotePollError(VoteChoiceNotAllowedForVotePollError),
@@ -994,6 +1021,55 @@ mod tests {
             )),
             134
         );
+        // The warning list (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotWarnedError(
+                ContractUserNotWarnedError::new(group_id, identity_id)
+            )),
+            135
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserWarningLimitReachedError(
+                ContractUserWarningLimitReachedError::new(group_id, identity_id, 16)
+            )),
+            136
+        );
+        // The moderators' restore of a deleted document (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ContractDocumentRemovalNotFoundError(
+                ContractDocumentRemovalNotFoundError::new(
+                    group_id,
+                    "post".to_string(),
+                    identity_id
+                )
+            )),
+            137
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentRestoreWindowElapsedError(
+                DocumentRestoreWindowElapsedError::new(group_id, identity_id, 1, 2, 3)
+            )),
+            138
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentRestoreHashMismatchError(
+                DocumentRestoreHashMismatchError::new(group_id, identity_id, [1; 32], [2; 32])
+            )),
+            139
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractDocumentAlreadyRestoredError(
+                ContractDocumentAlreadyRestoredError::new(group_id, identity_id, identity_id, 4)
+            )),
+            140
+        );
+        // Elected moderation teams (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ContractModeratedDocumentTypeNotYetUsableError(
+                ContractModeratedDocumentTypeNotYetUsableError::new(group_id, "post".to_string())
+            )),
+            141
+        );
         // Identity contender vote polls (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::VoteChoiceNotAllowedForVotePollError(
@@ -1002,7 +1078,7 @@ mod tests {
                     ResourceVoteChoice::Lock
                 )
             )),
-            135
+            142
         );
         assert_eq!(
             discriminant_of(
@@ -1013,7 +1089,7 @@ mod tests {
                     )
                 )
             ),
-            136
+            143
         );
     }
 }

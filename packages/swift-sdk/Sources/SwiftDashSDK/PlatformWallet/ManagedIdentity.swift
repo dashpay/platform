@@ -224,7 +224,12 @@ public final class ManagedIdentity: @unchecked Sendable {
         return blockTime
     }
 
-    /// Set the last updated balance block time
+    /// Set the block time on this detached identity snapshot only.
+    ///
+    /// This does not change or persist the live wallet's verified balance watermark.
+    /// Use `ManagedPlatformWallet.refreshIdentityBalance(identityId:)`, then obtain
+    /// a new managed identity snapshot to read the authoritative balance and time.
+    /// This method cannot reset a live wallet's watermark.
     public func setLastUpdatedBalanceBlockTime(_ blockTime: BlockTime) throws {
         var bt = blockTime
         try managed_identity_set_last_updated_balance_block_time(handle, &bt).check()
