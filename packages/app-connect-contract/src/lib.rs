@@ -15,6 +15,9 @@ pub const OWNER_ID_BYTES: [u8; 32] = [0; 32];
 
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
+/// The contract's definitions for `platform_version`. Version 0, the value the tables of
+/// protocol versions below 14 carry, names no schema generation and is refused like any
+/// unknown version: the contract does not exist before its activation.
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
     match platform_version.system_data_contracts.app_connect {
         1 => Ok(None),

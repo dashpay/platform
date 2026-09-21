@@ -13,9 +13,9 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 //
 // The app-connect contract (app_connect: 1) also activates with
 // PROTOCOL_VERSION_14: it is registered at genesis from that version on and
-// inserted by `transition_to_version_14` on chains upgrading from 13. Its
-// feature version is listed in the earlier tables only because the struct has
-// no optional fields; before 14 the contract is never loaded or served.
+// inserted by `transition_to_version_14` on chains upgrading from 13. The
+// earlier tables carry 0, which no schema generation answers to, so the table
+// itself refuses to load the contract before 14.
 pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
     SystemDataContractVersions {
         withdrawals: 2,

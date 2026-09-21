@@ -46,3 +46,6 @@ token-history-contract = { path = "../token-history-contract", optional = true }
 keyword-search-contract = { path = "../keyword-search-contract", optional = true }
 document-history-contract = { path = "../document-history-contract", optional = true }
 app-connect-contract = { path = "../app-connect-contract", optional = true }
+
+[dev-dependencies]
+base58 = "0.2.0"

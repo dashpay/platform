@@ -1871,6 +1871,7 @@ name = "data-contracts"
 version = "4.2.0-beta.3"
 dependencies = [
  "app-connect-contract",
+ "base58",
  "dashpay-contract",
  "document-history-contract",
  "dpns-contract",

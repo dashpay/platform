@@ -3,21 +3,18 @@ use crate::platform_types::platform::Platform;
 
 use drive::dpp::identity::TimestampMillis;
 
-use dpp::block::block_info::BlockInfo;
 use dpp::prelude::CoreBlockHeight;
-use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::query::TransactionArg;
-use std::collections::BTreeMap;
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents.
     ///
     /// v2 is v1 (protocol versions 6 to 13) plus the app-connect contract, which activates with
-    /// protocol version 14. Both the document history contract (v1 registered it from protocol
-    /// version 13 behind a version check) and the app-connect contract are unconditional here:
-    /// this generation is only ever selected by the tables of protocol version 14 and later.
+    /// protocol version 14: the same genesis body over v1's contract list with one more entry.
+    /// This generation is only ever selected by the tables of protocol version 14 and later,
+    /// where v1's list already carries the document history contract.
     #[inline(always)]
     pub(super) fn create_genesis_state_v2(
         &self,
@@ -26,91 +23,23 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        //versioned call
-        self.drive
-            .create_initial_state_structure(transaction, platform_version)?;
+        let mut system_data_contract_types =
+            self.genesis_v1_system_data_contracts(platform_version)?;
+        system_data_contract_types.insert(
+            SystemDataContract::AppConnect,
+            self.drive
+                .cache
+                .system_data_contracts
+                .load_app_connect(platform_version)?,
+        );
 
-        self.drive
-            .store_genesis_core_height(genesis_core_height, transaction, platform_version)?;
-
-        let mut operations = vec![];
-
-        // Create system identities and contracts
-
-        let system_data_contracts = &self.drive.cache.system_data_contracts;
-
-        let system_data_contract_types = BTreeMap::from_iter([
-            (
-                SystemDataContract::DPNS,
-                system_data_contracts.load_dpns(platform_version)?,
-            ),
-            (
-                SystemDataContract::Withdrawals,
-                system_data_contracts.load_withdrawals(platform_version)?,
-            ),
-            (
-                SystemDataContract::Dashpay,
-                system_data_contracts.load_dashpay(platform_version)?,
-            ),
-            (
-                SystemDataContract::MasternodeRewards,
-                system_data_contracts.load_masternode_reward_shares(platform_version)?,
-            ),
-            (
-                SystemDataContract::TokenHistory,
-                system_data_contracts.load_token_history(platform_version)?,
-            ),
-            (
-                SystemDataContract::KeywordSearch,
-                system_data_contracts.load_keyword_search(platform_version)?,
-            ),
-            (
-                SystemDataContract::DocumentHistory,
-                system_data_contracts.load_document_history(platform_version)?,
-            ),
-            (
-                SystemDataContract::AppConnect,
-                system_data_contracts.load_app_connect(platform_version)?,
-            ),
-        ]);
-
-        for data_contract in system_data_contract_types.values() {
-            self.register_system_data_contract_operations(
-                data_contract,
-                &mut operations,
-                platform_version,
-            )?;
-        }
-
-        let wallet_utils_contract =
-            load_system_data_contract(SystemDataContract::WalletUtils, platform_version)?;
-
-        self.register_system_data_contract_operations(
-            &wallet_utils_contract,
-            &mut operations,
-            platform_version,
-        )?;
-
-        let dpns_contract = system_data_contracts.load_dpns(platform_version)?;
-
-        self.register_dpns_top_level_domain_operations(
-            &dpns_contract,
+        self.create_genesis_state_with_system_data_contracts(
+            genesis_core_height,
             genesis_time,
-            &mut operations,
-        )?;
-
-        let block_info = BlockInfo::default_with_time(genesis_time);
-
-        self.drive.apply_drive_operations(
-            operations,
-            true,
-            &block_info,
+            system_data_contract_types,
             transaction,
             platform_version,
-            None, // No previous_fee_versions needed for genesis state creation
-        )?;
-
-        Ok(())
+        )
     }
 }
 

@@ -285,3 +285,23 @@ impl SystemDataContract {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SystemDataContract;
+    use base58::FromBase58;
+
+    /// `id()` spells the published identifier under both feature settings: with the crate
+    /// feature on it reads the crate's constant, without it the bytes copied above. A typo
+    /// in either copy would give feature-less builds a different contract id.
+    #[test]
+    fn app_connect_id_matches_the_published_id() {
+        let published = "H8F9mP1BM55TE1ShsxPZHzhyinaMdY9bMmP85mkDhcJJ"
+            .from_base58()
+            .expect("the published id is base58");
+        assert_eq!(
+            SystemDataContract::AppConnect.id().to_buffer().to_vec(),
+            published
+        );
+    }
+}
