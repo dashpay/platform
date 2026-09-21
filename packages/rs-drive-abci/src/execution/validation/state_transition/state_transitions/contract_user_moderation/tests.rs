@@ -22,7 +22,8 @@ use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
     ContractModerationDocument, ContractModerationList, ContractModerationListStatus,
     ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
-    ContractModerators, ContractSuspension, ContractWarning,
+    ContractModerators, ContractSuspension, ContractWarning, ElectedModerators, InterimModerators,
+    ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -72,7 +73,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
@@ -95,6 +96,7 @@ const DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS: u32 = 41115;
 const DOCUMENT_MODERATION_WINDOW_ELAPSED: u32 = 41116;
 const CONTRACT_USER_NOT_WARNED: u32 = 41117;
 const CONTRACT_USER_WARNING_LIMIT_REACHED: u32 = 41118;
+const CONTRACT_MODERATED_DOCUMENT_TYPE_NOT_YET_USABLE: u32 = 41200;
 const CONTRACT_DOCUMENT_REMOVAL_NOT_FOUND: u32 = 41119;
 const DOCUMENT_RESTORE_WINDOW_ELAPSED: u32 = 41120;
 const DOCUMENT_RESTORE_HASH_MISMATCH: u32 = 41121;
@@ -236,7 +238,17 @@ impl Setup {
         )
         .data_contract_owned();
         let moderation = moderation.map(|mut moderation| {
-            if let ContractModerators::AppointedModerators(ids) = &mut moderation.moderators {
+            let named = match &mut moderation.moderators {
+                ContractModerators::AppointedModerators(ids) => Some(ids),
+                ContractModerators::Elected(elected) => match &mut elected.interim {
+                    InterimModerators::AppointedModerators(ids) => Some(ids),
+                    InterimModerators::ContractOwner
+                    | InterimModerators::NotYetUsable
+                    | InterimModerators::NoModeration => None,
+                },
+                ContractModerators::ContractOwner => None,
+            };
+            if let Some(ids) = named {
                 if ids.remove(&THE_MODERATOR) {
                     ids.insert(moderator.id());
                 }
@@ -3024,6 +3036,349 @@ async fn should_fix_the_window_of_a_document_type() {
     }
 }
 
+/// An elected declaration keeping both lists, allowing bans and suspensions, moderating
+/// `moderated`, with `interim` until a team is seated
+fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModerationConfig {
+    ContractModerationConfig {
+        banlist: true,
+        suspensions: true,
+        warnings: false,
+        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            challenge_cool_down: 1_209_600,
+            moderated_document_types: moderated
+                .iter()
+                .map(|name| {
+                    (
+                        name.to_string(),
+                        BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]),
+                    )
+                })
+                .collect(),
+            interim,
+            owner_protected: false,
+        })),
+    }
+}
+
+fn assert_config_update_refused(execution: &StateTransitionExecutionResult, what: &str) {
+    assert!(
+        matches!(
+            execution,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DataContractConfigUpdateError(_)),
+                ..
+            }
+        ),
+        "expected {what} to be refused, got {execution:?}"
+    );
+}
+
+/// The owner moderates an elected contract until a team is seated: it bans, nobody else may,
+/// the moderated type is usable, and the declaration is frozen against every update that
+/// touches it while one that leaves it alone goes through.
+#[tokio::test]
+async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::ContractOwner,
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    // The moderated type is usable: somebody moderates.
+    let post = setup.create_document(&setup.user).await;
+    assert_success(&setup.process(&post, &transaction));
+
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.user.id()))
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    assert_eq!(
+        setup.status(setup.user.id(), Some(&transaction)).ban,
+        banned()
+    );
+    let refused = setup.create_document(&setup.user).await;
+    assert_paid_with_code(&setup.process(&refused, &transaction), CONTRACT_USER_BANNED);
+
+    // The interim names nobody else: the moderator of the other tests is a stranger here.
+    for actor in [&setup.moderator, &setup.stranger] {
+        let ban = setup.moderate(actor, ban_action(setup.user.id())).await;
+        assert_paid_with_code(
+            &setup.process(&ban, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+
+    // Frozen: a changed field, a changed interim, and leaving elected moderation.
+    let with_config = |moderation: ContractModerationConfig| {
+        let mut changed = setup.contract.clone();
+        changed.set_version(2);
+        changed.set_config(changed.config().clone().with_moderation(Some(moderation)));
+        changed
+    };
+    let mut longer_cool_down = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+    if let ContractModerators::Elected(declaration) = &mut longer_cool_down.moderators {
+        declaration.challenge_cool_down += 1;
+    }
+    let mut protected_owner = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+    if let ContractModerators::Elected(declaration) = &mut protected_owner.moderators {
+        declaration.owner_protected = true;
+    }
+    for (moderation, what) in [
+        (longer_cool_down, "a longer cool-down"),
+        (protected_owner, "the owner flag turned on"),
+        (
+            elected(
+                InterimModerators::AppointedModerators([setup.moderator.id()].into()),
+                &[DOCUMENT_TYPE],
+            ),
+            "an appointed interim set",
+        ),
+        (
+            moderation(true, true, setup.moderator.id()),
+            "leaving elected moderation",
+        ),
+    ] {
+        let update = setup.contract_update(with_config(moderation)).await;
+        assert_config_update_refused(&setup.process(&update, &transaction), what);
+    }
+    // A wider moderated set is frozen too, even when the same update adds the type it names
+    // (without the type, the declaration's own validation refuses first).
+    let mut wider = with_config(elected(
+        InterimModerators::ContractOwner,
+        &[DOCUMENT_TYPE, POST],
+    ));
+    add_document_type(&mut wider, POST, post_schema(false));
+    let update = setup.contract_update(wider).await;
+    assert_config_update_refused(
+        &setup.process(&update, &transaction),
+        "a wider moderated set",
+    );
+
+    // An update that leaves the declaration alone goes through, and may add a type.
+    let mut widened = setup.contract.clone();
+    widened.set_version(2);
+    add_document_type(&mut widened, POST, post_schema(false));
+    let update = setup.contract_update(widened).await;
+    assert_success(&setup.process(&update, &transaction));
+}
+
+/// An appointed interim set moderates as an appointed set does: the moderator and the owner
+/// ban, a stranger may not, and both are protected from each other's bans.
+#[tokio::test]
+async fn should_let_an_appointed_interim_set_moderate_an_elected_contract() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::AppointedModerators([THE_MODERATOR].into()),
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    let ban = setup
+        .moderate(&setup.moderator, ban_action(setup.user.id()))
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.stranger.id()))
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    let ban = setup
+        .moderate(&setup.stranger, ban_action(setup.user.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.moderator.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+    let ban = setup
+        .moderate(&setup.moderator, ban_action(setup.owner.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+
+    // The interim set shares the moderators pot, as an appointed set does.
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    assert_eq!(
+        ContractFeePot::Moderators.recipients(&setup.contract),
+        [setup.moderator.id()].into()
+    );
+}
+
+/// With nobody named in the interim, the moderated type waits for a team: its creates are
+/// refused, paid, in the mempool and in a block, another type works, nobody moderates, and
+/// nobody claims the moderators pot.
+#[tokio::test]
+async fn should_block_the_moderated_types_of_an_elected_contract_until_a_team_is_seated() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::NotYetUsable,
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    let blocked = setup.create_document(&setup.user).await;
+    let mempool_errors = setup.check_tx(&blocked);
+    assert_eq!(mempool_errors.len(), 1, "{mempool_errors:?}");
+    assert_eq!(
+        mempool_errors[0].code(),
+        CONTRACT_MODERATED_DOCUMENT_TYPE_NOT_YET_USABLE
+    );
+    assert_paid_with_code(
+        &setup.process(&blocked, &transaction),
+        CONTRACT_MODERATED_DOCUMENT_TYPE_NOT_YET_USABLE,
+    );
+
+    let (_, allowed) = setup
+        .create_document_of_type(&setup.user, "prettyDocument")
+        .await;
+    assert_success(&setup.process(&allowed, &transaction));
+
+    // Nobody moderates: the owner included.
+    for actor in [&setup.owner, &setup.moderator] {
+        let ban = setup.moderate(actor, ban_action(setup.user.id())).await;
+        assert_paid_with_code(
+            &setup.process(&ban, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    assert!(ContractFeePot::Moderators
+        .recipients(&setup.contract)
+        .is_empty());
+}
+
+/// Under a `noModeration` interim the moderated types are used, unmoderated: nobody may
+/// moderate, the owner included, and nobody claims the pot.
+#[tokio::test]
+async fn should_leave_the_moderated_types_usable_and_unmoderated_under_no_moderation() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::NoModeration,
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    let post = setup.create_document(&setup.user).await;
+    assert!(setup.check_tx(&post).is_empty());
+    assert_success(&setup.process(&post, &transaction));
+
+    for actor in [&setup.owner, &setup.moderator] {
+        let ban = setup.moderate(actor, ban_action(setup.user.id())).await;
+        assert_paid_with_code(
+            &setup.process(&ban, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    assert!(ContractFeePot::Moderators
+        .recipients(&setup.contract)
+        .is_empty());
+}
+
+/// A declaration outside a bound or naming a type the contract does not have is refused,
+/// unpaid, at the create; a contract that was not born elected can not become so.
+#[tokio::test]
+async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
+    let mut setup = Setup::new(None).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract = setup.contract.clone();
+    let with = |modify: fn(&mut ElectedModerators)| {
+        let mut moderation = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+        if let ContractModerators::Elected(declaration) = &mut moderation.moderators {
+            modify(declaration);
+        }
+        moderation
+    };
+    for (moderation, what) in [
+        (
+            with(|d| d.join_window = 86_399),
+            "a join window under a day",
+        ),
+        (
+            with(|d| d.vote_window = 86_399),
+            "a vote window under a day",
+        ),
+        (
+            with(|d| d.challenge_cool_down = 94_608_001),
+            "a cool-down over three years",
+        ),
+        (
+            with(|d| {
+                d.moderated_document_types = BTreeMap::from([(
+                    "comment".to_string(),
+                    BTreeSet::from([ModerationAbility::Ban]),
+                )]);
+            }),
+            "an unknown moderated type",
+        ),
+        (
+            with(|d| {
+                d.moderated_document_types
+                    .insert(DOCUMENT_TYPE.to_string(), BTreeSet::new());
+            }),
+            "an empty ability set",
+        ),
+        (
+            with(|d| {
+                d.moderated_document_types
+                    .get_mut(DOCUMENT_TYPE)
+                    .expect("moderated")
+                    .insert(ModerationAbility::DeleteDocuments);
+            }),
+            "deletions on a type moderators can not delete from",
+        ),
+    ] {
+        setup
+            .contract
+            .set_config(contract.config().clone().with_moderation(Some(moderation)));
+        let create = setup
+            .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+            .await;
+        let execution = setup.process(&create, &transaction);
+        assert_unpaid_with_code(&execution, INVALID_CONTRACT_MODERATION_CONFIG);
+        assert!(
+            matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.to_string().contains("elected moderation")),
+            "expected {what} to name the declaration, got {execution:?}"
+        );
+    }
+    // The bounds hold: the same declaration at its minimums is accepted.
+    setup
+        .contract
+        .set_config(contract.config().clone().with_moderation(Some(with(|d| {
+            d.join_window = 86_400;
+            d.vote_window = 86_400;
+        }))));
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    drop(transaction);
+
+    // Entering elected moderation by an update is refused.
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let mut entering = setup.contract.clone();
+    entering.set_version(2);
+    entering.set_config(entering.config().clone().with_moderation(Some(elected(
+        InterimModerators::ContractOwner,
+        &[DOCUMENT_TYPE],
+    ))));
+    let update = setup.contract_update(entering).await;
+    assert_config_update_refused(
+        &setup.process(&update, &transaction),
+        "entering elected moderation",
+    );
+}
 /// How long after a moderator's deletion a document can be restored: the protocol's week.
 fn restore_window_ms() -> TimestampMillis {
     PlatformVersion::latest()

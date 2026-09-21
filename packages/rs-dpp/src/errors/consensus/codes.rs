@@ -474,6 +474,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentRestoreWindowElapsedError(_) => 41120,
             Self::DocumentRestoreHashMismatchError(_) => 41121,
             Self::ContractDocumentAlreadyRestoredError(_) => 41122,
+
+            // Contract moderation team errors: 41200-41299
+            Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
         }
     }
 }

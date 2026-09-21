@@ -121,13 +121,47 @@ export interface DataContractConfig {
 }
 
 /**
- * Who may ban, suspend and warn identities on a moderated contract: the owner alone, or the
- * owner and a fixed set of identities (at most 16, each of which must exist). The owner always
- * may and need not be named; naming it counts toward the 16.
+ * Who may ban, suspend and warn identities on a moderated contract: the owner alone, the owner
+ * and a fixed set of identities (at most 16, each of which must exist; the owner always may
+ * and need not be named, naming it counts toward the 16), or an elected team.
+ *
+ * An elected declaration is fixed when the contract is created and never changes. Until a
+ * team is seated (no election exists yet) the contract is moderated by its `interim`
+ * moderators, or by nobody: with the moderated document types not yet usable (every
+ * document transition of one is refused) or used unmoderated meanwhile. Windows and the
+ * cool-down are in seconds: the windows one day
+ * to four weeks (one week when left out), the cool-down two weeks to three years.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
-  | { $type: "appointedModerators"; identities: string[] };
+  | { $type: "appointedModerators"; identities: string[] }
+  | {
+      $type: "elected";
+      joinWindow?: number;
+      voteWindow?: number;
+      challengeCoolDown: number;
+      /**
+       * The moderated document types of the contract, each with the non-empty abilities a
+       * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
+       * keeps, `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay
+       * contract-wide. A charter does not price actions: a type's `actionFees.moderators`
+       * amount is the most a team may charge.
+       */
+      moderatedDocumentTypes: Record<string, ModerationAbility[]>;
+      interim: InterimModerators;
+      /** Whether the owner is protected from the team; false when left out. */
+      ownerProtected?: boolean;
+    };
+
+/** What a charter may claim on an elected contract. */
+export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn";
+
+/** Who moderates an elected contract until its first team is seated. */
+export type InterimModerators =
+  | { $type: "contractOwner" }
+  | { $type: "appointedModerators"; identities: string[] }
+  | { $type: "notYetUsable" }
+  | { $type: "noModeration" };
 
 /**
  * The moderation a data contract declares. At least one list must be kept, unless a document

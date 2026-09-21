@@ -11,7 +11,9 @@ impl DataContractConfig {
     /// can not make an unmoderated contract moderated, turn a second list on, or turn a list
     /// off. Whoever writes documents under a contract knows, from its first version, whether
     /// and how they can be barred from it, and a list that is on may hold entries. Only the
-    /// moderators may change.
+    /// moderators may change, and only between the merged kinds: an elected declaration is
+    /// fixed at creation in every field, its interim included, and a contract neither enters
+    /// nor leaves elected moderation by an update.
     #[inline(always)]
     pub(super) fn validate_update_v2(
         &self,
@@ -55,6 +57,31 @@ impl DataContractConfig {
             None
         };
 
+        if let Some(reason) = refusal {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractConfigUpdateError::new(contract_id, reason).into(),
+            );
+        }
+
+        let elected = |config: &DataContractConfig| {
+            config
+                .moderation()
+                .and_then(|moderation| moderation.moderators.elected())
+                .cloned()
+        };
+        let refusal = match (elected(self), elected(new_config)) {
+            (Some(old), Some(new)) if old != new => {
+                Some("contract can not change its elected moderation declaration")
+            }
+            (Some(_), None) => {
+                Some("contract can not leave elected moderation once it declares it")
+            }
+            (None, Some(_)) => {
+                Some("contract can not declare elected moderation after it is created")
+            }
+            _ => None,
+        };
+
         match refusal {
             Some(reason) => SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(contract_id, reason).into(),
@@ -67,9 +94,13 @@ impl DataContractConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use crate::data_contract::config::moderation::{
+        ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+    };
     use crate::data_contract::config::v1::DataContractConfigV1;
     use crate::data_contract::config::v2::DataContractConfigV2;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn moderated(banlist: bool, suspensions: bool) -> DataContractConfig {
         DataContractConfig::V2(DataContractConfigV2 {
@@ -171,6 +202,100 @@ mod tests {
             platform_version,
         );
         assert!(!result.is_valid());
+    }
+
+    /// An elected declaration with both lists, `post` moderated, the owner in the interim
+    fn elected(modify: impl FnOnce(&mut ElectedModerators)) -> DataContractConfig {
+        let mut declaration = ElectedModerators {
+            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            challenge_cool_down: 1_209_600,
+            moderated_document_types: BTreeMap::from([(
+                "post".to_string(),
+                BTreeSet::from([ModerationAbility::Ban]),
+            )]),
+            interim: InterimModerators::ContractOwner,
+            owner_protected: false,
+        };
+        modify(&mut declaration);
+        DataContractConfig::V2(DataContractConfigV2 {
+            moderation: Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: true,
+                warnings: false,
+                moderators: ContractModerators::Elected(Box::new(declaration)),
+            }),
+            ..DataContractConfigV2::default()
+        })
+    }
+
+    #[test]
+    fn should_freeze_every_field_of_an_elected_declaration() {
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::new([1u8; 32]);
+        let unchanged = elected(|_| {});
+        let kept = unchanged.validate_update_v2(&unchanged, contract_id, platform_version);
+        assert!(kept.is_valid(), "{:?}", kept.errors);
+
+        type Change = (&'static str, fn(&mut ElectedModerators));
+        let changes: [Change; 7] = [
+            ("join window", |d| d.join_window += 1),
+            ("vote window", |d| d.vote_window += 1),
+            ("challenge cool-down", |d| d.challenge_cool_down += 1),
+            ("moderated set", |d| {
+                d.moderated_document_types
+                    .insert("like".to_string(), BTreeSet::from([ModerationAbility::Ban]));
+            }),
+            ("abilities", |d| {
+                d.moderated_document_types
+                    .get_mut("post")
+                    .expect("post is moderated")
+                    .insert(ModerationAbility::Suspend);
+            }),
+            ("interim", |d| {
+                d.interim =
+                    InterimModerators::AppointedModerators([Identifier::new([5u8; 32])].into())
+            }),
+            ("owner flag", |d| d.owner_protected = true),
+        ];
+        for (what, change) in changes {
+            let result =
+                unchanged.validate_update_v2(&elected(change), contract_id, platform_version);
+            assert!(
+                !result.is_valid(),
+                "expected a changed {what} to be refused"
+            );
+            assert!(
+                format!("{:?}", result.errors).contains("can not change its elected"),
+                "{what}: {:?}",
+                result.errors
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_entering_or_leaving_elected_moderation() {
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::new([1u8; 32]);
+        let entering = moderated(true, true).validate_update_v2(
+            &elected(|_| {}),
+            contract_id,
+            platform_version,
+        );
+        assert!(format!("{:?}", entering.errors).contains("after it is created"));
+        let leaving = elected(|_| {}).validate_update_v2(
+            &moderated(true, true),
+            contract_id,
+            platform_version,
+        );
+        assert!(format!("{:?}", leaving.errors).contains("once it declares it"));
+        // Leaving moderation altogether is caught by the lists first; the declaration would be too.
+        let dropped = elected(|_| {}).validate_update_v2(
+            &DataContractConfig::V1(DataContractConfigV1::default()),
+            contract_id,
+            platform_version,
+        );
+        assert!(!dropped.is_valid());
     }
 
     #[test]

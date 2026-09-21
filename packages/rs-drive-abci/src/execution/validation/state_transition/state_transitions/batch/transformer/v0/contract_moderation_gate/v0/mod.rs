@@ -7,8 +7,8 @@ use crate::execution::validation::state_transition::state_transitions::batch::tr
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionInternalTransformerV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::contract_moderation::{
-    ContractModerationCounterpartyBarredError, ContractModerationCounterpartyRole,
-    ContractUserBannedError, ContractUserSuspendedError,
+    ContractModeratedDocumentTypeNotYetUsableError, ContractModerationCounterpartyBarredError,
+    ContractModerationCounterpartyRole, ContractUserBannedError, ContractUserSuspendedError,
 };
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -60,6 +60,12 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
     /// document transition after a suspension lapsed sweeps the stale entry. The gate runs in the transformer, so the mempool refuses a
     /// barred identity as a block does. A contract that declares no moderation costs nothing:
     /// no read is made for it.
+    ///
+    /// An elected contract whose declaration names no interim moderators refuses, first,
+    /// every transition of a document type it moderates until a team is seated
+    /// (`ContractModeratedDocumentTypeNotYetUsableError`), deletions included: nothing of
+    /// those types was ever written. The lists are then read only for the transitions on the
+    /// other types, and not at all when nothing is left.
     fn contract_moderation_gate_v0<'a>(
         drive: &Drive,
         block_info: &BlockInfo,
@@ -75,6 +81,49 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
             return Ok(None);
         };
         let data_contract_id = contract.id();
+
+        // Every transition the gate refuses is refused on its own, as a per-transition
+        // failure is anywhere else in the transformer, so each one's contract nonce is bumped
+        // and none stays replayable.
+        let mut actions = vec![];
+        let mut errors = vec![];
+        let failed = |transition: &DocumentTransition, error: ConsensusError| {
+            Self::failed_per_transition_action(
+                transition.base(),
+                owner_id,
+                vec![error],
+                platform_version,
+            )
+        };
+
+        // The interim block: the types an elected contract moderates wait for a team.
+        let mut unblocked: BTreeMap<&'a String, Vec<&'a DocumentTransition>> = BTreeMap::new();
+        for (document_type_name, transitions) in document_transitions {
+            if moderation.interim_blocks_document_type(document_type_name) {
+                for transition in transitions {
+                    let refusal = failed(
+                        transition,
+                        ContractModeratedDocumentTypeNotYetUsableError::new(
+                            data_contract_id,
+                            (*document_type_name).clone(),
+                        )
+                        .into(),
+                    )?;
+                    actions.extend(refusal.data);
+                    errors.extend(refusal.errors);
+                }
+            } else {
+                unblocked.insert(*document_type_name, transitions.clone());
+            }
+        }
+        let blocked_any = !(actions.is_empty() && errors.is_empty());
+        if unblocked.is_empty() {
+            // Everything was blocked (the batch is never empty), so nothing needs the lists.
+            return Ok(Some(ContractModerationRefusal {
+                refused: ConsensusValidationResult::new_with_data_and_errors(actions, errors),
+                passed: BTreeMap::new(),
+            }));
+        }
 
         let lists: Vec<ContractModerationList> = moderation.barring_lists().collect();
         let (fee, status) = drive.fetch_contract_moderation_status_with_fee(
@@ -102,39 +151,37 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
             if status.has_lapsed_suspension_at(block_info.time_ms) {
                 lapsed_suspensions.insert(data_contract_id);
             }
-            return Ok(None);
+            if !blocked_any {
+                return Ok(None);
+            }
+            return Ok(Some(ContractModerationRefusal {
+                refused: ConsensusValidationResult::new_with_data_and_errors(actions, errors),
+                passed: unblocked,
+            }));
         };
 
-        // Paid: the signer is authenticated and the read happened. Every transition the bar
-        // covers is refused on its own, as a per-transition failure is anywhere else in the
-        // transformer, so each one's contract nonce is bumped and none stays replayable.
-        let mut actions = vec![];
-        let mut errors = vec![];
-        let mut deletions: BTreeMap<&'a String, Vec<&'a DocumentTransition>> = BTreeMap::new();
-        for (document_type_name, transitions) in document_transitions {
+        // Paid: the signer is authenticated and the read happened.
+        let mut passed: BTreeMap<&'a String, Vec<&'a DocumentTransition>> = BTreeMap::new();
+        for (document_type_name, transitions) in unblocked {
             for transition in transitions {
                 if matches!(
                     transition,
                     DocumentTransition::Delete(_) | DocumentTransition::IndexOnlyDelete(_)
                 ) {
-                    deletions
-                        .entry(*document_type_name)
+                    passed
+                        .entry(document_type_name)
                         .or_default()
-                        .push(*transition);
+                        .push(transition);
                     continue;
                 }
-                let failed = Self::failed_per_transition_action(
-                    transition.base(),
-                    owner_id,
-                    vec![error.clone()],
-                    platform_version,
-                )?;
-                actions.extend(failed.data);
-                errors.extend(failed.errors);
+                let refusal = failed(transition, error.clone())?;
+                actions.extend(refusal.data);
+                errors.extend(refusal.errors);
             }
         }
 
-        // Nothing but deletions: the bar does not apply, the batch carries on whole.
+        // Nothing but deletions and nothing blocked: the bar does not apply, the batch carries
+        // on whole.
         if actions.is_empty() && errors.is_empty() {
             return Ok(None);
         }
@@ -144,7 +191,7 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
         } else {
             ConsensusValidationResult::new_with_data_and_errors(actions, errors)
         };
-        Ok(Some(ContractModerationRefusal { refused, deletions }))
+        Ok(Some(ContractModerationRefusal { refused, passed }))
     }
 
     /// A barred identity is kept out of the contract's documents as a counterparty too: it can

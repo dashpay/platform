@@ -197,7 +197,8 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                 IdentityNotContractModeratorError::new(contract_id, moderator_id).into(),
             );
         }
-        // Whoever may moderate (the owner and the moderators) cannot be put on a list. They can
+        // Whoever the contract protects (the owner and the moderators, and the owner of an
+        // elected contract whose declaration says so) cannot be put on a list. They can
         // be taken off one: a contract update may name as moderator an identity that already
         // carries an entry, and without the removal that entry could only be lifted by demoting
         // the moderator first.
@@ -207,7 +208,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                 | ContractUserModerationAction::Suspend { .. }
                 | ContractUserModerationAction::Warn { .. }
         );
-        if adds_an_entry && moderation.may_moderate(&owner_id, &target_id) {
+        if adds_an_entry && moderation.protects(&owner_id, &target_id) {
             return refuse(
                 ContractModerationTargetNotAllowedError::new(contract_id, target_id).into(),
             );
@@ -340,7 +341,7 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     // What protects the owner and the moderators from a ban protects their documents:
     // the owner demotes a moderator by a contract update before deleting what it wrote.
     let document_owner_id = document.owner_id();
-    if moderation.may_moderate(&owner_id, &document_owner_id) {
+    if moderation.protects(&owner_id, &document_owner_id) {
         return refuse(
             ContractModerationTargetNotAllowedError::new(contract_id, document_owner_id).into(),
         );

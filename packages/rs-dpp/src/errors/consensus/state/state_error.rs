@@ -12,6 +12,7 @@ use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
+    ContractModeratedDocumentTypeNotYetUsableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
@@ -572,6 +573,10 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractDocumentAlreadyRestoredError(ContractDocumentAlreadyRestoredError),
+
+    // Elected moderation teams (protocol version 14).
+    #[error(transparent)]
+    ContractModeratedDocumentTypeNotYetUsableError(ContractModeratedDocumentTypeNotYetUsableError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1015,8 +1020,7 @@ mod tests {
             )),
             136
         );
-        // The moderators' restore of a deleted document (protocol version 14): the tail of
-        // the enum.
+        // The moderators' restore of a deleted document (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ContractDocumentRemovalNotFoundError(
                 ContractDocumentRemovalNotFoundError::new(
@@ -1044,6 +1048,13 @@ mod tests {
                 ContractDocumentAlreadyRestoredError::new(group_id, identity_id, identity_id, 4)
             )),
             140
+        );
+        // Elected moderation teams (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractModeratedDocumentTypeNotYetUsableError(
+                ContractModeratedDocumentTypeNotYetUsableError::new(group_id, "post".to_string())
+            )),
+            141
         );
     }
 }

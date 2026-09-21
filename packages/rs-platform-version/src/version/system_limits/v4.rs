@@ -47,6 +47,9 @@ use crate::version::system_limits::SystemLimits;
 ///   moderator identities, its owner counted when named. A suspension runs until at most
 ///   2^53 - 1 milliseconds of block time, the largest value JSON clients read exactly. The
 ///   text of the reason a ban or a suspension carries is at most 1024 bytes.
+/// * Elected moderation teams (protocol version 14): a contract that declares an elected
+///   moderation team sets its join window and vote window between one day and four weeks,
+///   and its challenge cool-down between two weeks and three years, all in seconds.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -75,7 +78,11 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderation_reason_length: 1024,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
-    contract_document_restore_window_ms: 604_800_000, // 7 days
+    min_contract_moderation_election_window_seconds: 86_400, // one day
+    max_contract_moderation_election_window_seconds: 2_419_200, // four weeks
+    min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
+    max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
+    contract_document_restore_window_ms: 604_800_000,        // 7 days
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

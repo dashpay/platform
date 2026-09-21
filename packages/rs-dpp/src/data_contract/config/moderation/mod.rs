@@ -13,29 +13,50 @@
 //! The same moderators may delete the documents of the document types that say so
 //! (`canBeDeletedByModerators`), with the same transition. Each removal leaves a
 //! [`ContractDocumentRemoval`] under the contract (key `16` of its other tree).
+//!
+//! A contract may instead declare that its moderators are an [elected team](elected): until
+//! one is seated, the interim moderators the declaration names moderate as the merged kinds
+//! do, or nobody does and the moderated document types wait.
 
 use crate::consensus::basic::contract_moderation::InvalidContractModerationConfigError;
+use crate::data_contract::document_type::property_names::CAN_BE_DELETED_BY_MODERATORS;
+use crate::data_contract::DocumentName;
 use crate::identity::TimestampMillis;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_value::Identifier;
+use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 mod document_removal;
+pub mod elected;
 mod reason;
 pub use document_removal::{ContractDocumentRemoval, ContractDocumentRestoration};
+pub use elected::{
+    ElectedModerators, InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+};
 pub use reason::{ContractModerationDocument, ContractModerationReason};
+
+/// Whether a raw document type schema sets `canBeDeletedByModerators: true`.
+pub fn document_schema_lets_moderators_delete(schema: &Value) -> bool {
+    schema
+        .get_optional_bool(CAN_BE_DELETED_BY_MODERATORS)
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+}
 
 /// Who may send a `ContractUserModeration` transition for the contract.
 ///
-/// The contract owner always may, named or not. A moderator set is fixed in the config and
-/// changed only by a contract update.
+/// With the first two kinds the contract owner always may, named or not; a moderator set is
+/// fixed in the config and changed only by a contract update. With the third the moderators
+/// are an elected team, and until one is seated the interim moderators the declaration
+/// names; the declaration is fixed at creation and never changes.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted)]
 pub enum ContractModerators {
     /// Only the contract owner moderates.
@@ -46,32 +67,77 @@ pub enum ContractModerators {
     /// exists. The owner may be appointed too, and then counts toward that limit; appointing
     /// it changes nothing about who may moderate.
     AppointedModerators(BTreeSet<Identifier>),
+    /// A team elected by masternodes moderates, once one is seated; until then the interim
+    /// moderators of the declaration do. Declarable only when the contract is created, and
+    /// never left or changed by an update. Boxed: the declaration is the largest kind by
+    /// far, and a contract's config is embedded by value wherever a contract is.
+    Elected(Box<ElectedModerators>),
 }
 
 impl ContractModerators {
-    /// The identities the set names, the owner among them only when it is named. `None` for
-    /// `ContractOwner`.
+    /// The identities the kind names, the owner among them only when it is named: the
+    /// appointed set, or the appointed interim set of an elected declaration. `None` when
+    /// nobody is named.
     pub fn identity_ids(&self) -> Option<&BTreeSet<Identifier>> {
         match self {
             ContractModerators::ContractOwner => None,
             ContractModerators::AppointedModerators(ids) => Some(ids),
+            ContractModerators::Elected(elected) => elected.interim.identity_ids(),
         }
     }
 
-    /// Whether `identity_id` is one of the identities the set names.
+    /// Whether `identity_id` is one of the identities the kind names.
     pub fn names(&self, identity_id: &Identifier) -> bool {
         self.identity_ids()
             .is_some_and(|ids| ids.contains(identity_id))
     }
 
-    /// Whether `identity_id` may moderate a contract owned by `owner_id`.
+    /// The elected declaration, `None` for the merged kinds.
+    pub fn elected(&self) -> Option<&ElectedModerators> {
+        match self {
+            ContractModerators::Elected(elected) => Some(elected.as_ref()),
+            ContractModerators::ContractOwner | ContractModerators::AppointedModerators(_) => None,
+        }
+    }
+
+    /// Whether `identity_id` may moderate a contract owned by `owner_id`. Under an elected
+    /// declaration, whether it may during the interim: the owner alone, the owner and the
+    /// appointed interim set, or nobody, the moderated types unusable or unmoderated meanwhile.
     pub fn may_moderate(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
-        owner_id == identity_id || self.names(identity_id)
+        match self {
+            ContractModerators::ContractOwner | ContractModerators::AppointedModerators(_) => {
+                owner_id == identity_id || self.names(identity_id)
+            }
+            ContractModerators::Elected(elected) => {
+                elected.interim.may_moderate(owner_id, identity_id)
+            }
+        }
+    }
+
+    /// Whether `identity_id` is protected from moderation on a contract owned by `owner_id`:
+    /// it can be neither banned nor suspended, and its documents can not be deleted. Whoever
+    /// may moderate is, and so is the owner of an elected contract whose declaration says so.
+    pub fn protects(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
+        self.may_moderate(owner_id, identity_id)
+            || (owner_id == identity_id
+                && self
+                    .elected()
+                    .is_some_and(|elected| elected.owner_protected))
+    }
+
+    /// Whether every document transition of the document type is refused: an elected
+    /// declaration in its interim with nobody moderating blocks its moderated types until a
+    /// team is seated.
+    pub fn interim_blocks_document_type(&self, document_type_name: &str) -> bool {
+        self.elected()
+            .is_some_and(|elected| elected.interim_blocks_document_type(document_type_name))
     }
 
     /// The moderation team of a contract owned by `owner_id`: the identities that share its
     /// moderators fee pot. It is the set the contract appoints, the owner among them only
-    /// when appointed, and the owner alone when nobody is appointed.
+    /// when appointed, and the owner alone when nobody is appointed. Under an elected
+    /// declaration it is the interim's team: the same by kind, and nobody while the
+    /// moderated types are not yet usable, so that the pot accumulates for the team to come.
     ///
     /// The team is about earnings, not authority: an owner who is not on it still may
     /// moderate ([`Self::may_moderate`]).
@@ -79,15 +145,18 @@ impl ContractModerators {
         match self {
             ContractModerators::ContractOwner => BTreeSet::from([*owner_id]),
             ContractModerators::AppointedModerators(ids) => ids.clone(),
+            ContractModerators::Elected(elected) => elected.interim.team(owner_id),
         }
     }
 }
 
-// The wire shape is a flat `{"$type": "contractOwner"}` or
-// `{"$type": "appointedModerators", "identities": [...]}` map, the style of
-// `AuthorizedActionTakers`. Bincode is untouched.
+// The wire shape is a flat `{"$type": "contractOwner"}`,
+// `{"$type": "appointedModerators", "identities": [...]}` or `{"$type": "elected", ...}` map
+// with the declaration's keys beside its `$type`, the style of `AuthorizedActionTakers`.
+// Bincode is untouched.
 impl Serialize for ContractModerators {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use elected::property_names as elected_names;
         use serde::ser::SerializeMap;
         match self {
             ContractModerators::ContractOwner => {
@@ -101,13 +170,77 @@ impl Serialize for ContractModerators {
                 m.serialize_entry("identities", ids)?;
                 m.end()
             }
+            ContractModerators::Elected(elected) => {
+                let mut m = serializer.serialize_map(Some(7))?;
+                m.serialize_entry("$type", "elected")?;
+                m.serialize_entry(elected_names::JOIN_WINDOW, &elected.join_window)?;
+                m.serialize_entry(elected_names::VOTE_WINDOW, &elected.vote_window)?;
+                m.serialize_entry(
+                    elected_names::CHALLENGE_COOL_DOWN,
+                    &elected.challenge_cool_down,
+                )?;
+                m.serialize_entry(
+                    elected_names::MODERATED_DOCUMENT_TYPES,
+                    &elected.moderated_document_types,
+                )?;
+                m.serialize_entry(elected_names::INTERIM, &elected.interim)?;
+                m.serialize_entry(elected_names::OWNER_PROTECTED, &elected.owner_protected)?;
+                m.end()
+            }
         }
     }
 }
 
 impl<'de> Deserialize<'de> for ContractModerators {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use elected::property_names as elected_names;
         use serde::de::{self, MapAccess, Visitor};
+
+        const KEYS: &[&str] = &[
+            "$type",
+            "identities",
+            elected_names::JOIN_WINDOW,
+            elected_names::VOTE_WINDOW,
+            elected_names::CHALLENGE_COOL_DOWN,
+            elected_names::MODERATED_DOCUMENT_TYPES,
+            elected_names::INTERIM,
+            elected_names::OWNER_PROTECTED,
+        ];
+
+        /// The keys of an elected declaration, each read at most once.
+        #[derive(Default)]
+        struct ElectedKeys {
+            join_window: Option<u32>,
+            vote_window: Option<u32>,
+            challenge_cool_down: Option<u32>,
+            moderated_document_types: Option<BTreeMap<DocumentName, BTreeSet<ModerationAbility>>>,
+            interim: Option<InterimModerators>,
+            owner_protected: Option<bool>,
+        }
+
+        impl ElectedKeys {
+            fn any(&self) -> bool {
+                self.join_window.is_some()
+                    || self.vote_window.is_some()
+                    || self.challenge_cool_down.is_some()
+                    || self.moderated_document_types.is_some()
+                    || self.interim.is_some()
+                    || self.owner_protected.is_some()
+            }
+        }
+
+        /// Reads the value of `key` into `slot`, refusing a second occurrence.
+        fn read_once<'de, A: MapAccess<'de>, T: Deserialize<'de>>(
+            map: &mut A,
+            key: &'static str,
+            slot: &mut Option<T>,
+        ) -> Result<(), A::Error> {
+            if slot.is_some() {
+                return Err(de::Error::duplicate_field(key));
+            }
+            *slot = Some(map.next_value()?);
+            Ok(())
+        }
 
         struct V;
 
@@ -117,38 +250,63 @@ impl<'de> Deserialize<'de> for ContractModerators {
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str(
                     "ContractModerators as a map with a `$type` discriminator, \
-                     e.g. {\"$type\": \"contractOwner\"} or \
-                     {\"$type\": \"appointedModerators\", \"identities\": [\"<base58>\"]}",
+                     e.g. {\"$type\": \"contractOwner\"}, \
+                     {\"$type\": \"appointedModerators\", \"identities\": [\"<base58>\"]} or \
+                     {\"$type\": \"elected\", \"challengeCoolDown\": 1209600, \
+                     \"moderatedDocumentTypes\": [\"post\"], \"abilities\": [\"ban\"], \
+                     \"interim\": {\"$type\": \"contractOwner\"}}",
                 )
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
                 let mut variant: Option<String> = None;
                 let mut identities: Option<BTreeSet<Identifier>> = None;
+                let mut elected = ElectedKeys::default();
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "$type" => {
-                            if variant.is_some() {
-                                return Err(de::Error::duplicate_field("$type"));
-                            }
-                            variant = Some(map.next_value()?);
+                        "$type" => read_once(&mut map, "$type", &mut variant)?,
+                        "identities" => read_once(&mut map, "identities", &mut identities)?,
+                        elected_names::JOIN_WINDOW => read_once(
+                            &mut map,
+                            elected_names::JOIN_WINDOW,
+                            &mut elected.join_window,
+                        )?,
+                        elected_names::VOTE_WINDOW => read_once(
+                            &mut map,
+                            elected_names::VOTE_WINDOW,
+                            &mut elected.vote_window,
+                        )?,
+                        elected_names::CHALLENGE_COOL_DOWN => read_once(
+                            &mut map,
+                            elected_names::CHALLENGE_COOL_DOWN,
+                            &mut elected.challenge_cool_down,
+                        )?,
+                        elected_names::MODERATED_DOCUMENT_TYPES => read_once(
+                            &mut map,
+                            elected_names::MODERATED_DOCUMENT_TYPES,
+                            &mut elected.moderated_document_types,
+                        )?,
+                        elected_names::INTERIM => {
+                            read_once(&mut map, elected_names::INTERIM, &mut elected.interim)?
                         }
-                        "identities" => {
-                            if identities.is_some() {
-                                return Err(de::Error::duplicate_field("identities"));
-                            }
-                            identities = Some(map.next_value()?);
-                        }
+                        elected_names::OWNER_PROTECTED => read_once(
+                            &mut map,
+                            elected_names::OWNER_PROTECTED,
+                            &mut elected.owner_protected,
+                        )?,
                         // Refused rather than skipped: the declaration can hardly be changed
                         // after the contract is created, so a misspelled key must not pass.
-                        other => {
-                            return Err(de::Error::unknown_field(other, &["$type", "identities"]));
-                        }
+                        other => return Err(de::Error::unknown_field(other, KEYS)),
                     }
                 }
 
                 let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
+                if variant != "elected" && elected.any() {
+                    return Err(de::Error::custom(
+                        "the keys of an elected declaration are only valid for `elected`",
+                    ));
+                }
                 match variant.as_str() {
                     "contractOwner" => {
                         if identities.is_some() {
@@ -163,9 +321,36 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             identities.ok_or_else(|| de::Error::missing_field("identities"))?;
                         Ok(ContractModerators::AppointedModerators(ids))
                     }
+                    "elected" => {
+                        if identities.is_some() {
+                            return Err(de::Error::custom(
+                                "`identities` is only valid for `appointedModerators`; an \
+                                 elected declaration names its interim set under `interim`",
+                            ));
+                        }
+                        let required = |key: &'static str| move || de::Error::missing_field(key);
+                        Ok(ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: elected
+                                .join_window
+                                .unwrap_or(DEFAULT_ELECTION_WINDOW_SECONDS),
+                            vote_window: elected
+                                .vote_window
+                                .unwrap_or(DEFAULT_ELECTION_WINDOW_SECONDS),
+                            challenge_cool_down: elected
+                                .challenge_cool_down
+                                .ok_or_else(required(elected_names::CHALLENGE_COOL_DOWN))?,
+                            moderated_document_types: elected
+                                .moderated_document_types
+                                .ok_or_else(required(elected_names::MODERATED_DOCUMENT_TYPES))?,
+                            interim: elected
+                                .interim
+                                .ok_or_else(required(elected_names::INTERIM))?,
+                            owner_protected: elected.owner_protected.unwrap_or(false),
+                        })))
+                    }
                     other => Err(de::Error::unknown_variant(
                         other,
-                        &["contractOwner", "appointedModerators"],
+                        &["contractOwner", "appointedModerators", "elected"],
                     )),
                 }
             }
@@ -182,6 +367,7 @@ impl fmt::Display for ContractModerators {
             ContractModerators::AppointedModerators(ids) => {
                 write!(f, "contract owner and {} appointed moderators", ids.len())
             }
+            ContractModerators::Elected(elected) => elected.fmt(f),
         }
     }
 }
@@ -292,6 +478,19 @@ impl ContractModerationConfig {
         self.moderators.may_moderate(owner_id, identity_id)
     }
 
+    /// Whether `identity_id` is protected from moderation on a contract owned by `owner_id`.
+    /// See [`ContractModerators::protects`].
+    pub fn protects(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
+        self.moderators.protects(owner_id, identity_id)
+    }
+
+    /// Whether every document transition of the document type is refused until a moderation
+    /// team is seated. See [`ContractModerators::interim_blocks_document_type`].
+    pub fn interim_blocks_document_type(&self, document_type_name: &str) -> bool {
+        self.moderators
+            .interim_blocks_document_type(document_type_name)
+    }
+
     /// The moderation team of a contract owned by `owner_id`: the identities that share its
     /// moderators fee pot. See [`ContractModerators::team`].
     pub fn team(&self, owner_id: &Identifier) -> BTreeSet<Identifier> {
@@ -301,14 +500,16 @@ impl ContractModerationConfig {
     /// The pure-data rules of the declaration: it gives the moderators something to do, and a
     /// moderator set is non-empty and within `SystemLimits::max_contract_moderators` (a named
     /// owner counts). Something to do is a list to edit or, failing that, a document type whose
-    /// documents they may delete (`has_document_type_deletable_by_moderators`, which the
-    /// caller reads from the contract the declaration belongs to).
+    /// documents they may delete, read from the raw `document_schemas` of the contract the
+    /// declaration belongs to, which an elected declaration is also checked against: its
+    /// moderated types must name document types of the contract
+    /// ([`ElectedModerators::validation_error`] has its rules).
     /// Whether the named identities exist is state validation, done by the contract create
     /// and update transitions: a moderator that does not exist can never sign, so naming one
     /// is a mistake, caught where it is cheapest.
     pub fn validate(
         &self,
-        has_document_type_deletable_by_moderators: bool,
+        document_schemas: &BTreeMap<DocumentName, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -317,7 +518,7 @@ impl ContractModerationConfig {
             .methods
             .validate_moderation_config
         {
-            0 => Ok(self.validate_v0(has_document_type_deletable_by_moderators, platform_version)),
+            0 => Ok(self.validate_v0(document_schemas, platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ContractModerationConfig::validate".to_string(),
                 known_versions: vec![0],
@@ -329,9 +530,12 @@ impl ContractModerationConfig {
     #[inline(always)]
     fn validate_v0(
         &self,
-        has_document_type_deletable_by_moderators: bool,
+        document_schemas: &BTreeMap<DocumentName, Value>,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
+        let has_document_type_deletable_by_moderators = document_schemas
+            .values()
+            .any(document_schema_lets_moderators_delete);
         if !self.banlist
             && !self.suspensions
             && !self.warnings
@@ -366,6 +570,16 @@ impl ContractModerationConfig {
                     .into(),
                 );
             }
+        }
+        if let Some(reason) = self
+            .moderators
+            .elected()
+            .and_then(|elected| elected.validation_error(self, document_schemas, platform_version))
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                InvalidContractModerationConfigError::new(format!("elected moderation: {reason}"))
+                    .into(),
+            );
         }
         SimpleConsensusValidationResult::new()
     }
@@ -593,9 +807,18 @@ impl ContractModerationListStatuses {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_value::platform_value;
 
     fn set(ids: &[u8]) -> BTreeSet<Identifier> {
         ids.iter().map(|b| Identifier::from([*b; 32])).collect()
+    }
+
+    /// One document type, `post`, whose documents moderators may delete
+    fn schemas_with_a_deletable_type() -> BTreeMap<DocumentName, Value> {
+        BTreeMap::from([(
+            "post".to_string(),
+            platform_value!({ "type": "object", "canBeDeletedByModerators": true }),
+        )])
     }
 
     #[test]
@@ -648,7 +871,7 @@ mod tests {
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(false, PlatformVersion::latest())
+            .validate(&BTreeMap::new(), PlatformVersion::latest())
             .expect("validate");
         assert!(!result.is_valid());
     }
@@ -662,7 +885,7 @@ mod tests {
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(true, PlatformVersion::latest())
+            .validate(&schemas_with_a_deletable_type(), PlatformVersion::latest())
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         assert_eq!(config.lists().count(), 0);
@@ -678,7 +901,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&[9, 1])),
         };
         let result = config
-            .validate(false, PlatformVersion::latest())
+            .validate(&BTreeMap::new(), PlatformVersion::latest())
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         // Naming the owner changes nothing about who may moderate or who is protected.
@@ -699,11 +922,11 @@ mod tests {
             )),
         };
         assert!(config(max)
-            .validate(false, platform_version)
+            .validate(&BTreeMap::new(), platform_version)
             .expect("validate")
             .is_valid());
         assert!(!config(max + 1)
-            .validate(false, platform_version)
+            .validate(&BTreeMap::new(), platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -718,7 +941,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(BTreeSet::new()),
         };
         assert!(!empty
-            .validate(false, platform_version)
+            .validate(&BTreeMap::new(), platform_version)
             .expect("validate")
             .is_valid());
         let too_many: Vec<u8> =
@@ -730,7 +953,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&too_many)),
         };
         assert!(!oversized
-            .validate(false, platform_version)
+            .validate(&BTreeMap::new(), platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -745,7 +968,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&[1, 2, 3])),
         };
         assert!(config
-            .validate(false, PlatformVersion::latest())
+            .validate(&BTreeMap::new(), PlatformVersion::latest())
             .expect("validate")
             .is_valid());
         assert!(config.may_moderate(&owner, &owner));
@@ -780,7 +1003,7 @@ mod tests {
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(false, PlatformVersion::latest())
+            .validate(&BTreeMap::new(), PlatformVersion::latest())
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         assert_eq!(

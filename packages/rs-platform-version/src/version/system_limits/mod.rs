@@ -128,6 +128,18 @@ pub struct SystemLimits {
     /// (`ContractModerationReason::documents`). Read by the reason's validation (protocol
     /// version 14) and never reached before.
     pub max_contract_moderation_reason_documents: u16,
+    /// Shortest join window and vote window, in seconds, an elected moderation team
+    /// declaration (`ContractModerators::Elected`) may set: one day. Read by the contract's
+    /// `validate_moderation_config` v0 (protocol version 14) and never reached before.
+    pub min_contract_moderation_election_window_seconds: u32,
+    /// Longest join window and vote window, in seconds, such a declaration may set: four
+    /// weeks.
+    pub max_contract_moderation_election_window_seconds: u32,
+    /// Shortest challenge cool-down, in seconds, such a declaration may set: two weeks. The
+    /// cool-down is how long a seated team is safe from a challenge after a seat change.
+    pub min_contract_moderation_challenge_cool_down_seconds: u32,
+    /// Longest challenge cool-down, in seconds, such a declaration may set: three years.
+    pub max_contract_moderation_challenge_cool_down_seconds: u32,
     /// How long after a moderator's deletion of a document, in milliseconds of block time,
     /// the contract's moderators may restore it (`ContractUserModeration`'s `RestoreDocument`
     /// action): a week. Read by the `ContractUserModeration` state validation v0 (protocol
