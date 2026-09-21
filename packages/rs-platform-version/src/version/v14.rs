@@ -459,8 +459,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
-/// ephemeral key and encrypted grant in `entryPayload`. Genesis generation 2
-/// registers it on fresh chains; `transition_to_version_14` inserts it on upgrade.
+/// ephemeral key and encrypted grant in `entryPayload`. Genesis registers it on
+/// chains born at this version; `transition_to_version_14` inserts it on upgrade.
 /// The Drive and trusted SDK caches serve it only from protocol version 14.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:

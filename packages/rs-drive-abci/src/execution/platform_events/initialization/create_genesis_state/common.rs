@@ -4,94 +4,20 @@ use crate::platform_types::platform::Platform;
 use dpp::platform_value::platform_value;
 use dpp::ProtocolError;
 
-use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
-use dpp::prelude::CoreBlockHeight;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::system_data_contracts::dpns_contract::DPNS_DASH_TLD_DOCUMENT_ID;
-use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::PlatformVersion;
 use drive::dpp::identity::TimestampMillis;
-use drive::query::TransactionArg;
 use drive::util::batch::{DataContractOperationType, DocumentOperationType, DriveOperation};
 use drive::util::object_size_info::{
     DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
 };
 use std::borrow::Cow;
-use std::collections::BTreeMap;
-use std::sync::Arc;
 
 impl<C> Platform<C> {
-    /// The genesis state every generation from v1 on writes: the initial tree structure,
-    /// the genesis core height, then one batch registering `system_data_contract_types`
-    /// (in the map's order), the wallet utils contract and the DPNS `dash` top-level
-    /// domain. Generations differ only in the contract list they pass, so a fix to the
-    /// shared steps reaches every generation, while each generation's list stays frozen
-    /// with it.
-    pub(in crate::execution::platform_events::initialization::create_genesis_state) fn create_genesis_state_with_system_data_contracts(
-        &self,
-        genesis_core_height: CoreBlockHeight,
-        genesis_time: TimestampMillis,
-        system_data_contract_types: BTreeMap<SystemDataContract, Arc<DataContract>>,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        //versioned call
-        self.drive
-            .create_initial_state_structure(transaction, platform_version)?;
-
-        self.drive
-            .store_genesis_core_height(genesis_core_height, transaction, platform_version)?;
-
-        let mut operations = vec![];
-
-        // Create system identities and contracts
-
-        for data_contract in system_data_contract_types.values() {
-            self.register_system_data_contract_operations(
-                data_contract,
-                &mut operations,
-                platform_version,
-            )?;
-        }
-
-        let wallet_utils_contract =
-            load_system_data_contract(SystemDataContract::WalletUtils, platform_version)?;
-
-        self.register_system_data_contract_operations(
-            &wallet_utils_contract,
-            &mut operations,
-            platform_version,
-        )?;
-
-        let dpns_contract = self
-            .drive
-            .cache
-            .system_data_contracts
-            .load_dpns(platform_version)?;
-
-        self.register_dpns_top_level_domain_operations(
-            &dpns_contract,
-            genesis_time,
-            &mut operations,
-        )?;
-
-        let block_info = BlockInfo::default_with_time(genesis_time);
-
-        self.drive.apply_drive_operations(
-            operations,
-            true,
-            &block_info,
-            transaction,
-            platform_version,
-            None, // No previous_fee_versions needed for genesis state creation
-        )?;
-
-        Ok(())
-    }
-
     pub(in crate::execution::platform_events::initialization::create_genesis_state) fn register_system_data_contract_operations<
         'a,
     >(
