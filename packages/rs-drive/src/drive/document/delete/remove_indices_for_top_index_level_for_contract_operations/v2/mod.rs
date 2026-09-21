@@ -92,14 +92,26 @@ impl Drive {
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // On this level we will have a 0 and all the top index paths
+            // On this level we will have a 0 and all the top index paths.
+            // Property-name keys keep the historical 32-byte estimate; a
+            // FLAT indexOnly level is keyed by its zero-joined component
+            // names, which can be wider, and every entry write rewrites
+            // that node at its real key length.
+            let sub_level_key_max_size = index_level
+                .sub_levels()
+                .keys()
+                .filter(|name| is_flat_level_key(name))
+                .map(|name| u8::try_from(name.len()).unwrap_or(u8::MAX))
+                .max()
+                .unwrap_or(DEFAULT_HASH_SIZE_U8)
+                .max(DEFAULT_HASH_SIZE_U8);
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
-                        DEFAULT_HASH_SIZE_U8,
+                        sub_level_key_max_size,
                         NoSumTrees,
                         storage_flags.map(|s| s.serialized_size()),
                     ),

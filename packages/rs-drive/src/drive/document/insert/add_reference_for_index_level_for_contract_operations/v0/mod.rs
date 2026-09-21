@@ -543,7 +543,6 @@ impl Drive {
             item_value.extend(encode_index_only_entry_payload(
                 document,
                 document_and_contract_info.document_type,
-                platform_version,
             )?);
             item_value
         };

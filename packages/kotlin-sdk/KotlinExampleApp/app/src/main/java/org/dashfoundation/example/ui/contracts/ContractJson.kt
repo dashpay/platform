@@ -195,10 +195,17 @@ internal fun indexAxisDescriptors(index: JsonObject): List<String> {
 }
 
 /**
- * The index's member-key property on an indexOnly document type: the
- * declared `terminal`, defaulting to `$ownerId` exactly as DPP
- * normalizes an omitted terminal. `null` on stored (non-indexOnly)
- * document types, where entries are keyed by document id.
+ * The index's member key on an indexOnly document type: the declared
+ * `terminal` (a property name, or the ordered component names of a
+ * composite terminal joined with ` ‖ ` for display), defaulting to
+ * `$ownerId` exactly as DPP normalizes an omitted terminal. `null` on
+ * stored (non-indexOnly) document types, where entries are keyed by
+ * document id.
  */
 internal fun indexTerminal(index: JsonObject, indexOnly: Boolean): String? =
-    index.stringField("terminal") ?: if (indexOnly) "\$ownerId" else null
+    index.stringField("terminal")
+        ?: (index["terminal"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content }
+            ?.takeIf { it.isNotEmpty() }
+            ?.joinToString(" ‖ ")
+        ?: if (indexOnly) "\$ownerId" else null

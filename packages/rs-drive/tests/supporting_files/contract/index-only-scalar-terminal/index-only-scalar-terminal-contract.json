@@ -293,6 +293,47 @@
         "kind"
       ],
       "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPostBody",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": [
+            "$ownerId",
+            "body"
+          ]
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "body": {
+          "type": "array",
+          "byteArray": true,
+          "maxItems": 16,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "body"
+      ],
+      "additionalProperties": false
     }
   }
 }

@@ -17,21 +17,14 @@
 //! the length frame be two bytes and fee estimation size the entry value
 //! by the bounds.
 
-#[cfg(any(feature = "server", feature = "verify"))]
+use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::error::drive::DriveError;
-#[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::{Document, DocumentV0Getters};
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::platform_value::Value;
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::version::PlatformVersion;
-#[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;
 
 /// The bytes of length frame each payload property carries.
@@ -41,7 +34,6 @@ pub const INDEX_ONLY_ENTRY_PAYLOAD_LENGTH_FRAME: u32 = 2;
 /// of every payload property's declared bound plus its length frame. Zero
 /// on a type without an entry payload. The parser guarantees every payload
 /// property is bounded, so an unbounded one here is a corrupted type.
-#[cfg(any(feature = "server", feature = "verify"))]
 pub fn index_only_entry_payload_max_size(
     document_type: DocumentTypeRef,
     platform_version: &PlatformVersion,
@@ -74,15 +66,15 @@ pub fn index_only_entry_payload_max_size(
 /// estimating site (the entry-insert terminal, the preallocated-tree
 /// estimate, the delete walkers and the delete-side probe estimate) sizes
 /// the item through this one function so they cannot drift.
-#[cfg(any(feature = "server", feature = "verify"))]
 pub fn index_only_item_estimated_value_size(
     document_type: DocumentTypeRef,
     platform_version: &PlatformVersion,
 ) -> Result<u32, Error> {
     Ok(
-        crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE.saturating_add(
-            index_only_entry_payload_max_size(document_type, platform_version)?,
-        ),
+        INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE.saturating_add(index_only_entry_payload_max_size(
+            document_type,
+            platform_version,
+        )?),
     )
 }
 
@@ -92,7 +84,6 @@ pub fn index_only_item_estimated_value_size(
 /// value is not capped at 255 bytes — the parser bounds it by the field
 /// value limit instead. Also what the row commitment hashes for a payload
 /// property, so the commitment and the stored value agree byte for byte.
-#[cfg(any(feature = "server", feature = "verify"))]
 pub fn encode_index_only_entry_payload_value(
     property_type: &DocumentPropertyType,
     value: &Value,
@@ -112,13 +103,10 @@ pub fn encode_index_only_entry_payload_value(
 /// name order, length-framed in its payload encoding. Empty on a type
 /// without an entry payload. A missing payload property is a corrupted
 /// document: the parser requires every payload property.
-#[cfg(any(feature = "server", feature = "verify"))]
 pub fn encode_index_only_entry_payload(
     document: &Document,
     document_type: DocumentTypeRef,
-    platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, Error> {
-    let _ = platform_version;
     let mut payload = Vec::new();
     for property_name in document_type.entry_payload() {
         let property = document_type
@@ -151,7 +139,6 @@ pub fn encode_index_only_entry_payload(
 /// commitment) back into `document_type`'s entry payload properties. Fails
 /// closed on any framing mismatch: a truncated, overlong or misframed
 /// payload is a corrupted entry, never a partial document.
-#[cfg(any(feature = "server", feature = "verify"))]
 pub fn decode_index_only_entry_payload(
     document_type: DocumentTypeRef,
     payload: &[u8],

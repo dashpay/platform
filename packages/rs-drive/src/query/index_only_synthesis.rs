@@ -40,7 +40,7 @@ use crate::query::{index_admissible_for_skip_if_absent, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, Index};
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
@@ -847,13 +847,11 @@ impl DriveDocumentQuery<'_> {
                     let mut path = document_type_path.to_vec();
                     path.push(flat_key.into_bytes());
                     path.push(vec![0]);
-                    let left_to_right = index
-                        .terminal_components()
-                        .first()
-                        .and_then(|component| self.order_by.get(component.as_str()))
-                        .map(|order_clause| order_clause.ascending)
-                        .unwrap_or(true);
-                    let mut query = grovedb::Query::new_with_direction(left_to_right);
+                    // An orderBy naming a component makes the matcher
+                    // report the terminal as used, which sends the query
+                    // down the terminal route instead; the generic match
+                    // only ever sees the unordered scan.
+                    let mut query = grovedb::Query::new_with_direction(true);
                     query.insert_all();
                     return Ok(Some(grovedb::PathQuery::new(
                         path,
@@ -1190,14 +1188,9 @@ pub fn synthesize_index_only_document(
                 );
             }
             CREATED_AT => {
-                created_at = Some(
-                    dpp::data_contract::document_type::DocumentPropertyType::decode_date_timestamp(
-                        encoded,
-                    )
-                    .ok_or(corrupted(
-                        "indexOnly synthesis: $createdAt key bytes are not a timestamp",
-                    ))?,
-                );
+                created_at = Some(DocumentPropertyType::decode_date_timestamp(encoded).ok_or(
+                    corrupted("indexOnly synthesis: $createdAt key bytes are not a timestamp"),
+                )?);
             }
             name => {
                 let property = document_type
@@ -1206,10 +1199,20 @@ pub fn synthesize_index_only_document(
                     .ok_or(corrupted(
                         "indexOnly synthesis: index names a property the document type lacks",
                     ))?;
-                let value = property
-                    .property_type
-                    .decode_value_for_tree_keys(encoded)
-                    .map_err(|e| Error::Protocol(Box::new(e)))?;
+                // Every indexed property of an indexOnly type is required,
+                // so an empty key never encodes an absent value: for a byte
+                // array it is the empty array itself, which the tree-key
+                // decoder would otherwise read back as the null sentinel.
+                let value = if encoded.is_empty()
+                    && matches!(property.property_type, DocumentPropertyType::ByteArray(_))
+                {
+                    Value::Bytes(Vec::new())
+                } else {
+                    property
+                        .property_type
+                        .decode_value_for_tree_keys(encoded)
+                        .map_err(|e| Error::Protocol(Box::new(e)))?
+                };
                 // A flattened name like `profile.targetId` must come back
                 // as a nested `profile` map, not as a dotted top-level key
                 // — field access, schema serialization and index encoding

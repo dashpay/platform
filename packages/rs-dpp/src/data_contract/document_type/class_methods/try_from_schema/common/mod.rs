@@ -100,6 +100,10 @@ use std::collections::HashSet;
 
 #[cfg(feature = "validation")]
 use super::NOT_ALLOWED_SYSTEM_PROPERTIES;
+use super::{MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH};
+use crate::consensus::basic::data_contract::{
+    InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
+};
 
 /// RANKED: the extra index-property check a generation runs before the generic
 /// index-key limits.
@@ -1315,7 +1319,7 @@ fn check_indexable_property_shape(
         | DocumentPropertyType::Object(_)
         | DocumentPropertyType::VariableTypeArray(_) => {
             Err(ProtocolError::ConsensusError(Box::new(
-                crate::consensus::basic::data_contract::InvalidIndexPropertyTypeError::new(
+                InvalidIndexPropertyTypeError::new(
                     document_type_name.to_owned(),
                     index_name.to_owned(),
                     property_name.to_owned(),
@@ -1326,19 +1330,19 @@ fn check_indexable_property_shape(
         }
         // Indexed byte array size must be limited
         DocumentPropertyType::ByteArray(sizes)
-            if sizes.max_size.is_none_or(|max_size| {
-                max_size > super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-            }) =>
+            if sizes
+                .max_size
+                .is_none_or(|max_size| max_size > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) =>
         {
             Err(ProtocolError::ConsensusError(Box::new(
-                crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError::new(
+                InvalidIndexedPropertyConstraintError::new(
                     document_type_name.to_owned(),
                     index_name.to_owned(),
                     property_name.to_owned(),
                     "maxItems".to_string(),
                     format!(
                         "should be less or equal {}",
-                        super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
                     ),
                 )
                 .into(),
@@ -1346,19 +1350,19 @@ fn check_indexable_property_shape(
         }
         // Indexed string length must be limited
         DocumentPropertyType::String(sizes)
-            if sizes.max_length.is_none_or(|max_length| {
-                max_length > super::MAX_INDEXED_STRING_PROPERTY_LENGTH
-            }) =>
+            if sizes
+                .max_length
+                .is_none_or(|max_length| max_length > MAX_INDEXED_STRING_PROPERTY_LENGTH) =>
         {
             Err(ProtocolError::ConsensusError(Box::new(
-                crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError::new(
+                InvalidIndexedPropertyConstraintError::new(
                     document_type_name.to_owned(),
                     index_name.to_owned(),
                     property_name.to_owned(),
                     "maxLength".to_string(),
                     format!(
                         "should be less or equal {}",
-                        super::MAX_INDEXED_STRING_PROPERTY_LENGTH
+                        MAX_INDEXED_STRING_PROPERTY_LENGTH
                     ),
                 )
                 .into(),
@@ -2794,22 +2798,19 @@ pub(super) fn apply_index_only(
             };
             terminal_max_width += max_width;
         }
-        if terminal_max_width > u32::from(super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
+        if terminal_max_width > u32::from(MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
             return Err(structure_error(format!(
                 "the terminal of index \"{}\" on indexOnly document type \"{}\" encodes to \
                  up to {} bytes, over the {}-byte member key cap: shorten or drop a \
                  component",
-                index_name,
-                name,
-                terminal_max_width,
-                super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
+                index_name, name, terminal_max_width, MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
             )));
         }
 
         // The flat level is itself a GroveDB key. Bounding the encoded
         // values above does not bound the concatenated component names.
         if let Some(flat_key) = index.flat_level_key() {
-            if flat_key.len() > usize::from(super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
+            if flat_key.len() > usize::from(MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
                 return Err(structure_error(format!(
                     "the flat level of index \"{}\" on indexOnly document type \"{}\" \
                      encodes to {} bytes, over the {}-byte flat level key cap: shorten \
@@ -2817,7 +2818,7 @@ pub(super) fn apply_index_only(
                     index_name,
                     name,
                     flat_key.len(),
-                    super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
+                    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
                 )));
             }
         }

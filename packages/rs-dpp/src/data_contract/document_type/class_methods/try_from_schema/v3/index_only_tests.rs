@@ -1219,6 +1219,64 @@ fn rejects_a_composite_terminal_over_the_key_cap() {
 }
 
 #[test]
+fn rejects_a_terminal_with_no_components() {
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!([]));
+    match parse_with(schema, PlatformVersion::latest(), false) {
+        Ok(_) => panic!("an empty terminal list must be refused"),
+        Err(error) => assert!(
+            error.to_string().contains("at least one property"),
+            "expected the empty-terminal rejection, got: {error}"
+        ),
+    }
+}
+
+/// The flat level's storage key is the zero-joined component names, which
+/// the value-width cap does not bound: five one-byte components named at
+/// the 64-character limit fit the member key with room to spare and still
+/// spell a 300-byte level key.
+#[test]
+fn rejects_a_flat_level_key_over_the_key_cap() {
+    let names: Vec<String> = (0..5)
+        .map(|position| format!("{position}{}", "n".repeat(63)))
+        .collect();
+    let mut properties = platform_value::Value::Map(Default::default());
+    for (position, name) in names.iter().enumerate() {
+        properties
+            .set_value(
+                name,
+                platform_value!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "position": position as u64
+                }),
+            )
+            .expect("property applies");
+    }
+    let required: Vec<platform_value::Value> = names
+        .iter()
+        .map(|name| platform_value!(name.as_str()))
+        .collect();
+    let mut terminal = required.clone();
+    terminal.push(platform_value!("$ownerId"));
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "indices": [{ "name": "byNames", "terminal": platform_value::Value::Array(terminal) }],
+        "properties": properties,
+        "required": platform_value::Value::Array(required),
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "flat level key cap",
+    );
+}
+
+#[test]
 fn rejects_a_terminal_naming_a_component_twice() {
     let schema = likes_schema_with_index_key(2, "terminal", platform_value!(["postId", "postId"]));
     match parse_with(schema, PlatformVersion::latest(), false) {

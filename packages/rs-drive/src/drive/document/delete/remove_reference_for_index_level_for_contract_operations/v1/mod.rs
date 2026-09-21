@@ -209,10 +209,9 @@ impl Drive {
             // A FLAT index's entries sit at `[…doctype, <flat level>, 0]`:
             // the flat level tree is registration-time structure (like a
             // property-name tree), so the climb stops at its `0` bucket
-            // exactly as it does on a preallocated index. Every prefixed
-            // indexOnly entry sits at least one level deeper.
-            let is_flat = key_info_path.len() == u32::from(CONTRACT_DOCUMENTS_PATH_HEIGHT) + 2;
-            let stop_path_height = if index_type.preallocated || is_flat {
+            // exactly as it does on a preallocated index. The level info
+            // carries the flag from the index that terminates there.
+            let stop_path_height = if index_type.preallocated || index_type.flat {
                 u16::try_from(key_info_path.len() - 1).map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "index path height must fit in u16",

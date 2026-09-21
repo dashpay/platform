@@ -28,14 +28,14 @@ stores nothing in primary storage. The index entries ARE the rows:
       → Item(<row commitment>, flags)
 ```
 
-The **terminal** — a per-index keyword defaulting to `$ownerId`, or any
-schema property a prefix position could carry (an identifier with or
-without a `refersTo`, a bounded byte array or string, an integer, a
-boolean, a date), or an ordered **list** of such properties (a *composite*
-terminal, whose member key is their encoded values concatenated) — is the
-member key, sitting exactly where a normal non-unique
-index keys by document id; the element is an `Item` instead of a
-`Reference` because there is nothing to point at. The `0` storage marker,
+The **terminal** is the member key, sitting exactly where a normal
+non-unique index keys by document id; the element is an `Item` instead of
+a `Reference` because there is nothing to point at. It is a per-index
+keyword defaulting to `$ownerId`. It may name any schema property a prefix
+position could carry (an identifier with or without a `refersTo`, a
+bounded byte array or string, an integer, a boolean, a date), or an
+ordered **list** of such properties (a *composite* terminal, whose member
+key is their encoded values concatenated). The `0` storage marker,
 value-tree types, and the count/sum/ranked tree derivation are
 byte-identical to the ordinary non-unique layout, which is what lets the
 protocol v14 ranked machinery (see
@@ -65,7 +65,7 @@ clean key range and synthesis can split the key back; a string can only
 be the last component; the whole key is capped at 255 bytes. Uniqueness
 spans the whole key. Queries bind the components in order: equality
 clauses on the leading ones, then at most one range or `in` clause on the
-next (ordered by it), nothing on the rest — the lowering pads the bound
+next (ordered by it), nothing on the rest. The lowering pads the bound
 prefix with `0xFF` to the key cap for the upper bound of "every key under
 this prefix", and addresses the key itself when the bound component is
 the last one. After equality-bound components are ignored, `orderBy` must
@@ -99,7 +99,7 @@ ones, just as filtered queries do; otherwise use a proved projection.
 **The entry payload.** `entryPayload: ["walletEphemeralPubKey",
 "encryptedPayload"]` on the document type names top-level properties that
 live in no index: every entry's item carries them after the 32-byte row
-commitment, each length-framed (`u16` big-endian), in property-name order —
+commitment, each length-framed (`u16` big-endian), in property-name order:
 the type's value slot. Byte arrays store their raw bytes and strings store
 UTF-8; other scalars use their tree-key encoding. The length frame preserves
 empty byte arrays and strings without null sentinels, and distinguishes an

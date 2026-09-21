@@ -80,6 +80,7 @@ pub mod index_only_row_commitment;
 
 /// The entry payload of an indexOnly document type: the value slot after
 /// the row commitment, its encoding and its fee-estimation bounds.
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_only_entry_payload;
 
 #[cfg(any(feature = "server", feature = "verify"))]

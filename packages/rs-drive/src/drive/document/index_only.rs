@@ -188,11 +188,15 @@ impl Drive {
                  always Some there after parse normalization)",
             )));
         }
-        // The member key: the terminal components' encoded values, concatenated.
-        let mut member_key = Vec::new();
-        for component in index.terminal_components() {
-            member_key.extend(raw_value_for(component)?);
-        }
+        // The member key: the terminal components' encoded values,
+        // concatenated, exactly as the write side keys the entry.
+        let member_key = index_only_member_key(
+            document,
+            document_type,
+            index.terminal_components(),
+            owner_id,
+            platform_version,
+        )?;
 
         Ok((paths, member_key))
     }

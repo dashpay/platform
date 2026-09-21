@@ -16,6 +16,7 @@
 //! | `rating` | `byPost`    | `[postId, $ownerId]`    | `stars`    | integer 1 to 5 |
 //! | `reaction` | `byPostKind` | `[postId]`          | `kind ‖ $ownerId` | composite, prefixed |
 //! | `loginKeyResponse` | `byRequest` | (none: flat) | `appEphemeralPubKeyHash ‖ $ownerId` | composite, flat; `entryPayload` |
+//! | `note`   | `byPostBody` | `[postId]`            | `$ownerId ‖ body` | composite; variable-width last |
 //!
 //! The last two exercise **composite terminals** (the member key is the
 //! concatenation of several components' encodings) — one below a prefix
@@ -68,6 +69,7 @@ const OWNER_1: [u8; 32] = [0x11; 32];
 const OWNER_2: [u8; 32] = [0x22; 32];
 const OWNER_3: [u8; 32] = [0x33; 32];
 
+/// A fresh Drive with the scalar-terminal fixture contract applied.
 fn setup() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
@@ -96,6 +98,7 @@ fn doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
     ]
 }
 
+/// A random document of `doctype` with the given properties and owner set.
 fn build(
     contract: &DataContract,
     doctype: &str,
@@ -119,6 +122,7 @@ fn build(
     document
 }
 
+/// An `answer` document: a request hash with its response payload.
 fn build_answer(
     contract: &DataContract,
     request: [u8; 20],
@@ -138,6 +142,7 @@ fn build_answer(
     )
 }
 
+/// A `vote` document for `choice` by `owner`.
 fn build_vote(contract: &DataContract, choice: &str, owner: [u8; 32], seed: u64) -> Document {
     build(
         contract,
@@ -151,6 +156,7 @@ fn build_vote(contract: &DataContract, choice: &str, owner: [u8; 32], seed: u64)
     )
 }
 
+/// A `rating` document of `stars` by `owner`.
 fn build_rating(contract: &DataContract, stars: u64, owner: [u8; 32], seed: u64) -> Document {
     build(
         contract,
@@ -164,6 +170,7 @@ fn build_rating(contract: &DataContract, stars: u64, owner: [u8; 32], seed: u64)
     )
 }
 
+/// Inserts (or dry-runs, when `apply` is false) the document and returns its fee.
 fn insert(
     drive: &Drive,
     contract: &DataContract,
@@ -192,6 +199,7 @@ fn insert(
     )
 }
 
+/// Deletes (or dry-runs, when `apply` is false) the document and returns its fee.
 fn delete(
     drive: &Drive,
     contract: &DataContract,
@@ -214,6 +222,7 @@ fn delete(
     )
 }
 
+/// A query on `doctype` with the given clauses and no ordering.
 fn query<'a>(
     contract: &'a DataContract,
     doctype: &str,
@@ -239,6 +248,7 @@ fn query<'a>(
     }
 }
 
+/// An equality clause on `field`.
 fn equal(field: &str, value: Value) -> WhereClause {
     WhereClause {
         field: field.to_string(),
@@ -264,6 +274,7 @@ fn entry(
     read_grove_element(drive, &path, member_key)
 }
 
+/// Asserts the element is a bare row-commitment Item (no entry payload).
 fn assert_commitment_item(element: Option<Element>, what: &str) {
     match element {
         Some(Element::Item(payload, _)) => assert_eq!(
@@ -717,10 +728,12 @@ const WALLET_KEY_3: [u8; 33] = [0xA3; 33];
 /// terminal component name preceded by a zero byte.
 const LOGIN_FLAT_LEVEL: &[u8] = b"\0appEphemeralPubKeyHash\0$ownerId";
 
+/// A stand-in ciphertext of `len` copies of `byte`.
 fn cipher(byte: u8, len: usize) -> Vec<u8> {
     vec![byte; len]
 }
 
+/// A `loginKeyResponse` document for `request` with the wallet key and ciphertext payload.
 fn build_login_response(
     contract: &DataContract,
     request: [u8; 20],
@@ -742,6 +755,7 @@ fn build_login_response(
     )
 }
 
+/// A `reaction` document of `kind` on the fixture post by `owner`.
 fn build_reaction(contract: &DataContract, kind: u64, owner: [u8; 32], seed: u64) -> Document {
     build(
         contract,
@@ -755,6 +769,7 @@ fn build_reaction(contract: &DataContract, kind: u64, owner: [u8; 32], seed: u64
     )
 }
 
+/// A query on `doctype` with the given clauses and `order_by` (field, ascending).
 fn query_ordered<'a>(
     contract: &'a DataContract,
     doctype: &str,
@@ -778,12 +793,14 @@ fn query_ordered<'a>(
     query
 }
 
+/// The flat member key of a login response: request hash then owner id.
 fn login_member_key(request: [u8; 20], owner: [u8; 32]) -> Vec<u8> {
     let mut key = request.to_vec();
     key.extend(owner);
     key
 }
 
+/// Reads the login response entry stored under the flat level for `request` and `owner`.
 fn login_entry(
     drive: &Drive,
     contract: &DataContract,
@@ -796,6 +813,7 @@ fn login_entry(
     read_grove_element(drive, &path, &login_member_key(request, owner))
 }
 
+/// The binary bytes of the document property `name`.
 fn payload_bytes(document: &Document, name: &str) -> Vec<u8> {
     document
         .properties()
@@ -1509,4 +1527,134 @@ fn should_refuse_serializing_an_incomplete_flat_scan() {
     let decoded = Document::from_bytes(&serialized[0], covering.document_type, platform_version())
         .expect("deserialize covering response");
     assert_eq!(decoded.properties(), document.properties());
+}
+
+/// A `note` document of `body` on the fixture post by `owner`.
+fn build_note(contract: &DataContract, body: &[u8], owner: [u8; 32], seed: u64) -> Document {
+    build(
+        contract,
+        "note",
+        vec![
+            ("postId", Value::Identifier(POST)),
+            ("body", Value::Bytes(body.to_vec())),
+        ],
+        owner,
+        seed,
+    )
+}
+
+/// A variable-width LAST component (a byte array with no `minItems`): an
+/// empty value contributes no key bytes, so the entry is keyed by the
+/// leading component alone and must still synthesize as an empty byte
+/// array rather than the tree-key null sentinel. Ranges on the last
+/// component are lowered against the key itself (no padding), in both
+/// directions of the bound, with proof parity.
+#[test]
+fn variable_width_last_component_ranges_and_empty_values() {
+    let (drive, contract) = setup();
+    let bodies: [&[u8]; 4] = [b"", b"apple", b"banana", b"cherry"];
+    for (seed, body) in bodies.iter().enumerate() {
+        insert(
+            &drive,
+            &contract,
+            "note",
+            &build_note(&contract, body, OWNER_1, seed as u64 + 1),
+            true,
+        )
+        .expect("insert note");
+    }
+    insert(
+        &drive,
+        &contract,
+        "note",
+        &build_note(&contract, b"zebra", OWNER_2, 9),
+        true,
+    )
+    .expect("insert another owner's note");
+    assert_commitment_item(
+        entry(&drive, &contract, "note", &[("postId", &POST)], &OWNER_1),
+        "an empty body keys the entry by the owner alone",
+    );
+
+    let run = |clauses: Vec<WhereClause>, what: &str| -> Vec<Vec<u8>> {
+        let mut clauses = clauses;
+        clauses.insert(0, equal("postId", Value::Identifier(POST)));
+        clauses.insert(1, equal("$ownerId", Value::Identifier(OWNER_1)));
+        let query = query_ordered(&contract, "note", clauses, vec![("body", true)], Some(10));
+        let outcome = drive
+            .query_documents(query.clone(), None, false, None, None)
+            .unwrap_or_else(|e| panic!("{what}: query executes: {e}"));
+        let bodies: Vec<Vec<u8>> = outcome
+            .documents()
+            .iter()
+            .map(|document| payload_bytes(document, "body"))
+            .collect();
+        let (proof, _) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version())
+            .unwrap_or_else(|e| panic!("{what}: proof generation: {e}"));
+        let (_root, verified) = query
+            .verify_proof(proof.as_slice(), platform_version())
+            .unwrap_or_else(|e| panic!("{what}: proof verification: {e}"));
+        let verified_bodies: Vec<Vec<u8>> = verified
+            .iter()
+            .map(|document| payload_bytes(document, "body"))
+            .collect();
+        assert_eq!(
+            verified_bodies, bodies,
+            "{what}: proved and unproved synthesis agree"
+        );
+        bodies
+    };
+    let between = |low: &[u8], high: &[u8], operator: WhereOperator| WhereClause {
+        field: "body".to_string(),
+        operator,
+        value: Value::Array(vec![
+            Value::Bytes(low.to_vec()),
+            Value::Bytes(high.to_vec()),
+        ]),
+    };
+    let bound = |operator: WhereOperator, value: &[u8]| WhereClause {
+        field: "body".to_string(),
+        operator,
+        value: Value::Bytes(value.to_vec()),
+    };
+
+    assert_eq!(
+        run(vec![], "every body of the owner"),
+        bodies.iter().map(|body| body.to_vec()).collect::<Vec<_>>(),
+        "the empty body is the owner's first key and comes back as an empty array"
+    );
+    assert_eq!(
+        run(vec![bound(WhereOperator::LessThan, b"b")], "bodies below b"),
+        vec![Vec::new(), b"apple".to_vec()]
+    );
+    assert_eq!(
+        run(
+            vec![between(b"b", b"cz", WhereOperator::Between)],
+            "bodies between b and cz"
+        ),
+        vec![b"banana".to_vec(), b"cherry".to_vec()]
+    );
+    assert_eq!(
+        run(
+            vec![between(
+                b"apple",
+                b"cherry",
+                WhereOperator::BetweenExcludeBounds
+            )],
+            "bodies strictly between apple and cherry"
+        ),
+        vec![b"banana".to_vec()]
+    );
+    assert_eq!(
+        run(
+            vec![bound(WhereOperator::GreaterThanOrEquals, b"cherry")],
+            "bodies from cherry"
+        ),
+        vec![b"cherry".to_vec()],
+        "another owner's later body sits under a different leading component"
+    );
+
+    assert_grovedb_is_consistent(&drive);
 }

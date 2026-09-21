@@ -125,6 +125,15 @@ pub struct IndexLevelTypeInfo {
     /// `false` on every pre-PV14 contract (the grammar rejects the keyword
     /// below meta-schema v3).
     pub preallocated: bool,
+    /// Whether the terminating index is FLAT (an indexOnly index with no
+    /// prefix properties, see [`Index::is_flat`]): its entries sit directly
+    /// under the `0` bucket of its own level, which is registration-time
+    /// structure like a property-name tree, so the delete walker stops its
+    /// upward prune at that bucket exactly as on a preallocated index.
+    /// Carried here so the walkers read the layout off the level info that
+    /// defines it instead of inferring it from a path height. `false` on
+    /// every pre-PV14 contract and on every prefixed index.
+    pub flat: bool,
 }
 
 impl IndexType {
@@ -522,6 +531,10 @@ impl IndexLevel {
             // Same PV14+ gating as `terminal` — `false` on every
             // historical index level.
             preallocated: index.preallocated,
+            // A flat index terminates on its own level, directly under the
+            // document type: the one layout whose prune boundary is the
+            // level's `0` bucket rather than the document type.
+            flat: index.is_flat(),
         }
     }
 

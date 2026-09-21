@@ -988,6 +988,7 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    /// The entry-payload property names of an indexOnly type (empty before V2).
     fn entry_payload(&self) -> &BTreeSet<String> {
         match self {
             DocumentType::V0(_) => &NO_ENTRY_PAYLOAD,
@@ -1112,6 +1113,7 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    /// The entry-payload property names of an indexOnly type (empty before V2).
     fn entry_payload(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(_) => &NO_ENTRY_PAYLOAD,
@@ -1202,6 +1204,7 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
         }
     }
 
+    /// The entry-payload property names of an indexOnly type (empty before V2).
     fn entry_payload(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeMutRef::V0(_) => &NO_ENTRY_PAYLOAD,
