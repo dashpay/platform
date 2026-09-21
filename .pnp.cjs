@@ -15,6 +15,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:."\
     },\
     {\
+      "name": "@dashevo/app-connect-contract",\
+      "reference": "workspace:packages/app-connect-contract"\
+    },\
+    {\
       "name": "@dashevo/bench-suite",\
       "reference": "workspace:packages/bench-suite"\
     },\
@@ -111,6 +115,7 @@ const RAW_RUNTIME_STATE =
   "ignorePatternData": "(^(?:\\\\.yarn\\\\/sdks(?:\\\\/(?!\\\\.{1,2}(?:\\\\/|$))(?:(?:(?!(?:^|\\\\/)\\\\.{1,2}(?:\\\\/|$)).)*?)|$))$)",\
   "pnpZipBackend": "libzip",\
   "fallbackExclusionList": [\
+    ["@dashevo/app-connect-contract", ["workspace:packages/app-connect-contract"]],\
     ["@dashevo/bench-suite", ["workspace:packages/bench-suite"]],\
     ["@dashevo/dapi", ["workspace:packages/dapi"]],\
     ["@dashevo/dapi-client", ["workspace:packages/js-dapi-client"]],\
@@ -2493,6 +2498,22 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["@dashevo/app-connect-contract", [\
+      ["workspace:packages/app-connect-contract", {\
+        "packageLocation": "./packages/app-connect-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/app-connect-contract", "workspace:packages/app-connect-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
+          ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
+          ["mocha", "npm:11.1.0"],\
+          ["sinon", "npm:18.0.1"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
     ["@dashevo/bench-suite", [\
       ["workspace:packages/bench-suite", {\
         "packageLocation": "./packages/bench-suite/",\
@@ -2545,8 +2566,8 @@ const RAW_RUNTIME_STATE =
           ["bs58", "npm:4.0.1"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["dotenv", "npm:8.6.0"],\
           ["dotenv-expand", "npm:5.1.0"],\
           ["dotenv-safe", "npm:8.2.0"],\
@@ -2562,7 +2583,7 @@ const RAW_RUNTIME_STATE =
           ["pino-pretty", "npm:10.2.3"],\
           ["semver", "npm:7.5.3"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
           ["swagger-jsdoc", "npm:3.7.0"],\
           ["ws", "virtual:b375dcefccef90d9158d5f197a75395cffedb61772e66f2efcf31c6c8e30c82a6423e0d52b091b15b4fa72cda43a09256ed00b6ce89b9cfb14074f087b9c8496#npm:8.17.1"]\
         ],\
@@ -2586,11 +2607,11 @@ const RAW_RUNTIME_STATE =
           ["buffer", "npm:6.0.3"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["comment-parser", "npm:0.7.6"],\
           ["core-js", "npm:3.33.2"],\
           ["crypto-browserify", "npm:3.12.1"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["events", "npm:3.3.0"],\
           ["google-protobuf", "npm:3.19.1"],\
@@ -2607,7 +2628,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["string_decoder", "npm:1.3.0"],\
           ["undici", "npm:6.25.0"],\
@@ -2630,15 +2651,15 @@ const RAW_RUNTIME_STATE =
           ["@grpc/grpc-js", "npm:1.14.3"],\
           ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["google-protobuf", "npm:3.19.1"],\
           ["long", "npm:5.2.0"],\
           ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2731,11 +2752,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2757,11 +2778,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/document-history-contract", "workspace:packages/document-history-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2787,11 +2808,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2849,8 +2870,8 @@ const RAW_RUNTIME_STATE =
           ["@grpc/proto-loader", "npm:0.5.6"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["lodash", "npm:4.17.23"],\
           ["long", "npm:5.2.0"],\
@@ -2859,7 +2880,7 @@ const RAW_RUNTIME_STATE =
           ["nyc", "npm:15.1.0"],\
           ["semver", "npm:7.5.3"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2871,11 +2892,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/keyword-search-contract", "workspace:packages/keyword-search-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2887,11 +2908,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2941,10 +2962,10 @@ const RAW_RUNTIME_STATE =
           ["buffer", "npm:6.0.3"],\
           ["bufferutil", "npm:4.0.6"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["crypto-browserify", "npm:3.12.1"],\
           ["dash", "workspace:packages/js-dash-sdk"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["dotenv-safe", "npm:8.2.0"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["events", "npm:3.3.0"],\
@@ -2969,7 +2990,7 @@ const RAW_RUNTIME_STATE =
           ["semver", "npm:7.5.3"],\
           ["setimmediate", "npm:1.0.5"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
           ["string_decoder", "npm:1.3.0"],\
@@ -3020,11 +3041,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/token-history-contract", "workspace:packages/token-history-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -3045,10 +3066,10 @@ const RAW_RUNTIME_STATE =
           ["buffer", "npm:6.0.3"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["crypto-browserify", "npm:3.12.1"],\
           ["crypto-js", "npm:4.2.0"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["dotenv-safe", "npm:8.2.0"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["events", "npm:3.3.0"],\
@@ -3071,7 +3092,7 @@ const RAW_RUNTIME_STATE =
           ["process", "npm:0.11.10"],\
           ["setimmediate", "npm:1.0.5"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
           ["string_decoder", "npm:1.3.0"],\
@@ -3093,11 +3114,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wallet-utils-contract", "workspace:packages/wallet-utils-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -3122,11 +3143,11 @@ const RAW_RUNTIME_STATE =
           ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["chai-exclude", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.1.0"],\
           ["chai-string", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:1.5.0"],\
           ["crypto-browserify", "npm:3.12.1"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["events", "npm:3.3.0"],\
           ["fast-json-patch", "npm:3.1.1"],\
@@ -3145,7 +3166,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
           ["string_decoder", "npm:1.3.0"],\
@@ -3243,11 +3264,11 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -8398,12 +8419,12 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1", {\
-        "packageLocation": "./.yarn/__virtual__/chai-as-promised-virtual-8795af412c/0/cache/chai-as-promised-npm-7.1.1-cdc17e4612-5d9ecab37b.zip/node_modules/chai-as-promised/",\
+      ["virtual:98d1afeac78a19485e4cb7428abff692e58b6fc468d8040035b560ed49383fc95857be6b5014af27e53063e6f08b654690c2b945f3443c22dd60c6b083684b3c#npm:7.1.1", {\
+        "packageLocation": "./.yarn/__virtual__/chai-as-promised-virtual-d444a37be5/0/cache/chai-as-promised-npm-7.1.1-cdc17e4612-5d9ecab37b.zip/node_modules/chai-as-promised/",\
         "packageDependencies": [\
-          ["@types/chai", null],\
+          ["@types/chai", "npm:4.3.20"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
+          ["chai-as-promised", "virtual:98d1afeac78a19485e4cb7428abff692e58b6fc468d8040035b560ed49383fc95857be6b5014af27e53063e6f08b654690c2b945f3443c22dd60c6b083684b3c#npm:7.1.1"],\
           ["check-error", "npm:1.0.3"]\
         ],\
         "packagePeers": [\
@@ -8412,12 +8433,12 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["virtual:98d1afeac78a19485e4cb7428abff692e58b6fc468d8040035b560ed49383fc95857be6b5014af27e53063e6f08b654690c2b945f3443c22dd60c6b083684b3c#npm:7.1.1", {\
-        "packageLocation": "./.yarn/__virtual__/chai-as-promised-virtual-d444a37be5/0/cache/chai-as-promised-npm-7.1.1-cdc17e4612-5d9ecab37b.zip/node_modules/chai-as-promised/",\
+      ["virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1", {\
+        "packageLocation": "./.yarn/__virtual__/chai-as-promised-virtual-d5c799738c/0/cache/chai-as-promised-npm-7.1.1-cdc17e4612-5d9ecab37b.zip/node_modules/chai-as-promised/",\
         "packageDependencies": [\
-          ["@types/chai", "npm:4.3.20"],\
+          ["@types/chai", null],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:98d1afeac78a19485e4cb7428abff692e58b6fc468d8040035b560ed49383fc95857be6b5014af27e53063e6f08b654690c2b945f3443c22dd60c6b083684b3c#npm:7.1.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["check-error", "npm:1.0.3"]\
         ],\
         "packagePeers": [\
@@ -9671,11 +9692,11 @@ const RAW_RUNTIME_STATE =
           ["begoo", "npm:2.0.2"],\
           ["bs58", "npm:4.0.1"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
+          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["chalk", "npm:4.1.2"],\
           ["cron", "npm:2.1.0"],\
           ["dashmate", "workspace:packages/dashmate"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
           ["diskusage-ng", "npm:1.0.4"],\
           ["dockerode", "npm:4.0.9"],\
           ["dot", "npm:1.1.3"],\
@@ -9704,7 +9725,7 @@ const RAW_RUNTIME_STATE =
           ["rxjs", "npm:6.6.7"],\
           ["semver", "npm:7.5.3"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
           ["systeminformation", "npm:5.31.1"],\
           ["table", "npm:6.8.1"],\
           ["tar", "npm:7.5.10"],\
@@ -10228,12 +10249,12 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1", {\
-        "packageLocation": "./.yarn/__virtual__/dirty-chai-virtual-a3086bc2f4/0/cache/dirty-chai-npm-2.0.1-acaf82c8df-b4f3d1ea01.zip/node_modules/dirty-chai/",\
+      ["virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1", {\
+        "packageLocation": "./.yarn/__virtual__/dirty-chai-virtual-7efea90668/0/cache/dirty-chai-npm-2.0.1-acaf82c8df-b4f3d1ea01.zip/node_modules/dirty-chai/",\
         "packageDependencies": [\
           ["@types/chai", null],\
           ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"]\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"]\
         ],\
         "packagePeers": [\
           "@types/chai",\
@@ -19781,14 +19802,14 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0", {\
-        "packageLocation": "./.yarn/__virtual__/sinon-chai-virtual-9ba2472305/0/cache/sinon-chai-npm-3.7.0-8e6588805e-028853eb8a.zip/node_modules/sinon-chai/",\
+      ["virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0", {\
+        "packageLocation": "./.yarn/__virtual__/sinon-chai-virtual-68fbcb0797/0/cache/sinon-chai-npm-3.7.0-8e6588805e-028853eb8a.zip/node_modules/sinon-chai/",\
         "packageDependencies": [\
           ["@types/chai", null],\
           ["@types/sinon", null],\
           ["chai", "npm:4.3.10"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
         ],\
         "packagePeers": [\
           "@types/chai",\
