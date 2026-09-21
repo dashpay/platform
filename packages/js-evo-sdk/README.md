@@ -16,6 +16,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Facades](#facades)
 - [Ranked queries](#ranked-queries)
 - [Document references (`refersTo`)](#document-references-refersto)
+- [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
@@ -223,6 +224,22 @@ try {
   }
 }
 ```
+
+## Building a document create transition by hand
+
+`sdk.documents.create` fetches the nonce, builds, signs, broadcasts and returns the confirmed document, whose `id` is the one Platform stored. An app that needs the signed transition itself (to broadcast later, or to cache the signed bytes) builds it from the re-exported `wasm-dpp2` classes:
+
+```ts
+import { Document, DocumentCreateTransition, BatchTransition } from '@dashevo/evo-sdk';
+
+const document = new Document({ properties, documentTypeName, dataContractId, ownerId });
+const transition = new DocumentCreateTransition({ document, identityContractNonce: nonce });
+const batch = BatchTransition.fromBatchedTransitions([transition.toDocumentTransition()], ownerId, 0); // userFeeIncrease
+const stateTransition = batch.toStateTransition();
+// sign, then sdk.stateTransitions.broadcast(stateTransition)
+```
+
+From protocol version 14 the id of a new document commits to the identity contract nonce of its create transition. `new DocumentCreateTransition(...)` derives that id from the document's entropy and `identityContractNonce`, puts it on the transition and writes it back onto `document`, so `document.id` is final once the transition exists and equals `transition.base.id`. Before that the `Document` carries a placeholder. To know the id earlier, `document.setIdForCreation(nonce)` or `Document.generateId(type, owner, contract, entropy, nonce)`, or pass `identityContractNonce` to the `Document` constructor. Pass `platformVersion` (defaults to latest) to any of them for a network on an earlier protocol version. No app needs to reimplement the hash.
 
 ## Immutable properties (`immutable`)
 
