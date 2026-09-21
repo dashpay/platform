@@ -590,6 +590,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderation_reason_length: 1024,
         max_contract_warnings_per_identity: 16,
         max_contract_moderation_reason_documents: 16,
+        contract_document_restore_window_ms: 604_800_000,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,

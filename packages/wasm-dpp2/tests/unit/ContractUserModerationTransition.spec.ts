@@ -12,13 +12,15 @@ const DOCUMENT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const DOCUMENT_TYPE_NAME = 'post';
 
 interface ModerationOptions {
-  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument';
-  /** `null` leaves the identity out; left undefined, every action but a deleteDocument gets `TARGET_ID` */
+  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument';
+  /** `null` leaves the identity out; left undefined, every action but a deleteDocument or a restoreDocument gets `TARGET_ID` */
   identityId?: string | null;
-  /** `null` leaves it out; left undefined, a deleteDocument gets `DOCUMENT_TYPE_NAME` */
+  /** `null` leaves it out; left undefined, a deleteDocument or a restoreDocument gets `DOCUMENT_TYPE_NAME` */
   documentTypeName?: string | null;
   /** `null` leaves it out; left undefined, a deleteDocument gets `DOCUMENT_ID` */
   documentId?: string | null;
+  /** `null` leaves it out; left undefined, a restoreDocument gets `DOCUMENT_BYTES` */
+  document?: Uint8Array | null;
   until?: bigint;
   /** `null` leaves the reason out; left undefined, a ban, a suspend and a warn get `REASON` */
   reason?: { code?: number; text: string; documents?: { documentTypeName: string; documentId: string }[] } | null;
@@ -27,6 +29,8 @@ interface ModerationOptions {
 }
 
 const REASON = { text: 'spam' };
+/** What a restore carries: the document as it was serialized when it was deleted */
+const DOCUMENT_BYTES = new Uint8Array(70).fill(7);
 
 function createTransition(options: ModerationOptions = {}) {
   const action = options.action ?? 'ban';
@@ -35,17 +39,23 @@ function createTransition(options: ModerationOptions = {}) {
   if (reason === undefined && addsAnEntry) {
     reason = REASON;
   }
-  // A deletion names a document and every other action an identity.
+  // A deletion and a restore name a document and every other action an identity.
   const deletesADocument = action === 'deleteDocument';
-  let { identityId, documentTypeName, documentId } = options;
-  if (identityId === undefined && !deletesADocument) {
+  const restoresADocument = action === 'restoreDocument';
+  let {
+    identityId, documentTypeName, documentId, document,
+  } = options;
+  if (identityId === undefined && !deletesADocument && !restoresADocument) {
     identityId = TARGET_ID;
   }
-  if (documentTypeName === undefined && deletesADocument) {
+  if (documentTypeName === undefined && (deletesADocument || restoresADocument)) {
     documentTypeName = DOCUMENT_TYPE_NAME;
   }
   if (documentId === undefined && deletesADocument) {
     documentId = DOCUMENT_ID;
+  }
+  if (document === undefined && restoresADocument) {
+    document = DOCUMENT_BYTES;
   }
 
   return new wasm.ContractUserModeration({
@@ -56,6 +66,7 @@ function createTransition(options: ModerationOptions = {}) {
     identityId: identityId ?? undefined,
     documentTypeName: documentTypeName ?? undefined,
     documentId: documentId ?? undefined,
+    document: document ?? undefined,
     until: options.until,
     reason: reason ?? undefined,
     userFeeIncrease: options.userFeeIncrease,
@@ -114,6 +125,31 @@ describe('ContractUserModeration', () => {
       expect(() => createTransition({ action: 'deleteDocument', until: BigInt(5) })).to.throw();
     });
 
+    it('should create a document restore, which carries the document and names no identity', () => {
+      const transition = createTransition({ action: 'restoreDocument' });
+
+      expect(transition.action).to.equal('restoreDocument');
+      expect(transition.documentTypeName).to.equal(DOCUMENT_TYPE_NAME);
+      expect(transition.document).to.deep.equal(DOCUMENT_BYTES);
+      expect(transition.documentId).to.equal(undefined);
+      expect(transition.identityId).to.equal(undefined);
+      expect(transition.until).to.equal(undefined);
+      expect(transition.reason).to.equal(undefined);
+    });
+
+    it('should refuse a document restore without its document type or its document', () => {
+      expect(() => createTransition({ action: 'restoreDocument', documentTypeName: null })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', document: null })).to.throw();
+    });
+
+    it('should refuse on a document restore what it does not carry', () => {
+      expect(() => createTransition({ action: 'restoreDocument', identityId: TARGET_ID })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', documentId: DOCUMENT_ID })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', reason: REASON })).to.throw();
+      expect(() => createTransition({ action: 'restoreDocument', until: BigInt(5) })).to.throw();
+      expect(() => createTransition({ action: 'deleteDocument', document: DOCUMENT_BYTES })).to.throw();
+    });
+
     it('should create a warning and its clearing, which name an identity', () => {
       const warn = createTransition({ action: 'warn', reason: { code: 1, text: 'first strike' } });
 
@@ -139,6 +175,7 @@ describe('ContractUserModeration', () => {
       (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings'] as const).forEach((action) => {
         expect(() => createTransition({ action, documentTypeName: DOCUMENT_TYPE_NAME })).to.throw();
         expect(() => createTransition({ action, documentId: DOCUMENT_ID })).to.throw();
+        expect(() => createTransition({ action, document: DOCUMENT_BYTES })).to.throw();
       });
       expect(() => createTransition({
         action: 'suspend',

@@ -857,6 +857,13 @@ message GetContractDocumentRemovalsRequest {
 }
 
 message GetContractDocumentRemovalsResponse {
+  message ContractDocumentRestoration {
+    bytes moderator_id =
+        1; // The contract owner or moderator that restored the document
+    uint64 restored_at =
+        2; // The time of the block that restored it, in milliseconds
+  }
+
   message ContractDocumentRemoval {
     bytes document_id = 1;       // The id the removed document had
     bytes document_owner_id = 2; // The identity that owned it
@@ -864,6 +871,13 @@ message GetContractDocumentRemovalsResponse {
     uint64 removed_at =
         4; // The time of the block that removed it, in milliseconds
     ContractModerationReason reason = 5; // Why the moderator removed it
+    bytes document_hash =
+        6; // A 32-byte double SHA-256 of the document as it was serialized
+           // under its document type when it was removed: what a restore must
+           // bring back byte for byte
+    ContractDocumentRestoration restoration =
+        7; // Set once a moderator restored the document, which is then live
+           // again as it was; absent while the removal stands
   }
 
   message ContractDocumentRemovals {

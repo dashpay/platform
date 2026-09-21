@@ -211,6 +211,40 @@ fn should_refuse_the_flag_on_an_index_only_type() {
 }
 
 #[test]
+fn should_refuse_the_flag_on_a_type_with_a_contested_index() {
+    // A moderator's restore puts a deleted document back through an ordinary insert; a
+    // contested index only takes a document through a vote, so such a deletion could never be
+    // undone.
+    let schema = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeletedByModerators": true,
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{ "normalizedLabel": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [
+                        { "field": "normalizedLabel", "regexPattern": "^[a-z]{3,}$" },
+                    ],
+                    "resolution": 0,
+                },
+            },
+        ],
+        "properties": {
+            "normalizedLabel": { "type": "string", "maxLength": 50, "position": 0 },
+        },
+        "required": ["normalizedLabel"],
+        "additionalProperties": false,
+    });
+    assert_refused_naming(
+        parse_moderated(schema),
+        &["contested index", "canBeDeletedByModerators"],
+    );
+}
+
+#[test]
 fn should_allow_the_flag_on_a_transferable_tradeable_type() {
     let document_type = parse_moderated(post_schema(platform_value!({
         "transferable": 1,

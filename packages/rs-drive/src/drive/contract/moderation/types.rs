@@ -1,6 +1,6 @@
 use dpp::data_contract::config::moderation::{
-    ContractBan, ContractDocumentRemoval, ContractModerationDocument, ContractModerationList,
-    ContractModerationReason, ContractSuspension, ContractWarning,
+    ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
+    ContractModerationList, ContractModerationReason, ContractSuspension, ContractWarning,
 };
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::Identifier;
@@ -182,27 +182,55 @@ impl ContractDocumentRemovalEntry {
 }
 
 /// The stored size of what a document removal starts with: the document owner's id, the
-/// moderator's id and the removal time as a u64.
-pub const CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE: usize = 32 + 32 + 8;
+/// moderator's id, the removal time as a u64, the hash of the removed document and the tag
+/// byte that says whether a restoration follows.
+pub const CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE: usize = 32 + 32 + 8 + 32 + 1;
+
+/// The stored size of the restoration a restored record carries after its tag: the restoring
+/// moderator's id and the restoration time as a u64.
+pub const CONTRACT_DOCUMENT_RESTORATION_SIZE: usize = 32 + 8;
+
+const NOT_RESTORED: u8 = 0;
+const RESTORED: u8 = 1;
 
 /// The size a document removal record is estimated at when its value is not known: the
-/// records a write walks past, sized like a list entry's typical reason. A record being
-/// written is priced by its own size.
+/// records a write walks past, sized like a list entry's typical reason and as if restored,
+/// the larger of the two shapes. A record being written is priced by its own size.
 pub fn estimated_document_removal_value_size() -> u32 {
-    CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE as u32
+    (CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + CONTRACT_DOCUMENT_RESTORATION_SIZE) as u32
         + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
         + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
 }
 
+/// The stored size of a document removal record.
+pub fn document_removal_encoded_size(removal: &ContractDocumentRemoval) -> usize {
+    CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE
+        + if removal.restoration.is_some() {
+            CONTRACT_DOCUMENT_RESTORATION_SIZE
+        } else {
+            0
+        }
+        + reason_encoded_size(&removal.reason)
+}
+
 /// Encodes a document removal record: the document owner's id, the moderator's id, the removal
-/// time as eight big-endian bytes, then the reason as in [`encode_ban`].
+/// time as eight big-endian bytes, the hash of the removed document, a tag byte (`0`: not
+/// restored, `1`: restored) followed when restored by the restoring moderator's id and the
+/// restoration time as eight big-endian bytes, then the reason as in [`encode_ban`].
 pub fn encode_document_removal(removal: &ContractDocumentRemoval) -> Vec<u8> {
-    let mut value = Vec::with_capacity(
-        CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + reason_encoded_size(&removal.reason),
-    );
+    let mut value = Vec::with_capacity(document_removal_encoded_size(removal));
     value.extend_from_slice(removal.document_owner_id.as_slice());
     value.extend_from_slice(removal.moderator_id.as_slice());
     value.extend_from_slice(&removal.removed_at.to_be_bytes());
+    value.extend_from_slice(&removal.document_hash);
+    match &removal.restoration {
+        None => value.push(NOT_RESTORED),
+        Some(restoration) => {
+            value.push(RESTORED);
+            value.extend_from_slice(restoration.moderator_id.as_slice());
+            value.extend_from_slice(&restoration.restored_at.to_be_bytes());
+        }
+    }
     encode_reason_into(&removal.reason, &mut value);
     value
 }
@@ -218,7 +246,33 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
     };
     let (document_owner_id, rest) = value.split_first_chunk::<32>().ok_or_else(cut_short)?;
     let (moderator_id, rest) = rest.split_first_chunk::<32>().ok_or_else(cut_short)?;
-    let (removed_at, reason) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
+    let (removed_at, rest) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
+    let (document_hash, rest) = rest.split_first_chunk::<32>().ok_or_else(cut_short)?;
+    let (tag, rest) = rest.split_first().ok_or_else(cut_short)?;
+    let (restoration, reason) = match *tag {
+        NOT_RESTORED => (None, rest),
+        RESTORED => {
+            let (restored_by, rest) = rest.split_first_chunk::<32>().ok_or_else(|| {
+                "document removal is cut short inside its restoration".to_string()
+            })?;
+            let (restored_at, reason) = rest.split_first_chunk::<8>().ok_or_else(|| {
+                "document removal is cut short inside its restoration".to_string()
+            })?;
+            (
+                Some(ContractDocumentRestoration {
+                    moderator_id: Identifier::from(*restored_by),
+                    restored_at: TimestampMillis::from_be_bytes(*restored_at),
+                }),
+                reason,
+            )
+        }
+        tag => {
+            return Err(format!(
+                "document removal has unknown restoration tag {}",
+                tag
+            ))
+        }
+    };
     // A list entry with no reason bytes is one written before entries carried a reason. No
     // record was ever written without one, so here the same bytes are a record cut short.
     if reason.is_empty() {
@@ -229,6 +283,8 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
         moderator_id: Identifier::from(*moderator_id),
         reason: decode_reason(reason)?,
         removed_at: TimestampMillis::from_be_bytes(*removed_at),
+        document_hash: *document_hash,
+        restoration,
     })
 }
 
@@ -642,13 +698,41 @@ mod tests {
                 documents: vec![],
             },
             removed_at: 1_700_000_000_123,
+            document_hash: [4; 32],
+            restoration: None,
         };
         let value = encode_document_removal(&removal);
         assert_eq!(&value[..32], &[1; 32]);
         assert_eq!(&value[32..64], &[2; 32]);
         assert_eq!(&value[64..72], &1_700_000_000_123u64.to_be_bytes());
-        assert_eq!(&value[72..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(&value[72..104], &[4; 32]);
+        assert_eq!(value[104], 0, "not restored");
+        assert_eq!(&value[105..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(value.len(), document_removal_encoded_size(&removal));
         assert_eq!(decode_document_removal(&value).expect("decode"), removal);
+
+        // Restored: the restoring moderator and the time follow the tag, before the reason.
+        let restored = ContractDocumentRemoval {
+            restoration: Some(ContractDocumentRestoration {
+                moderator_id: Identifier::from([5; 32]),
+                restored_at: 1_700_000_000_999,
+            }),
+            ..removal.clone()
+        };
+        let value = encode_document_removal(&restored);
+        assert_eq!(value[104], 1, "restored");
+        assert_eq!(&value[105..137], &[5; 32]);
+        assert_eq!(&value[137..145], &1_700_000_000_999u64.to_be_bytes());
+        assert_eq!(&value[145..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(value.len(), document_removal_encoded_size(&restored));
+        assert_eq!(decode_document_removal(&value).expect("decode"), restored);
+        assert!(
+            decode_document_removal(&value[..140]).is_err(),
+            "a record cut short inside its restoration is refused"
+        );
+        let mut unknown_tag = value.clone();
+        unknown_tag[104] = 2;
+        assert!(decode_document_removal(&unknown_tag).is_err());
 
         // No code and no text: what a moderator that gives no reason leaves.
         let bare = ContractDocumentRemoval {

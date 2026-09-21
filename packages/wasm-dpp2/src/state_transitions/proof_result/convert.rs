@@ -413,6 +413,15 @@ pub fn convert_proof_result(
             moderator_id: removal.moderator_id.into(),
             reason: removal.reason,
             removed_at: removal.removed_at,
+            document_hash: removal.document_hash,
+            restored_by: removal
+                .restoration
+                .as_ref()
+                .map(|restoration| restoration.moderator_id.into()),
+            restored_at: removal
+                .restoration
+                .as_ref()
+                .map(|restoration| restoration.restored_at),
         }
         .into(),
     };

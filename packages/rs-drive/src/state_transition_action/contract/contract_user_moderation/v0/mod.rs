@@ -1,7 +1,8 @@
 mod transformer;
 
 use crate::drive::contract::DataContractFetchInfo;
-use dpp::data_contract::config::moderation::ContractWarning;
+use dpp::data_contract::config::moderation::{ContractDocumentRemoval, ContractWarning};
+use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
@@ -25,9 +26,12 @@ pub struct ContractUserModerationTransitionActionV0 {
     pub target_is_suspended: bool,
     /// what a warn read when the transition was validated, `None` for every other action
     pub warning: Option<ContractWarningContext>,
-    /// what a document deletion read when the transition was validated, `None` for an action
-    /// on an identity
+    /// what a document deletion read when the transition was validated, `None` for every
+    /// other action
     pub document_deletion: Option<ContractDocumentDeletionContext>,
+    /// what a document restore read and decoded when the transition was validated, `None`
+    /// for every other action
+    pub document_restoration: Option<ContractDocumentRestorationContext>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }
@@ -52,4 +56,23 @@ pub struct ContractDocumentDeletionContext {
     pub document_owner_id: Identifier,
     /// the time of the block the deletion runs in, recorded as the removal time
     pub removed_at: TimestampMillis,
+    /// a double SHA-256 of the document as serialized under its type, recorded so that a
+    /// restore can be checked against it
+    pub document_hash: [u8; 32],
+    /// whether the document has a removal record already, from a deletion a moderator
+    /// restored: the fresh record then replaces it
+    pub replaces_restored_record: bool,
+}
+
+/// What the validation of a document restore read and decoded, so that Drive puts the
+/// document back and marks its removal record without reading again.
+#[derive(Debug, Clone)]
+pub struct ContractDocumentRestorationContext {
+    /// the moderated contract, as fetched: the restore resolves the document type from it
+    pub data_contract_fetch_info: Arc<DataContractFetchInfo>,
+    /// the document, decoded from the transition's bytes under its type: what is put back
+    pub document: Document,
+    /// the document's removal record as it will be stored: the record read, marked restored
+    /// by the signer at the block's time
+    pub removal: ContractDocumentRemoval,
 }

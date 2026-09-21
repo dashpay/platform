@@ -139,8 +139,10 @@ export interface ContractDocumentRemovalsQuery {
 }
 
 /**
- * The record a contract keeps of one document a moderator deleted. It is final: a document id
- * is produced at most once, so the removed id can not be created again.
+ * The record a contract keeps of one document a moderator deleted. A document id is produced
+ * at most once, so the removed id can not be created again; what can bring the document back
+ * is a moderator's restore within a week of the deletion, which marks the record restored and
+ * leaves it in place. A restored document deleted again gets a fresh record.
  */
 export interface ContractDocumentRemovalEntry {
   documentId: string;
@@ -152,6 +154,15 @@ export interface ContractDocumentRemovalEntry {
   reason: ContractModerationReason;
   /** The time of the block that removed it, in milliseconds. */
   removedAt: bigint;
+  /**
+   * A double SHA-256 of the document as it was serialized under its type when it was
+   * removed, as 64 hex characters: what a restore must bring back byte for byte.
+   */
+  documentHash: string;
+  /** The contract owner or moderator that restored the document; absent while the removal stands. */
+  restoredBy?: string;
+  /** The time of the block that restored it, in milliseconds; absent while the removal stands. */
+  restoredAt?: bigint;
 }
 
 /**
@@ -436,10 +447,12 @@ fn entries_to_js(
     Ok(result.into())
 }
 
-/// Sets `documentOwnerId`, `moderatorId`, `reason` and `removedAt` on `target`. The removals
-/// query and the result of a deletion carry the same record, so they share this. Each writes
-/// identifiers its own way, which `id_to_js` decides: base58 strings in a query answer, as the
-/// entries of a moderation list are, and `Identifier`s in the result of a transition.
+/// Sets `documentOwnerId`, `moderatorId`, `reason`, `removedAt` and `documentHash` on
+/// `target`, and `restoredBy` and `restoredAt` when the document was restored. The removals
+/// query and the result of a deletion or a restore carry the same record, so they share this.
+/// Each writes identifiers its own way, which `id_to_js` decides: base58 strings in a query
+/// answer, as the entries of a moderation list are, and `Identifier`s in the result of a
+/// transition. The hash is 64 hex characters either way.
 pub(crate) fn set_removal_fields(
     target: &js_sys::Object,
     removal: &ContractDocumentRemoval,
@@ -453,7 +466,19 @@ pub(crate) fn set_removal_fields(
     set("documentOwnerId", id_to_js(removal.document_owner_id))?;
     set("moderatorId", id_to_js(removal.moderator_id))?;
     set("reason", moderation_reason_to_js(&removal.reason))?;
-    set("removedAt", js_sys::BigInt::from(removal.removed_at).into())
+    set("removedAt", js_sys::BigInt::from(removal.removed_at).into())?;
+    set(
+        "documentHash",
+        JsValue::from_str(&hex::encode(removal.document_hash)),
+    )?;
+    if let Some(restoration) = &removal.restoration {
+        set("restoredBy", id_to_js(restoration.moderator_id))?;
+        set(
+            "restoredAt",
+            js_sys::BigInt::from(restoration.restored_at).into(),
+        )?;
+    }
+    Ok(())
 }
 
 fn removals_to_js(
