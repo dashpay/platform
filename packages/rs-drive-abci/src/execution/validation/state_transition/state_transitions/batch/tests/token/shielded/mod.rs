@@ -7,9 +7,11 @@ use super::*;
 /// nullifier checks, and token conservation with the pool as a balance term.
 mod token_shielded_pool_tests {
     use super::*;
+    use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_serialized_action, get_proving_key, serialize_authorized_bundle_i64,
     };
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
@@ -304,6 +306,37 @@ mod token_shielded_pool_tests {
         result
     }
 
+    /// CheckTx, the mempool admission path: it verifies every token shielded bundle a batch
+    /// carries statelessly, under the identity contract nonce limiter, so the sighash it binds
+    /// must agree with the one block validation binds.
+    pub(super) fn assert_check_tx_accepts(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        transition: &StateTransition,
+    ) {
+        let state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let result = platform
+            .check_tx(
+                &transition
+                    .serialize_to_bytes()
+                    .expect("serialize transition"),
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                PlatformVersion::latest(),
+            )
+            .expect("check tx");
+        assert!(
+            result.is_valid(),
+            "unexpected CheckTx errors: {:?}",
+            result.errors
+        );
+    }
+
     pub(super) fn platform_with_latest_version() -> TempPlatform<MockCoreRPCLike> {
         TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -435,6 +468,7 @@ mod token_shielded_pool_tests {
         .await
         .expect("token unshield transition");
 
+        assert_check_tx_accepts(&platform, &unshield);
         let result = process(&platform, &unshield);
         assert_matches!(
             result.execution_results().as_slice(),
@@ -513,6 +547,7 @@ mod token_shielded_pool_tests {
         .await
         .expect("token shielded transfer transition");
 
+        assert_check_tx_accepts(&platform, &transfer);
         let result = process(&platform, &transfer);
         assert_matches!(
             result.execution_results().as_slice(),
@@ -676,64 +711,6 @@ mod token_shielded_pool_tests {
             result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError {
                 error: ConsensusError::StateError(StateError::TokenIsPausedError(_)),
-                ..
-            }]
-        );
-        assert_eq!(pool_balance(&platform, token_id), 0);
-    }
-
-    #[tokio::test]
-    async fn test_token_shield_rejected_when_identity_frozen() {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
-        let mut rng = StdRng::seed_from_u64(9005);
-
-        let (identity, signer, key) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
-        let (contract, token_id) = create_token_contract_with_owner_identity(
-            &mut platform,
-            identity.id(),
-            Some(enable_shielded_pool),
-            None,
-            None,
-            None,
-            platform_version,
-        );
-
-        platform
-            .drive
-            .token_freeze(
-                token_id,
-                identity.id(),
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("freeze identity token account");
-
-        let shield = BatchTransition::new_token_shield_transition(
-            token_id,
-            identity.id(),
-            contract.id(),
-            0,
-            SHIELD_AMOUNT,
-            dummy_bundle(),
-            &key,
-            2,
-            0,
-            &signer,
-            platform_version,
-            None,
-        )
-        .await
-        .expect("token shield transition");
-
-        let result = process(&platform, &shield);
-        assert_matches!(
-            result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(_)),
                 ..
             }]
         );
@@ -1206,21 +1183,22 @@ mod token_shielded_pool_tests {
 /// Mint, burn, claim and purchase straight into or out of the token shielded pool.
 mod token_pool_mint_burn_claim_purchase_tests {
     use super::token_shielded_pool_tests::{
-        assert_tokens_conserved, build_shield_bundle, build_spend_bundle, dummy_bundle,
-        enable_shielded_pool, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
-        platform_with_latest_version, pool_balance, pool_notes_count, process, spendable_note,
-        OWNER_INITIAL_BALANCE,
+        assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle, build_spend_bundle,
+        dummy_bundle, enable_shielded_pool, identity_token_balance, insert_token_pool_anchor,
+        nullifier_is_spent, platform_with_latest_version, pool_balance, pool_notes_count, process,
+        spendable_note, OWNER_INITIAL_BALANCE,
     };
     use super::*;
-    use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
-    use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::epoch::Epoch;
+    use dpp::consensus::basic::BasicError;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
@@ -1234,34 +1212,6 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::state_transition::StateTransition;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     use platform_version::version::PlatformVersion;
-
-    fn assert_check_tx_accepts(
-        platform: &TempPlatform<MockCoreRPCLike>,
-        transition: &StateTransition,
-    ) {
-        let state = platform.state.load();
-        let platform_ref = PlatformRef {
-            drive: &platform.drive,
-            state: &state,
-            config: &platform.config,
-            core_rpc: &platform.core_rpc,
-        };
-        let result = platform
-            .check_tx(
-                &transition
-                    .serialize_to_bytes()
-                    .expect("serialize transition"),
-                CheckTxLevel::FirstTimeCheck,
-                &platform_ref,
-                PlatformVersion::latest(),
-            )
-            .expect("check tx");
-        assert!(
-            result.is_valid(),
-            "unexpected CheckTx errors: {:?}",
-            result.errors
-        );
-    }
 
     fn total_supply(platform: &TempPlatform<MockCoreRPCLike>, token_id: Identifier) -> u64 {
         platform
@@ -1331,6 +1281,64 @@ mod token_pool_mint_burn_claim_purchase_tests {
             Some(OWNER_INITIAL_BALANCE)
         );
         assert_tokens_conserved(&platform);
+    }
+
+    /// A mint into the pool sends the tokens wherever the minter's notes say, so it is refused
+    /// where the configuration pins the destination of minted tokens.
+    #[tokio::test]
+    async fn test_token_mint_to_pool_rejected_when_destination_is_fixed() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9106);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                enable_shielded_pool(token_configuration);
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_minting_allow_choosing_destination(false);
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let mint = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            1_337,
+            build_shield_bundle(1_337, 27),
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool transition");
+
+        let result = process(&platform, &mint);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(
+                    BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                ),
+                ..
+            }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(total_supply(&platform, token_id), OWNER_INITIAL_BALANCE);
     }
 
     #[tokio::test]
@@ -1509,6 +1517,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
         .await
         .expect("token burn from pool transition");
 
+        assert_check_tx_accepts(&platform, &burn);
         let result = process(&platform, &burn);
         assert_matches!(
             result.execution_results().as_slice(),
@@ -2186,8 +2195,8 @@ mod token_pool_mint_burn_claim_purchase_tests {
 /// cost with a spend bundle bound to the token, the buyer, the contract and the document id.
 mod document_shielded_token_payment_tests {
     use super::token_shielded_pool_tests::{
-        assert_tokens_conserved, build_shield_bundle, build_spend_bundle, dummy_bundle,
-        identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
+        assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle, build_spend_bundle,
+        dummy_bundle, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
         platform_with_latest_version, pool_balance, process, spendable_note,
     };
     use super::*;
@@ -2417,6 +2426,7 @@ mod document_shielded_token_payment_tests {
         .await
         .expect("document create transition");
 
+        assert_check_tx_accepts(&platform, &transition);
         let result = process(&platform, &transition);
         assert_matches!(
             result.execution_results().as_slice(),

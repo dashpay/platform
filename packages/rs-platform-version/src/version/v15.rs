@@ -26,8 +26,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
 ///    identity balance, the supply and the pool or inside it; the identity
 ///    signs and pays the fee in credits, and every spend bundle binds the
-///    token id and owner id (plus the recipient and amount where tokens leave
-///    the pool) into the Orchard sighash. The pool balances are a term of the
+///    token id and the batch owner (a burn binds the burner: the batch owner,
+///    or the proposer of a group action), plus the recipient and amount where
+///    tokens leave the pool, into the Orchard sighash. The pool balances are a term of the
 ///    token conservation check (`calculate_total_tokens_balance` v1 in
 ///    `DRIVE_TOKEN_METHOD_VERSIONS_V3`, reached through `DRIVE_VERSION_V10`).
 ///    `record_token_shielded_pool_anchors` (`DRIVE_ABCI_METHOD_VERSIONS_V11`)

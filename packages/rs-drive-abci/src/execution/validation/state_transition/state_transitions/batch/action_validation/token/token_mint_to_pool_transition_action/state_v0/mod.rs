@@ -14,6 +14,8 @@ use crate::execution::validation::state_transition::batch::action_validation::to
     validate_token_shielded_pool_enabled, verify_token_pool_bundle,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::FLAGS_OUTPUTS_ONLY;
+use dpp::consensus::basic::token::ChoosingTokenMintRecipientNotAllowedError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::group::ModificationOfGroupActionMainParametersNotPermittedError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::TokenMintPastMaxSupplyError;
@@ -21,6 +23,7 @@ use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupActionAccessors;
 use dpp::shielded::serialized_actions_digest;
@@ -80,6 +83,19 @@ impl TokenMintToPoolTransitionActionStateValidationV0 for TokenMintToPoolTransit
 
         let contract = &self.data_contract_fetch_info_ref().contract;
         let token_configuration = contract.expected_token_configuration(self.token_position())?;
+        // The notes' recipients are the minter's choice, so a mint into the pool is only
+        // allowed where the minter may choose the destination of a transparent mint.
+        if !token_configuration
+            .distribution_rules()
+            .minting_allow_choosing_destination()
+        {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                BasicError::ChoosingTokenMintRecipientNotAllowedError(
+                    ChoosingTokenMintRecipientNotAllowedError::new(token_id),
+                )
+                .into(),
+            ));
+        }
         let rules = token_configuration.manual_minting_rules();
         let main_control_group = token_configuration.main_control_group();
         let validation_result = self.base().validate_group_action(

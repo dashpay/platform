@@ -8,6 +8,11 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::BatchedTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::InvalidTokenClaimPropertyMismatch;
+use dpp::consensus::ConsensusError;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::fee::fee_result::FeeResult;
 use dpp::shielded::compute_shielded_verification_fee;
 use dpp::identifier::Identifier;
@@ -106,6 +111,32 @@ impl TokenClaimToPoolTransitionActionV0 {
             }
         };
 
+        // A perpetual claim into the pool must name the moment it claims up to: the bundle
+        // proves an exact amount, which only a pinned moment makes predictable.
+        if matches!(distribution_type, TokenDistributionType::Perpetual) && claim_up_to.is_none() {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                    base,
+                    owner_id,
+                    user_fee_increase,
+                );
+            let batched_action =
+                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+            return Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    batched_action,
+                    vec![ConsensusError::StateError(
+                        StateError::InvalidTokenClaimPropertyMismatch(
+                            InvalidTokenClaimPropertyMismatch::new(
+                                "claim up to moment",
+                                base.token_id(),
+                            ),
+                        ),
+                    )],
+                ),
+                fee_result,
+            ));
+        }
         let (amount, distribution_info) = match resolve_token_claim(
             drive,
             owner_id,

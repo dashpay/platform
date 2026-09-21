@@ -64,8 +64,8 @@ balances, a token with `hasShieldedPool` must disable them permanently: `freezeR
 have no admin action takers, so no later configuration update can switch them on. Contract
 create and update reject anything else with `TokenShieldedPoolIncompatibleRulesError` (10278).
 Pausing still works: shield, unshield and shielded transfer are all rejected while the token is
-paused. The frozen-account checks in the shield and unshield validators remain as defence in
-depth for state written before this rule.
+paused. A pooled token can never freeze an account, so the pool validators read and bill no
+frozen-account check.
 
 ## Batch transitions
 
@@ -78,7 +78,7 @@ fees, so unlike the credit pool nothing is carved from the bundle's value balanc
 | `TokenShield` | outputs only | `-amount` | none | `amount` leaves the owner's balance and enters the pool as new notes. |
 | `TokenUnshield` | spends and outputs | `+amount` | `token_id, owner_id, recipient_id, amount` | Notes are spent; `amount` is credited to `recipient_id`; change comes back as new notes. |
 | `TokenShieldedTransfer` | spends and outputs | `0` | `token_id, owner_id` | Notes are spent and recreated; the pool balance is unchanged. |
-| `TokenMintToPool` | outputs only | `-amount` | none | An authorized minter (manual minting rules, group actions supported) mints `amount` into new notes; the supply and the pool balance grow. |
+| `TokenMintToPool` | outputs only | `-amount` | none | An authorized minter (manual minting rules, group actions supported) mints `amount` into new notes; the supply and the pool balance grow. Allowed only where `mintingAllowChoosingDestination` is set, since the notes' recipients are the minter's choice. |
 | `TokenBurnFromPool` | spends and outputs | `+amount` | `token_id, burner_id, amount` | An authorized burner (manual burning rules, group actions supported) spends notes and destroys `amount`; the supply and the pool balance shrink. `burner_id` is the batch owner, or the proposer of a group action. |
 | `TokenClaimToPool` | outputs only | `-amount` | none | A distribution claim released into new notes instead of the claimant's balance; a perpetual claim names the cycle-aligned moment it claims up to so the amount is predictable. |
 | `TokenDirectPurchaseToPool` | outputs only | `-token_count` | none | The buyer pays credits at the direct purchase price and the tokens are minted into new notes. |
@@ -151,8 +151,8 @@ flat storage of what the transition writes outside the pools; a purchase adds th
 on top), both proofs are verified statelessly, and the transform validates the pools: the
 token owns a pool and is not paused, the token bundle's anchor is recorded and its nullifiers
 unspent in the token pool, the credit pool holds what leaves it and the fee bundle's anchor and
-nullifiers check out there, plus the transition's own rules (recipient exists and is not frozen
-for an unshield, the pricing schedule and the max supply for a purchase). Execution is a
+nullifiers check out there, plus the transition's own rules (recipient exists for an
+unshield, the pricing schedule and the max supply for a purchase). Execution is a
 `PaidFromShieldedPool` event: the fee goes to the fee pools, the token side is the matching
 token operation, and a purchase credits the contract owner. Uniqueness is by the spent
 nullifiers of both bundles; a replay is an unpaid rejection. CheckTx admits their proofs under
@@ -171,11 +171,11 @@ State validation runs in this order, and the first failure is returned:
 
 1. The token base transition (contract exists, position valid, nonce).
 2. `hasShieldedPool` on the token's configuration, else `TokenShieldedPoolNotEnabledError`.
-3. Shield: the owner holds `amount`, the owner's account is not frozen, the token is not
-   paused. Unshield: the token is not paused, the recipient identity exists, the recipient's
-   account is not frozen unless the token allows transfers to frozen balances. Shielded
-   transfer: the token is not paused. Mint to pool: the minting rules authorize the identity
-   (or group) and the max supply is not exceeded. Burn from pool: the burning rules authorize
+3. Shield: the owner holds `amount` and the token is not paused. Unshield: the token is
+   not paused and the recipient identity exists. Shielded transfer: the token is not paused.
+   Mint to pool: the configuration lets the minter choose the destination
+   (`mintingAllowChoosingDestination`), the minting rules authorize the identity (or group)
+   and the max supply is not exceeded. Burn from pool: the burning rules authorize
    the identity and the token is not paused. Claim to pool: the claim resolves exactly as a
    claim into a balance does (the shared `resolve_token_claim`). Purchase to pool: the pricing
    schedule and the max supply.

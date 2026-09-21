@@ -10,6 +10,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
+use drive::error::drive::DriveError;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::token_purchase_from_shielded_pool::TokenPurchaseFromShieldedPoolTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -69,9 +70,20 @@ impl TokenPurchaseFromShieldedPoolStateTransitionTransformIntoActionValidationV0
             return Ok(ConsensusValidationResult::new_with_error(consensus_error));
         }
         // Minting into the pool must respect the max supply.
-        let total_supply = drive
-            .fetch_token_total_supply(v0.token_id.to_buffer(), transaction, platform_version)?
-            .unwrap_or_default();
+        let Some(total_supply) = drive.fetch_token_total_supply(
+            v0.token_id.to_buffer(),
+            transaction,
+            platform_version,
+        )?
+        else {
+            return Err(Error::Drive(
+                DriveError::CorruptedDriveState(format!(
+                    "token {} total supply not found",
+                    v0.token_id
+                ))
+                .into(),
+            ));
+        };
         if let Some(max_supply) = configuration.max_supply() {
             match total_supply.checked_add(v0.token_count) {
                 Some(after) if after <= max_supply => {}

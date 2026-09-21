@@ -7,13 +7,14 @@
 //! pool-paid transitions.
 
 use crate::error::Error;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_pool_common::{
+    validate_token_pool_anchor_exists, validate_token_pool_nullifiers,
+};
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_nullifiers,
 };
 use dpp::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
-use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
-use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{TokenIsPausedError, TokenShieldedPoolNotEnabledError};
 use dpp::consensus::ConsensusError;
@@ -29,7 +30,6 @@ use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 /// A resolved pooled token: its contract and its configuration.
@@ -106,33 +106,31 @@ pub(crate) fn validate_token_pool_spend(
 ) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
     let token_id_bytes = token_id.to_buffer();
     let mut drive_operations = vec![];
-    if !drive.has_token_pool_anchor(
+    let result = validate_token_pool_anchor_exists(
+        drive,
         &token_id_bytes,
         anchor,
         transaction,
         &mut drive_operations,
         platform_version,
-    )? {
-        return Ok(Some(ConsensusValidationResult::new_with_error(
-            StateError::InvalidAnchorError(InvalidAnchorError::new(*anchor)).into(),
+    )?;
+    if !result.is_valid() {
+        return Ok(Some(ConsensusValidationResult::new_with_errors(
+            result.errors,
         )));
     }
-    let mut seen = HashSet::new();
-    for nullifier in nullifiers {
-        if !seen.insert(nullifier)
-            || drive.has_token_pool_nullifier(
-                &token_id_bytes,
-                nullifier,
-                transaction,
-                &mut drive_operations,
-                platform_version,
-            )?
-        {
-            return Ok(Some(ConsensusValidationResult::new_with_error(
-                StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(*nullifier))
-                    .into(),
-            )));
-        }
+    let result = validate_token_pool_nullifiers(
+        drive,
+        &token_id_bytes,
+        nullifiers,
+        transaction,
+        &mut drive_operations,
+        platform_version,
+    )?;
+    if !result.is_valid() {
+        return Ok(Some(ConsensusValidationResult::new_with_errors(
+            result.errors,
+        )));
     }
     Ok(None)
 }

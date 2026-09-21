@@ -28,6 +28,9 @@ use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransition
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
+use dpp::shielded::{
+    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
+};
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
@@ -589,21 +592,21 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                         )?
                     }
                     ShieldedMinFeeKind::TokenShieldedTransfer { token_actions } => {
-                        dpp::shielded::compute_token_shielded_transfer_with_shielded_fee_fee(
+                        compute_token_shielded_transfer_with_shielded_fee_fee(
                             token_actions,
                             num_actions,
                             platform_version,
                         )?
                     }
                     ShieldedMinFeeKind::TokenUnshield { token_actions } => {
-                        dpp::shielded::compute_token_unshield_with_shielded_fee_fee(
+                        compute_token_unshield_with_shielded_fee_fee(
                             token_actions,
                             num_actions,
                             platform_version,
                         )?
                     }
                     ShieldedMinFeeKind::TokenPurchase { token_actions } => {
-                        dpp::shielded::compute_token_purchase_from_shielded_pool_fee(
+                        compute_token_purchase_from_shielded_pool_fee(
                             token_actions,
                             num_actions,
                             platform_version,
@@ -950,7 +953,7 @@ fn validate_batch_token_shielded_proofs(
                 )
             }
             BatchedTransitionRef::Token(TokenTransition::Unshield(t)) => {
-                let extra_sighash_data = dpp::shielded::token_unshield_extra_sighash_data(
+                let extra_sighash_data = token_unshield_extra_sighash_data(
                     &t.base().token_id().to_buffer(),
                     &owner_id,
                     &t.recipient_id().to_buffer(),
@@ -968,7 +971,7 @@ fn validate_batch_token_shielded_proofs(
                 )
             }
             BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(t)) => {
-                let extra_sighash_data = dpp::shielded::token_shielded_transfer_extra_sighash_data(
+                let extra_sighash_data = token_shielded_transfer_extra_sighash_data(
                     &t.base().token_id().to_buffer(),
                     &owner_id,
                     platform_version,
@@ -1003,7 +1006,7 @@ fn validate_batch_token_shielded_proofs(
                     // from the stored group action, so state validation verifies this proof.
                     continue;
                 }
-                let extra_sighash_data = dpp::shielded::token_burn_from_pool_extra_sighash_data(
+                let extra_sighash_data = token_burn_from_pool_extra_sighash_data(
                     &t.base().token_id().to_buffer(),
                     &owner_id,
                     t.amount(),
@@ -1044,7 +1047,7 @@ fn validate_batch_token_shielded_proofs(
                 let Some(payment) = token_payment_info.shielded_payment() else {
                     continue;
                 };
-                let extra_sighash_data = dpp::shielded::document_token_payment_extra_sighash_data(
+                let extra_sighash_data = document_token_payment_extra_sighash_data(
                     &token_payment_info
                         .token_id(base.data_contract_id())
                         .to_buffer(),
@@ -1183,13 +1186,13 @@ fn validate_shielded_proof_v2(
                     },
                     StateTransition::TokenShieldedTransferWithShieldedFee(st) => match st {
                         TokenShieldedTransferWithShieldedFeeTransition::V0(v0) => {
-                            let token_extra_sighash_data = dpp::shielded::token_shielded_transfer_with_shielded_fee_extra_sighash_data(
+                            let token_extra_sighash_data = token_shielded_transfer_with_shielded_fee_extra_sighash_data(
                 &v0.token_id.to_buffer(),
                 platform_version,
             )?;
                             let fee_extra_sighash_data =
-                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
-                                    dpp::shielded::TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
+                                token_pool_fee_bundle_extra_sighash_data(
+                                    TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
                                     &v0.token_id.to_buffer(),
                                     &v0.token_actions,
                                     platform_version,
@@ -1218,15 +1221,15 @@ fn validate_shielded_proof_v2(
                     },
                     StateTransition::TokenUnshieldWithShieldedFee(st) => match st {
                         TokenUnshieldWithShieldedFeeTransition::V0(v0) => {
-                            let token_extra_sighash_data = dpp::shielded::token_unshield_with_shielded_fee_extra_sighash_data(
+                            let token_extra_sighash_data = token_unshield_with_shielded_fee_extra_sighash_data(
                 &v0.token_id.to_buffer(),
                 &v0.recipient_id.to_buffer(),
                 v0.amount,
                 platform_version,
             )?;
                             let fee_extra_sighash_data =
-                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
-                                    dpp::shielded::TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
+                                token_pool_fee_bundle_extra_sighash_data(
+                                    TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
                                     &v0.token_id.to_buffer(),
                                     &v0.token_actions,
                                     platform_version,
@@ -1255,15 +1258,15 @@ fn validate_shielded_proof_v2(
                     },
                     StateTransition::TokenPurchaseFromShieldedPool(st) => match st {
                         TokenPurchaseFromShieldedPoolTransition::V0(v0) => {
-                            let token_extra_sighash_data = dpp::shielded::token_purchase_from_shielded_pool_extra_sighash_data(
+                            let token_extra_sighash_data = token_purchase_from_shielded_pool_extra_sighash_data(
                 &v0.token_id.to_buffer(),
                 v0.token_count,
                 v0.total_agreed_price,
                 platform_version,
             )?;
                             let fee_extra_sighash_data =
-                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
-                                    dpp::shielded::TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
+                                token_pool_fee_bundle_extra_sighash_data(
+                                    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
                                     &v0.token_id.to_buffer(),
                                     &v0.token_actions,
                                     platform_version,

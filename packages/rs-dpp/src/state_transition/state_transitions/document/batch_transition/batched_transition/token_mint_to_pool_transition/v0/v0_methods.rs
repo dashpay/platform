@@ -1,5 +1,5 @@
 use crate::balances::credits::TokenAmount;
-use crate::shielded::SerializedAction;
+use crate::shielded::{serialized_actions_digest, SerializedAction};
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_mint_to_pool_transition::TokenMintToPoolTransition;
@@ -86,7 +86,7 @@ impl AllowedAsMultiPartyAction for TokenMintToPoolTransitionV0 {
             owner_id.as_bytes(),
             self.base.identity_contract_nonce(),
             self.amount,
-            &crate::shielded::serialized_actions_digest(&self.actions),
+            &serialized_actions_digest(&self.actions),
         ))
     }
 }

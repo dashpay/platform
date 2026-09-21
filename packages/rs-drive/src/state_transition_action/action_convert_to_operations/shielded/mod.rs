@@ -10,9 +10,12 @@ mod token_shielded_transfer_with_shielded_fee_transition;
 mod token_unshield_with_shielded_fee_transition;
 mod unshield_transition;
 
+use crate::error::drive::DriveError;
+use crate::error::Error;
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
 use crate::util::batch::DriveOperation;
+use dpp::fee::Credits;
 
 /// Insert nullifiers into the permanent tree (double-spend prevention) and
 /// per-block sync storage (catch-up RPCs).
@@ -52,6 +55,29 @@ pub(super) fn update_balance<'a>(ops: &mut Vec<DriveOperation<'a>>, new_total_ba
     ops.push(DriveOperation::ShieldedPoolOperation(
         ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
     ));
+}
+
+/// The credit pool side of an identity-less token pool transition: the fee bundle's spent
+/// nullifiers are recorded, its change notes appended and the pool's total balance lowered
+/// by `credits_leaving` (the fee, plus whatever else left the pool with it).
+pub(super) fn pay_from_credit_pool<'a>(
+    ops: &mut Vec<DriveOperation<'a>>,
+    fee_notes: &[ShieldedActionNote],
+    current_credit_pool_balance: Credits,
+    credits_leaving: Credits,
+) -> Result<(), Error> {
+    insert_nullifiers(ops, fee_notes);
+    insert_notes(ops, fee_notes);
+    let new_total_balance = current_credit_pool_balance
+        .checked_sub(credits_leaving)
+        .ok_or_else(|| {
+            Error::Drive(DriveError::CorruptedDriveState(
+                "shielded pool total balance underflow when paying a token pool transition"
+                    .to_string(),
+            ))
+        })?;
+    update_balance(ops, new_total_balance);
+    Ok(())
 }
 
 /// Measurement support for the pool-paid shielded fee-floor tests.

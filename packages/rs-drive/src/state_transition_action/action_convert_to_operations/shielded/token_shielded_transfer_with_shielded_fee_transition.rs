@@ -1,4 +1,4 @@
-use super::{insert_notes, insert_nullifiers, update_balance};
+use super::pay_from_credit_pool;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -36,18 +36,12 @@ impl DriveHighLevelOperationConverter for TokenShieldedTransferWithShieldedFeeTr
                     }));
                     let credits_leaving = v0.fee_amount;
 
-                    insert_nullifiers(&mut ops, &v0.fee_notes);
-                    insert_notes(&mut ops, &v0.fee_notes);
-                    let new_total_balance = v0
-                        .current_credit_pool_balance
-                        .checked_sub(credits_leaving)
-                        .ok_or_else(|| {
-                            Error::Drive(DriveError::CorruptedDriveState(
-                                "shielded pool total balance underflow when paying a token pool transition"
-                                    .to_string(),
-                            ))
-                        })?;
-                    update_balance(&mut ops, new_total_balance);
+                    pay_from_credit_pool(
+                        &mut ops,
+                        &v0.fee_notes,
+                        v0.current_credit_pool_balance,
+                        credits_leaving,
+                    )?;
                     Ok(ops)
                 }
             },

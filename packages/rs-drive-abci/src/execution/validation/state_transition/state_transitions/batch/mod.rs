@@ -1,5 +1,5 @@
 use advanced_structure::v1::DocumentsBatchStateTransitionStructureValidationV1;
-mod action_validation;
+pub(in crate::execution::validation::state_transition::state_transitions) mod action_validation;
 mod advanced_structure;
 mod data_triggers;
 mod identity_contract_nonce;

@@ -63,13 +63,18 @@ impl DocumentBaseTransitionActionV0 {
         );
         let mut shielded_token_payment = None;
         if let Some(document_action_token_cost) = document_action_token_cost {
+            let token_id: Identifier = calculate_token_id(
+                document_action_token_cost
+                    .contract_id
+                    .unwrap_or(data_contract_id)
+                    .as_bytes(),
+                document_action_token_cost.token_contract_position,
+            )
+            .into();
             let Some(token_payment_info) = value.token_payment_info_ref() else {
                 return Ok(ConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::RequiredTokenPaymentInfoNotSetError(
-                        RequiredTokenPaymentInfoNotSetError::new(
-                            token_cost.expect("expected token cost").0,
-                            action.to_string(),
-                        ),
+                        RequiredTokenPaymentInfoNotSetError::new(token_id, action.to_string()),
                     )),
                 ));
             };
@@ -83,7 +88,7 @@ impl DocumentBaseTransitionActionV0 {
                         IdentityTryingToPayWithWrongTokenError::new(
                             document_action_token_cost.contract_id,
                             document_action_token_cost.token_contract_position,
-                            token_cost.expect("expected token cost").0,
+                            token_id,
                             token_payment_info.payment_token_contract_id(),
                             token_payment_info.token_contract_position(),
                             token_payment_info.token_id(data_contract_id),
@@ -99,7 +104,7 @@ impl DocumentBaseTransitionActionV0 {
                     ConsensusError::StateError(
                         StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(
                             IdentityHasNotAgreedToPayRequiredTokenAmountError::new(
-                                token_cost.expect("expected token cost").0,
+                                token_id,
                                 document_action_token_cost.token_amount,
                                 token_payment_info.minimum_token_cost(),
                                 token_payment_info.maximum_token_cost(),
@@ -117,7 +122,7 @@ impl DocumentBaseTransitionActionV0 {
                         ConsensusError::StateError(
                             StateError::TokenShieldedPaymentAmountMismatchError(
                                 TokenShieldedPaymentAmountMismatchError::new(
-                                    token_cost.expect("expected token cost").0,
+                                    token_id,
                                     document_action_token_cost.token_amount,
                                     payment.amount,
                                     action.to_string(),
