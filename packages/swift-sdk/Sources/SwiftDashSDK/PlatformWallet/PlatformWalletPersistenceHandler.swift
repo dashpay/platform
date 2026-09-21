@@ -4941,6 +4941,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 existing.coreHeight = blockTime.core_height
                 existing.timestampMillis = Int64(bitPattern: blockTime.timestamp)
             } else {
+                // An unresolved legacy network can mislabel this sidecar as testnet;
+                // scoped deletion may retain it until an unscoped orphan purge.
                 let network = self.network ?? walletNetwork(walletId: walletId) ?? .testnet
                 backgroundContext.insert(PersistentIdentityBalanceMetadata(
                     networkRaw: network.rawValue, walletId: walletId, identityId: identityId,
