@@ -310,10 +310,6 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
     opened = [pr for pr in pulls if pr["state"] == "open"]
     if len(opened) > 1:
         raise ReleaseError("Multiple open snapshot pull requests need manual reconciliation")
-    # The newest closed attempt records the maintainer's latest decision.
-    # An older merged PR must not override a subsequently rejected follow-up.
-    if not opened and pulls and not pulls[0].get("merged_at"):
-        raise ReleaseError("The snapshot pull request was closed without merging; reopen it to retry")
     env = git_environment(token)
     with tempfile.TemporaryDirectory(prefix="appstore-schema-") as temporary:
         clone = Path(temporary) / "platform"
@@ -344,6 +340,11 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
                 retain_source(clone, commit, env, dry_run=dry_run)
             print("This release is already present in the merged registry.")
             return
+        # The branch is shared by releases with the same schema. A rejected
+        # follow-up must block an unregistered release, not invalidate one
+        # already verified in the merged registry above.
+        if not opened and pulls and not pulls[0].get("merged_at"):
+            raise ReleaseError("The snapshot pull request was closed without merging; reopen it to retry")
         remote_branch = git(clone, "ls-remote", "--heads", "origin", branch, env=env)
         if remote_branch:
             git(clone, "fetch", "origin", f"{branch}:refs/remotes/origin/{branch}", env=env)

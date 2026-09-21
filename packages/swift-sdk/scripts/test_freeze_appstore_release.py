@@ -316,8 +316,9 @@ p.write_text(json.dumps(r))
             {"state": "closed", "merged_at": "2026-09-18"},
         ]
         before = git(self.remote, "show-ref")
-        with self.assertRaisesRegex(worker.ReleaseError, "reopen it to retry"):
-            self.prepare()
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run), self.assertRaisesRegex(worker.ReleaseError, "reopen it to retry"):
+                self.prepare(dry_run=dry_run)
         self.assertEqual(git(self.remote, "show-ref"), before)
         self.api.request.assert_not_called()
 
@@ -523,6 +524,31 @@ p.write_text(json.dumps(r))
             with self.subTest(dry_run=dry_run), self.assertRaisesRegex(worker.ReleaseError, "different object"):
                 self.prepare(dry_run=dry_run)
         self.assertEqual(git(self.remote, "show-ref"), before)
+        self.api.request.assert_not_called()
+
+    def test_handled_release_survives_a_later_rejected_pr_and_still_repairs_source_tags(self):
+        self.prepare()
+        branch = "codex/freeze-swift-schema-v2.0.0"
+        merged_commit = git(self.remote, "rev-parse", branch)
+        git(self.remote, "update-ref", f"refs/heads/{worker.BASE_BRANCH}", merged_commit)
+        self.api.pull_requests.return_value = [
+            {"state": "closed", "merged_at": None},
+            {"state": "closed", "merged_at": "2026-09-18"},
+        ]
+        self.api.request.reset_mock()
+        source = self.manifest["platform_sha"]
+        ref = worker.SOURCE_TAG_PREFIX + source
+        git(self.remote, "update-ref", "-d", ref)
+        before = git(self.remote, "show-ref")
+        self.prepare(dry_run=True)
+        self.assertEqual(git(self.remote, "show-ref"), before)
+        self.prepare()
+        self.assertEqual(git(self.remote, "rev-parse", ref), source)
+        self.assertEqual(git(self.remote, "rev-parse", branch), merged_commit)
+        git(self.remote, "update-ref", ref, merged_commit)
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run), self.assertRaisesRegex(worker.ReleaseError, "different object"):
+                self.prepare(dry_run=dry_run)
         self.api.request.assert_not_called()
 
     def test_new_release_of_same_schema_appends_association_to_existing_pr(self):
