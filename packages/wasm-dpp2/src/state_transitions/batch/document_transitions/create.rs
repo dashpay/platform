@@ -9,25 +9,36 @@ use crate::state_transitions::batch::generators::generate_create_transition;
 use crate::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::utils::{
-    try_from_options, try_from_options_optional, try_from_options_with, try_to_u64,
+    try_from_options_mut, try_from_options_optional, try_from_options_with, try_to_u64,
     try_vec_to_fixed_bytes, ToSerdeJSONExt,
 };
+use crate::version::PlatformVersionWasm;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::DocumentCreateTransition;
+use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENT_CREATE_OPTIONS_TS: &str = r#"
 export interface DocumentCreateTransitionOptions {
+    /**
+     * The document to create. Its id is derived here from its entropy and
+     * `identityContractNonce` (from protocol version 14 the id of a new
+     * document commits to that nonce), replacing whatever id the document
+     * carried, and written back onto this object: after construction
+     * `document.id` equals `transition.base.id`.
+     */
     document: Document;
     identityContractNonce: bigint;
     prefundedVotingBalance?: PrefundedVotingBalance;
     tokenPaymentInfo?: TokenPaymentInfo;
     actionFeeAgreement?: DocumentActionFeeAgreement;
+    /** Platform version the id is derived for (default: latest) */
+    platformVersion?: PlatformVersionLike;
 }
 "#;
 
@@ -62,12 +73,22 @@ impl DocumentCreateTransitionWasm {
     pub fn constructor(
         options: DocumentCreateTransitionOptionsJs,
     ) -> WasmDppResult<DocumentCreateTransitionWasm> {
-        let document: DocumentWasm = try_from_options(&options, "document")?;
-
         let identity_contract_nonce: IdentityNonce =
             try_from_options_with(&options, "identityContractNonce", |v| {
                 try_to_u64(v, "identityContractNonce")
             })?;
+
+        let platform_version: PlatformVersion =
+            try_from_options_optional::<PlatformVersionWasm>(&options, "platformVersion")?
+                .unwrap_or_default()
+                .into();
+
+        // The id a document carries before its nonce is known is a
+        // placeholder: derive the one consensus will recompute, on the
+        // caller's own object so `document.id` matches `transition.base.id`,
+        // as `DocumentCreateTransitionV0::from_document` does in dpp.
+        let mut document = try_from_options_mut::<DocumentWasm>(&options, "document", "Document")?;
+        document.set_id_for_creation(identity_contract_nonce, &platform_version)?;
 
         let prefunded_voting_balance: Option<PrefundedVotingBalanceWasm> =
             try_from_options_optional(&options, "prefundedVotingBalance")?;

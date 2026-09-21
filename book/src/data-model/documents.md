@@ -101,6 +101,7 @@ The ID of a new document only exists once the nonce of its create transition is 
 - The ID a `Document` carries before its create transition is built (for example the one `create_document_from_data` gives it) is a **placeholder**. `DocumentCreateTransitionV0::from_document` replaces it with the derived ID, so every transition built through dpp carries the right one.
 - Read the ID from the transition, or from the confirmed document `put_to_platform_and_wait_for_response` returns, not from the document you passed in.
 - To know IDs up front (a chain of documents that reference each other), assign the nonces first: nonces may be used out of order within a window of 24.
+- JavaScript gets the same through `wasm-dpp2`: `new DocumentCreateTransition({ document, identityContractNonce })` derives the ID for the network's protocol version (`platformVersion` option, latest by default), so the transition carries the right one and `document.id` is updated to match. `Document.generateId(type, owner, contract, entropy, identityContractNonce)` and `document.setIdForCreation(identityContractNonce)` give the ID before the transition exists, and `new Document({ ..., identityContractNonce })` derives it at construction. A `Document` built without a nonce carries the entropy-only placeholder. No app needs to reimplement the hash.
 
 ## The Accessor Traits
 
