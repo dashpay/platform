@@ -18,13 +18,14 @@
 # checks, and wallet-scoped doctests mirror the full job so nothing merges
 # through the fast path that the full path would have rejected.
 #
-# Coverage upload is intentionally omitted (codecov never gates the merge —
-# `fail_ci_if_error: false`). Known trade-offs: this fast path stays pinned to
-# the macOS runners (unlike the full workspace job, which schedules onto any
-# `rust-ci` self-hosted runner), so wallet PRs depend on a mac runner being
-# online; and the scoped `-p` builds feature-unify shared deps differently
-# than `--workspace` builds, so the shared target/ carries an extra artifact
-# flavor.
+# No coverage here: code coverage is collected only by the nightly run of the
+# full workspace workflow (tests-rs-workspace.yml, `coverage` input), which
+# also measures the wallet crates. Known trade-offs: this fast path stays
+# pinned to the macOS runners (unlike the full workspace job, which schedules
+# onto any `rust-ci` self-hosted runner), so wallet PRs depend on a mac
+# runner being online; and the scoped `-p` builds feature-unify shared deps
+# differently than `--workspace` builds, so the shared target/ carries an
+# extra artifact flavor.
 on:
   workflow_call:
     inputs:
@@ -51,12 +52,12 @@ jobs:
         with:
           clean: false
 
-      # target/llvm-cov-target is deliberately NOT pruned here: the workspace
-      # job (tests-rs-workspace.yml) keeps its coverage-instrumented build
-      # there for incremental compiles, and this job shares the same runner
-      # workspace — wiping it on a wallet-only PR would force the next
-      # workspace run into a ~2.5 min cold rebuild. The size guard below
-      # still removes the whole target/ if it outgrows the caps.
+      # target/llvm-cov-target is deliberately NOT pruned here: the nightly
+      # coverage run of the workspace job (tests-rs-workspace.yml) keeps its
+      # instrumented build there for incremental compiles, and this job
+      # shares the same runner workspace — wiping it on a wallet-only PR
+      # would force the next nightly into a ~2.5 min cold rebuild. The size
+      # guard below still removes the whole target/ if it outgrows the caps.
       - name: Prune macOS runner disk before tests
         run: |
           for path in ../target-backup-before-*-clean-*; do
@@ -67,9 +68,9 @@ jobs:
           done
 
           # Purge per-run coverage profile data possibly left by a cancelled
-          # workspace run in the shared workspace — before measuring target/,
-          # so stale profraw cannot inflate the size check and cost the
-          # instrumented build.
+          # nightly coverage run in the shared workspace — before measuring
+          # target/, so stale profraw cannot inflate the size check and cost
+          # the instrumented build.
           if [ -d target/llvm-cov-target ]; then
             find target/llvm-cov-target \( -name '*.profraw' -o -name '*.profdata' \) -delete || true
           fi
