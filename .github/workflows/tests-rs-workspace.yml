@@ -501,15 +501,18 @@ jobs:
           steps.coverage-cache.outputs.reuse == 'false'
           && inputs.shielded-changed
         run: |
-          # `--tests` mirrors what cargo-llvm-cov passes to cargo when no
-          # target is selected: every test target except doctests, which
-          # have their own gated step at the end of the job.
+          # `--tests` selects every test target except doctests, which have
+          # their own gated step at the end of the job. cargo-llvm-cov adds
+          # it itself when no target is selected; passing it explicitly in
+          # both modes pins the equivalence instead of relying on that
+          # default of an unpinned tool.
           if [ "${{ inputs.coverage }}" = "true" ]; then
             RUN=(cargo llvm-cov test --no-report)
           else
-            RUN=(cargo test --tests)
+            RUN=(cargo test)
           fi
           "${RUN[@]}" \
+            --tests \
             --package dpp \
             --package drive \
             --package drive-abci \
@@ -526,18 +529,21 @@ jobs:
         if: inputs.coverage && steps.shielded-tests.outcome == 'success'
         run: cargo llvm-cov report --lcov --output-path lcov-shielded.info
 
-      # The marker means "this exact tree passed the COMPLETE suite", so it
-      # is written only when both skippable phases (chain simulations and
-      # shielded) actually ran and succeeded. A PR fast-path run must not
-      # write it: the post-merge push commonly has the same tree as the PR
-      # merge ref, and on the same runner the marker would let the reuse
-      # check skip the push run's full phases — the safety net for changes
-      # the PR-path gating misses.
+      # The marker means "this exact tree passed the COMPLETE suite in a
+      # plain run", so it is written only when both skippable phases (chain
+      # simulations and shielded) actually ran and succeeded. A PR fast-path
+      # run must not write it: the post-merge push commonly has the same
+      # tree as the PR merge ref, and on the same runner the marker would
+      # let the reuse check skip the push run's full phases — the safety net
+      # for changes the PR-path gating misses. A coverage run does not write
+      # it either: it never reads it, and the marker exists to dedup plain
+      # runs against each other, not against an instrumented pass.
       - name: Record tests tree hash
         if: >-
-          steps.coverage-cache.outputs.reuse == 'false'
+          ${{ !inputs.coverage
+          && steps.coverage-cache.outputs.reuse == 'false'
           && steps.strategy-tests.outcome == 'success'
-          && steps.shielded-tests.outcome == 'success'
+          && steps.shielded-tests.outcome == 'success' }}
         run: git rev-parse 'HEAD^{tree}' > target/tests-tree-hash
 
       # Needed by the Codecov upload below on the macOS runners.
