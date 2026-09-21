@@ -934,12 +934,13 @@ impl IdentityEntry {
     /// [`ManagedIdentity::keys_snapshot_changeset`](crate::wallet::identity::ManagedIdentity)
     /// into an [`IdentityKeysChangeSet`].
     pub fn from_managed(managed: &ManagedIdentity) -> Self {
+        let (balance, last_updated_balance_block_time) = managed.balance_snapshot_for_persistence();
         Self {
             id: managed.identity.id(),
-            balance: managed.identity.balance(),
+            balance,
             revision: managed.identity.revision(),
             identity_index: managed.identity_index,
-            last_updated_balance_block_time: managed.last_updated_balance_block_time,
+            last_updated_balance_block_time,
             last_synced_keys_block_time: managed.last_synced_keys_block_time,
             dpns_names: managed.dpns_names.clone(),
             contested_dpns_names: managed.contested_dpns_names.clone(),

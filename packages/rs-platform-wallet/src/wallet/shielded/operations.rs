@@ -37,6 +37,7 @@ use crate::wallet::platform_wallet::WalletId;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
@@ -938,7 +939,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     memo: [u8; 36],
     signer: &Sig,
     prover: &P,
-) -> Result<(Credits, u64), PlatformWalletError> {
+) -> Result<(Credits, ResponseMetadata), PlatformWalletError> {
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -1060,7 +1061,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     // `wait_for_affected_state` only converts the proof generically, so the variant
     // and the identity are enforced here: only this identity's balance proof is
     // accepted as the post-debit balance.
-    let proof_outcome: Result<(Credits, u64), String> = match state_transition
+    let proof_outcome: Result<(Credits, ResponseMetadata), String> = match state_transition
         .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(sdk, None)
         .await
     {
@@ -1070,7 +1071,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
             partial
                 .balance
                 .ok_or_else(|| "the identity proof did not include the updated balance".to_string())
-                .map(|balance| (balance, metadata.height))
+                .map(|balance| (balance, metadata))
         }
         Ok((StateTransitionProofResult::VerifiedPartialIdentity(partial), _)) => Err(format!(
             "the proof returned identity {} but {} initiated the shield",
@@ -1363,7 +1364,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<Option<Credits>, PlatformWalletError> {
-    identity_top_up_from_pool_with_height(
+    identity_top_up_from_pool_with_metadata(
         sdk,
         store,
         persister,
@@ -1379,7 +1380,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::wallet) async fn identity_top_up_from_pool_with_height<
+pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     S: ShieldedStore,
     P: OrchardProver,
 >(
@@ -1392,7 +1393,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_height<
     identity_id: Identifier,
     amount: u64,
     prover: &P,
-) -> Result<(Option<Credits>, u64), PlatformWalletError> {
+) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -1462,7 +1463,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_height<
         // still proves the reserved notes are consumed and authenticates the
         // credited identity's balance; the shield, shield-from-identity and
         // identity-create paths accept the same class of outcome.
-        broadcast_shielded_spend_with_redrive_with_height(
+        broadcast_shielded_spend_with_redrive_with_metadata(
             sdk,
             store,
             id,
@@ -1478,7 +1479,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_height<
     .await;
 
     match result {
-        Ok((proof, proof_height)) => {
+        Ok((proof, metadata)) => {
             record_activity_status(
                 store,
                 persister,
@@ -1531,7 +1532,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_height<
                     None
                 }
             };
-            Ok((proven_balance, proof_height))
+            Ok((proven_balance, metadata))
         }
         Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
@@ -2934,7 +2935,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     operation: &'static str,
     wait: SpendResultWait,
 ) -> Result<StateTransitionProofResult, PlatformWalletError> {
-    broadcast_shielded_spend_with_redrive_with_height(
+    broadcast_shielded_spend_with_redrive_with_metadata(
         sdk,
         store,
         id,
@@ -2950,7 +2951,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn broadcast_shielded_spend_with_redrive_with_height<S: ShieldedStore>(
+async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -2960,7 +2961,7 @@ async fn broadcast_shielded_spend_with_redrive_with_height<S: ShieldedStore>(
     state_transition: &StateTransition,
     operation: &'static str,
     wait: SpendResultWait,
-) -> Result<(StateTransitionProofResult, u64), PlatformWalletError> {
+) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
     let result = broadcast_shielded_spend(sdk, state_transition, operation, wait).await;
     if matches!(
         &result,
@@ -3372,7 +3373,7 @@ async fn broadcast_shielded_spend(
     state_transition: &StateTransition,
     operation: &'static str,
     wait: SpendResultWait,
-) -> Result<(StateTransitionProofResult, u64), PlatformWalletError> {
+) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
@@ -3405,9 +3406,7 @@ async fn broadcast_shielded_spend(
                 .await
         }
     };
-    waited
-        .map(|(proof, metadata)| (proof, metadata.height))
-        .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
+    waited.map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
 }
 
 /// Classify a `wait_for_response` failure for an already-broadcast

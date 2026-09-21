@@ -23,6 +23,8 @@ use super::platform_addresses::merge_platform_payment_candidate_addresses;
 use super::platform_addresses::PlatformAddressWallet;
 #[cfg(feature = "shielded")]
 use super::shielded::operations::shield_fee_reserve_credits;
+#[cfg(feature = "shielded")]
+use crate::BlockTime;
 // Phase 4d.3 deleted the `ShieldedWallet` wrapper; per-account
 // keysets now live in `self.shielded_keys` directly. Spend
 // operations source the shared commitment-tree store from
@@ -1466,8 +1468,8 @@ impl PlatformWallet {
         let _shield_guard = self.shield_guard.lock().await;
 
         let keyset = self.derive_spend_keyset(seed, account).await?;
-        let (proven_balance, proof_height) =
-            super::shielded::operations::identity_top_up_from_pool_with_height(
+        let (mut proven_balance, metadata) =
+            super::shielded::operations::identity_top_up_from_pool_with_metadata(
                 &self.sdk,
                 coordinator.store(),
                 Some(&self.persister),
@@ -1490,14 +1492,11 @@ impl PlatformWallet {
                 .get_wallet_info_mut(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
             if let Some(managed) = managed {
-                managed.set_confirmed_balance(balance, proof_height);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after shielded top-up"
-                    );
-                }
+                proven_balance = Some(managed.persist_confirmed_balance(
+                    balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                ));
             }
         }
 
@@ -2078,7 +2077,7 @@ impl PlatformWallet {
                 })?
                 .clone()
         };
-        let (new_balance, proof_height) = super::shielded::operations::shield_from_identity_to(
+        let (mut new_balance, metadata) = super::shielded::operations::shield_from_identity_to(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -2104,18 +2103,11 @@ impl PlatformWallet {
                 .get_wallet_info_mut(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
             if let Some(managed) = managed {
-                managed.set_confirmed_balance(new_balance, proof_height);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    // Broadcast already happened. Returning a transaction error
-                    // could prompt a second payment; it cannot undo the debit.
-                    // Keep the proven in-memory balance and report the cache
-                    // failure separately in diagnostics.
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after shield from identity"
-                    );
-                }
+                new_balance = managed.persist_confirmed_balance(
+                    new_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 

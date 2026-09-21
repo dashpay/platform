@@ -11,9 +11,12 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::transfer::{TransferToIdentity, TransferToIdentityWithHeight};
+use dash_sdk::platform::transition::transfer::{
+    TransferToIdentity, TransferToIdentityWithMetadata,
+};
 
 use crate::error::PlatformWalletError;
+use crate::BlockTime;
 
 use super::*;
 
@@ -95,8 +98,8 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?
         };
 
-        let ((sender_balance, _receiver_balance), proof_height) = identity
-            .transfer_credits_with_height(
+        let ((sender_balance, _receiver_balance), metadata) = identity
+            .transfer_credits_with_metadata(
                 &self.sdk,
                 *to_id,
                 amount,
@@ -127,14 +130,11 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(from_id) {
-                managed.set_confirmed_balance(sender_balance, proof_height);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %from_id,
-                        error = %e,
-                        "Failed to persist identity balance update after transfer (external signer)"
-                    );
-                }
+                managed.persist_confirmed_balance(
+                    sender_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 

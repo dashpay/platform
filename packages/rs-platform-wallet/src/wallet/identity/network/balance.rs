@@ -2,7 +2,7 @@
 
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
-use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 
 use crate::error::PlatformWalletError;
@@ -74,28 +74,7 @@ impl IdentityWallet {
         balance: u64,
         block_time: BlockTime,
     ) -> Result<(), PlatformWalletError> {
-        // Reject both older and equal-height responses: a confirmed local
-        // transaction at that height takes precedence over a refresh.
-        if managed
-            .last_updated_balance_block_time
-            .is_none_or(|previous| block_time.height > previous.height)
-        {
-            let mut candidate = managed.clone();
-            candidate.identity.set_balance(balance);
-            candidate.last_updated_balance_block_time = Some(block_time);
-            self.persister
-                .store(candidate.snapshot_changeset().into())
-                .map_err(|e| self.persister.classify_store_failure(e))?;
-            // Inline backends already committed; their flush callback is
-            // only a notification. Buffered backends must finish first.
-            if !self.persister.store_commits_inline() {
-                self.persister
-                    .flush()
-                    .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
-            }
-            *managed = candidate;
-        }
-        Ok(())
+        managed.persist_refreshed_balance(balance, block_time, &self.persister)
     }
 }
 
@@ -334,11 +313,11 @@ mod tests {
                     .identity_manager
                     .wallet_identity_mut(&iw.wallet_id, &id)
                     .unwrap();
-                managed.set_confirmed_balance(AFTER_DPNS, proof_height);
-                iw.persister
-                    .store(managed.snapshot_changeset().into())
-                    .unwrap();
-                iw.persister.flush().unwrap();
+                managed.persist_confirmed_balance(
+                    AFTER_DPNS,
+                    BlockTime::new(proof_height, 42, 1000),
+                    &iw.persister,
+                );
             }
             let before = backend.flush_count.load(Ordering::SeqCst);
             assert_eq!(iw.refresh_identity_balance(&id).await.unwrap(), AFTER_DPNS);
@@ -405,7 +384,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_persist_an_older_retry_after_a_failed_newer_store() {
+    async fn should_retry_the_newer_snapshot_before_accepting_an_older_response() {
         let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
         let mut wm = iw.wallet_manager.write().await;
         let managed = wm
@@ -423,17 +402,17 @@ mod tests {
         backend.fail_store.store(false, Ordering::SeqCst);
         iw.persist_refreshed_balance(managed, 200, BlockTime::new(9, 9, 9))
             .unwrap();
-        assert_eq!(managed.identity.balance(), 200);
+        assert_eq!(managed.identity.balance(), 100);
         let committed = backend.committed.lock().unwrap();
         assert_eq!(committed.len(), 1);
-        assert_eq!(committed[0].1.balance, 200);
+        assert_eq!(committed[0].1.balance, 100);
         assert_eq!(
             committed[0]
                 .1
                 .last_updated_balance_block_time
                 .unwrap()
                 .height,
-            9
+            10
         );
     }
     #[tokio::test]
@@ -448,7 +427,7 @@ mod tests {
             .unwrap();
         iw.persist_refreshed_balance(managed, 300, BlockTime::new(8, 8, 8))
             .unwrap();
-        managed.set_confirmed_balance(100, 10);
+        managed.persist_confirmed_balance(100, BlockTime::new(10, 42, 1000), &iw.persister);
         for height in [9, 10] {
             iw.persist_refreshed_balance(
                 managed,
@@ -458,11 +437,11 @@ mod tests {
             .unwrap();
             assert_eq!(managed.identity.balance(), 100);
         }
-        assert_eq!(backend.committed.lock().unwrap().len(), 1);
+        assert_eq!(backend.committed.lock().unwrap().len(), 2);
         iw.persist_refreshed_balance(managed, 50, BlockTime::new(11, 11, 11))
             .unwrap();
         assert_eq!(managed.identity.balance(), 50);
-        assert_eq!(backend.committed.lock().unwrap().len(), 2);
+        assert_eq!(backend.committed.lock().unwrap().len(), 3);
     }
     #[tokio::test]
     async fn should_preserve_store_failure_kind_with_backend_retry_guarantee() {
@@ -485,5 +464,209 @@ mod tests {
             );
             assert_eq!(local_balance(&iw, &id).await, OLD_BALANCE);
         }
+    }
+    fn reload_balance(backend: &BalancePersister, id: &Identifier) -> (u64, Option<BlockTime>) {
+        let mut reloaded = IdentityManager::new();
+        for (_, entry) in backend.committed.lock().unwrap().iter() {
+            reloaded.apply_identity_entry(entry.clone());
+        }
+        let managed = reloaded.identity(id).unwrap();
+        (
+            managed.identity.balance(),
+            managed.last_updated_balance_block_time,
+        )
+    }
+
+    #[tokio::test]
+    async fn should_retry_failed_height_ten_flush_before_height_nine_and_reload_ten() {
+        let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .unwrap()
+            .identity_manager
+            .wallet_identity_mut(&iw.wallet_id, &id)
+            .unwrap();
+        let newer = BlockTime::new(10, 42, 1000);
+        backend.fail_flush.store(true, Ordering::SeqCst);
+        assert!(iw.persist_refreshed_balance(managed, 100, newer).is_err());
+        assert_eq!(managed.identity.balance(), OLD_BALANCE);
+        assert!(iw
+            .persist_refreshed_balance(managed, 200, BlockTime::new(9, 41, 900))
+            .is_err());
+        assert!(backend
+            .queued
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(_, entry)| entry.balance == 100));
+        backend.fail_flush.store(false, Ordering::SeqCst);
+        iw.persist_refreshed_balance(managed, 200, BlockTime::new(9, 41, 900))
+            .unwrap();
+        assert_eq!(managed.identity.balance(), 100);
+        assert_eq!(reload_balance(&backend, &id), (100, Some(newer)));
+        assert!(backend.queued.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_carry_pending_balance_through_an_unrelated_scalar_write() {
+        let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .unwrap()
+            .identity_manager
+            .wallet_identity_mut(&iw.wallet_id, &id)
+            .unwrap();
+        let newer = BlockTime::new(10, 42, 1000);
+        backend.fail_flush.store(true, Ordering::SeqCst);
+        assert!(iw.persist_refreshed_balance(managed, 100, newer).is_err());
+        // This used to queue the published OLD_BALANCE behind the height-10 row.
+        managed.update_keys_sync_block_time(BlockTime::new(11, 43, 1100), &iw.persister);
+        backend.fail_flush.store(false, Ordering::SeqCst);
+        iw.persister.flush().unwrap();
+        assert_eq!(reload_balance(&backend, &id), (100, Some(newer)));
+        iw.persist_refreshed_balance(managed, 200, BlockTime::new(9, 41, 900))
+            .unwrap();
+        assert_eq!(managed.identity.balance(), 100);
+        assert_eq!(
+            managed.last_synced_keys_block_time,
+            Some(BlockTime::new(11, 43, 1100))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_retry_failed_confirmed_balance_store_before_equal_or_older_refresh() {
+        for refresh_height in [9, 10] {
+            for inline in [false, true] {
+                let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&iw.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .wallet_identity_mut(&iw.wallet_id, &id)
+                    .unwrap();
+                let confirmed = BlockTime::new(10, 42, 1000);
+                backend.commits_inline.store(inline, Ordering::SeqCst);
+                backend.fail_store.store(true, Ordering::SeqCst);
+                assert_eq!(
+                    managed.persist_confirmed_balance(100, confirmed, &iw.persister),
+                    100
+                );
+                assert_eq!(managed.last_updated_balance_block_time, Some(confirmed));
+                assert!(!managed.needs_balance_update(1050, 100));
+                assert!(backend.committed.lock().unwrap().is_empty());
+                backend.fail_store.store(false, Ordering::SeqCst);
+                iw.persist_refreshed_balance(managed, 200, BlockTime::new(refresh_height, 41, 900))
+                    .unwrap();
+                assert_eq!(reload_balance(&backend, &id), (100, Some(confirmed)));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn should_keep_one_snapshot_per_height_and_return_the_retained_balance() {
+        let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .unwrap()
+            .identity_manager
+            .wallet_identity_mut(&iw.wallet_id, &id)
+            .unwrap();
+        let confirmed = BlockTime::new(10, 42, 1000);
+        assert_eq!(
+            managed.persist_confirmed_balance(100, confirmed, &iw.persister),
+            100
+        );
+        for height in [9, 10] {
+            // A delayed result cannot replace the height-pinned state, return a
+            // different balance to the host, or queue an obsolete snapshot.
+            assert_eq!(
+                managed.persist_confirmed_balance(
+                    200,
+                    BlockTime::new(height, 41, 900),
+                    &iw.persister
+                ),
+                100
+            );
+        }
+        assert_eq!(backend.committed.lock().unwrap().len(), 1);
+        assert_eq!(reload_balance(&backend, &id), (100, Some(confirmed)));
+    }
+
+    #[tokio::test]
+    async fn should_compare_query_and_transaction_proofs_on_the_same_chain_height() {
+        let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .unwrap()
+            .identity_manager
+            .wallet_identity_mut(&iw.wallet_id, &id)
+            .unwrap();
+        let query = BlockTime::new(1000, 42, 1000);
+        iw.persist_refreshed_balance(managed, 100, query).unwrap();
+        assert_eq!(
+            managed.persist_confirmed_balance(200, BlockTime::new(999, 41, 900), &iw.persister),
+            100
+        );
+        assert_eq!(backend.committed.lock().unwrap().len(), 1);
+        assert_eq!(reload_balance(&backend, &id), (100, Some(query)));
+    }
+
+    #[tokio::test]
+    async fn should_replace_a_failed_query_write_with_a_newer_transaction_snapshot() {
+        let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .unwrap()
+            .identity_manager
+            .wallet_identity_mut(&iw.wallet_id, &id)
+            .unwrap();
+        backend.fail_flush.store(true, Ordering::SeqCst);
+        assert!(iw
+            .persist_refreshed_balance(managed, 200, BlockTime::new(9, 41, 900))
+            .is_err());
+        backend.fail_flush.store(false, Ordering::SeqCst);
+        let confirmed = BlockTime::new(10, 42, 1000);
+        assert_eq!(
+            managed.persist_confirmed_balance(100, confirmed, &iw.persister),
+            100
+        );
+        assert_eq!(reload_balance(&backend, &id), (100, Some(confirmed)));
+        let count = backend.committed.lock().unwrap().len();
+        iw.persist_refreshed_balance(managed, 200, BlockTime::new(9, 41, 900))
+            .unwrap();
+        assert_eq!(backend.committed.lock().unwrap().len(), count);
+    }
+    #[tokio::test]
+    async fn should_publish_a_confirmation_matching_a_failed_query_without_losing_retry() {
+        let (iw, id, backend) = fixture(Some(AFTER_DPNS)).await;
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&iw.wallet_id)
+            .unwrap()
+            .identity_manager
+            .wallet_identity_mut(&iw.wallet_id, &id)
+            .unwrap();
+        let confirmed = BlockTime::new(10, 42, 1000);
+        backend.fail_store.store(true, Ordering::SeqCst);
+        assert!(iw
+            .persist_refreshed_balance(managed, 100, confirmed)
+            .is_err());
+        assert_eq!(managed.identity.balance(), OLD_BALANCE);
+        assert_eq!(
+            managed.persist_confirmed_balance(100, confirmed, &iw.persister),
+            100
+        );
+        assert_eq!(managed.last_updated_balance_block_time, Some(confirmed));
+        assert!(backend.committed.lock().unwrap().is_empty());
+        backend.fail_store.store(false, Ordering::SeqCst);
+        iw.persist_refreshed_balance(managed, 200, BlockTime::new(9, 41, 900))
+            .unwrap();
+        assert_eq!(reload_balance(&backend, &id), (100, Some(confirmed)));
     }
 }

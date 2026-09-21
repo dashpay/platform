@@ -62,13 +62,14 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithHeight;
+use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
 
 use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
+use crate::BlockTime;
 
 use super::*;
 
@@ -466,7 +467,7 @@ impl IdentityWallet {
         // same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
         let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            identity.top_up_identity_with_signer_with_height(
+            identity.top_up_identity_with_signer_with_metadata(
                 &self.sdk,
                 proof.clone(),
                 &path,
@@ -489,7 +490,7 @@ impl IdentityWallet {
                     .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
-                    identity.top_up_identity_with_signer_with_height(
+                    identity.top_up_identity_with_signer_with_metadata(
                         &self.sdk,
                         chain_proof.clone(),
                         &path,
@@ -502,7 +503,7 @@ impl IdentityWallet {
             }
             Err(e) => (Err(e), proof.clone()),
         };
-        let (new_balance, proof_height) = self
+        let (mut new_balance, metadata) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(
                 submit_result,
@@ -528,14 +529,11 @@ impl IdentityWallet {
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
                     if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                        managed.set_confirmed_balance(new_balance, proof_height);
-                        if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                            tracing::error!(
-                                identity = %identity_id,
-                                error = %e,
-                                "Failed to persist identity balance update after top_up"
-                            );
-                        }
+                        new_balance = managed.persist_confirmed_balance(
+                            new_balance,
+                            BlockTime::from(metadata),
+                            &self.persister,
+                        );
                     }
                 }
                 None => {

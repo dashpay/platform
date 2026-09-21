@@ -14,10 +14,11 @@ use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::withdraw_from_identity::{
-    WithdrawFromIdentity, WithdrawFromIdentityWithHeight,
+    WithdrawFromIdentity, WithdrawFromIdentityWithMetadata,
 };
 
 use crate::error::PlatformWalletError;
+use crate::BlockTime;
 
 use super::*;
 
@@ -94,8 +95,8 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (new_balance, proof_height) = identity
-            .withdraw_with_height(
+        let (new_balance, metadata) = identity
+            .withdraw_with_metadata(
                 &self.sdk,
                 Some(to_address.clone()),
                 amount,
@@ -125,14 +126,11 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info_guard.identity_manager.identity_mut(identity_id) {
-                managed.set_confirmed_balance(new_balance, proof_height);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after withdraw (external signer)"
-                    );
-                }
+                managed.persist_confirmed_balance(
+                    new_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 

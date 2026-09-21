@@ -3,6 +3,8 @@ use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::{Error, Sdk};
+#[cfg(feature = "core_key_wallet")]
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::{Identity, PartialIdentity};
 use dpp::prelude::AssetLockProof;
@@ -47,19 +49,19 @@ pub trait TopUpIdentity: Waitable {
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
 }
 
-/// Balance operations that also expose the committed proof height.
+/// Balance operations that also expose the committed proof metadata.
 #[async_trait::async_trait]
-pub trait TopUpIdentityWithHeight: Waitable {
-    /// Returns the confirmed balance result and its proof block height.
+pub trait TopUpIdentityWithMetadata: Waitable {
+    /// Returns the confirmed balance result and its proof metadata.
     #[cfg(feature = "core_key_wallet")]
-    async fn top_up_identity_with_signer_with_height<AS>(
+    async fn top_up_identity_with_signer_with_metadata<AS>(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, u64), Error>
+    ) -> Result<(u64, ResponseMetadata), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
 }
@@ -106,7 +108,7 @@ impl TopUpIdentity for Identity {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        self.top_up_identity_with_signer_with_height(
+        self.top_up_identity_with_signer_with_metadata(
             sdk,
             asset_lock_proof,
             asset_lock_proof_path,
@@ -119,16 +121,16 @@ impl TopUpIdentity for Identity {
 }
 
 #[async_trait::async_trait]
-impl TopUpIdentityWithHeight for Identity {
+impl TopUpIdentityWithMetadata for Identity {
     #[cfg(feature = "core_key_wallet")]
-    async fn top_up_identity_with_signer_with_height<AS>(
+    async fn top_up_identity_with_signer_with_metadata<AS>(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, u64), Error>
+    ) -> Result<(u64, ResponseMetadata), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
@@ -153,6 +155,6 @@ impl TopUpIdentityWithHeight for Identity {
         identity
             .balance
             .ok_or(Error::Generic("expected an identity balance".to_string()))
-            .map(|balance| (balance, metadata.height))
+            .map(|balance| (balance, metadata))
     }
 }

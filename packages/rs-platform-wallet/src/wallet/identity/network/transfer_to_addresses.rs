@@ -11,12 +11,13 @@ use dpp::prelude::Identifier;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
+use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddressesWithMetadata;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
+use crate::BlockTime;
 
 use super::*;
 
@@ -99,8 +100,8 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (address_infos, new_balance, proof_height) = identity
-            .transfer_credits_to_addresses(
+        let (address_infos, mut new_balance, metadata) = identity
+            .transfer_credits_to_addresses_with_metadata(
                 &self.sdk,
                 recipient_addresses,
                 None, // signing_transfer_key_to_use
@@ -120,6 +121,8 @@ impl IdentityWallet {
                 })
             })?;
 
+        let proof_height = metadata.height;
+
         {
             let mut wm = self.wallet_manager.write().await;
             let info_guard = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
@@ -131,15 +134,11 @@ impl IdentityWallet {
                 .identity_manager
                 .managed_identity_mut(identity_id)
             {
-                managed.set_confirmed_balance(new_balance, proof_height);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after \
-                         transfer_to_addresses (external signer)"
-                    );
-                }
+                new_balance = managed.persist_confirmed_balance(
+                    new_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 

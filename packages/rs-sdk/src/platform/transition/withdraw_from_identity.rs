@@ -1,3 +1,4 @@
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::Address;
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -34,12 +35,12 @@ pub trait WithdrawFromIdentity {
     ) -> Result<u64, Error>;
 }
 
-/// Balance operations that also expose the committed proof height.
+/// Balance operations that also expose the committed proof metadata.
 #[async_trait::async_trait]
-pub trait WithdrawFromIdentityWithHeight {
-    /// Returns the confirmed balance result and its proof block height.
+pub trait WithdrawFromIdentityWithMetadata {
+    /// Returns the confirmed balance result and its proof metadata.
     #[allow(clippy::too_many_arguments)]
-    async fn withdraw_with_height<S: Signer<IdentityPublicKey> + Send>(
+    async fn withdraw_with_metadata<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
         address: Option<Address>,
@@ -48,7 +49,7 @@ pub trait WithdrawFromIdentityWithHeight {
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, u64), Error>;
+    ) -> Result<(u64, ResponseMetadata), Error>;
 }
 
 #[async_trait::async_trait]
@@ -63,7 +64,7 @@ impl WithdrawFromIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
-        self.withdraw_with_height(
+        self.withdraw_with_metadata(
             sdk,
             address,
             amount,
@@ -78,9 +79,9 @@ impl WithdrawFromIdentity for Identity {
 }
 
 #[async_trait::async_trait]
-impl WithdrawFromIdentityWithHeight for Identity {
+impl WithdrawFromIdentityWithMetadata for Identity {
     #[allow(clippy::too_many_arguments)]
-    async fn withdraw_with_height<S: Signer<IdentityPublicKey> + Send>(
+    async fn withdraw_with_metadata<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
         address: Option<Address>,
@@ -89,7 +90,7 @@ impl WithdrawFromIdentityWithHeight for Identity {
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, u64), Error> {
+    ) -> Result<(u64, ResponseMetadata), Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let script = address.map(|address| CoreScript::new(address.script_pubkey()));
         let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
@@ -120,7 +121,7 @@ impl WithdrawFromIdentityWithHeight for Identity {
                 .ok_or(Error::Generic(
                     "expected an identity balance after withdrawal".to_string(),
                 ))
-                .map(|balance| (balance, metadata.height)),
+                .map(|balance| (balance, metadata)),
             _ => Err(Error::Generic("proved a non identity".to_string())),
         }
     }
