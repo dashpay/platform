@@ -143,8 +143,8 @@ impl SystemDataContract {
             SystemDataContract::KeywordSearch => keyword_search_contract::ID_BYTES,
             #[cfg(not(feature = "keyword-search"))]
             SystemDataContract::KeywordSearch => [
-                92, 20, 14, 101, 92, 2, 101, 187, 194, 168, 8, 113, 109, 225, 132, 121, 133, 19,
-                89, 24, 173, 81, 205, 253, 11, 118, 102, 75, 169, 91, 163, 124,
+                161, 147, 167, 153, 40, 225, 219, 101, 50, 156, 28, 146, 150, 52, 114, 213, 56,
+                154, 106, 15, 79, 66, 18, 156, 94, 146, 216, 104, 140, 93, 170, 215,
             ],
 
             #[cfg(feature = "document-history")]
@@ -291,17 +291,53 @@ mod tests {
     use super::SystemDataContract;
     use base58::FromBase58;
 
-    /// `id()` spells the published identifier under both feature settings: with the crate
-    /// feature on it reads the crate's constant, without it the bytes copied above. A typo
-    /// in either copy would give feature-less builds a different contract id.
+    /// `id()` spells the published identifier of every system contract under both feature
+    /// settings: with a contract's feature on it reads that crate's constant, without it the
+    /// bytes copied above. A copy that drifts from the published id would give feature-less
+    /// builds a different contract id, which is exactly what happened to `KeywordSearch`
+    /// before this test existed. `FeatureFlags` has no crate and no published id; its bytes
+    /// are only a reserved slot.
     #[test]
-    fn app_connect_id_matches_the_published_id() {
-        let published = "H8F9mP1BM55TE1ShsxPZHzhyinaMdY9bMmP85mkDhcJJ"
-            .from_base58()
-            .expect("the published id is base58");
-        assert_eq!(
-            SystemDataContract::AppConnect.id().to_buffer().to_vec(),
-            published
-        );
+    fn every_system_contract_id_matches_the_published_id() {
+        let published = |base58: &str| base58.from_base58().expect("the published id is base58");
+
+        for contract in SystemDataContract::ALL {
+            let expected = match contract {
+                SystemDataContract::Withdrawals => {
+                    published("4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6")
+                }
+                SystemDataContract::MasternodeRewards => {
+                    published("rUnsWrFu3PKyRMGk2mxmZVBPbQuZx2qtHeFjURoQevX")
+                }
+                SystemDataContract::FeatureFlags => continue,
+                SystemDataContract::DPNS => {
+                    published("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec")
+                }
+                SystemDataContract::Dashpay => {
+                    published("Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7")
+                }
+                SystemDataContract::WalletUtils => {
+                    published("7CSFGeF4WNzgDmx94zwvHkYaG3Dx4XEe5LFsFgJswLbm")
+                }
+                SystemDataContract::TokenHistory => {
+                    published("43gujrzZgXqcKBiScLa4T8XTDnRhenR9BLx8GWVHjPxF")
+                }
+                SystemDataContract::KeywordSearch => {
+                    published("BsjE6tQxG47wffZCRQCovFx5rYrAYYC3rTVRWKro27LA")
+                }
+                SystemDataContract::DocumentHistory => {
+                    published("6voHRaoiPcfmMhbqCA9dixH98xcgPQ9UEcuaXjpVu3LD")
+                }
+                SystemDataContract::AppConnect => {
+                    published("H8F9mP1BM55TE1ShsxPZHzhyinaMdY9bMmP85mkDhcJJ")
+                }
+            };
+
+            assert_eq!(
+                contract.id().to_buffer().to_vec(),
+                expected,
+                "{contract:?} id does not match its published id"
+            );
+        }
     }
 }
