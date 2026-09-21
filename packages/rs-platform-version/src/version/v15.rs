@@ -3,7 +3,6 @@ use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v
 use crate::version::dpp_versions::dpp_validation_versions::v6::DPP_VALIDATION_VERSIONS_V6;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
-use crate::version::drive_abci_versions::drive_abci_query_versions::v4::DRIVE_ABCI_QUERY_VERSIONS_V4;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
@@ -49,7 +48,6 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the protocol-change hook v2 migrates retained histories on the first v15 block
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: delete consults the lifecycle; erase structure and state validation
-        query: DRIVE_ABCI_QUERY_VERSIONS_V4, // changed: the history handler reports the deleted and erasing lifecycle states with their times
         ..PLATFORM_V14.drive_abci
     },
     dpp: DPPVersion {

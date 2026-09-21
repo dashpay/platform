@@ -579,3 +579,199 @@ fn should_reject_missing_selectors_before_reading_state() {
         .unwrap()
         .is_valid());
 }
+
+#[test]
+fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Setters;
+
+    let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+    let mut state = state.as_ref().clone();
+    let contract = json_document_to_contract(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"
+        ),
+        false,
+        version,
+    )
+    .unwrap();
+    platform
+        .drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let owner = Identifier::from([8; 32]);
+    let mut document = json_document_to_document(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/profile0.json"
+        ),
+        Some(owner),
+        document_type,
+        version,
+    )
+    .unwrap();
+    let chunk = version
+        .system_limits
+        .max_document_revisions_erased_per_transition
+        .expect("protocol 15 bounds the erase chunk") as u64;
+    for revision in 1..=chunk + 2 {
+        document.set_revision(Some(revision));
+        platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                revision > 1,
+                BlockInfo::default_with_time(1_000 + revision),
+                true,
+                None,
+                version,
+                None,
+            )
+            .unwrap();
+    }
+
+    let key = SecretKey::<Bls12381G2Impl>::from_hash(b"document-history-quorum");
+    let provider = Provider {
+        contract: Arc::new(contract.clone()),
+        key: key.public_key().to_bytes().try_into().unwrap(),
+    };
+    state.last_committed_block_info = Some(
+        dpp::block::extended_block_info::v0::ExtendedBlockInfoV0 {
+            basic_info: BlockInfo {
+                height: 42,
+                core_height: 12,
+                time_ms: 3_000,
+                epoch: Default::default(),
+            },
+            app_hash: [0; 32],
+            quorum_hash: [9; 32],
+            block_id_hash: [7; 32],
+            proposer_pro_tx_hash: [0; 32],
+            signature: [0; 96],
+            round: 0,
+        }
+        .into(),
+    );
+    let wire_request = GetDocumentHistoryRequestV0 {
+        data_contract_id: contract.id().to_vec(),
+        document_type_name: "profile".into(),
+        document_id: document.id().to_vec(),
+        limit: None,
+        prove: true,
+        filter: Some(Filter::StartAtMs(0)),
+    };
+    let request: GetDocumentHistoryRequest = wire_request.clone().into();
+
+    for (stage, expected_state) in [
+        ("deleted", DocumentHistoryState::Deleted),
+        ("erasing", DocumentHistoryState::Erasing),
+    ] {
+        let operations = if stage == "deleted" {
+            platform
+                .drive
+                .delete_document_for_contract_operations_with_lifecycle(
+                    document.id(),
+                    &contract,
+                    document_type,
+                    &BlockInfo::default_with_time(5_000),
+                    Some(owner),
+                    None,
+                    &mut None,
+                    5_000,
+                    None,
+                    version,
+                )
+                .unwrap()
+        } else {
+            platform
+                .drive
+                .erase_document_for_contract_operations(
+                    document.id(),
+                    &contract,
+                    document_type,
+                    &BlockInfo::default_with_time(6_000),
+                    &mut None,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        platform
+            .drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &version.drive,
+            )
+            .unwrap();
+
+        let root = platform
+            .drive
+            .grove
+            .root_hash(None, &version.drive.grove_version)
+            .value
+            .unwrap();
+        let metadata = platform.response_metadata_v0(&state, CheckpointUsed::Current);
+        let signed = signed_proof(
+            vec![],
+            root,
+            &metadata,
+            &key,
+            platform.config.validator_set.quorum_type as u32,
+        );
+        let committed = state.last_committed_block_info.as_mut().unwrap();
+        committed.set_app_hash(root);
+        committed.set_signature(signed.signature.try_into().unwrap());
+
+        let response = platform
+            .query_document_history_v0(wire_request.clone(), &state, version)
+            .unwrap()
+            .into_data()
+            .unwrap();
+        // A proved response carries the proof and nothing else: there are no
+        // lifecycle fields on the wire for a client to trust, so every value
+        // the verifier returns below is derived from the proof itself.
+        assert!(
+            matches!(response.result, Some(ResponseResult::Proof(_))),
+            "{stage}: a proved response must not carry lifecycle claims"
+        );
+        let verify = |response: GetDocumentHistoryResponseV0| {
+            DocumentHistory::maybe_from_proof(
+                request.clone(),
+                GetDocumentHistoryResponse::from(response),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+        };
+        let history = verify(response.clone())
+            .unwrap_or_else(|error| panic!("{stage}: honest response must verify: {error}"))
+            .expect("the proof authenticates a history");
+        let lifecycle = history
+            .lifecycle
+            .expect("the proof authenticates the lifecycle");
+        assert_eq!(lifecycle.state, expected_state, "{stage}");
+        assert_eq!(lifecycle.times.deleted_at_ms, 5_000, "{stage}");
+
+        let mut tampered = response;
+        let proof = proof_mut(&mut tampered);
+        let mut envelope = DocumentHistoryProof::from_bytes(&proof.grovedb_proof).unwrap();
+        let middle = envelope.metadata_proof.len() / 2;
+        envelope.metadata_proof[middle] ^= 1;
+        proof.grovedb_proof = envelope.to_bytes().unwrap();
+        assert!(
+            verify(tampered).is_err(),
+            "{stage}: changing the proof that authenticates lifecycle must be rejected"
+        );
+    }
+}
