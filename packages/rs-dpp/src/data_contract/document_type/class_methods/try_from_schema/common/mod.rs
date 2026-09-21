@@ -2091,8 +2091,12 @@ pub(super) fn apply_can_be_deleted_by_moderators(
 pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
     schema: &Value,
 ) -> Result<Option<u32>, ProtocolError> {
-    schema
-        .get_optional_integer::<u32>(CAN_BE_DELETED_BY_MODERATORS_FOR)
+    // Let the core parser report a non-object schema as an invalid contract
+    // structure, as the other doctype-keyword readers do.
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(None);
+    };
+    Value::inner_optional_integer_value::<u32>(schema_map, CAN_BE_DELETED_BY_MODERATORS_FOR)
         .map_err(consensus_or_protocol_value_error)
 }
 
