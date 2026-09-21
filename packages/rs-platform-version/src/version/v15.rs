@@ -1,4 +1,5 @@
 use super::dpp_versions::dpp_contract_versions::v7::CONTRACT_VERSIONS_V7;
+use super::dpp_versions::dpp_validation_versions::v6::DPP_VALIDATION_VERSIONS_V6;
 use super::dpp_versions::DPPVersion;
 use super::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
 use super::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
@@ -46,6 +47,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     dpp: DPPVersion {
         contract_versions: CONTRACT_VERSIONS_V7,
+        validation: DPP_VALIDATION_VERSIONS_V6,
         ..PLATFORM_V14.dpp
     },
     ..PLATFORM_V14

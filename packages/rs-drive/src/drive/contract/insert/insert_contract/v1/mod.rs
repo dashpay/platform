@@ -19,7 +19,6 @@ use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -261,16 +260,6 @@ impl Drive {
                     transaction,
                     platform_version,
                 )?;
-            }
-
-            if token_config.has_shielded_pool() {
-                batch_operations.extend(self.create_token_shielded_pool_trees_operations(
-                    token_id_bytes,
-                    false,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )?);
             }
 
             if token_config.start_as_paused() {

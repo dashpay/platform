@@ -995,6 +995,14 @@ fn validate_batch_token_shielded_proofs(
                 )
             }
             BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
+                if t.base()
+                    .using_group_info()
+                    .is_some_and(|info| !info.action_is_proposer)
+                {
+                    // A confirmer reuses the proposer's bundle. Its burner identity comes
+                    // from the stored group action, so state validation verifies this proof.
+                    continue;
+                }
                 let extra_sighash_data = dpp::shielded::token_burn_from_pool_extra_sighash_data(
                     &t.base().token_id().to_buffer(),
                     &owner_id,

@@ -9,6 +9,8 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use dpp::version::feature_initial_protocol_versions::{
@@ -57,9 +59,19 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_)
             | StateTransition::ContractFeeClaim(_) => Ok(true),
-            StateTransition::DataContractCreate(_)
-            | StateTransition::DataContractUpdate(_)
-            | StateTransition::IdentityCreate(_)
+            // Newly decoded token formats need an unpaid activation check even while the
+            // older contract basic-structure generations remain frozen.
+            StateTransition::DataContractCreate(st) => Ok(st
+                .data_contract()
+                .tokens()
+                .values()
+                .any(|configuration| configuration.format_version() > 0)),
+            StateTransition::DataContractUpdate(st) => Ok(st
+                .data_contract()
+                .tokens()
+                .values()
+                .any(|configuration| configuration.format_version() > 0)),
+            StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
@@ -73,6 +85,20 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
+        let contract = match self {
+            StateTransition::DataContractCreate(st) => Some(st.data_contract()),
+            StateTransition::DataContractUpdate(st) => Some(st.data_contract()),
+            _ => None,
+        };
+        if let Some(contract) = contract {
+            for configuration in contract.tokens().values() {
+                let result = configuration.validate_format_version(platform_version);
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+            }
+            return Ok(ConsensusValidationResult::new());
+        }
         match self {
             StateTransition::Batch(st) => {
                 // Token shielded pools (the batch transitions that use them and a document token

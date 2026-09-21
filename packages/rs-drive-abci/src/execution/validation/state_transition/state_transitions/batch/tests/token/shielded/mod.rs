@@ -13,7 +13,10 @@ mod token_shielded_pool_tests {
     use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::DataContract;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
@@ -24,7 +27,10 @@ mod token_shielded_pool_tests {
     };
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::StateTransition;
+    use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::version::feature_initial_protocol_versions::TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
     use drive::drive::shielded::paths::token_shielded_pool_anchors_path_vec;
@@ -1075,6 +1081,110 @@ mod token_shielded_pool_tests {
         );
     }
 
+    #[tokio::test]
+    async fn should_gate_new_shielded_tokens_and_validate_their_rules_on_contract_update() {
+        for (platform_version, incompatible_rules) in [
+            (PlatformVersion::get(14).unwrap(), false),
+            (PlatformVersion::latest(), true),
+            (PlatformVersion::latest(), false),
+        ] {
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(platform_version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, 9012, dash_to_credits!(1.0));
+            let mut contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            contract.set_owner_id(identity.id());
+            contract.config_mut().set_readonly(false);
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("store original contract");
+
+            let token_contract = shielded_token_contract(identity.id(), platform_version);
+            let mut configuration = token_contract
+                .expected_token_configuration(0)
+                .expect("shielded token configuration")
+                .clone();
+            if incompatible_rules {
+                configuration.set_freeze_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                    authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                    changing_authorized_action_takers_to_no_one_allowed: false,
+                    changing_admin_action_takers_to_no_one_allowed: false,
+                    self_changing_admin_action_takers_allowed: false,
+                }));
+            }
+            contract.add_token(0, configuration);
+            contract.increment_version();
+            let token_id = contract.token_id(0).expect("token id");
+            let update = DataContractUpdateTransition::new_from_data_contract(
+                contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("contract update transition");
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[update.serialize_to_bytes().expect("serialize update")],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process contract update");
+
+            if platform_version.protocol_version < 15 {
+                assert_matches!(
+                    result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+                    )]
+                );
+            } else if incompatible_rules {
+                assert_matches!(result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::TokenShieldedPoolIncompatibleRulesError(error))
+                    )] if error.token_contract_position() == 0 && error.rule() == "freezeRules");
+            } else {
+                assert_matches!(
+                    result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+                assert!(platform
+                    .drive
+                    .has_token_shielded_pool(
+                        token_id.to_buffer(),
+                        Some(&transaction),
+                        &mut vec![],
+                        platform_version,
+                    )
+                    .expect("new token pool must exist"));
+            }
+        }
+    }
+
     /// `hasShieldedPool` is a format-version-1 field, so clients see it in the contract JSON
     /// and it survives the round trip.
     #[test]
@@ -1102,6 +1212,9 @@ mod token_pool_mint_burn_claim_purchase_tests {
         OWNER_INITIAL_BALANCE,
     };
     use super::*;
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TempPlatform;
@@ -1118,8 +1231,37 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::state_transition::batch_transition::{
         TokenBurnFromPoolTransition, TokenSetPriceForDirectPurchaseTransition,
     };
+    use dpp::state_transition::StateTransition;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     use platform_version::version::PlatformVersion;
+
+    fn assert_check_tx_accepts(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        transition: &StateTransition,
+    ) {
+        let state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let result = platform
+            .check_tx(
+                &transition
+                    .serialize_to_bytes()
+                    .expect("serialize transition"),
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                PlatformVersion::latest(),
+            )
+            .expect("check tx");
+        assert!(
+            result.is_valid(),
+            "unexpected CheckTx errors: {:?}",
+            result.errors
+        );
+    }
 
     fn total_supply(platform: &TempPlatform<MockCoreRPCLike>, token_id: Identifier) -> u64 {
         platform
@@ -1512,6 +1654,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
         )
         .await
         .expect("token burn from pool proposal");
+        assert_check_tx_accepts(&platform, &proposal);
         let result = process(&platform, &proposal);
         assert_matches!(
             result.execution_results().as_slice(),
@@ -1610,6 +1753,59 @@ mod token_pool_mint_burn_claim_purchase_tests {
         )
         .await
         .expect("token burn from pool confirmation");
+        assert_check_tx_accepts(&platform, &confirmation);
+
+        // Stateless admission must defer a confirmer's proof, but block execution must
+        // still verify it after recovering the proposer. Corrupting only the binding
+        // signature preserves the group action's pinned actions digest.
+        let mut corrupted_bundle = burn_bundle.clone();
+        corrupted_bundle.binding_signature[0] ^= 1;
+        let corrupted = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            corrupted_bundle,
+            None,
+            as_other_signer(),
+            &confirmer_key,
+            3,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("confirmation with an invalid binding signature");
+        assert!(corrupted
+            .validate_shielded_proof(platform_version)
+            .expect("stateless proof check")
+            .is_valid());
+        let state = platform.state.load();
+        let transaction = platform.drive.grove.start_transaction();
+        let rejected = platform
+            .platform
+            .process_raw_state_transitions(
+                &[corrupted
+                    .serialize_to_bytes()
+                    .expect("serialize corrupted confirmation")],
+                &state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("validate corrupted confirmation");
+        assert_matches!(
+            rejected.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
+        );
+        drop(transaction);
         let result = process(&platform, &confirmation);
         assert_matches!(
             result.execution_results().as_slice(),

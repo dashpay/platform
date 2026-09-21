@@ -12641,6 +12641,70 @@ export namespace GetGroupActionsResponse {
       }
     }
 
+    export class MintToPoolEvent extends jspb.Message {
+      getAmount(): number;
+      setAmount(value: number): void;
+
+      getActionsDigest(): Uint8Array | string;
+      getActionsDigest_asU8(): Uint8Array;
+      getActionsDigest_asB64(): string;
+      setActionsDigest(value: Uint8Array | string): void;
+
+      hasPublicNote(): boolean;
+      clearPublicNote(): void;
+      getPublicNote(): string;
+      setPublicNote(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): MintToPoolEvent.AsObject;
+      static toObject(includeInstance: boolean, msg: MintToPoolEvent): MintToPoolEvent.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: MintToPoolEvent, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): MintToPoolEvent;
+      static deserializeBinaryFromReader(message: MintToPoolEvent, reader: jspb.BinaryReader): MintToPoolEvent;
+    }
+
+    export namespace MintToPoolEvent {
+      export type AsObject = {
+        amount: number,
+        actionsDigest: Uint8Array | string,
+        publicNote: string,
+      }
+    }
+
+    export class BurnFromPoolEvent extends jspb.Message {
+      getAmount(): number;
+      setAmount(value: number): void;
+
+      getActionsDigest(): Uint8Array | string;
+      getActionsDigest_asU8(): Uint8Array;
+      getActionsDigest_asB64(): string;
+      setActionsDigest(value: Uint8Array | string): void;
+
+      hasPublicNote(): boolean;
+      clearPublicNote(): void;
+      getPublicNote(): string;
+      setPublicNote(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): BurnFromPoolEvent.AsObject;
+      static toObject(includeInstance: boolean, msg: BurnFromPoolEvent): BurnFromPoolEvent.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: BurnFromPoolEvent, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): BurnFromPoolEvent;
+      static deserializeBinaryFromReader(message: BurnFromPoolEvent, reader: jspb.BinaryReader): BurnFromPoolEvent;
+    }
+
+    export namespace BurnFromPoolEvent {
+      export type AsObject = {
+        amount: number,
+        actionsDigest: Uint8Array | string,
+        publicNote: string,
+      }
+    }
+
     export class GroupActionEvent extends jspb.Message {
       hasTokenEvent(): boolean;
       clearTokenEvent(): void;
@@ -12824,6 +12888,16 @@ export namespace GetGroupActionsResponse {
       getUpdatePrice(): GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent | undefined;
       setUpdatePrice(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent): void;
 
+      hasMintToPool(): boolean;
+      clearMintToPool(): void;
+      getMintToPool(): GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent | undefined;
+      setMintToPool(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent): void;
+
+      hasBurnFromPool(): boolean;
+      clearBurnFromPool(): void;
+      getBurnFromPool(): GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent | undefined;
+      setBurnFromPool(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent): void;
+
       getTypeCase(): TokenEvent.TypeCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): TokenEvent.AsObject;
@@ -12845,6 +12919,8 @@ export namespace GetGroupActionsResponse {
         emergencyAction?: GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.AsObject,
         tokenConfigUpdate?: GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEvent.AsObject,
         updatePrice?: GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.AsObject,
+        mintToPool?: GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.AsObject,
+        burnFromPool?: GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.AsObject,
       }
 
       export enum TypeCase {
@@ -12857,6 +12933,8 @@ export namespace GetGroupActionsResponse {
         EMERGENCY_ACTION = 6,
         TOKEN_CONFIG_UPDATE = 7,
         UPDATE_PRICE = 8,
+        MINT_TO_POOL = 9,
+        BURN_FROM_POOL = 10,
       }
     }
 
@@ -14151,6 +14229,13 @@ export namespace GetShieldedEncryptedNotesRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    hasTokenId(): boolean;
+    clearTokenId(): void;
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetShieldedEncryptedNotesRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetShieldedEncryptedNotesRequestV0): GetShieldedEncryptedNotesRequestV0.AsObject;
@@ -14166,6 +14251,7 @@ export namespace GetShieldedEncryptedNotesRequest {
       startIndex: number,
       count: number,
       prove: boolean,
+      tokenId: Uint8Array | string,
     }
   }
 
@@ -14332,6 +14418,13 @@ export namespace GetShieldedAnchorsRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    hasTokenId(): boolean;
+    clearTokenId(): void;
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetShieldedAnchorsRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetShieldedAnchorsRequestV0): GetShieldedAnchorsRequestV0.AsObject;
@@ -14345,6 +14438,7 @@ export namespace GetShieldedAnchorsRequest {
   export namespace GetShieldedAnchorsRequestV0 {
     export type AsObject = {
       prove: boolean,
+      tokenId: Uint8Array | string,
     }
   }
 
@@ -14473,6 +14567,13 @@ export namespace GetMostRecentShieldedAnchorRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    hasTokenId(): boolean;
+    clearTokenId(): void;
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorRequestV0): GetMostRecentShieldedAnchorRequestV0.AsObject;
@@ -14486,6 +14587,7 @@ export namespace GetMostRecentShieldedAnchorRequest {
   export namespace GetMostRecentShieldedAnchorRequestV0 {
     export type AsObject = {
       prove: boolean,
+      tokenId: Uint8Array | string,
     }
   }
 
@@ -14592,6 +14694,13 @@ export namespace GetShieldedPoolStateRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    hasTokenId(): boolean;
+    clearTokenId(): void;
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetShieldedPoolStateRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetShieldedPoolStateRequestV0): GetShieldedPoolStateRequestV0.AsObject;
@@ -14605,6 +14714,7 @@ export namespace GetShieldedPoolStateRequest {
   export namespace GetShieldedPoolStateRequestV0 {
     export type AsObject = {
       prove: boolean,
+      tokenId: Uint8Array | string,
     }
   }
 
@@ -14709,6 +14819,13 @@ export namespace GetShieldedNotesCountRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    hasTokenId(): boolean;
+    clearTokenId(): void;
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetShieldedNotesCountRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetShieldedNotesCountRequestV0): GetShieldedNotesCountRequestV0.AsObject;
@@ -14722,6 +14839,7 @@ export namespace GetShieldedNotesCountRequest {
   export namespace GetShieldedNotesCountRequestV0 {
     export type AsObject = {
       prove: boolean,
+      tokenId: Uint8Array | string,
     }
   }
 
@@ -14833,6 +14951,13 @@ export namespace GetShieldedNullifiersRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    hasTokenId(): boolean;
+    clearTokenId(): void;
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetShieldedNullifiersRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetShieldedNullifiersRequestV0): GetShieldedNullifiersRequestV0.AsObject;
@@ -14847,6 +14972,7 @@ export namespace GetShieldedNullifiersRequest {
     export type AsObject = {
       nullifiersList: Array<Uint8Array | string>,
       prove: boolean,
+      tokenId: Uint8Array | string,
     }
   }
 

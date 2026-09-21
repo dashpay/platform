@@ -8,6 +8,18 @@ use super::{
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
+            contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(3),
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .contract_create_state_transition
+            },
+            contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(3),
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .contract_update_state_transition
+            },
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 document_base_transition_state_validation: 1,
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10

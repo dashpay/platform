@@ -98770,6 +98770,516 @@ $root.org = (function() {
                                 return UpdateDirectPurchasePriceEvent;
                             })();
 
+                            GetGroupActionsResponseV0.MintToPoolEvent = (function() {
+
+                                /**
+                                 * Properties of a MintToPoolEvent.
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0
+                                 * @interface IMintToPoolEvent
+                                 * @property {number|Long|null} [amount] MintToPoolEvent amount
+                                 * @property {Uint8Array|null} [actionsDigest] MintToPoolEvent actionsDigest
+                                 * @property {string|null} [publicNote] MintToPoolEvent publicNote
+                                 */
+
+                                /**
+                                 * Constructs a new MintToPoolEvent.
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0
+                                 * @classdesc Represents a MintToPoolEvent.
+                                 * @implements IMintToPoolEvent
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IMintToPoolEvent=} [properties] Properties to set
+                                 */
+                                function MintToPoolEvent(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * MintToPoolEvent amount.
+                                 * @member {number|Long} amount
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @instance
+                                 */
+                                MintToPoolEvent.prototype.amount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * MintToPoolEvent actionsDigest.
+                                 * @member {Uint8Array} actionsDigest
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @instance
+                                 */
+                                MintToPoolEvent.prototype.actionsDigest = $util.newBuffer([]);
+
+                                /**
+                                 * MintToPoolEvent publicNote.
+                                 * @member {string} publicNote
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @instance
+                                 */
+                                MintToPoolEvent.prototype.publicNote = "";
+
+                                /**
+                                 * Creates a new MintToPoolEvent instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IMintToPoolEvent=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent} MintToPoolEvent instance
+                                 */
+                                MintToPoolEvent.create = function create(properties) {
+                                    return new MintToPoolEvent(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified MintToPoolEvent message. Does not implicitly {@link org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IMintToPoolEvent} message MintToPoolEvent message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                MintToPoolEvent.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.amount);
+                                    if (message.actionsDigest != null && Object.hasOwnProperty.call(message, "actionsDigest"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.actionsDigest);
+                                    if (message.publicNote != null && Object.hasOwnProperty.call(message, "publicNote"))
+                                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.publicNote);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified MintToPoolEvent message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IMintToPoolEvent} message MintToPoolEvent message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                MintToPoolEvent.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a MintToPoolEvent message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent} MintToPoolEvent
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                MintToPoolEvent.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.amount = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.actionsDigest = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.publicNote = reader.string();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a MintToPoolEvent message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent} MintToPoolEvent
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                MintToPoolEvent.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a MintToPoolEvent message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                MintToPoolEvent.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.amount != null && message.hasOwnProperty("amount"))
+                                        if (!$util.isInteger(message.amount) && !(message.amount && $util.isInteger(message.amount.low) && $util.isInteger(message.amount.high)))
+                                            return "amount: integer|Long expected";
+                                    if (message.actionsDigest != null && message.hasOwnProperty("actionsDigest"))
+                                        if (!(message.actionsDigest && typeof message.actionsDigest.length === "number" || $util.isString(message.actionsDigest)))
+                                            return "actionsDigest: buffer expected";
+                                    if (message.publicNote != null && message.hasOwnProperty("publicNote"))
+                                        if (!$util.isString(message.publicNote))
+                                            return "publicNote: string expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a MintToPoolEvent message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent} MintToPoolEvent
+                                 */
+                                MintToPoolEvent.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent();
+                                    if (object.amount != null)
+                                        if ($util.Long)
+                                            (message.amount = $util.Long.fromValue(object.amount)).unsigned = true;
+                                        else if (typeof object.amount === "string")
+                                            message.amount = parseInt(object.amount, 10);
+                                        else if (typeof object.amount === "number")
+                                            message.amount = object.amount;
+                                        else if (typeof object.amount === "object")
+                                            message.amount = new $util.LongBits(object.amount.low >>> 0, object.amount.high >>> 0).toNumber(true);
+                                    if (object.actionsDigest != null)
+                                        if (typeof object.actionsDigest === "string")
+                                            $util.base64.decode(object.actionsDigest, message.actionsDigest = $util.newBuffer($util.base64.length(object.actionsDigest)), 0);
+                                        else if (object.actionsDigest.length >= 0)
+                                            message.actionsDigest = object.actionsDigest;
+                                    if (object.publicNote != null)
+                                        message.publicNote = String(object.publicNote);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a MintToPoolEvent message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent} message MintToPoolEvent
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                MintToPoolEvent.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.amount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.amount = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.actionsDigest = "";
+                                        else {
+                                            object.actionsDigest = [];
+                                            if (options.bytes !== Array)
+                                                object.actionsDigest = $util.newBuffer(object.actionsDigest);
+                                        }
+                                        object.publicNote = "";
+                                    }
+                                    if (message.amount != null && message.hasOwnProperty("amount"))
+                                        if (typeof message.amount === "number")
+                                            object.amount = options.longs === String ? String(message.amount) : message.amount;
+                                        else
+                                            object.amount = options.longs === String ? $util.Long.prototype.toString.call(message.amount) : options.longs === Number ? new $util.LongBits(message.amount.low >>> 0, message.amount.high >>> 0).toNumber(true) : message.amount;
+                                    if (message.actionsDigest != null && message.hasOwnProperty("actionsDigest"))
+                                        object.actionsDigest = options.bytes === String ? $util.base64.encode(message.actionsDigest, 0, message.actionsDigest.length) : options.bytes === Array ? Array.prototype.slice.call(message.actionsDigest) : message.actionsDigest;
+                                    if (message.publicNote != null && message.hasOwnProperty("publicNote"))
+                                        object.publicNote = message.publicNote;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this MintToPoolEvent to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                MintToPoolEvent.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return MintToPoolEvent;
+                            })();
+
+                            GetGroupActionsResponseV0.BurnFromPoolEvent = (function() {
+
+                                /**
+                                 * Properties of a BurnFromPoolEvent.
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0
+                                 * @interface IBurnFromPoolEvent
+                                 * @property {number|Long|null} [amount] BurnFromPoolEvent amount
+                                 * @property {Uint8Array|null} [actionsDigest] BurnFromPoolEvent actionsDigest
+                                 * @property {string|null} [publicNote] BurnFromPoolEvent publicNote
+                                 */
+
+                                /**
+                                 * Constructs a new BurnFromPoolEvent.
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0
+                                 * @classdesc Represents a BurnFromPoolEvent.
+                                 * @implements IBurnFromPoolEvent
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IBurnFromPoolEvent=} [properties] Properties to set
+                                 */
+                                function BurnFromPoolEvent(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * BurnFromPoolEvent amount.
+                                 * @member {number|Long} amount
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @instance
+                                 */
+                                BurnFromPoolEvent.prototype.amount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * BurnFromPoolEvent actionsDigest.
+                                 * @member {Uint8Array} actionsDigest
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @instance
+                                 */
+                                BurnFromPoolEvent.prototype.actionsDigest = $util.newBuffer([]);
+
+                                /**
+                                 * BurnFromPoolEvent publicNote.
+                                 * @member {string} publicNote
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @instance
+                                 */
+                                BurnFromPoolEvent.prototype.publicNote = "";
+
+                                /**
+                                 * Creates a new BurnFromPoolEvent instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IBurnFromPoolEvent=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent} BurnFromPoolEvent instance
+                                 */
+                                BurnFromPoolEvent.create = function create(properties) {
+                                    return new BurnFromPoolEvent(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified BurnFromPoolEvent message. Does not implicitly {@link org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IBurnFromPoolEvent} message BurnFromPoolEvent message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                BurnFromPoolEvent.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.amount);
+                                    if (message.actionsDigest != null && Object.hasOwnProperty.call(message, "actionsDigest"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.actionsDigest);
+                                    if (message.publicNote != null && Object.hasOwnProperty.call(message, "publicNote"))
+                                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.publicNote);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified BurnFromPoolEvent message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IBurnFromPoolEvent} message BurnFromPoolEvent message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                BurnFromPoolEvent.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a BurnFromPoolEvent message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent} BurnFromPoolEvent
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                BurnFromPoolEvent.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.amount = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.actionsDigest = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.publicNote = reader.string();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a BurnFromPoolEvent message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent} BurnFromPoolEvent
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                BurnFromPoolEvent.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a BurnFromPoolEvent message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                BurnFromPoolEvent.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.amount != null && message.hasOwnProperty("amount"))
+                                        if (!$util.isInteger(message.amount) && !(message.amount && $util.isInteger(message.amount.low) && $util.isInteger(message.amount.high)))
+                                            return "amount: integer|Long expected";
+                                    if (message.actionsDigest != null && message.hasOwnProperty("actionsDigest"))
+                                        if (!(message.actionsDigest && typeof message.actionsDigest.length === "number" || $util.isString(message.actionsDigest)))
+                                            return "actionsDigest: buffer expected";
+                                    if (message.publicNote != null && message.hasOwnProperty("publicNote"))
+                                        if (!$util.isString(message.publicNote))
+                                            return "publicNote: string expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a BurnFromPoolEvent message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent} BurnFromPoolEvent
+                                 */
+                                BurnFromPoolEvent.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent();
+                                    if (object.amount != null)
+                                        if ($util.Long)
+                                            (message.amount = $util.Long.fromValue(object.amount)).unsigned = true;
+                                        else if (typeof object.amount === "string")
+                                            message.amount = parseInt(object.amount, 10);
+                                        else if (typeof object.amount === "number")
+                                            message.amount = object.amount;
+                                        else if (typeof object.amount === "object")
+                                            message.amount = new $util.LongBits(object.amount.low >>> 0, object.amount.high >>> 0).toNumber(true);
+                                    if (object.actionsDigest != null)
+                                        if (typeof object.actionsDigest === "string")
+                                            $util.base64.decode(object.actionsDigest, message.actionsDigest = $util.newBuffer($util.base64.length(object.actionsDigest)), 0);
+                                        else if (object.actionsDigest.length >= 0)
+                                            message.actionsDigest = object.actionsDigest;
+                                    if (object.publicNote != null)
+                                        message.publicNote = String(object.publicNote);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a BurnFromPoolEvent message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent} message BurnFromPoolEvent
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                BurnFromPoolEvent.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.amount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.amount = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.actionsDigest = "";
+                                        else {
+                                            object.actionsDigest = [];
+                                            if (options.bytes !== Array)
+                                                object.actionsDigest = $util.newBuffer(object.actionsDigest);
+                                        }
+                                        object.publicNote = "";
+                                    }
+                                    if (message.amount != null && message.hasOwnProperty("amount"))
+                                        if (typeof message.amount === "number")
+                                            object.amount = options.longs === String ? String(message.amount) : message.amount;
+                                        else
+                                            object.amount = options.longs === String ? $util.Long.prototype.toString.call(message.amount) : options.longs === Number ? new $util.LongBits(message.amount.low >>> 0, message.amount.high >>> 0).toNumber(true) : message.amount;
+                                    if (message.actionsDigest != null && message.hasOwnProperty("actionsDigest"))
+                                        object.actionsDigest = options.bytes === String ? $util.base64.encode(message.actionsDigest, 0, message.actionsDigest.length) : options.bytes === Array ? Array.prototype.slice.call(message.actionsDigest) : message.actionsDigest;
+                                    if (message.publicNote != null && message.hasOwnProperty("publicNote"))
+                                        object.publicNote = message.publicNote;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this BurnFromPoolEvent to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                BurnFromPoolEvent.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return BurnFromPoolEvent;
+                            })();
+
                             GetGroupActionsResponseV0.GroupActionEvent = (function() {
 
                                 /**
@@ -99877,6 +100387,8 @@ $root.org = (function() {
                                  * @property {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IEmergencyActionEvent|null} [emergencyAction] TokenEvent emergencyAction
                                  * @property {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.ITokenConfigUpdateEvent|null} [tokenConfigUpdate] TokenEvent tokenConfigUpdate
                                  * @property {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IUpdateDirectPurchasePriceEvent|null} [updatePrice] TokenEvent updatePrice
+                                 * @property {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IMintToPoolEvent|null} [mintToPool] TokenEvent mintToPool
+                                 * @property {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IBurnFromPoolEvent|null} [burnFromPool] TokenEvent burnFromPool
                                  */
 
                                 /**
@@ -99958,17 +100470,33 @@ $root.org = (function() {
                                  */
                                 TokenEvent.prototype.updatePrice = null;
 
+                                /**
+                                 * TokenEvent mintToPool.
+                                 * @member {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IMintToPoolEvent|null|undefined} mintToPool
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEvent
+                                 * @instance
+                                 */
+                                TokenEvent.prototype.mintToPool = null;
+
+                                /**
+                                 * TokenEvent burnFromPool.
+                                 * @member {org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.IBurnFromPoolEvent|null|undefined} burnFromPool
+                                 * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEvent
+                                 * @instance
+                                 */
+                                TokenEvent.prototype.burnFromPool = null;
+
                                 // OneOf field names bound to virtual getters and setters
                                 var $oneOfFields;
 
                                 /**
                                  * TokenEvent type.
-                                 * @member {"mint"|"burn"|"freeze"|"unfreeze"|"destroyFrozenFunds"|"emergencyAction"|"tokenConfigUpdate"|"updatePrice"|undefined} type
+                                 * @member {"mint"|"burn"|"freeze"|"unfreeze"|"destroyFrozenFunds"|"emergencyAction"|"tokenConfigUpdate"|"updatePrice"|"mintToPool"|"burnFromPool"|undefined} type
                                  * @memberof org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEvent
                                  * @instance
                                  */
                                 Object.defineProperty(TokenEvent.prototype, "type", {
-                                    get: $util.oneOfGetter($oneOfFields = ["mint", "burn", "freeze", "unfreeze", "destroyFrozenFunds", "emergencyAction", "tokenConfigUpdate", "updatePrice"]),
+                                    get: $util.oneOfGetter($oneOfFields = ["mint", "burn", "freeze", "unfreeze", "destroyFrozenFunds", "emergencyAction", "tokenConfigUpdate", "updatePrice", "mintToPool", "burnFromPool"]),
                                     set: $util.oneOfSetter($oneOfFields)
                                 });
 
@@ -100012,6 +100540,10 @@ $root.org = (function() {
                                         $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEvent.encode(message.tokenConfigUpdate, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
                                     if (message.updatePrice != null && Object.hasOwnProperty.call(message, "updatePrice"))
                                         $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.encode(message.updatePrice, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+                                    if (message.mintToPool != null && Object.hasOwnProperty.call(message, "mintToPool"))
+                                        $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.encode(message.mintToPool, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
+                                    if (message.burnFromPool != null && Object.hasOwnProperty.call(message, "burnFromPool"))
+                                        $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.encode(message.burnFromPool, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
                                     return writer;
                                 };
 
@@ -100069,6 +100601,12 @@ $root.org = (function() {
                                             break;
                                         case 8:
                                             message.updatePrice = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.decode(reader, reader.uint32());
+                                            break;
+                                        case 9:
+                                            message.mintToPool = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.decode(reader, reader.uint32());
+                                            break;
+                                        case 10:
+                                            message.burnFromPool = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.decode(reader, reader.uint32());
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -100184,6 +100722,26 @@ $root.org = (function() {
                                                 return "updatePrice." + error;
                                         }
                                     }
+                                    if (message.mintToPool != null && message.hasOwnProperty("mintToPool")) {
+                                        if (properties.type === 1)
+                                            return "type: multiple values";
+                                        properties.type = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.verify(message.mintToPool);
+                                            if (error)
+                                                return "mintToPool." + error;
+                                        }
+                                    }
+                                    if (message.burnFromPool != null && message.hasOwnProperty("burnFromPool")) {
+                                        if (properties.type === 1)
+                                            return "type: multiple values";
+                                        properties.type = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.verify(message.burnFromPool);
+                                            if (error)
+                                                return "burnFromPool." + error;
+                                        }
+                                    }
                                     return null;
                                 };
 
@@ -100238,6 +100796,16 @@ $root.org = (function() {
                                         if (typeof object.updatePrice !== "object")
                                             throw TypeError(".org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEvent.updatePrice: object expected");
                                         message.updatePrice = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.fromObject(object.updatePrice);
+                                    }
+                                    if (object.mintToPool != null) {
+                                        if (typeof object.mintToPool !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEvent.mintToPool: object expected");
+                                        message.mintToPool = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.fromObject(object.mintToPool);
+                                    }
+                                    if (object.burnFromPool != null) {
+                                        if (typeof object.burnFromPool !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEvent.burnFromPool: object expected");
+                                        message.burnFromPool = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.fromObject(object.burnFromPool);
                                     }
                                     return message;
                                 };
@@ -100294,6 +100862,16 @@ $root.org = (function() {
                                         object.updatePrice = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.toObject(message.updatePrice, options);
                                         if (options.oneofs)
                                             object.type = "updatePrice";
+                                    }
+                                    if (message.mintToPool != null && message.hasOwnProperty("mintToPool")) {
+                                        object.mintToPool = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintToPoolEvent.toObject(message.mintToPool, options);
+                                        if (options.oneofs)
+                                            object.type = "mintToPool";
+                                    }
+                                    if (message.burnFromPool != null && message.hasOwnProperty("burnFromPool")) {
+                                        object.burnFromPool = $root.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnFromPoolEvent.toObject(message.burnFromPool, options);
+                                        if (options.oneofs)
+                                            object.type = "burnFromPool";
                                     }
                                     return object;
                                 };
@@ -110394,6 +110972,7 @@ $root.org = (function() {
                              * @property {number|Long|null} [startIndex] GetShieldedEncryptedNotesRequestV0 startIndex
                              * @property {number|null} [count] GetShieldedEncryptedNotesRequestV0 count
                              * @property {boolean|null} [prove] GetShieldedEncryptedNotesRequestV0 prove
+                             * @property {Uint8Array|null} [tokenId] GetShieldedEncryptedNotesRequestV0 tokenId
                              */
 
                             /**
@@ -110436,6 +111015,14 @@ $root.org = (function() {
                             GetShieldedEncryptedNotesRequestV0.prototype.prove = false;
 
                             /**
+                             * GetShieldedEncryptedNotesRequestV0 tokenId.
+                             * @member {Uint8Array} tokenId
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @instance
+                             */
+                            GetShieldedEncryptedNotesRequestV0.prototype.tokenId = $util.newBuffer([]);
+
+                            /**
                              * Creates a new GetShieldedEncryptedNotesRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
@@ -110465,6 +111052,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.count);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                if (message.tokenId != null && Object.hasOwnProperty.call(message, "tokenId"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.tokenId);
                                 return writer;
                             };
 
@@ -110507,6 +111096,9 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 4:
+                                        message.tokenId = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -110552,6 +111144,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    if (!(message.tokenId && typeof message.tokenId.length === "number" || $util.isString(message.tokenId)))
+                                        return "tokenId: buffer expected";
                                 return null;
                             };
 
@@ -110580,6 +111175,11 @@ $root.org = (function() {
                                     message.count = object.count >>> 0;
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.tokenId != null)
+                                    if (typeof object.tokenId === "string")
+                                        $util.base64.decode(object.tokenId, message.tokenId = $util.newBuffer($util.base64.length(object.tokenId)), 0);
+                                    else if (object.tokenId.length >= 0)
+                                        message.tokenId = object.tokenId;
                                 return message;
                             };
 
@@ -110604,6 +111204,13 @@ $root.org = (function() {
                                         object.startIndex = options.longs === String ? "0" : 0;
                                     object.count = 0;
                                     object.prove = false;
+                                    if (options.bytes === String)
+                                        object.tokenId = "";
+                                    else {
+                                        object.tokenId = [];
+                                        if (options.bytes !== Array)
+                                            object.tokenId = $util.newBuffer(object.tokenId);
+                                    }
                                 }
                                 if (message.startIndex != null && message.hasOwnProperty("startIndex"))
                                     if (typeof message.startIndex === "number")
@@ -110614,6 +111221,8 @@ $root.org = (function() {
                                     object.count = message.count;
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    object.tokenId = options.bytes === String ? $util.base64.encode(message.tokenId, 0, message.tokenId.length) : options.bytes === Array ? Array.prototype.slice.call(message.tokenId) : message.tokenId;
                                 return object;
                             };
 
@@ -111831,6 +112440,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
                              * @interface IGetShieldedAnchorsRequestV0
                              * @property {boolean|null} [prove] GetShieldedAnchorsRequestV0 prove
+                             * @property {Uint8Array|null} [tokenId] GetShieldedAnchorsRequestV0 tokenId
                              */
 
                             /**
@@ -111855,6 +112465,14 @@ $root.org = (function() {
                              * @instance
                              */
                             GetShieldedAnchorsRequestV0.prototype.prove = false;
+
+                            /**
+                             * GetShieldedAnchorsRequestV0 tokenId.
+                             * @member {Uint8Array} tokenId
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @instance
+                             */
+                            GetShieldedAnchorsRequestV0.prototype.tokenId = $util.newBuffer([]);
 
                             /**
                              * Creates a new GetShieldedAnchorsRequestV0 instance using the specified properties.
@@ -111882,6 +112500,8 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                if (message.tokenId != null && Object.hasOwnProperty.call(message, "tokenId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.tokenId);
                                 return writer;
                             };
 
@@ -111918,6 +112538,9 @@ $root.org = (function() {
                                     switch (tag >>> 3) {
                                     case 1:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 2:
+                                        message.tokenId = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -111957,6 +112580,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    if (!(message.tokenId && typeof message.tokenId.length === "number" || $util.isString(message.tokenId)))
+                                        return "tokenId: buffer expected";
                                 return null;
                             };
 
@@ -111974,6 +112600,11 @@ $root.org = (function() {
                                 var message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0();
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.tokenId != null)
+                                    if (typeof object.tokenId === "string")
+                                        $util.base64.decode(object.tokenId, message.tokenId = $util.newBuffer($util.base64.length(object.tokenId)), 0);
+                                    else if (object.tokenId.length >= 0)
+                                        message.tokenId = object.tokenId;
                                 return message;
                             };
 
@@ -111990,10 +112621,20 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.prove = false;
+                                    if (options.bytes === String)
+                                        object.tokenId = "";
+                                    else {
+                                        object.tokenId = [];
+                                        if (options.bytes !== Array)
+                                            object.tokenId = $util.newBuffer(object.tokenId);
+                                    }
+                                }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    object.tokenId = options.bytes === String ? $util.base64.encode(message.tokenId, 0, message.tokenId.length) : options.bytes === Array ? Array.prototype.slice.call(message.tokenId) : message.tokenId;
                                 return object;
                             };
 
@@ -112919,6 +113560,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
                              * @interface IGetMostRecentShieldedAnchorRequestV0
                              * @property {boolean|null} [prove] GetMostRecentShieldedAnchorRequestV0 prove
+                             * @property {Uint8Array|null} [tokenId] GetMostRecentShieldedAnchorRequestV0 tokenId
                              */
 
                             /**
@@ -112943,6 +113585,14 @@ $root.org = (function() {
                              * @instance
                              */
                             GetMostRecentShieldedAnchorRequestV0.prototype.prove = false;
+
+                            /**
+                             * GetMostRecentShieldedAnchorRequestV0 tokenId.
+                             * @member {Uint8Array} tokenId
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.prototype.tokenId = $util.newBuffer([]);
 
                             /**
                              * Creates a new GetMostRecentShieldedAnchorRequestV0 instance using the specified properties.
@@ -112970,6 +113620,8 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                if (message.tokenId != null && Object.hasOwnProperty.call(message, "tokenId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.tokenId);
                                 return writer;
                             };
 
@@ -113006,6 +113658,9 @@ $root.org = (function() {
                                     switch (tag >>> 3) {
                                     case 1:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 2:
+                                        message.tokenId = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -113045,6 +113700,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    if (!(message.tokenId && typeof message.tokenId.length === "number" || $util.isString(message.tokenId)))
+                                        return "tokenId: buffer expected";
                                 return null;
                             };
 
@@ -113062,6 +113720,11 @@ $root.org = (function() {
                                 var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0();
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.tokenId != null)
+                                    if (typeof object.tokenId === "string")
+                                        $util.base64.decode(object.tokenId, message.tokenId = $util.newBuffer($util.base64.length(object.tokenId)), 0);
+                                    else if (object.tokenId.length >= 0)
+                                        message.tokenId = object.tokenId;
                                 return message;
                             };
 
@@ -113078,10 +113741,20 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.prove = false;
+                                    if (options.bytes === String)
+                                        object.tokenId = "";
+                                    else {
+                                        object.tokenId = [];
+                                        if (options.bytes !== Array)
+                                            object.tokenId = $util.newBuffer(object.tokenId);
+                                    }
+                                }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    object.tokenId = options.bytes === String ? $util.base64.encode(message.tokenId, 0, message.tokenId.length) : options.bytes === Array ? Array.prototype.slice.call(message.tokenId) : message.tokenId;
                                 return object;
                             };
 
@@ -113798,6 +114471,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
                              * @interface IGetShieldedPoolStateRequestV0
                              * @property {boolean|null} [prove] GetShieldedPoolStateRequestV0 prove
+                             * @property {Uint8Array|null} [tokenId] GetShieldedPoolStateRequestV0 tokenId
                              */
 
                             /**
@@ -113822,6 +114496,14 @@ $root.org = (function() {
                              * @instance
                              */
                             GetShieldedPoolStateRequestV0.prototype.prove = false;
+
+                            /**
+                             * GetShieldedPoolStateRequestV0 tokenId.
+                             * @member {Uint8Array} tokenId
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @instance
+                             */
+                            GetShieldedPoolStateRequestV0.prototype.tokenId = $util.newBuffer([]);
 
                             /**
                              * Creates a new GetShieldedPoolStateRequestV0 instance using the specified properties.
@@ -113849,6 +114531,8 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                if (message.tokenId != null && Object.hasOwnProperty.call(message, "tokenId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.tokenId);
                                 return writer;
                             };
 
@@ -113885,6 +114569,9 @@ $root.org = (function() {
                                     switch (tag >>> 3) {
                                     case 1:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 2:
+                                        message.tokenId = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -113924,6 +114611,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    if (!(message.tokenId && typeof message.tokenId.length === "number" || $util.isString(message.tokenId)))
+                                        return "tokenId: buffer expected";
                                 return null;
                             };
 
@@ -113941,6 +114631,11 @@ $root.org = (function() {
                                 var message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0();
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.tokenId != null)
+                                    if (typeof object.tokenId === "string")
+                                        $util.base64.decode(object.tokenId, message.tokenId = $util.newBuffer($util.base64.length(object.tokenId)), 0);
+                                    else if (object.tokenId.length >= 0)
+                                        message.tokenId = object.tokenId;
                                 return message;
                             };
 
@@ -113957,10 +114652,20 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.prove = false;
+                                    if (options.bytes === String)
+                                        object.tokenId = "";
+                                    else {
+                                        object.tokenId = [];
+                                        if (options.bytes !== Array)
+                                            object.tokenId = $util.newBuffer(object.tokenId);
+                                    }
+                                }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    object.tokenId = options.bytes === String ? $util.base64.encode(message.tokenId, 0, message.tokenId.length) : options.bytes === Array ? Array.prototype.slice.call(message.tokenId) : message.tokenId;
                                 return object;
                             };
 
@@ -114684,6 +115389,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
                              * @interface IGetShieldedNotesCountRequestV0
                              * @property {boolean|null} [prove] GetShieldedNotesCountRequestV0 prove
+                             * @property {Uint8Array|null} [tokenId] GetShieldedNotesCountRequestV0 tokenId
                              */
 
                             /**
@@ -114708,6 +115414,14 @@ $root.org = (function() {
                              * @instance
                              */
                             GetShieldedNotesCountRequestV0.prototype.prove = false;
+
+                            /**
+                             * GetShieldedNotesCountRequestV0 tokenId.
+                             * @member {Uint8Array} tokenId
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountRequestV0.prototype.tokenId = $util.newBuffer([]);
 
                             /**
                              * Creates a new GetShieldedNotesCountRequestV0 instance using the specified properties.
@@ -114735,6 +115449,8 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                if (message.tokenId != null && Object.hasOwnProperty.call(message, "tokenId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.tokenId);
                                 return writer;
                             };
 
@@ -114771,6 +115487,9 @@ $root.org = (function() {
                                     switch (tag >>> 3) {
                                     case 1:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 2:
+                                        message.tokenId = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -114810,6 +115529,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    if (!(message.tokenId && typeof message.tokenId.length === "number" || $util.isString(message.tokenId)))
+                                        return "tokenId: buffer expected";
                                 return null;
                             };
 
@@ -114827,6 +115549,11 @@ $root.org = (function() {
                                 var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0();
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.tokenId != null)
+                                    if (typeof object.tokenId === "string")
+                                        $util.base64.decode(object.tokenId, message.tokenId = $util.newBuffer($util.base64.length(object.tokenId)), 0);
+                                    else if (object.tokenId.length >= 0)
+                                        message.tokenId = object.tokenId;
                                 return message;
                             };
 
@@ -114843,10 +115570,20 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.prove = false;
+                                    if (options.bytes === String)
+                                        object.tokenId = "";
+                                    else {
+                                        object.tokenId = [];
+                                        if (options.bytes !== Array)
+                                            object.tokenId = $util.newBuffer(object.tokenId);
+                                    }
+                                }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    object.tokenId = options.bytes === String ? $util.base64.encode(message.tokenId, 0, message.tokenId.length) : options.bytes === Array ? Array.prototype.slice.call(message.tokenId) : message.tokenId;
                                 return object;
                             };
 
@@ -115571,6 +116308,7 @@ $root.org = (function() {
                              * @interface IGetShieldedNullifiersRequestV0
                              * @property {Array.<Uint8Array>|null} [nullifiers] GetShieldedNullifiersRequestV0 nullifiers
                              * @property {boolean|null} [prove] GetShieldedNullifiersRequestV0 prove
+                             * @property {Uint8Array|null} [tokenId] GetShieldedNullifiersRequestV0 tokenId
                              */
 
                             /**
@@ -115606,6 +116344,14 @@ $root.org = (function() {
                             GetShieldedNullifiersRequestV0.prototype.prove = false;
 
                             /**
+                             * GetShieldedNullifiersRequestV0 tokenId.
+                             * @member {Uint8Array} tokenId
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @instance
+                             */
+                            GetShieldedNullifiersRequestV0.prototype.tokenId = $util.newBuffer([]);
+
+                            /**
                              * Creates a new GetShieldedNullifiersRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
@@ -115634,6 +116380,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.nullifiers[i]);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                if (message.tokenId != null && Object.hasOwnProperty.call(message, "tokenId"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.tokenId);
                                 return writer;
                             };
 
@@ -115675,6 +116423,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 3:
+                                        message.tokenId = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -115721,6 +116472,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    if (!(message.tokenId && typeof message.tokenId.length === "number" || $util.isString(message.tokenId)))
+                                        return "tokenId: buffer expected";
                                 return null;
                             };
 
@@ -115748,6 +116502,11 @@ $root.org = (function() {
                                 }
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.tokenId != null)
+                                    if (typeof object.tokenId === "string")
+                                        $util.base64.decode(object.tokenId, message.tokenId = $util.newBuffer($util.base64.length(object.tokenId)), 0);
+                                    else if (object.tokenId.length >= 0)
+                                        message.tokenId = object.tokenId;
                                 return message;
                             };
 
@@ -115766,8 +116525,16 @@ $root.org = (function() {
                                 var object = {};
                                 if (options.arrays || options.defaults)
                                     object.nullifiers = [];
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.prove = false;
+                                    if (options.bytes === String)
+                                        object.tokenId = "";
+                                    else {
+                                        object.tokenId = [];
+                                        if (options.bytes !== Array)
+                                            object.tokenId = $util.newBuffer(object.tokenId);
+                                    }
+                                }
                                 if (message.nullifiers && message.nullifiers.length) {
                                     object.nullifiers = [];
                                     for (var j = 0; j < message.nullifiers.length; ++j)
@@ -115775,6 +116542,8 @@ $root.org = (function() {
                                 }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.tokenId != null && message.hasOwnProperty("tokenId"))
+                                    object.tokenId = options.bytes === String ? $util.base64.encode(message.tokenId, 0, message.tokenId.length) : options.bytes === Array ? Array.prototype.slice.call(message.tokenId) : message.tokenId;
                                 return object;
                             };
 
