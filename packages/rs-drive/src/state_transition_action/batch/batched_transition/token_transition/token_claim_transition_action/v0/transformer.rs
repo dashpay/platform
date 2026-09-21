@@ -601,24 +601,50 @@ pub(crate) fn resolve_token_claim(
             )
         }
         TokenDistributionType::OncePerIdentity => {
-            let Some(distribution) = token_config.distribution_rules().once_per_identity_distribution() else {
+            let Some(distribution) = token_config
+                .distribution_rules()
+                .once_per_identity_distribution()
+            else {
                 return Ok(Err(StateError::InvalidTokenClaimPropertyMismatch(
-                    InvalidTokenClaimPropertyMismatch::new("once per identity distribution", base.token_id()),
-                ).into()));
+                    InvalidTokenClaimPropertyMismatch::new(
+                        "once per identity distribution",
+                        base.token_id(),
+                    ),
+                )
+                .into()));
             };
             let mut claim_operations = vec![];
             let already_claimed_at = drive.fetch_once_per_identity_distribution_claim_operations(
-                base.token_id().to_buffer(), owner_id, &mut claim_operations, transaction, platform_version,
+                base.token_id().to_buffer(),
+                owner_id,
+                &mut claim_operations,
+                transaction,
+                platform_version,
             )?;
             fee_result.checked_add_assign(Drive::calculate_fee(
-                None, Some(claim_operations), &block_info.epoch, drive.config.epochs_per_era, platform_version, None,
+                None,
+                Some(claim_operations),
+                &block_info.epoch,
+                drive.config.epochs_per_era,
+                platform_version,
+                None,
             )?)?;
             if let Some(claimed_at_ms) = already_claimed_at {
-                return Ok(Err(StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(
-                    TokenOncePerIdentityDistributionAlreadyClaimedError::new(base.token_id(), owner_id, claimed_at_ms),
-                ).into()));
+                return Ok(Err(
+                    StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(
+                        TokenOncePerIdentityDistributionAlreadyClaimedError::new(
+                            base.token_id(),
+                            owner_id,
+                            claimed_at_ms,
+                        ),
+                    )
+                    .into(),
+                ));
             }
-            (distribution.amount(), TokenDistributionInfo::OncePerIdentity(block_info.time_ms, owner_id))
+            (
+                distribution.amount(),
+                TokenDistributionInfo::OncePerIdentity(block_info.time_ms, owner_id),
+            )
         }
     };
     Ok(Ok((amount, distribution_info)))

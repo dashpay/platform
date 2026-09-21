@@ -820,7 +820,7 @@ impl<C> Platform<C> {
     /// When transitioning to version 15 we insert the token shielded pools root: the BigSumTree
     /// under the Tokens tree that holds one Orchard pool per token opting in
     /// (`TokenConfigurationV1::has_shielded_pool`). CONSENSUS-CRITICAL: the genesis-v15 path
-    /// (`Drive::create_initial_state_structure_v4`) calls the same helper, so a chain born at v15
+    /// (`Drive::create_initial_state_structure_v5`) calls the same helper, so a chain born at v15
     /// and one upgraded to it build a byte-identical `[Tokens]` subtree.
     fn transition_to_version_15(
         &self,
@@ -3112,7 +3112,7 @@ mod tests {
     /// because both paths now call the shared
     /// `Drive::insert_shielded_pool_structure`).
     /// The token shielded pools root is built by two paths that must coincide byte for byte:
-    /// `Drive::create_initial_state_structure_v4` at a v15 genesis and
+    /// `Drive::create_initial_state_structure_v5` at a v15 genesis and
     /// `transition_to_version_15` on a chain upgraded from v14.
     #[test]
     fn test_genesis_v15_and_upgrade_to_v15_build_identical_token_shielded_pools_root() {

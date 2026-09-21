@@ -16,6 +16,10 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 /// amount into the Orchard sighash. Put the result into a `TokenPaymentInfo::V1` on the
 /// document transition's base; the identity signing the batch still pays the credit fee.
 ///
+/// For document creation, `document_id` must be the final ID derived from the creation
+/// nonce. Call `Document::set_id_for_creation` before building this payment; a document
+/// factory's placeholder ID is replaced when the create transition is built.
+///
 /// `value_balance == amount` exactly; the pool pays the cost, nothing is carved for fees.
 #[allow(clippy::too_many_arguments)]
 pub fn build_document_shielded_token_payment<P: OrchardProver>(

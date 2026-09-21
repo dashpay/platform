@@ -62,7 +62,7 @@ see those notes. Rather than let an issuer advertise controls that cover only tr
 balances, a token with `hasShieldedPool` must disable them permanently: `freezeRules`,
 `unfreezeRules` and `destroyFrozenFundsRules` must each authorize no one to take the action and
 have no admin action takers, so no later configuration update can switch them on. Contract
-create and update reject anything else with `TokenShieldedPoolIncompatibleRulesError` (10277).
+create and update reject anything else with `TokenShieldedPoolIncompatibleRulesError` (10278).
 Pausing still works: shield, unshield and shielded transfer are all rejected while the token is
 paused. The frozen-account checks in the shield and unshield validators remain as defence in
 depth for state written before this rule.
@@ -115,8 +115,8 @@ binds the token id, the batch owner, the document's contract and id and the amou
 (`document_token_payment_extra_sighash_data`), so it cannot pay for another document.
 
 The transformer rejects a payment whose amount is not the document type's cost
-(`TokenShieldedPaymentAmountMismatchError`, 40723) and a shielded payment on an action with no
-token cost (`TokenShieldedPaymentNotRequiredError`, 40724). Document base state validation
+(`TokenShieldedPaymentAmountMismatchError`, 40724) and a shielded payment on an action with no
+token cost (`TokenShieldedPaymentNotRequiredError`, 40725). Document base state validation
 version 1 skips the owner's balance and frozen-account checks for a shielded payment; the pool
 side (pool exists, token not paused, anchor, unspent nullifiers, pool balance, proof) is
 validated once the document action itself is valid. The lowering pays the cost from the pool: a
@@ -133,9 +133,9 @@ shielded pool that pays the fee, both authorized only by Orchard spend keys.
 
 | Type | Transition | Token bundle | Fee bundle | Effect |
 |---|---|---|---|---|
-| 23 | `TokenShieldedTransferWithShieldedFee` | spends, value `0` | spends, value = fee | Notes spent and recreated in the token pool; the fee leaves the credit pool. |
-| 24 | `TokenUnshieldWithShieldedFee` | spends, value `+amount` | spends, value = fee | `amount` leaves the token pool into `recipient_id`'s token balance. |
-| 25 | `TokenPurchaseFromShieldedPool` | outputs only, value `-token_count` | spends, value = price + fee | `token_count` is minted into the token pool at the direct purchase price; the price is credited to the contract owner. |
+| 26 | `TokenShieldedTransferWithShieldedFee` | spends, value `0` | spends, value = fee | Notes spent and recreated in the token pool; the fee leaves the credit pool. |
+| 27 | `TokenUnshieldWithShieldedFee` | spends, value `+amount` | spends, value = fee | `amount` leaves the token pool into `recipient_id`'s token balance. |
+| 28 | `TokenPurchaseFromShieldedPool` | outputs only, value `-token_count` | spends, value = price + fee | `token_count` is minted into the token pool at the direct purchase price; the price is credited to the contract owner. |
 
 Every transition names the contract, the token position and the token id (which must derive
 from the two), the two bundles and `credit_amount`, the fee bundle's value balance. The token
@@ -247,7 +247,9 @@ proves the spent nullifiers in the token's pool.
 `build_token_claim_to_pool_transition` and `build_token_direct_purchase_to_pool_transition`.
 They prove the bundle, bind the extra sighash data, and call the batch constructors
 (`new_token_shield_transition` and siblings) which sign with the identity key.
-`build_document_shielded_token_payment` builds the bundle of a `TokenPaymentInfo::V1`, and
+`build_document_shielded_token_payment` builds the bundle of a `TokenPaymentInfo::V1`.
+For document creation, call `Document::set_id_for_creation` with the creation nonce before
+building the payment: the proof must bind the final document ID, not the factory placeholder.
 `build_token_shielded_transfer_with_shielded_fee_transition`,
 `build_token_unshield_with_shielded_fee_transition` and
 `build_token_purchase_from_shielded_pool_transition` build the identity-less transitions from a

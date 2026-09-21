@@ -9,7 +9,7 @@ impl Drive {
     /// Inserts the token shielded pools root tree `[Tokens, TOKEN_SHIELDED_POOLS_KEY]` (an empty
     /// BigSumTree) if it does not exist yet.
     ///
-    /// CONSENSUS-CRITICAL: both the genesis path (`Drive::create_initial_state_structure_v4`)
+    /// CONSENSUS-CRITICAL: both the genesis path (`Drive::create_initial_state_structure_v5`)
     /// and the in-place upgrade path (`Platform::transition_to_version_15`) call this one helper
     /// so a chain born at protocol version 15 and a chain upgraded to it build a byte-identical
     /// `[Tokens]` subtree. The tree stays empty until a token with a shielded pool is registered.

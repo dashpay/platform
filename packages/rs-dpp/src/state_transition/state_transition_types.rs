@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_invalid() {
-        assert!(StateTransitionType::try_from(26u8).is_err());
+        assert!(StateTransitionType::try_from(29u8).is_err());
         assert!(StateTransitionType::try_from(255u8).is_err());
     }
 

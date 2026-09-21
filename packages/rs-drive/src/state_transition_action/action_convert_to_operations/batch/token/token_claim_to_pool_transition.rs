@@ -64,6 +64,15 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimToPoolTransitionAction 
                             },
                         ));
                     }
+                    TokenDistributionInfo::OncePerIdentity(claimed_at_ms, _) => {
+                        ops.push(TokenOperation(
+                            TokenOperationType::TokenMarkOncePerIdentityReleaseAsDistributed {
+                                token_id,
+                                recipient_id: owner_id,
+                                claimed_at_ms: *claimed_at_ms,
+                            },
+                        ));
+                    }
                 }
 
                 Ok(ops)

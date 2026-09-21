@@ -1124,7 +1124,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            102
+            145
         );
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPaymentNotRequiredError(
@@ -1133,7 +1133,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            103
+            146
         );
     }
 }

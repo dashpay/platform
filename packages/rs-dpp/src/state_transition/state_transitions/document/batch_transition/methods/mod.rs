@@ -21,11 +21,11 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
+use crate::shielded::OrchardBundleParams;
 use crate::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-#[cfg(feature = "state-transition-signing")]
-use crate::shielded::OrchardBundleParams;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;

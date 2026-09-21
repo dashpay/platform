@@ -1,3 +1,7 @@
+use crate::drive::shielded::paths::{
+    SHIELDED_ANCHORS_BY_HEIGHT_KEY, SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_NOTES_KEY,
+    SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+};
 use crate::drive::tokens::paths::{
     TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_CONTRACT_INFO_KEY,
     TOKEN_DIRECT_SELL_PRICE_KEY, TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY,
@@ -6,7 +10,8 @@ use crate::drive::tokens::paths::{
     TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
     TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
-    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_SHIELDED_POOLS_KEY, TOKEN_STATUS_INFO_KEY,
+    TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
@@ -38,6 +43,7 @@ pub(crate) fn structure() -> StructureNode {
     )
     .children(vec![
         distributions(),
+        shielded_pools(),
         StructureNode::fixed(
             "status",
             &[TOKEN_STATUS_INFO_KEY],
@@ -364,4 +370,117 @@ fn distributions() -> StructureNode {
             ]),
         ),
     ])
+}
+
+/// One Orchard pool per token that enables shielded balances in protocol 15.
+fn shielded_pools() -> StructureNode {
+    StructureNode::fixed(
+        "shielded_pools",
+        &[TOKEN_SHIELDED_POOLS_KEY],
+        "TokenShieldedPools",
+        "TOKEN_SHIELDED_POOLS_KEY",
+    )
+    .kind(ElementKind::BigSumTree)
+    .since(15)
+    .source(SOURCE)
+    .book("data-model/token-shielded-pools.md")
+    .describe("The shielded balances of tokens that enable an Orchard pool.")
+    .child(
+        token("The Orchard pool for one token.")
+            .kind(ElementKind::SumTree)
+            .source("packages/rs-drive/src/drive/shielded/paths.rs")
+            .children(vec![
+                StructureNode::fixed(
+                    "total_balance",
+                    &[SHIELDED_TOTAL_BALANCE_KEY],
+                    "TotalBalance",
+                    "SHIELDED_TOTAL_BALANCE_KEY",
+                )
+                .kind(ElementKind::SumItem)
+                .value("token amount")
+                .describe("Every token in the pool."),
+                StructureNode::fixed(
+                    "nullifiers",
+                    &[SHIELDED_NULLIFIERS_KEY],
+                    "Nullifiers",
+                    "SHIELDED_NULLIFIERS_KEY",
+                )
+                .kind(ElementKind::ProvableCountTree)
+                .describe(
+                    "The nullifier of every spent note, so none is \
+                 spent twice.",
+                )
+                .child(
+                    StructureNode::dynamic(
+                        "nullifier",
+                        "nullifier",
+                        KeyMatcher::Len(32),
+                        KeyEncoding::Hash32,
+                        "The nullifier",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("empty")
+                    .describe("One spent note."),
+                ),
+                StructureNode::fixed(
+                    "anchors_by_height",
+                    &[SHIELDED_ANCHORS_BY_HEIGHT_KEY],
+                    "AnchorsByHeight",
+                    "SHIELDED_ANCHORS_BY_HEIGHT_KEY",
+                )
+                .kind(ElementKind::Tree)
+                .describe(
+                    "The commitment tree anchor after each block that \
+                 added notes, for pruning old anchors.",
+                )
+                .child(
+                    StructureNode::dynamic(
+                        "height",
+                        "block_height",
+                        KeyMatcher::Len(8),
+                        KeyEncoding::U64Be,
+                        "The block height",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("the anchor, 32 bytes")
+                    .describe("The anchor at that height."),
+                ),
+                StructureNode::fixed(
+                    "notes",
+                    &[SHIELDED_NOTES_KEY],
+                    "Notes",
+                    "SHIELDED_NOTES_KEY",
+                )
+                .kind(ElementKind::CommitmentTree)
+                .opaque(
+                    "Note commitments with their encrypted notes in a \
+                 bulk append tree, plus the Sinsemilla frontier \
+                 the anchors are computed from.",
+                )
+                .describe(
+                    "Every note ever added to the pool. Read by every \
+                 wallet sync.",
+                ),
+                StructureNode::fixed(
+                    "anchors_in_pool",
+                    &[SHIELDED_ANCHORS_IN_POOL_KEY],
+                    "AnchorsInPool",
+                    "SHIELDED_ANCHORS_IN_POOL_KEY",
+                )
+                .kind(ElementKind::Tree)
+                .describe("The anchors a spend may still prove against.")
+                .child(
+                    StructureNode::dynamic(
+                        "anchor",
+                        "anchor",
+                        KeyMatcher::Len(32),
+                        KeyEncoding::Hash32,
+                        "The anchor",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("the block height, u64 big endian")
+                    .describe("One valid anchor."),
+                ),
+            ]),
+    )
 }

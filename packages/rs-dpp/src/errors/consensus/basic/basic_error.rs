@@ -39,11 +39,10 @@ use crate::consensus::basic::data_contract::{
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
     RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
-    TokenShieldedPoolIncompatibleRulesError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
-    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
-    UnknownTransferableTypeError,
+    TokenShieldedPoolIncompatibleRulesError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,

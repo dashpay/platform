@@ -930,6 +930,443 @@ fn key_not_allowed_in_shielded_creation(
         })
 }
 
+/// Verifies every token shielded bundle a batch carries, statelessly.
+fn validate_batch_token_shielded_proofs(
+    batch: &BatchTransition,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let owner_id = batch.owner_id().to_buffer();
+    for transition in batch.transitions_iter() {
+        let result = match transition {
+            BatchedTransitionRef::Token(TokenTransition::Shield(t)) => {
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_OUTPUTS_ONLY,
+                    -(t.amount() as i64),
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &[],
+                )
+            }
+            BatchedTransitionRef::Token(TokenTransition::Unshield(t)) => {
+                let extra_sighash_data = dpp::shielded::token_unshield_extra_sighash_data(
+                    &t.base().token_id().to_buffer(),
+                    &owner_id,
+                    &t.recipient_id().to_buffer(),
+                    t.amount(),
+                    platform_version,
+                )?;
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_SPENDS_AND_OUTPUTS,
+                    t.amount() as i64,
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &extra_sighash_data,
+                )
+            }
+            BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(t)) => {
+                let extra_sighash_data = dpp::shielded::token_shielded_transfer_extra_sighash_data(
+                    &t.base().token_id().to_buffer(),
+                    &owner_id,
+                    platform_version,
+                )?;
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_SPENDS_AND_OUTPUTS,
+                    0,
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &extra_sighash_data,
+                )
+            }
+            BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_OUTPUTS_ONLY,
+                    -(t.amount() as i64),
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &[],
+                )
+            }
+            BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
+                let extra_sighash_data = dpp::shielded::token_burn_from_pool_extra_sighash_data(
+                    &t.base().token_id().to_buffer(),
+                    &owner_id,
+                    t.amount(),
+                    platform_version,
+                )?;
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_SPENDS_AND_OUTPUTS,
+                    t.amount() as i64,
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &extra_sighash_data,
+                )
+            }
+            // The claimable amount is only known against state, so a claim into the pool is
+            // verified in block validation only; its proof is still admitted per nonce.
+            BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => continue,
+            BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_OUTPUTS_ONLY,
+                    -(t.token_count() as i64),
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &[],
+                )
+            }
+            // A document whose token cost is paid from the token's shielded pool: the payment
+            // states the amount its bundle proves, and state validation rejects the document
+            // when that is not the document type's cost, so the bundle can be checked here.
+            BatchedTransitionRef::Document(document_transition) => {
+                let base = document_transition.base();
+                let Some(token_payment_info) = base.token_payment_info_ref() else {
+                    continue;
+                };
+                let Some(payment) = token_payment_info.shielded_payment() else {
+                    continue;
+                };
+                let extra_sighash_data = dpp::shielded::document_token_payment_extra_sighash_data(
+                    &token_payment_info
+                        .token_id(base.data_contract_id())
+                        .to_buffer(),
+                    &owner_id,
+                    &base.data_contract_id().to_buffer(),
+                    &base.id().to_buffer(),
+                    payment.amount,
+                    platform_version,
+                )?;
+                reconstruct_and_verify_bundle(
+                    &payment.actions,
+                    FLAGS_SPENDS_AND_OUTPUTS,
+                    payment.amount as i64,
+                    &payment.anchor,
+                    &payment.proof,
+                    &payment.binding_signature,
+                    &extra_sighash_data,
+                )
+            }
+            _ => continue,
+        };
+        if let Err(e) = result {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                StateError::InvalidShieldedProofError(e).into(),
+            ));
+        }
+    }
+    Ok(SimpleConsensusValidationResult::new())
+}
+
+/// Protocol 15 proof validation adds token pools while retaining the identity key restrictions.
+fn validate_shielded_proof_v2(
+    state_transition: &StateTransition,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    if let Some(error) = key_not_allowed_in_shielded_creation(state_transition) {
+        return Ok(SimpleConsensusValidationResult::new_with_error(error));
+    }
+    // A batch carries no pool-paid bundle of its own; its token shielded
+    // transitions are verified one by one against the sighash data each binds.
+    // Block processing verifies them again inside state validation, where a
+    // failure is a paid nonce bump; this stateless pass is CheckTx's admission
+    // filter, run under the nonce-aware limiter.
+    if let StateTransition::Batch(batch) = state_transition {
+        return validate_batch_token_shielded_proofs(batch, platform_version);
+    }
+
+    // `IdentityCreateFromShieldedPool` is the only shielded transition carrying separate
+    // per-key proof-of-possession signatures that are NOT covered by the Orchard proof
+    // (they sign the platform signable bytes, and only id+denomination+keys — not the PoP
+    // sigs — are bound into `extra_sighash_data`). Validate the CHEAP key structure +
+    // per-key PoP here, BEFORE the expensive Halo 2 bundle verification, so a relayer
+    // who flips a PoP byte on an observed transition is rejected without the node paying
+    // for proof verification (DoS hardening). Same `signable_bytes` the transformer uses.
+    if let StateTransition::IdentityCreateFromShieldedPool(st) = state_transition {
+        let IdentityCreateFromShieldedPoolTransition::V0(v0) = st;
+
+        let key_structure_result =
+            IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+                &v0.public_keys,
+                true,
+                platform_version,
+            )?;
+        if !key_structure_result.is_valid() {
+            return Ok(key_structure_result);
+        }
+
+        let signable_bytes = state_transition.signable_bytes()?;
+        for key in v0.public_keys.iter() {
+            let pop_result = signable_bytes.as_slice().verify_signature(
+                key.key_type(),
+                key.data().as_slice(),
+                key.signature().as_slice(),
+            );
+            if !pop_result.is_valid() {
+                return Ok(pop_result);
+            }
+        }
+    }
+
+    let result = match state_transition {
+                    StateTransition::Shield(st) => match st {
+                        dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_OUTPUTS_ONLY,
+                                -(v0.amount as i64),
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &[], // No transparent fields for shield
+                            )
+                        }
+                    },
+                    StateTransition::ShieldFromIdentity(st) => match st {
+                        ShieldFromIdentityTransition::V0(v0) => reconstruct_and_verify_bundle(
+                            &v0.actions,
+                            FLAGS_OUTPUTS_ONLY,
+                            -(v0.amount as i64),
+                            &v0.anchor,
+                            v0.proof.as_slice(),
+                            &v0.binding_signature,
+                            &[],
+                        ),
+                    },
+                    StateTransition::ShieldedTransfer(st) => match st {
+                        dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.value_balance as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &[], // No transparent fields for shielded transfer
+                            )
+                        }
+                    },
+                    StateTransition::Unshield(st) => match st {
+                        dpp::state_transition::unshield_transition::UnshieldTransition::V0(v0) => {
+                            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                                &v0.output_address.to_bytes(),
+                                v0.unshielding_amount,
+                                platform_version,
+                            )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.unshielding_amount as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    StateTransition::TokenShieldedTransferWithShieldedFee(st) => match st {
+                        TokenShieldedTransferWithShieldedFeeTransition::V0(v0) => {
+                            let token_extra_sighash_data = dpp::shielded::token_shielded_transfer_with_shielded_fee_extra_sighash_data(
+                &v0.token_id.to_buffer(),
+                platform_version,
+            )?;
+                            let fee_extra_sighash_data =
+                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
+                                    dpp::shielded::TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
+                                    &v0.token_id.to_buffer(),
+                                    &v0.token_actions,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.token_actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                0,
+                                &v0.token_anchor,
+                                v0.token_proof.as_slice(),
+                                &v0.token_binding_signature,
+                                &token_extra_sighash_data,
+                            )
+                            .and_then(|_| {
+                                reconstruct_and_verify_bundle(
+                                    &v0.fee_actions,
+                                    FLAGS_SPENDS_AND_OUTPUTS,
+                                    v0.credit_amount as i64,
+                                    &v0.fee_anchor,
+                                    v0.fee_proof.as_slice(),
+                                    &v0.fee_binding_signature,
+                                    &fee_extra_sighash_data,
+                                )
+                            })
+                        }
+                    },
+                    StateTransition::TokenUnshieldWithShieldedFee(st) => match st {
+                        TokenUnshieldWithShieldedFeeTransition::V0(v0) => {
+                            let token_extra_sighash_data = dpp::shielded::token_unshield_with_shielded_fee_extra_sighash_data(
+                &v0.token_id.to_buffer(),
+                &v0.recipient_id.to_buffer(),
+                v0.amount,
+                platform_version,
+            )?;
+                            let fee_extra_sighash_data =
+                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
+                                    dpp::shielded::TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
+                                    &v0.token_id.to_buffer(),
+                                    &v0.token_actions,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.token_actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.amount as i64,
+                                &v0.token_anchor,
+                                v0.token_proof.as_slice(),
+                                &v0.token_binding_signature,
+                                &token_extra_sighash_data,
+                            )
+                            .and_then(|_| {
+                                reconstruct_and_verify_bundle(
+                                    &v0.fee_actions,
+                                    FLAGS_SPENDS_AND_OUTPUTS,
+                                    v0.credit_amount as i64,
+                                    &v0.fee_anchor,
+                                    v0.fee_proof.as_slice(),
+                                    &v0.fee_binding_signature,
+                                    &fee_extra_sighash_data,
+                                )
+                            })
+                        }
+                    },
+                    StateTransition::TokenPurchaseFromShieldedPool(st) => match st {
+                        TokenPurchaseFromShieldedPoolTransition::V0(v0) => {
+                            let token_extra_sighash_data = dpp::shielded::token_purchase_from_shielded_pool_extra_sighash_data(
+                &v0.token_id.to_buffer(),
+                v0.token_count,
+                v0.total_agreed_price,
+                platform_version,
+            )?;
+                            let fee_extra_sighash_data =
+                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
+                                    dpp::shielded::TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
+                                    &v0.token_id.to_buffer(),
+                                    &v0.token_actions,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.token_actions,
+                                FLAGS_OUTPUTS_ONLY,
+                                -(v0.token_count as i64),
+                                &v0.token_anchor,
+                                v0.token_proof.as_slice(),
+                                &v0.token_binding_signature,
+                                &token_extra_sighash_data,
+                            )
+                            .and_then(|_| {
+                                reconstruct_and_verify_bundle(
+                                    &v0.fee_actions,
+                                    FLAGS_SPENDS_AND_OUTPUTS,
+                                    v0.credit_amount as i64,
+                                    &v0.fee_anchor,
+                                    v0.fee_proof.as_slice(),
+                                    &v0.fee_binding_signature,
+                                    &fee_extra_sighash_data,
+                                )
+                            })
+                        }
+                    },
+                    StateTransition::IdentityTopUpFromShieldedPool(st) => match st {
+                        IdentityTopUpFromShieldedPoolTransition::V0(v0) => {
+                            let extra_sighash_data =
+                                dpp::shielded::identity_top_up_from_shielded_extra_sighash_data(
+                                    &v0.identity_id.to_buffer(),
+                                    v0.top_up_amount,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.top_up_amount as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    StateTransition::ShieldedWithdrawal(st) => match st {
+                        dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
+                            let extra_sighash_data =
+                                dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                                    v0.output_script.as_bytes(),
+                                    v0.unshielding_amount,
+                                    v0.core_fee_per_byte,
+                                    v0.pooling,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.unshielding_amount as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    StateTransition::IdentityCreateFromShieldedPool(st) => match st {
+                        dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition::V0(v0) => {
+                            // Bind the new identity id + denomination + FULL public-key set into the
+                            // Orchard sighash so the bundle cannot be redirected to a different
+                            // identity/keys (the surplus_output binding analog). The id is re-derived
+                            // from the spend nullifiers — the canonical value — so the binding holds
+                            // regardless of any (separately-validated) wire `identity_id`.
+                            let identity_id =
+                                dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions(&v0.actions)
+                                    .to_buffer();
+                            let extra_sighash_data =
+                                dpp::shielded::identity_create_from_shielded_extra_sighash_data(
+                                    &identity_id,
+                                    v0.denomination,
+                                    &v0.send_to_address_on_creation_failure,
+                                    &v0.public_keys,
+                                    platform_version,
+                                )?;
+                            // value_balance = denomination EXACTLY (the ShieldedTransfer exact-equality
+                            // model): the binding signature proves the value commitments sum to exactly
+                            // the denomination leaving the pool.
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.denomination as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    // ShieldFromAssetLock retains proof verification in transform_into_action;
+                    // its paid-failure action comes from the asset lock.
+                    _ => return Ok(SimpleConsensusValidationResult::new()),
+                };
+
+    match result {
+        Ok(()) => Ok(SimpleConsensusValidationResult::new()),
+        Err(e) => Ok(SimpleConsensusValidationResult::new_with_error(
+            StateError::InvalidShieldedProofError(e).into(),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1288,7 +1725,7 @@ mod tests {
 
         /// Build an `IdentityCreateFromShieldedPool` with `num_actions` actions, `num_keys` keys, and
         /// the given `denomination` (the min-fee gate only reads those three).
-        fn identity_create_from_shielded_pool(
+        pub(super) fn identity_create_from_shielded_pool(
             denomination: u64,
             num_actions: usize,
             num_keys: usize,
@@ -1422,7 +1859,55 @@ mod tests {
     }
 
     mod validate_shielded_proof {
+        use super::validate_minimum_shielded_fee::identity_create_from_shielded_pool;
         use super::*;
+        use dpp::identity::contract_bounds::ContractBounds;
+        use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+
+        #[test]
+        fn should_preserve_identity_key_restrictions_after_token_pool_activation() {
+            for platform_version in [
+                PlatformVersion::get(14).expect("v14"),
+                PlatformVersion::latest(),
+            ] {
+                for limits in [false, true] {
+                    let mut transition = identity_create_from_shielded_pool(10_000_000_000, 2, 1);
+                    let StateTransition::IdentityCreateFromShieldedPool(
+                        IdentityCreateFromShieldedPoolTransition::V0(ref mut creation),
+                    ) = transition
+                    else {
+                        panic!("expected the identity creation fixture");
+                    };
+                    let IdentityPublicKeyInCreation::V0(mut key) = creation.public_keys.remove(0)
+                    else {
+                        panic!("expected a version 0 key");
+                    };
+                    creation.public_keys = vec![if limits {
+                        IdentityPublicKeyInCreation::V1(
+                            IdentityPublicKeyInCreationV1::from_v0_with_limits(
+                                key,
+                                Some(100),
+                                None,
+                            ),
+                        )
+                    } else {
+                        key.contract_bounds =
+                            Some(ContractBounds::ContractGroup { id: [1; 32].into() });
+                        IdentityPublicKeyInCreation::V0(key)
+                    }];
+                    // These restrictions must run before the deliberately invalid signatures
+                    // and Orchard proof in the fixture, in both protocol versions.
+                    let result = transition
+                        .validate_shielded_proof(platform_version)
+                        .expect("consensus rejection");
+                    if limits {
+                        assert!(matches!(result.errors.as_slice(), [ConsensusError::BasicError(BasicError::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_))]));
+                    } else {
+                        assert!(matches!(result.errors.as_slice(), [ConsensusError::BasicError(BasicError::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(_))]));
+                    }
+                }
+            }
+        }
 
         #[test]
         fn should_pass_for_non_shielded_transition() {
@@ -1434,441 +1919,4 @@ mod tests {
             assert!(result.is_valid());
         }
     }
-}
-
-/// Verifies every token shielded bundle a batch carries, statelessly.
-fn validate_batch_token_shielded_proofs(
-    batch: &BatchTransition,
-    platform_version: &PlatformVersion,
-) -> Result<SimpleConsensusValidationResult, Error> {
-    let owner_id = batch.owner_id().to_buffer();
-    for transition in batch.transitions_iter() {
-        let result = match transition {
-            BatchedTransitionRef::Token(TokenTransition::Shield(t)) => {
-                reconstruct_and_verify_bundle(
-                    t.actions(),
-                    FLAGS_OUTPUTS_ONLY,
-                    -(t.amount() as i64),
-                    t.anchor(),
-                    t.proof(),
-                    t.binding_signature(),
-                    &[],
-                )
-            }
-            BatchedTransitionRef::Token(TokenTransition::Unshield(t)) => {
-                let extra_sighash_data = dpp::shielded::token_unshield_extra_sighash_data(
-                    &t.base().token_id().to_buffer(),
-                    &owner_id,
-                    &t.recipient_id().to_buffer(),
-                    t.amount(),
-                    platform_version,
-                )?;
-                reconstruct_and_verify_bundle(
-                    t.actions(),
-                    FLAGS_SPENDS_AND_OUTPUTS,
-                    t.amount() as i64,
-                    t.anchor(),
-                    t.proof(),
-                    t.binding_signature(),
-                    &extra_sighash_data,
-                )
-            }
-            BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(t)) => {
-                let extra_sighash_data = dpp::shielded::token_shielded_transfer_extra_sighash_data(
-                    &t.base().token_id().to_buffer(),
-                    &owner_id,
-                    platform_version,
-                )?;
-                reconstruct_and_verify_bundle(
-                    t.actions(),
-                    FLAGS_SPENDS_AND_OUTPUTS,
-                    0,
-                    t.anchor(),
-                    t.proof(),
-                    t.binding_signature(),
-                    &extra_sighash_data,
-                )
-            }
-            BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
-                reconstruct_and_verify_bundle(
-                    t.actions(),
-                    FLAGS_OUTPUTS_ONLY,
-                    -(t.amount() as i64),
-                    t.anchor(),
-                    t.proof(),
-                    t.binding_signature(),
-                    &[],
-                )
-            }
-            BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
-                let extra_sighash_data = dpp::shielded::token_burn_from_pool_extra_sighash_data(
-                    &t.base().token_id().to_buffer(),
-                    &owner_id,
-                    t.amount(),
-                    platform_version,
-                )?;
-                reconstruct_and_verify_bundle(
-                    t.actions(),
-                    FLAGS_SPENDS_AND_OUTPUTS,
-                    t.amount() as i64,
-                    t.anchor(),
-                    t.proof(),
-                    t.binding_signature(),
-                    &extra_sighash_data,
-                )
-            }
-            // The claimable amount is only known against state, so a claim into the pool is
-            // verified in block validation only; its proof is still admitted per nonce.
-            BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => continue,
-            BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
-                reconstruct_and_verify_bundle(
-                    t.actions(),
-                    FLAGS_OUTPUTS_ONLY,
-                    -(t.token_count() as i64),
-                    t.anchor(),
-                    t.proof(),
-                    t.binding_signature(),
-                    &[],
-                )
-            }
-            // A document whose token cost is paid from the token's shielded pool: the payment
-            // states the amount its bundle proves, and state validation rejects the document
-            // when that is not the document type's cost, so the bundle can be checked here.
-            BatchedTransitionRef::Document(document_transition) => {
-                let base = document_transition.base();
-                let Some(token_payment_info) = base.token_payment_info_ref() else {
-                    continue;
-                };
-                let Some(payment) = token_payment_info.shielded_payment() else {
-                    continue;
-                };
-                let extra_sighash_data = dpp::shielded::document_token_payment_extra_sighash_data(
-                    &token_payment_info
-                        .token_id(base.data_contract_id())
-                        .to_buffer(),
-                    &owner_id,
-                    &base.data_contract_id().to_buffer(),
-                    &base.id().to_buffer(),
-                    payment.amount,
-                    platform_version,
-                )?;
-                reconstruct_and_verify_bundle(
-                    &payment.actions,
-                    FLAGS_SPENDS_AND_OUTPUTS,
-                    payment.amount as i64,
-                    &payment.anchor,
-                    &payment.proof,
-                    &payment.binding_signature,
-                    &extra_sighash_data,
-                )
-            }
-            _ => continue,
-        };
-        if let Err(e) = result {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                StateError::InvalidShieldedProofError(e).into(),
-            ));
-        }
-    }
-    Ok(SimpleConsensusValidationResult::new())
-}
-
-/// Protocol 15 proof validation adds token pools while retaining the identity key restrictions.
-fn validate_shielded_proof_v2(
-    state_transition: &StateTransition,
-    platform_version: &PlatformVersion,
-) -> Result<SimpleConsensusValidationResult, Error> {
-    if let Some(error) = key_not_allowed_in_shielded_creation(state_transition) {
-        return Ok(SimpleConsensusValidationResult::new_with_error(error));
-    }
-                // A batch carries no pool-paid bundle of its own; its token shielded
-                // transitions are verified one by one against the sighash data each binds.
-                // Block processing verifies them again inside state validation, where a
-                // failure is a paid nonce bump; this stateless pass is CheckTx's admission
-                // filter, run under the nonce-aware limiter.
-                if let StateTransition::Batch(batch) = state_transition {
-                    return validate_batch_token_shielded_proofs(batch, platform_version);
-                }
-
-                // `IdentityCreateFromShieldedPool` is the only shielded transition carrying separate
-                // per-key proof-of-possession signatures that are NOT covered by the Orchard proof
-                // (they sign the platform signable bytes, and only id+denomination+keys — not the PoP
-                // sigs — are bound into `extra_sighash_data`). Validate the CHEAP key structure +
-                // per-key PoP here, BEFORE the expensive Halo 2 bundle verification, so a relayer
-                // who flips a PoP byte on an observed transition is rejected without the node paying
-                // for proof verification (DoS hardening). Same `signable_bytes` the transformer uses.
-                if let StateTransition::IdentityCreateFromShieldedPool(st) = state_transition {
-                    let IdentityCreateFromShieldedPoolTransition::V0(v0) = st;
-
-                    let key_structure_result =
-                        IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
-                            &v0.public_keys,
-                            true,
-                            platform_version,
-                        )?;
-                    if !key_structure_result.is_valid() {
-                        return Ok(key_structure_result);
-                    }
-
-                    let signable_bytes = state_transition.signable_bytes()?;
-                    for key in v0.public_keys.iter() {
-                        let pop_result = signable_bytes.as_slice().verify_signature(
-                            key.key_type(),
-                            key.data().as_slice(),
-                            key.signature().as_slice(),
-                        );
-                        if !pop_result.is_valid() {
-                            return Ok(pop_result);
-                        }
-                    }
-                }
-
-                let result = match state_transition {
-                    StateTransition::Shield(st) => match st {
-                        dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_OUTPUTS_ONLY,
-                                -(v0.amount as i64),
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &[], // No transparent fields for shield
-                            )
-                        }
-                    },
-                    StateTransition::ShieldFromIdentity(st) => match st {
-                        ShieldFromIdentityTransition::V0(v0) => reconstruct_and_verify_bundle(
-                            &v0.actions,
-                            FLAGS_OUTPUTS_ONLY,
-                            -(v0.amount as i64),
-                            &v0.anchor,
-                            v0.proof.as_slice(),
-                            &v0.binding_signature,
-                            &[],
-                        ),
-                    },
-                    StateTransition::ShieldedTransfer(st) => match st {
-                        dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_SPENDS_AND_OUTPUTS,
-                                v0.value_balance as i64,
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &[], // No transparent fields for shielded transfer
-                            )
-                        }
-                    },
-                    StateTransition::Unshield(st) => match st {
-                        dpp::state_transition::unshield_transition::UnshieldTransition::V0(v0) => {
-                            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
-                                &v0.output_address.to_bytes(),
-                                v0.unshielding_amount,
-                                platform_version,
-                            )?;
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_SPENDS_AND_OUTPUTS,
-                                v0.unshielding_amount as i64,
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &extra_sighash_data,
-                            )
-                        }
-                    },
-                    StateTransition::TokenShieldedTransferWithShieldedFee(st) => match st {
-                        TokenShieldedTransferWithShieldedFeeTransition::V0(v0) => {
-                            let token_extra_sighash_data = dpp::shielded::token_shielded_transfer_with_shielded_fee_extra_sighash_data(
-                &v0.token_id.to_buffer(),
-                platform_version,
-            )?;
-                            let fee_extra_sighash_data =
-                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
-                                    dpp::shielded::TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
-                                    &v0.token_id.to_buffer(),
-                                    &v0.token_actions,
-                                    platform_version,
-                                )?;
-                            reconstruct_and_verify_bundle(
-                                &v0.token_actions,
-                                FLAGS_SPENDS_AND_OUTPUTS,
-                                0,
-                                &v0.token_anchor,
-                                v0.token_proof.as_slice(),
-                                &v0.token_binding_signature,
-                                &token_extra_sighash_data,
-                            )
-                            .and_then(|_| {
-                                reconstruct_and_verify_bundle(
-                                    &v0.fee_actions,
-                                    FLAGS_SPENDS_AND_OUTPUTS,
-                                    v0.credit_amount as i64,
-                                    &v0.fee_anchor,
-                                    v0.fee_proof.as_slice(),
-                                    &v0.fee_binding_signature,
-                                    &fee_extra_sighash_data,
-                                )
-                            })
-                        }
-                    },
-                    StateTransition::TokenUnshieldWithShieldedFee(st) => match st {
-                        TokenUnshieldWithShieldedFeeTransition::V0(v0) => {
-                            let token_extra_sighash_data = dpp::shielded::token_unshield_with_shielded_fee_extra_sighash_data(
-                &v0.token_id.to_buffer(),
-                &v0.recipient_id.to_buffer(),
-                v0.amount,
-                platform_version,
-            )?;
-                            let fee_extra_sighash_data =
-                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
-                                    dpp::shielded::TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
-                                    &v0.token_id.to_buffer(),
-                                    &v0.token_actions,
-                                    platform_version,
-                                )?;
-                            reconstruct_and_verify_bundle(
-                                &v0.token_actions,
-                                FLAGS_SPENDS_AND_OUTPUTS,
-                                v0.amount as i64,
-                                &v0.token_anchor,
-                                v0.token_proof.as_slice(),
-                                &v0.token_binding_signature,
-                                &token_extra_sighash_data,
-                            )
-                            .and_then(|_| {
-                                reconstruct_and_verify_bundle(
-                                    &v0.fee_actions,
-                                    FLAGS_SPENDS_AND_OUTPUTS,
-                                    v0.credit_amount as i64,
-                                    &v0.fee_anchor,
-                                    v0.fee_proof.as_slice(),
-                                    &v0.fee_binding_signature,
-                                    &fee_extra_sighash_data,
-                                )
-                            })
-                        }
-                    },
-                    StateTransition::TokenPurchaseFromShieldedPool(st) => match st {
-                        TokenPurchaseFromShieldedPoolTransition::V0(v0) => {
-                            let token_extra_sighash_data = dpp::shielded::token_purchase_from_shielded_pool_extra_sighash_data(
-                &v0.token_id.to_buffer(),
-                v0.token_count,
-                v0.total_agreed_price,
-                platform_version,
-            )?;
-                            let fee_extra_sighash_data =
-                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
-                                    dpp::shielded::TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
-                                    &v0.token_id.to_buffer(),
-                                    &v0.token_actions,
-                                    platform_version,
-                                )?;
-                            reconstruct_and_verify_bundle(
-                                &v0.token_actions,
-                                FLAGS_OUTPUTS_ONLY,
-                                -(v0.token_count as i64),
-                                &v0.token_anchor,
-                                v0.token_proof.as_slice(),
-                                &v0.token_binding_signature,
-                                &token_extra_sighash_data,
-                            )
-                            .and_then(|_| {
-                                reconstruct_and_verify_bundle(
-                                    &v0.fee_actions,
-                                    FLAGS_SPENDS_AND_OUTPUTS,
-                                    v0.credit_amount as i64,
-                                    &v0.fee_anchor,
-                                    v0.fee_proof.as_slice(),
-                                    &v0.fee_binding_signature,
-                                    &fee_extra_sighash_data,
-                                )
-                            })
-                        }
-                    },
-                    StateTransition::IdentityTopUpFromShieldedPool(st) => match st {
-                        IdentityTopUpFromShieldedPoolTransition::V0(v0) => {
-                            let extra_sighash_data =
-                                dpp::shielded::identity_top_up_from_shielded_extra_sighash_data(
-                                    &v0.identity_id.to_buffer(),
-                                    v0.top_up_amount,
-                                    platform_version,
-                                )?;
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_SPENDS_AND_OUTPUTS,
-                                v0.top_up_amount as i64,
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &extra_sighash_data,
-                            )
-                        }
-                    },
-                    StateTransition::ShieldedWithdrawal(st) => match st {
-                        dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
-                            let extra_sighash_data =
-                                dpp::shielded::shielded_withdrawal_extra_sighash_data(
-                                    v0.output_script.as_bytes(),
-                                    v0.unshielding_amount,
-                                    v0.core_fee_per_byte,
-                                    v0.pooling,
-                                    platform_version,
-                                )?;
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_SPENDS_AND_OUTPUTS,
-                                v0.unshielding_amount as i64,
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &extra_sighash_data,
-                            )
-                        }
-                    },
-                    StateTransition::IdentityCreateFromShieldedPool(st) => match st {
-                        dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition::V0(v0) => {
-                            // Bind the new identity id + denomination + FULL public-key set into the
-                            // Orchard sighash so the bundle cannot be redirected to a different
-                            // identity/keys (the surplus_output binding analog). The id is re-derived
-                            // from the spend nullifiers — the canonical value — so the binding holds
-                            // regardless of any (separately-validated) wire `identity_id`.
-                            let identity_id =
-                                dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions(&v0.actions)
-                                    .to_buffer();
-                            let extra_sighash_data =
-                                dpp::shielded::identity_create_from_shielded_extra_sighash_data(
-                                    &identity_id,
-                                    v0.denomination,
-                                    &v0.send_to_address_on_creation_failure,
-                                    &v0.public_keys,
-                                    platform_version,
-                                )?;
-                            // value_balance = denomination EXACTLY (the ShieldedTransfer exact-equality
-                            // model): the binding signature proves the value commitments sum to exactly
-                            // the denomination leaving the pool.
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_SPENDS_AND_OUTPUTS,
-                                v0.denomination as i64,
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &extra_sighash_data,
-                            )
-                        }
-                    },
-                    // ShieldFromAssetLock retains proof verification in transform_into_action;
-                    // its paid-failure action comes from the asset lock.
-                    _ => return Ok(SimpleConsensusValidationResult::new()),
-                };
-
-                match result {
-                    Ok(()) => Ok(SimpleConsensusValidationResult::new()),
-                    Err(e) => Ok(SimpleConsensusValidationResult::new_with_error(
-                        StateError::InvalidShieldedProofError(e).into(),
-                    )),
-                }
 }

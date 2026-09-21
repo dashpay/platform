@@ -1108,6 +1108,9 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::identity::accessors::IdentityGettersV0;
@@ -1627,6 +1630,15 @@ mod token_pool_mint_burn_claim_purchase_tests {
 
     #[tokio::test]
     async fn test_token_claim_to_pool_pre_programmed() {
+        assert_token_claim_to_pool(TokenDistributionType::PreProgrammed).await;
+    }
+
+    #[tokio::test]
+    async fn should_claim_once_per_identity_into_the_pool_only_once() {
+        assert_token_claim_to_pool(TokenDistributionType::OncePerIdentity).await;
+    }
+
+    async fn assert_token_claim_to_pool(distribution_type: TokenDistributionType) {
         let platform_version = PlatformVersion::latest();
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9105);
@@ -1640,13 +1652,23 @@ mod token_pool_mint_burn_claim_purchase_tests {
             owner.id(),
             Some(move |configuration: &mut TokenConfiguration| {
                 configuration.set_has_shielded_pool(true);
-                configuration
-                    .distribution_rules_mut()
-                    .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
-                        TokenPreProgrammedDistributionV0 {
-                            distributions: [(100, [(claimant_id, 445)].into())].into(),
-                        },
-                    )));
+                if distribution_type == TokenDistributionType::OncePerIdentity {
+                    configuration
+                        .distribution_rules_mut()
+                        .set_once_per_identity_distribution(Some(
+                            TokenOncePerIdentityDistribution::V0(
+                                TokenOncePerIdentityDistributionV0 { amount: 445 },
+                            ),
+                        ));
+                } else {
+                    configuration
+                        .distribution_rules_mut()
+                        .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                            TokenPreProgrammedDistributionV0 {
+                                distributions: [(100, [(claimant_id, 445)].into())].into(),
+                            },
+                        )));
+                }
             }),
             None,
             None,
@@ -1669,7 +1691,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             claimant_id,
             contract.id(),
             0,
-            TokenDistributionType::PreProgrammed,
+            distribution_type,
             None,
             build_shield_bundle(444, 24),
             None,
@@ -1715,7 +1737,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             claimant_id,
             contract.id(),
             0,
-            TokenDistributionType::PreProgrammed,
+            distribution_type,
             None,
             claim_bundle.clone(),
             None,
@@ -1773,7 +1795,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             claimant_id,
             contract.id(),
             0,
-            TokenDistributionType::PreProgrammed,
+            distribution_type,
             None,
             build_shield_bundle(445, 26),
             None,
@@ -1799,13 +1821,28 @@ mod token_pool_mint_burn_claim_purchase_tests {
                 None,
             )
             .expect("process state transition");
-        assert_matches!(
-            result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                ..
-            }]
-        );
+        if distribution_type == TokenDistributionType::OncePerIdentity {
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(_)
+                    ),
+                    ..
+                }]
+            );
+        } else {
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::InvalidTokenClaimNoCurrentRewards(_)
+                    ),
+                    ..
+                }]
+            );
+        }
+        assert_eq!(pool_balance(&platform, token_id), 445);
     }
 
     #[tokio::test]
@@ -1969,6 +2006,7 @@ mod document_shielded_token_payment_tests {
     use dpp::document::{Document, DocumentV0Getters};
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::prelude::IdentityNonce;
     use dpp::shielded::{document_token_payment_extra_sighash_data_v0, OrchardBundleParams};
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -2027,6 +2065,7 @@ mod document_shielded_token_payment_tests {
         rng: &mut StdRng,
         card_document_type: DocumentTypeRef,
         owner_id: Identifier,
+        identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
     ) -> (Document, Bytes32) {
         let entropy = Bytes32::random_with_rng(rng);
@@ -2040,6 +2079,15 @@ mod document_shielded_token_payment_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        // The proof must bind the final nonce-derived creation ID.
+        document
+            .set_id_for_creation(
+                card_document_type,
+                &entropy.0,
+                identity_contract_nonce,
+                platform_version,
+            )
+            .expect("creation document id");
         document.set("attack", 4.into());
         document.set("defense", 7.into());
         (document, entropy)
@@ -2135,8 +2183,13 @@ mod document_shielded_token_payment_tests {
         let card_document_type = contract
             .document_type_for_name("card")
             .expect("card document type");
-        let (document, entropy) =
-            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+        let (document, entropy) = random_card(
+            &mut rng,
+            card_document_type,
+            buyer.id(),
+            2,
+            platform_version,
+        );
 
         // A 15 note the wallet holds pays the 10 cost; 5 return to the pool as change.
         let (note, anchor, merkle_path) = spendable_note(SHIELDED, 4);
@@ -2193,8 +2246,13 @@ mod document_shielded_token_payment_tests {
         assert_tokens_conserved(&platform);
 
         // The spent notes cannot pay for another document.
-        let (replay_document, replay_entropy) =
-            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+        let (replay_document, replay_entropy) = random_card(
+            &mut rng,
+            card_document_type,
+            buyer.id(),
+            3,
+            platform_version,
+        );
         let replay = BatchTransition::new_document_creation_transition_from_document(
             replay_document,
             card_document_type,
@@ -2251,8 +2309,13 @@ mod document_shielded_token_payment_tests {
         let card_document_type = contract
             .document_type_for_name("card")
             .expect("card document type");
-        let (document, entropy) =
-            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+        let (document, entropy) = random_card(
+            &mut rng,
+            card_document_type,
+            buyer.id(),
+            2,
+            platform_version,
+        );
 
         let (note, anchor, merkle_path) = spendable_note(SHIELDED, 5);
         insert_token_pool_anchor(&platform, token_id, &anchor);
@@ -2321,8 +2384,13 @@ mod document_shielded_token_payment_tests {
         let card_document_type = contract
             .document_type_for_name("card")
             .expect("card document type");
-        let (document, entropy) =
-            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+        let (document, entropy) = random_card(
+            &mut rng,
+            card_document_type,
+            buyer.id(),
+            2,
+            platform_version,
+        );
 
         // A bundle proving 9 where the card costs 10.
         let underpaid = CARD_COST - 1;
@@ -2399,8 +2467,13 @@ mod document_shielded_token_payment_tests {
         let card_document_type = contract
             .document_type_for_name("card")
             .expect("card document type");
-        let (document, entropy) =
-            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+        let (document, entropy) = random_card(
+            &mut rng,
+            card_document_type,
+            buyer.id(),
+            1,
+            platform_version,
+        );
 
         let transition = BatchTransition::new_document_creation_transition_from_document(
             document,

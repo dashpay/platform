@@ -21,11 +21,11 @@ const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
 
 /// The state transition type byte the token bundle of a `TokenShieldedTransferWithShieldedFee`
 /// commits to (`StateTransitionType::TokenShieldedTransferWithShieldedFee`).
-pub const TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE: u8 = 23;
+pub const TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE: u8 = 26;
 /// The state transition type byte the token bundle of a `TokenUnshieldWithShieldedFee` commits to.
-pub const TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE: u8 = 24;
+pub const TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE: u8 = 27;
 /// The state transition type byte the token bundle of a `TokenPurchaseFromShieldedPool` commits to.
-pub const TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE: u8 = 25;
+pub const TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE: u8 = 28;
 
 /// Computes the platform sighash from an Orchard bundle commitment and optional
 /// transparent field data.
@@ -458,7 +458,7 @@ pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data(
     }
 }
 
-/// Version 0 layout: `state transition type (1, = 23) || token_id (32)`. Frozen.
+/// Version 0 layout: `state transition type (1, = 26) || token_id (32)`. Frozen.
 pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(
     token_id: &[u8; 32],
 ) -> Vec<u8> {
@@ -491,7 +491,7 @@ pub fn token_unshield_with_shielded_fee_extra_sighash_data(
     }
 }
 
-/// Version 0 layout: `state transition type (1, = 24) || token_id (32) || recipient_id (32)
+/// Version 0 layout: `state transition type (1, = 27) || token_id (32) || recipient_id (32)
 /// || amount (8, little endian)`. Frozen.
 pub fn token_unshield_with_shielded_fee_extra_sighash_data_v0(
     token_id: &[u8; 32],
@@ -528,7 +528,7 @@ pub fn token_purchase_from_shielded_pool_extra_sighash_data(
     }
 }
 
-/// Version 0 layout: `state transition type (1, = 25) || token_id (32) || token_count (8, LE)
+/// Version 0 layout: `state transition type (1, = 28) || token_id (32) || token_count (8, LE)
 /// || total_agreed_price (8, LE)`. Frozen.
 pub fn token_purchase_from_shielded_pool_extra_sighash_data_v0(
     token_id: &[u8; 32],
@@ -940,26 +940,26 @@ mod tests {
     fn token_pool_paid_layouts_start_with_the_state_transition_type() {
         let transfer = token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(&[1u8; 32]);
         assert_eq!(transfer.len(), 33);
-        assert_eq!(transfer[0], 23);
+        assert_eq!(transfer[0], 26);
         assert_eq!(&transfer[1..], &[1u8; 32]);
 
         let unshield =
             token_unshield_with_shielded_fee_extra_sighash_data_v0(&[1u8; 32], &[2u8; 32], 300);
         assert_eq!(unshield.len(), 73);
-        assert_eq!(unshield[0], 24);
+        assert_eq!(unshield[0], 27);
         assert_eq!(&unshield[1..33], &[1u8; 32]);
         assert_eq!(&unshield[33..65], &[2u8; 32]);
         assert_eq!(&unshield[65..], &300u64.to_le_bytes());
 
         let purchase = token_purchase_from_shielded_pool_extra_sighash_data_v0(&[1u8; 32], 5, 900);
         assert_eq!(purchase.len(), 49);
-        assert_eq!(purchase[0], 25);
+        assert_eq!(purchase[0], 28);
         assert_eq!(&purchase[33..41], &5u64.to_le_bytes());
         assert_eq!(&purchase[41..], &900u64.to_le_bytes());
 
-        let fee = token_pool_fee_bundle_extra_sighash_data_v0(24, &[1u8; 32], &[3u8; 32]);
+        let fee = token_pool_fee_bundle_extra_sighash_data_v0(27, &[1u8; 32], &[3u8; 32]);
         assert_eq!(fee.len(), 65);
-        assert_eq!(fee[0], 24);
+        assert_eq!(fee[0], 27);
         assert_eq!(&fee[1..33], &[1u8; 32]);
         assert_eq!(&fee[33..], &[3u8; 32]);
     }

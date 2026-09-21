@@ -67,8 +67,8 @@ failure: the identity is charged, its identity contract nonce advances, and no t
 
 ### Identity-less token pool transitions
 
-`TokenShieldedTransferWithShieldedFee` (23), `TokenUnshieldWithShieldedFee` (24) and
-`TokenPurchaseFromShieldedPool` (25) have no identity: the fee is carved from a second bundle
+`TokenShieldedTransferWithShieldedFee` (26), `TokenUnshieldWithShieldedFee` (27) and
+`TokenPurchaseFromShieldedPool` (28) have no identity: the fee is carved from a second bundle
 spent in the credit shielded pool, exactly as `ShieldedTransfer` carves its own fee.
 
 | Transition | Fee Formula | Explanation |
