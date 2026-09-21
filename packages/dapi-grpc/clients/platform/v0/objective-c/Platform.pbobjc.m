@@ -42,6 +42,7 @@ GPBObjCClassDeclaration(CompactedBlockAddressBalanceChanges);
 GPBObjCClassDeclaration(ContractGroupDocumentTypeMember);
 GPBObjCClassDeclaration(ContractGroupTokenMember);
 GPBObjCClassDeclaration(ContractModerationReason);
+GPBObjCClassDeclaration(ContractWarning);
 GPBObjCClassDeclaration(GPBBytesValue);
 GPBObjCClassDeclaration(GPBUInt32Value);
 GPBObjCClassDeclaration(GetAddressInfoRequest);
@@ -567,11 +568,13 @@ GPBEnumDescriptor *ContractModerationList_EnumDescriptor(void) {
     static const char *valueNames =
         "ContractModerationListUnspecified\000Contra"
         "ctModerationListBanlist\000ContractModerati"
-        "onListSuspensions\000";
+        "onListSuspensions\000ContractModerationList"
+        "Warnings\000";
     static const int32_t values[] = {
         ContractModerationList_ContractModerationListUnspecified,
         ContractModerationList_ContractModerationListBanlist,
         ContractModerationList_ContractModerationListSuspensions,
+        ContractModerationList_ContractModerationListWarnings,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(ContractModerationList)
@@ -592,6 +595,7 @@ BOOL ContractModerationList_IsValidValue(int32_t value__) {
     case ContractModerationList_ContractModerationListUnspecified:
     case ContractModerationList_ContractModerationListBanlist:
     case ContractModerationList_ContractModerationListSuspensions:
+    case ContractModerationList_ContractModerationListWarnings:
       return YES;
     default:
       return NO;
@@ -6290,6 +6294,62 @@ typedef struct ContractModerationReason__storage_ {
 
 @end
 
+#pragma mark - ContractWarning
+
+@implementation ContractWarning
+
+@dynamic warnedAt;
+@dynamic hasReason, reason;
+
+typedef struct ContractWarning__storage_ {
+  uint32_t _has_storage_[1];
+  ContractModerationReason *reason;
+  uint64_t warnedAt;
+} ContractWarning__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "warnedAt",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ContractWarning_FieldNumber_WarnedAt,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(ContractWarning__storage_, warnedAt),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "reason",
+        .dataTypeSpecific.clazz = GPBObjCClass(ContractModerationReason),
+        .number = ContractWarning_FieldNumber_Reason,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(ContractWarning__storage_, reason),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[ContractWarning class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(ContractWarning__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetContractModerationStatusRequest
 
 @implementation GetContractModerationStatusRequest
@@ -6491,12 +6551,14 @@ void GetContractModerationStatusResponse_ClearVersionOneOfCase(GetContractModera
 @dynamic listsArray, listsArray_Count;
 @dynamic hasBanReason, banReason;
 @dynamic hasSuspensionReason, suspensionReason;
+@dynamic warningsArray, warningsArray_Count;
 
 typedef struct GetContractModerationStatusResponse_ContractModerationStatus__storage_ {
   uint32_t _has_storage_[1];
   GPBEnumArray *listsArray;
   ContractModerationReason *banReason;
   ContractModerationReason *suspensionReason;
+  NSMutableArray *warningsArray;
   uint64_t suspendedUntil;
 } GetContractModerationStatusResponse_ContractModerationStatus__storage_;
 
@@ -6549,6 +6611,15 @@ typedef struct GetContractModerationStatusResponse_ContractModerationStatus__sto
         .hasIndex = 4,
         .offset = (uint32_t)offsetof(GetContractModerationStatusResponse_ContractModerationStatus__storage_, suspensionReason),
         .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "warningsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(ContractWarning),
+        .number = GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_WarningsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContractModerationStatusResponse_ContractModerationStatus__storage_, warningsArray),
+        .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
       },
     };
@@ -6873,11 +6944,13 @@ void GetContractModerationEntriesResponse_ClearVersionOneOfCase(GetContractModer
 @dynamic identityId;
 @dynamic hasUntil, until;
 @dynamic hasReason, reason;
+@dynamic warningsArray, warningsArray_Count;
 
 typedef struct GetContractModerationEntriesResponse_ContractModerationEntry__storage_ {
   uint32_t _has_storage_[1];
   NSData *identityId;
   ContractModerationReason *reason;
+  NSMutableArray *warningsArray;
   uint64_t until;
 } GetContractModerationEntriesResponse_ContractModerationEntry__storage_;
 
@@ -6912,6 +6985,15 @@ typedef struct GetContractModerationEntriesResponse_ContractModerationEntry__sto
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetContractModerationEntriesResponse_ContractModerationEntry__storage_, reason),
         .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "warningsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(ContractWarning),
+        .number = GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_WarningsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContractModerationEntriesResponse_ContractModerationEntry__storage_, warningsArray),
+        .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
       },
     };

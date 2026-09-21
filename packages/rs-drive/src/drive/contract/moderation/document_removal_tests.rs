@@ -76,6 +76,7 @@ fn contract_with(moderated: bool, banlist: bool, deletable_types: &[&str]) -> Da
         banlist,
         suspensions: false,
         moderators: ContractModerators::ContractOwner,
+        warnings: false,
     });
     contract.set_config(contract.config().clone().with_moderation(moderation));
     for name in deletable_types {
@@ -364,6 +365,7 @@ fn should_keep_the_banlist_on_top_of_the_other_tree_when_every_tree_is_created_a
                 banlist,
                 suspensions,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             },
         )));
         add_deletable_type(&mut contract, POST);
@@ -408,6 +410,7 @@ fn should_lose_the_top_of_the_other_tree_to_the_version_item_once_both_fee_pots_
             banlist: true,
             suspensions: true,
             moderators: ContractModerators::ContractOwner,
+            warnings: false,
         },
     )));
     add_deletable_type(&mut contract, POST);

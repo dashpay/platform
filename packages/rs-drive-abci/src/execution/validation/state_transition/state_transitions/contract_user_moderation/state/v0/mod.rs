@@ -14,7 +14,8 @@ use dpp::consensus::state::contract_moderation::{
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationTargetNotFoundError, ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, DocumentModerationWindowElapsedError,
+    ContractUserNotSuspendedError, ContractUserNotWarnedError,
+    ContractUserWarningLimitReachedError, DocumentModerationWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -62,13 +63,15 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
     /// A document deletion is checked by `transform_document_deletion_v0`. For the rest:
     /// reads the contract and the target's status and checks the moderation: the contract
     /// keeps the list the action edits, the signer is its owner or one of its moderators, the
-    /// target is neither and exists, and the action fits the target's status. Every refusal,
-    /// a contract that does not exist included, is paid for by bumping the signer's contract
-    /// nonce.
+    /// target is neither and exists, and the action fits the target's status (a warn fits
+    /// while the target carries fewer than `SystemLimits::max_contract_warnings_per_identity`
+    /// warnings). Every refusal, a contract that does not exist included, is paid for by
+    /// bumping the signer's contract nonce.
     ///
-    /// The action carries what Drive needs of the target's status as read here, so Drive edits
-    /// the lists without reading them again, and the mempool, which transforms without a state validation stage,
-    /// refuses with the same consensus codes as a block.
+    /// The action carries what Drive needs of the target's status as read here (and for a
+    /// warn the block time the warning is stamped with), so Drive edits the lists without
+    /// reading them again, and the mempool, which transforms without a state validation
+    /// stage, refuses with the same consensus codes as a block.
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -144,7 +147,9 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
             | ContractUserModerationAction::Suspend { identity_id, .. }
-            | ContractUserModerationAction::Unsuspend { identity_id } => *identity_id,
+            | ContractUserModerationAction::Unsuspend { identity_id }
+            | ContractUserModerationAction::Warn { identity_id, .. }
+            | ContractUserModerationAction::ClearWarnings { identity_id } => *identity_id,
         };
         let Some(list) = list_of(action) else {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -171,7 +176,9 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         // the moderator first.
         let adds_an_entry = matches!(
             action,
-            ContractUserModerationAction::Ban { .. } | ContractUserModerationAction::Suspend { .. }
+            ContractUserModerationAction::Ban { .. }
+                | ContractUserModerationAction::Suspend { .. }
+                | ContractUserModerationAction::Warn { .. }
         );
         if adds_an_entry && moderation.may_moderate(&owner_id, &target_id) {
             return refuse(
@@ -202,14 +209,22 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
-        if let Some(error) = refusal_for_status(action, target_id, &status, contract_id, block_info)
-        {
+        if let Some(error) = refusal_for_status(
+            action,
+            target_id,
+            &status,
+            contract_id,
+            block_info,
+            platform_version,
+        ) {
             return refuse(error);
         }
 
         Ok(ConsensusValidationResult::new_with_data(
             ContractUserModerationTransitionAction::from_borrowed_transition_with_status(
-                self, &status,
+                self,
+                &status,
+                block_info.time_ms,
             )
             .into(),
         ))
@@ -359,13 +374,18 @@ fn list_of(action: &ContractUserModerationAction) -> Option<ContractModerationLi
         | ContractUserModerationAction::Unsuspend { .. } => {
             Some(ContractModerationList::Suspensions)
         }
+        ContractUserModerationAction::Warn { .. }
+        | ContractUserModerationAction::ClearWarnings { .. } => {
+            Some(ContractModerationList::Warnings)
+        }
         ContractUserModerationAction::DeleteDocument { .. } => None,
     }
 }
 
 /// The lists the action needs to know about: its own, and for a ban or a suspend the other
-/// one as well, because a ban removes a suspension and a suspend is refused for a banned
-/// identity. Only lists the contract keeps are read.
+/// barring one as well, because a ban removes a suspension and a suspend is refused for a
+/// banned identity. Warnings bar nothing and are left alone by a ban, so the warning list is
+/// read by a warn and a clearing alone. Only lists the contract keeps are read.
 fn lists_to_read(
     moderation: &ContractModerationConfig,
     action: &ContractUserModerationAction,
@@ -373,10 +393,12 @@ fn lists_to_read(
 ) -> Vec<ContractModerationList> {
     match action {
         ContractUserModerationAction::Ban { .. } | ContractUserModerationAction::Suspend { .. } => {
-            moderation.lists().collect()
+            moderation.barring_lists().collect()
         }
         ContractUserModerationAction::Unban { .. }
         | ContractUserModerationAction::Unsuspend { .. }
+        | ContractUserModerationAction::Warn { .. }
+        | ContractUserModerationAction::ClearWarnings { .. }
         | ContractUserModerationAction::DeleteDocument { .. } => vec![list],
     }
 }
@@ -388,6 +410,7 @@ fn refusal_for_status(
     status: &ContractModerationStatus,
     contract_id: Identifier,
     block_info: &BlockInfo,
+    platform_version: &PlatformVersion,
 ) -> Option<ConsensusError> {
     match action {
         ContractUserModerationAction::Ban { .. } => status
@@ -414,6 +437,19 @@ fn refusal_for_status(
             .suspension
             .is_none()
             .then(|| ContractUserNotSuspendedError::new(contract_id, target_id).into()),
+        // A warning is refused only once the entry is full: a banned or suspended identity
+        // may be warned, since the warning outlives the ban and says why it came to that.
+        ContractUserModerationAction::Warn { .. } => {
+            let max_warnings = platform_version
+                .system_limits
+                .max_contract_warnings_per_identity;
+            (status.warnings.len() >= usize::from(max_warnings)).then(|| {
+                ContractUserWarningLimitReachedError::new(contract_id, target_id, max_warnings)
+                    .into()
+            })
+        }
+        ContractUserModerationAction::ClearWarnings { .. } => (!status.warned())
+            .then(|| ContractUserNotWarnedError::new(contract_id, target_id).into()),
         // A document deletion reads no list.
         ContractUserModerationAction::DeleteDocument { .. } => None,
     }

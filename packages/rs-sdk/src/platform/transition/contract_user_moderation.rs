@@ -1,10 +1,12 @@
-//! Ban, unban, suspend and unsuspend identities on a moderated data contract, and delete
-//! documents of the document types that let moderators do so (protocol version 14).
+//! Ban, unban, suspend, unsuspend, warn and clear the warnings of identities on a moderated
+//! data contract, and delete documents of the document types that let moderators do so
+//! (protocol version 14).
 //!
-//! A contract whose config declares moderation keeps a banlist and/or a suspension list. The
-//! contract owner, or a moderator the config names, edits them with a
+//! A contract whose config declares moderation keeps a banlist, a suspension list and/or a
+//! warning list. The contract owner, or a moderator the config names, edits them with a
 //! [`ContractUserModerationTransition`] signed by a CRITICAL authentication key. A banned or
-//! suspended identity cannot act on the contract at the document level.
+//! suspended identity cannot act on the contract at the document level; a warned one can, the
+//! warnings being a record it and everyone else can read.
 //!
 //! The same transition deletes one document of a document type that sets
 //! `canBeDeletedByModerators`, whoever owns it, and leaves a record of the deletion under the
@@ -48,10 +50,11 @@ use crate::{Error, Sdk};
 use super::waitable::Waitable;
 
 /// The target identity's status on the lists a moderation touched, as the proof of the
-/// moderation shows it. A ban proves every list the contract keeps (it removes a suspension
-/// too); an unban, a suspend and an unsuspend prove the one list they edit and say nothing
-/// about the other, so an identity shown as no longer suspended may still be banned. Fetch
-/// `ContractModerationListStatuses` over every list the contract keeps for the whole picture.
+/// moderation shows it. A ban proves every barring list the contract keeps (it removes a
+/// suspension too); an unban, a suspend, an unsuspend, a warn and a clearing prove the one
+/// list they edit and say nothing about the others, so an identity shown as no longer
+/// suspended may still be banned. Fetch `ContractModerationListStatuses` over every list the
+/// contract keeps for the whole picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeratedUserStatus {
     /// The moderated contract
@@ -221,6 +224,57 @@ pub trait ModerateContractUser: Waitable {
         .await
     }
 
+    /// Adds a warning for `reason` (as for a ban) to the entry of `identity_id` on the
+    /// warning list of `contract_id`, stamped with the block time. Warnings bar nothing and
+    /// accumulate, at most `SystemLimits::max_contract_warnings_per_identity` at a time:
+    /// past that, the warn is refused until they are cleared.
+    #[allow(clippy::too_many_arguments)]
+    async fn warn_contract_user<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ModeratedUserStatus, Error> {
+        self.moderate_contract_user(
+            sdk,
+            contract_id,
+            ContractUserModerationAction::Warn {
+                identity_id,
+                reason,
+            },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    /// Takes `identity_id` off the warning list of `contract_id`: every warning it carries
+    /// goes.
+    async fn clear_contract_user_warnings<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ModeratedUserStatus, Error> {
+        self.moderate_contract_user(
+            sdk,
+            contract_id,
+            ContractUserModerationAction::ClearWarnings { identity_id },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+    }
+
     /// Deletes document `document_id` of `document_type_name` on `contract_id`, whoever owns
     /// it, for `reason` (as for a ban). The document type must set
     /// `canBeDeletedByModerators`. Resolves with the record the deletion left under the
@@ -354,8 +408,8 @@ where
         None => signing_key_for_moderation(identity, &signer)?,
     };
 
-    // The proof of a ban covers every list the contract keeps, which the verifier reads from
-    // the contract through the context provider. A provider that can not resolve the contract
+    // The proof of a ban covers every barring list the contract keeps, which the verifier reads
+    // from the contract through the context provider. A provider that can not resolve the contract
     // would refuse a result the network already accepted, so before the nonce is taken and
     // anything is signed or paid for, the provider is asked, and only when it does not have
     // the contract (the lists never change, so whatever copy it holds will do) is the contract

@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::contract_user_moderation::v0::ContractDocumentDeletionContext;
 use crate::state_transition_action::contract::contract_user_moderation::v0::ContractUserModerationTransitionActionV0;
+use crate::state_transition_action::contract::contract_user_moderation::v0::ContractWarningContext;
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use crate::util::batch::DriveOperation::{
     ContractModerationOperation, DocumentOperation, IdentityOperation,
@@ -12,7 +13,7 @@ use crate::util::batch::{
 };
 use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::config::moderation::ContractDocumentRemoval;
+use dpp::data_contract::config::moderation::{ContractDocumentRemoval, ContractWarning};
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::version::PlatformVersion;
 
@@ -37,6 +38,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         identity_contract_nonce,
                         action,
                         target_is_suspended,
+                        warning,
                         document_deletion,
                         ..
                     },
@@ -100,6 +102,38 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                     ContractUserModerationAction::Unsuspend { identity_id } => {
                         operations.push(ContractModerationOperation(
                             ContractModerationOperationType::RemoveSuspension {
+                                contract_id,
+                                identity_id,
+                            },
+                        ));
+                    }
+                    ContractUserModerationAction::Warn {
+                        identity_id,
+                        reason,
+                    } => {
+                        let ContractWarningContext {
+                            existing_warnings,
+                            warned_at,
+                        } = warning.ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "a warn action must carry what its validation read",
+                        )))?;
+                        // The entry is rewritten whole: the warnings it held, then this one.
+                        let replaces_existing = !existing_warnings.is_empty();
+                        let mut warnings = existing_warnings;
+                        warnings.push(ContractWarning { warned_at, reason });
+                        operations.push(ContractModerationOperation(
+                            ContractModerationOperationType::AddWarning {
+                                contract_id,
+                                identity_id,
+                                warnings,
+                                replaces_existing,
+                                moderator_id,
+                            },
+                        ));
+                    }
+                    ContractUserModerationAction::ClearWarnings { identity_id } => {
+                        operations.push(ContractModerationOperation(
+                            ContractModerationOperationType::RemoveWarnings {
                                 contract_id,
                                 identity_id,
                             },
@@ -182,9 +216,76 @@ mod tests {
             identity_contract_nonce: 4,
             action,
             target_is_suspended,
+            warning: None,
             document_deletion: None,
             user_fee_increase: 0,
         })
+    }
+
+    #[test]
+    fn should_rewrite_the_warning_list_entry_with_the_new_warning_last() {
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).expect("epoch");
+        let target = Identifier::from([0xCC; 32]);
+        let earlier = ContractWarning {
+            warned_at: 5,
+            reason: ContractModerationReason::from_text("first strike"),
+        };
+
+        let mut warn = action(
+            ContractUserModerationAction::Warn {
+                identity_id: target,
+                reason: ContractModerationReason::from_text("second strike"),
+            },
+            false,
+        );
+        let ContractUserModerationTransitionAction::V0(v0) = &mut warn;
+        v0.warning = Some(ContractWarningContext {
+            existing_warnings: vec![earlier.clone()],
+            warned_at: 9,
+        });
+        let ops = warn
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("operations");
+        assert_eq!(ops.len(), 2);
+        assert!(matches!(
+            &ops[1],
+            ContractModerationOperation(ContractModerationOperationType::AddWarning {
+                identity_id,
+                warnings,
+                replaces_existing: true,
+                ..
+            }) if *identity_id == target
+                && warnings.len() == 2
+                && warnings[0] == earlier
+                && warnings[1].warned_at == 9
+                && warnings[1].reason.text == "second strike"
+        ));
+
+        // A warn that lost what its validation read can not write a whole entry.
+        let orphan = action(
+            ContractUserModerationAction::Warn {
+                identity_id: target,
+                reason: ContractModerationReason::from_text("spam"),
+            },
+            false,
+        );
+        assert!(orphan
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .is_err());
+
+        let ops = action(
+            ContractUserModerationAction::ClearWarnings {
+                identity_id: target,
+            },
+            false,
+        )
+        .into_high_level_drive_operations(&epoch, platform_version)
+        .expect("operations");
+        assert!(matches!(
+            &ops[1],
+            ContractModerationOperation(ContractModerationOperationType::RemoveWarnings { .. })
+        ));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 mod transformer;
 
 use crate::drive::contract::DataContractFetchInfo;
+use dpp::data_contract::config::moderation::ContractWarning;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
@@ -22,11 +23,23 @@ pub struct ContractUserModerationTransitionActionV0 {
     /// Drive knows whether a suspend replaces an entry and whether a ban also removes a
     /// suspension, without reading again. The status itself, with its reasons, stays behind.
     pub target_is_suspended: bool,
+    /// what a warn read when the transition was validated, `None` for every other action
+    pub warning: Option<ContractWarningContext>,
     /// what a document deletion read when the transition was validated, `None` for an action
     /// on an identity
     pub document_deletion: Option<ContractDocumentDeletionContext>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
+}
+
+/// What the validation of a warn read, so that Drive writes the identity's warning list entry
+/// whole, the new warning last, without reading again.
+#[derive(Debug, Clone)]
+pub struct ContractWarningContext {
+    /// the warnings the identity carried, oldest first; empty when it had no entry
+    pub existing_warnings: Vec<ContractWarning>,
+    /// the time of the block the warn runs in, recorded with the warning
+    pub warned_at: TimestampMillis,
 }
 
 /// What the validation of a document deletion read, so that Drive deletes the document and

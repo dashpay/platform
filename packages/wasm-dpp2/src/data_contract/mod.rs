@@ -21,5 +21,6 @@ pub use transitions::fee_claim::{ContractFeeClaimWasm, contract_fee_pot_from_str
 pub use transitions::update::DataContractUpdateTransitionWasm;
 pub use transitions::user_moderation::{
     ContractModerationReasonJs, ContractUserModerationActionParts, ContractUserModerationWasm,
-    moderation_action_from_parts, moderation_reason_to_js,
+    ContractWarningsJs, moderation_action_from_parts, moderation_reason_to_js,
+    moderation_warnings_to_js,
 };

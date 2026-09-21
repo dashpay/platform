@@ -1,7 +1,7 @@
 //! Contract moderation queries: one identity's status on a moderated contract
-//! (`getContractModerationStatus`), one page of a contract's banlist or suspension list
-//! (`getContractModerationEntries`) and the records of the documents its moderators deleted
-//! (`getContractDocumentRemovals`).
+//! (`getContractModerationStatus`), one page of a contract's banlist, suspension list or
+//! warning list (`getContractModerationEntries`) and the records of the documents its
+//! moderators deleted (`getContractDocumentRemovals`).
 
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
@@ -21,13 +21,13 @@ use js_sys::Array;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::data_contract::moderation_reason_to_js;
+use wasm_dpp2::data_contract::{moderation_reason_to_js, moderation_warnings_to_js};
 use wasm_dpp2::identifier::IdentifierWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_MODERATION_QUERY_TS: &'static str = r#"
-/** One of the two moderation lists a moderated contract may keep. */
-export type ContractModerationListKind = 'banlist' | 'suspensions';
+/** One of the moderation lists a moderated contract may keep. */
+export type ContractModerationListKind = 'banlist' | 'suspensions' | 'warnings';
 
 /**
  * Query parameters for one identity's status on a moderated contract
@@ -65,11 +65,16 @@ export interface ContractModerationStatus {
   suspendedUntil?: bigint;
   /** When the identity is suspended: why, as the moderator wrote it. */
   suspensionReason?: ContractModerationReason;
+  /**
+   * When `lists` includes `warnings`: the identity's warnings, oldest first, an empty array
+   * when it carries none. Warnings bar nothing and stay until a moderator clears them.
+   */
+  warnings?: ContractWarning[];
 }
 
 /**
- * Query parameters for one page of a moderated contract's banlist or suspension list
- * (`getContractModerationEntries`).
+ * Query parameters for one page of a moderated contract's banlist, suspension list or
+ * warning list (`getContractModerationEntries`).
  */
 export interface ContractModerationEntriesQuery {
   /** The moderated contract. */
@@ -90,8 +95,13 @@ export interface ContractModerationEntry {
   identityId: string;
   /** For a suspension list entry: the block time, in milliseconds, at which it lapses. */
   until?: bigint;
-  /** Why the identity is on the list, as the moderator wrote it. */
+  /**
+   * Why the identity is on the list, as the moderator wrote it: the ban's reason, the
+   * suspension's, or for a warning list entry the latest warning's.
+   */
   reason: ContractModerationReason;
+  /** For a warning list entry: every warning the identity carries, oldest first. */
+  warnings?: ContractWarning[];
 }
 
 /**
@@ -172,6 +182,7 @@ extern "C" {
 enum ContractModerationListInput {
     Banlist,
     Suspensions,
+    Warnings,
 }
 
 impl From<ContractModerationListInput> for ContractModerationList {
@@ -179,6 +190,7 @@ impl From<ContractModerationListInput> for ContractModerationList {
         match list {
             ContractModerationListInput::Banlist => ContractModerationList::Banlist,
             ContractModerationListInput::Suspensions => ContractModerationList::Suspensions,
+            ContractModerationListInput::Warnings => ContractModerationList::Warnings,
         }
     }
 }
@@ -330,11 +342,11 @@ fn parse_removals_query(
     Ok(page_query)
 }
 
-/// Sets `lists`, and `banned` and `suspendedUntil` for the lists read, each with the reason of
-/// the entry found, on `target`. Only the
-/// lists read are reported: the field of a list that was not read stays undefined (unknown)
-/// rather than reading as "not banned" or "not suspended". The status query and the moderation
-/// result share the shape, so they share this.
+/// Sets `lists`, and `banned`, `suspendedUntil` and `warnings` for the lists read, each with
+/// the reason of the entry found, on `target`. Only the lists read are reported: the field of
+/// a list that was not read stays undefined (unknown) rather than reading as "not banned",
+/// "not suspended" or "never warned". The status query and the moderation result share the
+/// shape, so they share this.
 pub(crate) fn set_status_fields(
     target: &js_sys::Object,
     statuses: &ContractModerationListStatuses,
@@ -366,6 +378,10 @@ pub(crate) fn set_status_fields(
                         moderation_reason_to_js(&suspension.reason),
                     )?;
                 }
+            }
+            ContractModerationListStatus::Warnings { warnings } => {
+                lists.push(&"warnings".into());
+                set("warnings", moderation_warnings_to_js(warnings, false))?;
             }
         }
     }
@@ -399,6 +415,13 @@ fn entries_to_js(
             set(&js_entry, "until", js_sys::BigInt::from(until).into())?;
         }
         set(&js_entry, "reason", moderation_reason_to_js(&entry.reason))?;
+        if !entry.warnings.is_empty() {
+            set(
+                &js_entry,
+                "warnings",
+                moderation_warnings_to_js(&entry.warnings, false),
+            )?;
+        }
         entries.push(&js_entry);
     }
     set(&result, "entries", entries.into())?;
@@ -467,8 +490,8 @@ fn removals_to_js(
 
 #[wasm_bindgen]
 impl WasmSdk {
-    /// One identity's status on a moderated contract: whether it is banned, and until when it
-    /// is suspended, on the lists read. Every list the query names must be one the contract
+    /// One identity's status on a moderated contract: whether it is banned, until when it is
+    /// suspended, and the warnings it carries, on the lists read. Every list the query names must be one the contract
     /// keeps; without `lists`, every list the contract keeps is read.
     ///
     /// # Example
@@ -515,9 +538,9 @@ impl WasmSdk {
         ))
     }
 
-    /// One page of a moderated contract's banlist or suspension list, in identity id order.
-    /// Pass the page's `nextStartAfter` as the next query's `startAfter`; a page without one
-    /// is the last.
+    /// One page of a moderated contract's banlist, suspension list or warning list, in
+    /// identity id order. Pass the page's `nextStartAfter` as the next query's `startAfter`;
+    /// a page without one is the last.
     ///
     /// # Example
     /// ```javascript

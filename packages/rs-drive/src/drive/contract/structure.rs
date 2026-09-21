@@ -1,7 +1,7 @@
 use crate::drive::contract::paths::{
     CONTRACT_BANLIST_KEY, CONTRACT_DOCUMENT_REMOVALS_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY,
     CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
-    CONTRACT_VERSION_KEY,
+    CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
@@ -258,6 +258,42 @@ pub(crate) fn structure() -> StructureNode {
                         .describe(
                             "One suspension and why. A lapsed one stays until the \
                                  identity's next document transition sweeps it.",
+                        ),
+                    ),
+                    StructureNode::fixed(
+                        "warnings",
+                        &[CONTRACT_WARNINGS_KEY],
+                        "Warnings",
+                        "CONTRACT_WARNINGS_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .describe(
+                        "The identities warned on the contract, and why. \
+                             Created with the contract, and only when its config \
+                             declares a warning list. A warning bars nothing, so no \
+                             document transition reads it and its depth does not \
+                             matter: above 192, it leaves the banlist on top in \
+                             the likely combinations of lists.",
+                    )
+                    .child(
+                        StructureNode::identifier(
+                            "identity",
+                            "identity_id",
+                            "The warned identity's id",
+                        )
+                        .kind(ElementKind::Item)
+                        .flags(&[FlagsKind::EpochOwned], MODERATOR_FLAGS)
+                        .value(
+                            "one or more warnings, oldest first, each: the block \
+                                 time in milliseconds of the warning, u64 big endian, \
+                                 the length of its reason, u16 big endian, then the \
+                                 moderator's reason as in a banlist entry",
+                        )
+                        .describe(
+                            "The warnings one identity carries. Each warn rewrites \
+                                 the item one warning longer, so it belongs to the \
+                                 moderator that warned last; a clearing deletes it.",
                         ),
                     ),
                 ]),

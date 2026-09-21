@@ -14,6 +14,7 @@ fn moderated_config(platform_version: &PlatformVersion) -> DataContractConfig {
             banlist: false,
             suspensions: false,
             moderators: ContractModerators::ContractOwner,
+            warnings: false,
         }))
 }
 

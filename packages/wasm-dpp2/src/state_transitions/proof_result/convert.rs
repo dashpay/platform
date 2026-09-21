@@ -337,6 +337,7 @@ pub fn convert_proof_result(
             let mut ban_reason = None;
             let mut suspended_until = None;
             let mut suspension_reason = None;
+            let mut warnings = None;
             for status in statuses.0 {
                 match status {
                     ContractModerationListStatus::Banlist { ban } => {
@@ -351,6 +352,12 @@ pub fn convert_proof_result(
                             suspension_reason = Some(suspension.reason);
                         }
                     }
+                    ContractModerationListStatus::Warnings {
+                        warnings: proved_warnings,
+                    } => {
+                        lists.push("warnings".to_string());
+                        warnings = Some(proved_warnings);
+                    }
                 }
             }
             VerifiedContractModerationListStatusesWasm {
@@ -361,6 +368,7 @@ pub fn convert_proof_result(
                 ban_reason,
                 suspended_until,
                 suspension_reason,
+                warnings,
             }
             .into()
         }

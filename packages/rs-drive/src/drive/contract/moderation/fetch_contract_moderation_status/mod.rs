@@ -12,8 +12,8 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Reads one identity's status on a moderated contract: whether it is on the banlist, and
-    /// until when it is on the suspension list. Only the lists in `lists` are read; those are
+    /// Reads one identity's status on a moderated contract: whether it is on the banlist,
+    /// until when it is on the suspension list, and the warnings it carries. Only the lists in `lists` are read; those are
     /// the lists the contract's config declares, and an undeclared list has no tree.
     ///
     /// # Parameters

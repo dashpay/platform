@@ -5,12 +5,13 @@ use crate::DataContractWasm;
 use crate::IdentifierWasm;
 use crate::PlatformVersionLikeJs;
 use crate::data_contract::{
-    ContractModerationReasonJs, DataContractJSONJs, DataContractObjectJs, moderation_reason_to_js,
+    ContractModerationReasonJs, ContractWarningsJs, DataContractJSONJs, DataContractObjectJs,
+    moderation_reason_to_js, moderation_warnings_to_js,
 };
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::serialization::conversions::normalize_js_value_for_json;
-use dpp::data_contract::config::moderation::ContractModerationReason;
+use dpp::data_contract::config::moderation::{ContractModerationReason, ContractWarning};
 use js_sys::{BigInt, Map};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -77,9 +78,9 @@ impl VerifiedDataContractWasm {
 impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
 
 /// `VerifiedContractModerationListStatuses` proof-result wrapper: the target identity's status
-/// on the lists a moderation transition touched (both for a ban, the edited one otherwise).
-/// A list the proof does not cover is unknown: `banned` is undefined unless `lists` includes
-/// `banlist`.
+/// on the lists a moderation transition touched (every barring list for a ban, the edited one
+/// otherwise). A list the proof does not cover is unknown: `banned` is undefined unless
+/// `lists` includes `banlist`, and `warnings` unless it includes `warnings`.
 #[wasm_bindgen(js_name = "VerifiedContractModerationListStatuses")]
 #[derive(Clone)]
 pub struct VerifiedContractModerationListStatusesWasm {
@@ -87,7 +88,7 @@ pub struct VerifiedContractModerationListStatusesWasm {
     pub contract_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
     pub identity_id: IdentifierWasm,
-    /// The lists the proof covers: `banlist`, `suspensions`, or both
+    /// The lists the proof covers: `banlist` and `suspensions` for a ban, else the one edited
     #[wasm_bindgen(getter_with_clone)]
     pub lists: Vec<String>,
     /// When `lists` includes `banlist`: the identity is on the banlist
@@ -100,9 +101,20 @@ pub struct VerifiedContractModerationListStatusesWasm {
     pub suspended_until: Option<u64>,
     #[wasm_bindgen(skip)]
     pub suspension_reason: Option<ContractModerationReason>,
+    /// When `lists` includes `warnings`: the identity's warnings, oldest first, empty when it
+    /// carries none
+    #[wasm_bindgen(skip)]
+    pub warnings: Option<Vec<ContractWarning>>,
 }
 
 impl VerifiedContractModerationListStatusesWasm {
+    fn warnings_or_undefined(&self, as_json: bool) -> JsValue {
+        self.warnings
+            .as_deref()
+            .map(|warnings| moderation_warnings_to_js(warnings, as_json))
+            .unwrap_or(JsValue::UNDEFINED)
+    }
+
     fn reason_or_undefined(reason: &Option<ContractModerationReason>) -> JsValue {
         reason
             .as_ref()
@@ -127,6 +139,14 @@ impl VerifiedContractModerationListStatusesWasm {
         self.suspension_reason
             .as_ref()
             .map(|reason| moderation_reason_to_js(reason).into())
+    }
+
+    /// When `lists` includes `warnings`: the identity's warnings, oldest first
+    #[wasm_bindgen(getter = "warnings")]
+    pub fn warnings(&self) -> Option<ContractWarningsJs> {
+        self.warnings
+            .as_deref()
+            .map(|warnings| moderation_warnings_to_js(warnings, false).into())
     }
 
     #[wasm_bindgen(js_name = toObject)]
@@ -159,6 +179,7 @@ impl VerifiedContractModerationListStatusesWasm {
                 "suspensionReason",
                 Self::reason_or_undefined(&self.suspension_reason),
             ),
+            ("warnings", self.warnings_or_undefined(false)),
         ]))
     }
 
@@ -198,6 +219,7 @@ impl VerifiedContractModerationListStatusesWasm {
                 "suspensionReason",
                 Self::reason_or_undefined(&self.suspension_reason),
             ),
+            ("warnings", self.warnings_or_undefined(true)),
         ]))
     }
 }

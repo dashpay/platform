@@ -42,6 +42,7 @@ CF_EXTERN_C_BEGIN
 @class ContractGroupDocumentTypeMember;
 @class ContractGroupTokenMember;
 @class ContractModerationReason;
+@class ContractWarning;
 @class GPBBytesValue;
 @class GPBUInt32Value;
 @class GetAddressInfoRequest_GetAddressInfoRequestV0;
@@ -386,7 +387,7 @@ BOOL KeyPurpose_IsValidValue(int32_t value);
 
 #pragma mark - Enum ContractModerationList
 
-/** One of the two moderation lists a moderated data contract may keep (protocol version 14). */
+/** One of the moderation lists a moderated data contract may keep (protocol version 14). */
 typedef GPB_ENUM(ContractModerationList) {
   /**
    * Value used if any message's field encounters a value that is not defined
@@ -402,6 +403,9 @@ typedef GPB_ENUM(ContractModerationList) {
 
   /** Identities barred until a block time */
   ContractModerationList_ContractModerationListSuspensions = 2,
+
+  /** Identities warned, barred from nothing */
+  ContractModerationList_ContractModerationListWarnings = 3,
 };
 
 GPBEnumDescriptor *ContractModerationList_EnumDescriptor(void);
@@ -2981,8 +2985,8 @@ typedef GPB_ENUM(ContractModerationReason_FieldNumber) {
 };
 
 /**
- * Why a moderator banned or suspended an identity. Nothing checks what a
- * moderator writes.
+ * Why a moderator banned, suspended or warned an identity. Nothing checks
+ * what a moderator writes.
  **/
 GPB_FINAL @interface ContractModerationReason : GPBMessage
 
@@ -2992,6 +2996,28 @@ GPB_FINAL @interface ContractModerationReason : GPBMessage
 @property(nonatomic, readwrite) BOOL hasCode;
 /** protocol version; a u16, expected unset today, never checked */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *text;
+
+@end
+
+#pragma mark - ContractWarning
+
+typedef GPB_ENUM(ContractWarning_FieldNumber) {
+  ContractWarning_FieldNumber_WarnedAt = 1,
+  ContractWarning_FieldNumber_Reason = 2,
+};
+
+/**
+ * One warning an identity carries on a contract's warning list.
+ **/
+GPB_FINAL @interface ContractWarning : GPBMessage
+
+/** The time of the block that issued it, in milliseconds */
+@property(nonatomic, readwrite) uint64_t warnedAt;
+
+/** Why */
+@property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *reason;
+/** Test to see if @c reason has been set. */
+@property(nonatomic, readwrite) BOOL hasReason;
 
 @end
 
@@ -3079,6 +3105,7 @@ typedef GPB_ENUM(GetContractModerationStatusResponse_ContractModerationStatus_Fi
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_ListsArray = 3,
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_BanReason = 4,
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_SuspensionReason = 5,
+  GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_WarningsArray = 6,
 };
 
 /**
@@ -3113,6 +3140,11 @@ GPB_FINAL @interface GetContractModerationStatusResponse_ContractModerationStatu
 @property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *suspensionReason;
 /** Test to see if @c suspensionReason has been set. */
 @property(nonatomic, readwrite) BOOL hasSuspensionReason;
+
+/** When the warning list was read: the identity's warnings, oldest */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractWarning*> *warningsArray;
+/** The number of items in @c warningsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger warningsArray_Count;
 
 @end
 
@@ -3250,11 +3282,12 @@ typedef GPB_ENUM(GetContractModerationEntriesResponse_ContractModerationEntry_Fi
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_IdentityId = 1,
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_Until = 2,
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_Reason = 3,
+  GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_WarningsArray = 4,
 };
 
 GPB_FINAL @interface GetContractModerationEntriesResponse_ContractModerationEntry : GPBMessage
 
-/** The barred identity */
+/** The identity on the list */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
 
 /** For a suspension list entry: the block time, in milliseconds, at */
@@ -3265,6 +3298,14 @@ GPB_FINAL @interface GetContractModerationEntriesResponse_ContractModerationEntr
 @property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *reason;
 /** Test to see if @c reason has been set. */
 @property(nonatomic, readwrite) BOOL hasReason;
+
+/**
+ * suspension's. Unset for a warning list entry, whose reasons
+ * are its warnings'
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractWarning*> *warningsArray;
+/** The number of items in @c warningsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger warningsArray_Count;
 
 @end
 

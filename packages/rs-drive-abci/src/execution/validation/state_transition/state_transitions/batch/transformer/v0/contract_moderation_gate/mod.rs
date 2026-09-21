@@ -165,6 +165,7 @@ mod tests {
                 banlist: true,
                 suspensions: true,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             },
         )));
         contract

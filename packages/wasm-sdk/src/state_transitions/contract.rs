@@ -255,9 +255,10 @@ impl WasmSdk {
 const CONTRACT_MODERATION_OPTIONS_TS: &'static str = r#"
 /**
  * Options for moderating one identity on a moderated data contract (protocol version 14): all
- * an unban and an unsuspend take, and the base of the options of a ban and a suspend. The signer
- * must hold a CRITICAL authentication key without contract bounds of the moderating identity:
- * the contract owner, or a moderator the contract's config names.
+ * an unban, an unsuspend and a clearWarnings take, and the base of the options of a ban, a
+ * suspend and a warn. The signer must hold a CRITICAL authentication key without contract
+ * bounds of the moderating identity: the contract owner, or a moderator the contract's config
+ * names.
  */
 export interface ContractModerationOptions {
   /** The moderating identity: the contract owner or a named moderator */
@@ -286,12 +287,18 @@ export interface ContractSuspendOptions extends ContractModerationOptions {
   reason: ContractModerationReason;
 }
 
+/** Options for warning an identity: a warning needs a reason. */
+export interface ContractWarnOptions extends ContractModerationOptions {
+  /** Why. Stored with the warning, so anyone reading the list reads it. */
+  reason: ContractModerationReason;
+}
+
 /**
  * The moderated identity's status on the lists the moderation touched, as its proof shows it.
- * A ban proves every list the contract keeps (it removes a suspension too); an unban, a
- * suspend and an unsuspend prove the one list they edit and say nothing about the other, so
- * after an unsuspend `banned` is undefined (unknown), not false. Use
- * `getContractModerationStatus` for the identity's whole status.
+ * A ban proves every barring list the contract keeps (it removes a suspension too); an unban,
+ * a suspend, an unsuspend, a warn and a clearWarnings prove the one list they edit and say
+ * nothing about the others, so after an unsuspend `banned` is undefined (unknown), not false.
+ * Use `getContractModerationStatus` for the identity's whole status.
  */
 export interface ContractModerationResult {
   contractId: Identifier;
@@ -309,6 +316,11 @@ export interface ContractModerationResult {
   suspendedUntil?: bigint;
   /** When the identity is suspended: why */
   suspensionReason?: ContractModerationReason;
+  /**
+   * When `lists` includes `warnings`: the identity's warnings, oldest first, an empty array
+   * after a clearWarnings
+   */
+  warnings?: ContractWarning[];
 }
 
 /**
@@ -371,6 +383,9 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "ContractSuspendOptions")]
     pub type ContractSuspendOptionsJs;
 
+    #[wasm_bindgen(typescript_type = "ContractWarnOptions")]
+    pub type ContractWarnOptionsJs;
+
     #[wasm_bindgen(typescript_type = "ContractModerationResult")]
     pub type ContractModerationResultJs;
 
@@ -432,10 +447,10 @@ impl WasmSdk {
         )
         .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
 
-        // The proof of a ban covers every list the contract keeps, which the verifier reads
-        // from the contract, so the contract is resolved and cached before anything is paid
-        // for; a cold cache would otherwise refuse a result the network already accepted. The
-        // other actions prove the one entry they edit and need no contract.
+        // The proof of a ban covers every barring list the contract keeps, which the verifier
+        // reads from the contract, so the contract is resolved and cached before anything is
+        // paid for; a cold cache would otherwise refuse a result the network already accepted.
+        // The other actions prove the one entry they edit and need no contract.
         if matches!(action, ContractUserModerationAction::Ban { .. }) {
             self.get_or_fetch_contract(contract_id).await?;
         }
@@ -524,6 +539,34 @@ impl WasmSdk {
         options: ContractModerationOptionsJs,
     ) -> Result<ContractModerationResultJs, WasmSdkError> {
         self.moderate_contract_user(options, "unsuspend").await
+    }
+
+    /// Warns an identity on a moderated contract: adds a warning, stamped with the block
+    /// time, to the warnings it carries. A warning bars nothing; the warnings accumulate, at
+    /// most 16 at a time, until they are cleared.
+    ///
+    /// @param options - The moderating identity, the contract, the target, the `reason` and the signer
+    /// @returns The target's warnings on the contract, proved
+    #[wasm_bindgen(js_name = "contractWarnUser")]
+    pub async fn contract_warn_user(
+        &self,
+        options: ContractWarnOptionsJs,
+    ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        self.moderate_contract_user(options.unchecked_into(), "warn")
+            .await
+    }
+
+    /// Takes an identity off a moderated contract's warning list: every warning it carries
+    /// goes.
+    ///
+    /// @param options - The moderating identity, the contract, the target and the signer
+    /// @returns The target's status on the contract, proved: no warnings
+    #[wasm_bindgen(js_name = "contractClearUserWarnings")]
+    pub async fn contract_clear_user_warnings(
+        &self,
+        options: ContractModerationOptionsJs,
+    ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        self.moderate_contract_user(options, "clearWarnings").await
     }
 
     /// Deletes one document on a moderated contract as a moderator, whoever owns it, except

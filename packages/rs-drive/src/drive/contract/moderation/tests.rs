@@ -3,7 +3,7 @@ use crate::drive::contract::moderation::types::{
 };
 use crate::drive::contract::paths::{
     contract_other_path, CONTRACT_BANLIST_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
-    CONTRACT_VERSION_KEY,
+    CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::{Drive, RootTree};
 use crate::util::grove_operations::DirectQueryType;
@@ -14,6 +14,7 @@ use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Set
 use dpp::data_contract::config::moderation::{
     ContractBan, ContractModerationConfig, ContractModerationList, ContractModerationListStatuses,
     ContractModerationReason, ContractModerationStatus, ContractModerators, ContractSuspension,
+    ContractWarning,
 };
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
@@ -31,6 +32,7 @@ fn banned_for(text: &str) -> ContractModerationStatus {
             reason: reason(text),
         }),
         suspension: None,
+        warnings: vec![],
     }
 }
 
@@ -41,6 +43,7 @@ fn suspended_until(until: u64, text: &str) -> ContractModerationStatus {
             until,
             reason: reason(text),
         }),
+        warnings: vec![],
     }
 }
 
@@ -49,16 +52,36 @@ fn identity(seed: u8) -> Identifier {
 }
 
 fn moderated_contract(banlist: bool, suspensions: bool) -> DataContract {
+    moderated_contract_keeping(banlist, suspensions, false)
+}
+
+fn moderated_contract_keeping(banlist: bool, suspensions: bool, warnings: bool) -> DataContract {
     let platform_version = PlatformVersion::latest();
     let mut contract =
         get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
-    let moderation = (banlist || suspensions).then_some(ContractModerationConfig {
+    let moderation = (banlist || suspensions || warnings).then_some(ContractModerationConfig {
         banlist,
         suspensions,
+        warnings,
         moderators: ContractModerators::ContractOwner,
     });
     contract.set_config(contract.config().clone().with_moderation(moderation));
     contract
+}
+
+fn warning(warned_at: u64, text: &str) -> ContractWarning {
+    ContractWarning {
+        warned_at,
+        reason: reason(text),
+    }
+}
+
+fn warned_with(warnings: Vec<ContractWarning>) -> ContractModerationStatus {
+    ContractModerationStatus {
+        ban: None,
+        suspension: None,
+        warnings,
+    }
 }
 
 fn insert(drive: &Drive, contract: &DataContract, platform_version: &PlatformVersion) {
@@ -224,6 +247,7 @@ fn should_keep_the_list_trees_and_their_entries_across_a_contract_update() {
                 moderators: ContractModerators::AppointedModerators(
                     [identity(0x42)].into_iter().collect(),
                 ),
+                warnings: false,
             })),
     );
     drive
@@ -297,6 +321,7 @@ fn should_ban_and_unban_and_prove_the_status_and_the_entries() {
             identity_id: target,
             until: None,
             reason: reason("spam"),
+            warnings: vec![],
         }],
     );
 
@@ -403,6 +428,7 @@ fn should_suspend_replace_and_unsuspend() {
             identity_id: target,
             until: Some(20),
             reason: reason("flooding again, after a warning"),
+            warnings: vec![],
         }],
     );
 
@@ -574,6 +600,7 @@ fn should_page_entries_with_a_cursor_and_bound_the_limit() {
         identity_id,
         until: None,
         reason: reason("spam"),
+        warnings: vec![],
     };
 
     let first_page = ContractModerationEntriesQuery {
@@ -744,6 +771,7 @@ fn should_bill_the_replacing_moderator_for_a_longer_reason() {
                 until: 20,
                 reason: longer,
             }),
+            warnings: vec![],
         },
     );
 
@@ -953,6 +981,7 @@ fn should_charge_a_ban_by_the_length_of_its_reason() {
         ContractModerationStatus {
             ban: Some(ContractBan { reason: longest }),
             suspension: None,
+            warnings: vec![],
         },
     );
 }
@@ -997,6 +1026,224 @@ fn should_say_nothing_about_a_list_the_status_proof_does_not_cover() {
     assert_eq!(proved.0.len(), 1);
 }
 
+#[test]
+fn should_create_the_warning_list_tree_only_when_the_config_declares_it() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+    let without = moderated_contract(true, true);
+    insert(&drive, &without, platform_version);
+    assert!(!has_list_tree(&drive, without.id(), CONTRACT_WARNINGS_KEY));
+
+    let mut with = moderated_contract_keeping(false, false, true);
+    with.set_id(identity(0x13));
+    insert(&drive, &with, platform_version);
+    assert!(has_list_tree(&drive, with.id(), CONTRACT_WARNINGS_KEY));
+    assert!(!has_list_tree(&drive, with.id(), CONTRACT_BANLIST_KEY));
+    assert!(!has_list_tree(&drive, with.id(), CONTRACT_SUSPENSIONS_KEY));
+}
+
+#[test]
+fn should_warn_accumulate_clear_and_prove_the_status_and_the_entries() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract_keeping(true, false, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let first_moderator = contract.owner_id();
+    let second_moderator = identity(0x62);
+    let target = identity(0x61);
+    let lists = [ContractModerationList::Warnings];
+    let first = warning(1_000, "first strike");
+    let second = warning(2_000, "second strike, a longer one");
+
+    let first_fee = drive
+        .add_contract_warning(
+            contract_id,
+            target,
+            std::slice::from_ref(&first),
+            false,
+            first_moderator,
+            &BlockInfo::default_with_epoch(Epoch::new(0).expect("epoch 0")),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to warn");
+    assert!(first_fee.storage_fee > 0, "a warning stores an entry");
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &lists,
+        warned_with(vec![first.clone()]),
+    );
+    // The banlist says nothing about it.
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &BOTH[..1],
+        ContractModerationStatus::default(),
+    );
+
+    // A second warning, by another moderator in a later epoch: the entry is rewritten one
+    // warning longer, so it passes to the moderator that warned last, who pays the added
+    // bytes.
+    let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
+    let second_fee = drive
+        .add_contract_warning(
+            contract_id,
+            target,
+            &[first.clone(), second.clone()],
+            true,
+            second_moderator,
+            &later,
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to warn again");
+    assert!(second_fee.storage_fee > 0, "the added warning is stored");
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &lists,
+        warned_with(vec![first.clone(), second.clone()]),
+    );
+    assert_entries(
+        &drive,
+        contract_id,
+        &ContractModerationEntriesQuery {
+            list: ContractModerationList::Warnings,
+            start_after: None,
+            limit: 10,
+        },
+        &[ContractModerationEntry {
+            identity_id: target,
+            until: None,
+            // The entry's reason is the latest warning's; every warning comes along.
+            reason: second.reason.clone(),
+            warnings: vec![first, second],
+        }],
+    );
+
+    let fee = drive
+        .remove_contract_warnings(contract_id, target, &later, true, None, platform_version)
+        .expect("expected to clear the warnings");
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(second_moderator)
+            .is_some(),
+        "the moderator that warned last owns the entry"
+    );
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(first_moderator)
+            .is_none(),
+        "the first moderator's bytes passed on with the entry"
+    );
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &lists,
+        ContractModerationStatus::default(),
+    );
+    assert_entries(
+        &drive,
+        contract_id,
+        &ContractModerationEntriesQuery {
+            list: ContractModerationList::Warnings,
+            start_after: None,
+            limit: 10,
+        },
+        &[],
+    );
+}
+
+#[test]
+fn should_not_estimate_a_warning_below_what_it_costs() {
+    let platform_version = PlatformVersion::latest();
+    let max_length = platform_version
+        .system_limits
+        .max_contract_moderation_reason_length as usize;
+    let max_warnings = platform_version
+        .system_limits
+        .max_contract_warnings_per_identity as usize;
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract_keeping(false, false, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let moderator = contract.owner_id();
+    let target = identity(0x54);
+    let warn = |warnings: &[ContractWarning], replaces_existing: bool, apply: bool| {
+        drive
+            .add_contract_warning(
+                contract_id,
+                target,
+                warnings,
+                replaces_existing,
+                moderator,
+                &BlockInfo::default(),
+                apply,
+                None,
+                platform_version,
+            )
+            .expect("expected to warn")
+    };
+
+    // The first warning is an insert, estimated as one.
+    let first = vec![warning(1, "spam")];
+    let estimated = warn(&first, false, false);
+    let applied = warn(&first, false, true);
+    assert_eq!(estimated.storage_fee, applied.storage_fee, "first warning");
+
+    // Every later one replaces the entry with a longer one. GroveDB's average-case replace
+    // assumes an item keeps its size, so a replacement is estimated as an insert of the whole
+    // entry, an upper bound: up to the fullest entry the protocol admits.
+    let mut warnings = first;
+    for index in 1..max_warnings {
+        warnings.push(warning(index as u64 + 1, &"x".repeat(max_length)));
+        let estimated = warn(&warnings, true, false);
+        let applied = warn(&warnings, true, true);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "warning {}: estimated storage {} below applied {}",
+            index + 1,
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+        assert!(
+            estimated.total_base_fee() >= applied.total_base_fee(),
+            "warning {}: estimated {} below applied {}",
+            index + 1,
+            estimated.total_base_fee(),
+            applied.total_base_fee()
+        );
+    }
+    // The fullest entry reads back whole.
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &[ContractModerationList::Warnings],
+        warned_with(warnings),
+    );
+    let estimated = drive
+        .remove_contract_warnings(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+        )
+        .expect("expected to estimate a clearing");
+    assert!(estimated.processing_fee > 0);
+}
+
 /// The root key of the Merk at `path`/`key`, read from the tree element that points at it.
 fn merk_root_key(drive: &Drive, path: &[&[u8]], key: &[u8]) -> Option<Vec<u8>> {
     let platform_version = PlatformVersion::latest();
@@ -1020,15 +1267,22 @@ fn merk_root_key(drive: &Drive, path: &[&[u8]], key: &[u8]) -> Option<Vec<u8>> {
 fn should_keep_the_documents_on_top_of_the_contract_subtree_and_the_banlist_on_top_of_the_other_tree(
 ) {
     let platform_version = PlatformVersion::latest();
-    // (banlist, suspensions) -> the key on top of the contract's other tree
-    for (banlist, suspensions, top_of_other) in [
-        (false, false, CONTRACT_VERSION_KEY),
-        (true, false, CONTRACT_BANLIST_KEY),
-        (false, true, CONTRACT_SUSPENSIONS_KEY),
-        (true, true, CONTRACT_BANLIST_KEY),
+    // (banlist, suspensions, warnings) -> the key on top of the contract's other tree
+    for (banlist, suspensions, warnings, top_of_other) in [
+        (false, false, false, CONTRACT_VERSION_KEY),
+        (true, false, false, CONTRACT_BANLIST_KEY),
+        (false, true, false, CONTRACT_SUSPENSIONS_KEY),
+        (true, true, false, CONTRACT_BANLIST_KEY),
+        (false, false, true, CONTRACT_WARNINGS_KEY),
+        (true, false, true, CONTRACT_BANLIST_KEY),
+        (false, true, true, CONTRACT_SUSPENSIONS_KEY),
+        // Four keys created at once root at the upper middle: the one combination where the
+        // banlist sits a level down. With the removal records tree (key 16) beside them it is
+        // on top again.
+        (true, true, true, CONTRACT_SUSPENSIONS_KEY),
     ] {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = moderated_contract(banlist, suspensions);
+        let contract = moderated_contract_keeping(banlist, suspensions, warnings);
         insert(&drive, &contract, platform_version);
         let contract_id = contract.id();
         let contracts_root: &[u8] = Into::<&[u8; 1]>::into(RootTree::DataContractDocuments);
@@ -1039,7 +1293,7 @@ fn should_keep_the_documents_on_top_of_the_contract_subtree_and_the_banlist_on_t
         assert_eq!(
             merk_root_key(&drive, &[contracts_root], contract_id.as_slice()),
             Some(vec![1]),
-            "banlist {banlist}, suspensions {suspensions}"
+            "banlist {banlist}, suspensions {suspensions}, warnings {warnings}"
         );
         assert_eq!(
             merk_root_key(
@@ -1048,7 +1302,7 @@ fn should_keep_the_documents_on_top_of_the_contract_subtree_and_the_banlist_on_t
                 &[CONTRACT_OTHER_KEY]
             ),
             Some(vec![top_of_other]),
-            "banlist {banlist}, suspensions {suspensions}"
+            "banlist {banlist}, suspensions {suspensions}, warnings {warnings}"
         );
     }
 }

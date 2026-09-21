@@ -23564,12 +23564,14 @@ $root.org = (function() {
                      * @property {number} CONTRACT_MODERATION_LIST_UNSPECIFIED=0 CONTRACT_MODERATION_LIST_UNSPECIFIED value
                      * @property {number} CONTRACT_MODERATION_LIST_BANLIST=1 CONTRACT_MODERATION_LIST_BANLIST value
                      * @property {number} CONTRACT_MODERATION_LIST_SUSPENSIONS=2 CONTRACT_MODERATION_LIST_SUSPENSIONS value
+                     * @property {number} CONTRACT_MODERATION_LIST_WARNINGS=3 CONTRACT_MODERATION_LIST_WARNINGS value
                      */
                     v0.ContractModerationList = (function() {
                         var valuesById = {}, values = Object.create(valuesById);
                         values[valuesById[0] = "CONTRACT_MODERATION_LIST_UNSPECIFIED"] = 0;
                         values[valuesById[1] = "CONTRACT_MODERATION_LIST_BANLIST"] = 1;
                         values[valuesById[2] = "CONTRACT_MODERATION_LIST_SUSPENSIONS"] = 2;
+                        values[valuesById[3] = "CONTRACT_MODERATION_LIST_WARNINGS"] = 3;
                         return values;
                     })();
 
@@ -23781,6 +23783,235 @@ $root.org = (function() {
                         };
 
                         return ContractModerationReason;
+                    })();
+
+                    v0.ContractWarning = (function() {
+
+                        /**
+                         * Properties of a ContractWarning.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IContractWarning
+                         * @property {number|Long|null} [warnedAt] ContractWarning warnedAt
+                         * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] ContractWarning reason
+                         */
+
+                        /**
+                         * Constructs a new ContractWarning.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a ContractWarning.
+                         * @implements IContractWarning
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IContractWarning=} [properties] Properties to set
+                         */
+                        function ContractWarning(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * ContractWarning warnedAt.
+                         * @member {number|Long} warnedAt
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @instance
+                         */
+                        ContractWarning.prototype.warnedAt = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * ContractWarning reason.
+                         * @member {org.dash.platform.dapi.v0.IContractModerationReason|null|undefined} reason
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @instance
+                         */
+                        ContractWarning.prototype.reason = null;
+
+                        /**
+                         * Creates a new ContractWarning instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractWarning=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.ContractWarning} ContractWarning instance
+                         */
+                        ContractWarning.create = function create(properties) {
+                            return new ContractWarning(properties);
+                        };
+
+                        /**
+                         * Encodes the specified ContractWarning message. Does not implicitly {@link org.dash.platform.dapi.v0.ContractWarning.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractWarning} message ContractWarning message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        ContractWarning.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.warnedAt != null && Object.hasOwnProperty.call(message, "warnedAt"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.warnedAt);
+                            if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
+                                $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.reason, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified ContractWarning message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.ContractWarning.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractWarning} message ContractWarning message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        ContractWarning.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a ContractWarning message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.ContractWarning} ContractWarning
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        ContractWarning.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.ContractWarning();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.warnedAt = reader.uint64();
+                                    break;
+                                case 2:
+                                    message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a ContractWarning message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.ContractWarning} ContractWarning
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        ContractWarning.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a ContractWarning message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        ContractWarning.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.warnedAt != null && message.hasOwnProperty("warnedAt"))
+                                if (!$util.isInteger(message.warnedAt) && !(message.warnedAt && $util.isInteger(message.warnedAt.low) && $util.isInteger(message.warnedAt.high)))
+                                    return "warnedAt: integer|Long expected";
+                            if (message.reason != null && message.hasOwnProperty("reason")) {
+                                var error = $root.org.dash.platform.dapi.v0.ContractModerationReason.verify(message.reason);
+                                if (error)
+                                    return "reason." + error;
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a ContractWarning message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.ContractWarning} ContractWarning
+                         */
+                        ContractWarning.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.ContractWarning)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.ContractWarning();
+                            if (object.warnedAt != null)
+                                if ($util.Long)
+                                    (message.warnedAt = $util.Long.fromValue(object.warnedAt)).unsigned = true;
+                                else if (typeof object.warnedAt === "string")
+                                    message.warnedAt = parseInt(object.warnedAt, 10);
+                                else if (typeof object.warnedAt === "number")
+                                    message.warnedAt = object.warnedAt;
+                                else if (typeof object.warnedAt === "object")
+                                    message.warnedAt = new $util.LongBits(object.warnedAt.low >>> 0, object.warnedAt.high >>> 0).toNumber(true);
+                            if (object.reason != null) {
+                                if (typeof object.reason !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.ContractWarning.reason: object expected");
+                                message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.reason);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a ContractWarning message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ContractWarning} message ContractWarning
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        ContractWarning.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.warnedAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.warnedAt = options.longs === String ? "0" : 0;
+                                object.reason = null;
+                            }
+                            if (message.warnedAt != null && message.hasOwnProperty("warnedAt"))
+                                if (typeof message.warnedAt === "number")
+                                    object.warnedAt = options.longs === String ? String(message.warnedAt) : message.warnedAt;
+                                else
+                                    object.warnedAt = options.longs === String ? $util.Long.prototype.toString.call(message.warnedAt) : options.longs === Number ? new $util.LongBits(message.warnedAt.low >>> 0, message.warnedAt.high >>> 0).toNumber(true) : message.warnedAt;
+                            if (message.reason != null && message.hasOwnProperty("reason"))
+                                object.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.reason, options);
+                            return object;
+                        };
+
+                        /**
+                         * Converts this ContractWarning to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.ContractWarning
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        ContractWarning.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return ContractWarning;
                     })();
 
                     v0.GetContractModerationStatusRequest = (function() {
@@ -24191,6 +24422,7 @@ $root.org = (function() {
                                         case 0:
                                         case 1:
                                         case 2:
+                                        case 3:
                                             break;
                                         }
                                 }
@@ -24240,6 +24472,10 @@ $root.org = (function() {
                                         case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
                                         case 2:
                                             message.lists[i] = 2;
+                                            break;
+                                        case "CONTRACT_MODERATION_LIST_WARNINGS":
+                                        case 3:
+                                            message.lists[i] = 3;
                                             break;
                                         }
                                 }
@@ -24530,6 +24766,7 @@ $root.org = (function() {
                              * @property {Array.<org.dash.platform.dapi.v0.ContractModerationList>|null} [lists] ContractModerationStatus lists
                              * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [banReason] ContractModerationStatus banReason
                              * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [suspensionReason] ContractModerationStatus suspensionReason
+                             * @property {Array.<org.dash.platform.dapi.v0.IContractWarning>|null} [warnings] ContractModerationStatus warnings
                              */
 
                             /**
@@ -24542,6 +24779,7 @@ $root.org = (function() {
                              */
                             function ContractModerationStatus(properties) {
                                 this.lists = [];
+                                this.warnings = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -24589,6 +24827,14 @@ $root.org = (function() {
                             ContractModerationStatus.prototype.suspensionReason = null;
 
                             /**
+                             * ContractModerationStatus warnings.
+                             * @member {Array.<org.dash.platform.dapi.v0.IContractWarning>} warnings
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @instance
+                             */
+                            ContractModerationStatus.prototype.warnings = $util.emptyArray;
+
+                            /**
                              * Creates a new ContractModerationStatus instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
@@ -24626,6 +24872,9 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.banReason, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 if (message.suspensionReason != null && Object.hasOwnProperty.call(message, "suspensionReason"))
                                     $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.suspensionReason, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                if (message.warnings != null && message.warnings.length)
+                                    for (var i = 0; i < message.warnings.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.ContractWarning.encode(message.warnings[i], writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
                                 return writer;
                             };
 
@@ -24682,6 +24931,11 @@ $root.org = (function() {
                                     case 5:
                                         message.suspensionReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
                                         break;
+                                    case 6:
+                                        if (!(message.warnings && message.warnings.length))
+                                            message.warnings = [];
+                                        message.warnings.push($root.org.dash.platform.dapi.v0.ContractWarning.decode(reader, reader.uint32()));
+                                        break;
                                     default:
                                         reader.skipType(tag & 7);
                                         break;
@@ -24733,6 +24987,7 @@ $root.org = (function() {
                                         case 0:
                                         case 1:
                                         case 2:
+                                        case 3:
                                             break;
                                         }
                                 }
@@ -24745,6 +25000,15 @@ $root.org = (function() {
                                     var error = $root.org.dash.platform.dapi.v0.ContractModerationReason.verify(message.suspensionReason);
                                     if (error)
                                         return "suspensionReason." + error;
+                                }
+                                if (message.warnings != null && message.hasOwnProperty("warnings")) {
+                                    if (!Array.isArray(message.warnings))
+                                        return "warnings: array expected";
+                                    for (var i = 0; i < message.warnings.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.ContractWarning.verify(message.warnings[i]);
+                                        if (error)
+                                            return "warnings." + error;
+                                    }
                                 }
                                 return null;
                             };
@@ -24791,6 +25055,10 @@ $root.org = (function() {
                                         case 2:
                                             message.lists[i] = 2;
                                             break;
+                                        case "CONTRACT_MODERATION_LIST_WARNINGS":
+                                        case 3:
+                                            message.lists[i] = 3;
+                                            break;
                                         }
                                 }
                                 if (object.banReason != null) {
@@ -24802,6 +25070,16 @@ $root.org = (function() {
                                     if (typeof object.suspensionReason !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.suspensionReason: object expected");
                                     message.suspensionReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.suspensionReason);
+                                }
+                                if (object.warnings) {
+                                    if (!Array.isArray(object.warnings))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.warnings: array expected");
+                                    message.warnings = [];
+                                    for (var i = 0; i < object.warnings.length; ++i) {
+                                        if (typeof object.warnings[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.warnings: object expected");
+                                        message.warnings[i] = $root.org.dash.platform.dapi.v0.ContractWarning.fromObject(object.warnings[i]);
+                                    }
                                 }
                                 return message;
                             };
@@ -24819,8 +25097,10 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.arrays || options.defaults)
+                                if (options.arrays || options.defaults) {
                                     object.lists = [];
+                                    object.warnings = [];
+                                }
                                 if (options.defaults) {
                                     object.banned = false;
                                     if ($util.Long) {
@@ -24847,6 +25127,11 @@ $root.org = (function() {
                                     object.banReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.banReason, options);
                                 if (message.suspensionReason != null && message.hasOwnProperty("suspensionReason"))
                                     object.suspensionReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.suspensionReason, options);
+                                if (message.warnings && message.warnings.length) {
+                                    object.warnings = [];
+                                    for (var j = 0; j < message.warnings.length; ++j)
+                                        object.warnings[j] = $root.org.dash.platform.dapi.v0.ContractWarning.toObject(message.warnings[j], options);
+                                }
                                 return object;
                             };
 
@@ -25544,6 +25829,7 @@ $root.org = (function() {
                                     case 0:
                                     case 1:
                                     case 2:
+                                    case 3:
                                         break;
                                     }
                                 if (message.startAfter != null && message.hasOwnProperty("startAfter"))
@@ -25587,6 +25873,10 @@ $root.org = (function() {
                                 case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
                                 case 2:
                                     message.list = 2;
+                                    break;
+                                case "CONTRACT_MODERATION_LIST_WARNINGS":
+                                case 3:
+                                    message.list = 3;
                                     break;
                                 }
                                 if (object.startAfter != null)
@@ -25880,6 +26170,7 @@ $root.org = (function() {
                              * @property {Uint8Array|null} [identityId] ContractModerationEntry identityId
                              * @property {number|Long|null} [until] ContractModerationEntry until
                              * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] ContractModerationEntry reason
+                             * @property {Array.<org.dash.platform.dapi.v0.IContractWarning>|null} [warnings] ContractModerationEntry warnings
                              */
 
                             /**
@@ -25891,6 +26182,7 @@ $root.org = (function() {
                              * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntry=} [properties] Properties to set
                              */
                             function ContractModerationEntry(properties) {
+                                this.warnings = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -25922,6 +26214,14 @@ $root.org = (function() {
                             ContractModerationEntry.prototype.reason = null;
 
                             /**
+                             * ContractModerationEntry warnings.
+                             * @member {Array.<org.dash.platform.dapi.v0.IContractWarning>} warnings
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @instance
+                             */
+                            ContractModerationEntry.prototype.warnings = $util.emptyArray;
+
+                            /**
                              * Creates a new ContractModerationEntry instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
@@ -25951,6 +26251,9 @@ $root.org = (function() {
                                     writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.until);
                                 if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
                                     $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.reason, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.warnings != null && message.warnings.length)
+                                    for (var i = 0; i < message.warnings.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.ContractWarning.encode(message.warnings[i], writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 return writer;
                             };
 
@@ -25993,6 +26296,11 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        if (!(message.warnings && message.warnings.length))
+                                            message.warnings = [];
+                                        message.warnings.push($root.org.dash.platform.dapi.v0.ContractWarning.decode(reader, reader.uint32()));
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -26040,6 +26348,15 @@ $root.org = (function() {
                                     if (error)
                                         return "reason." + error;
                                 }
+                                if (message.warnings != null && message.hasOwnProperty("warnings")) {
+                                    if (!Array.isArray(message.warnings))
+                                        return "warnings: array expected";
+                                    for (var i = 0; i < message.warnings.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.ContractWarning.verify(message.warnings[i]);
+                                        if (error)
+                                            return "warnings." + error;
+                                    }
+                                }
                                 return null;
                             };
 
@@ -26074,6 +26391,16 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.reason: object expected");
                                     message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.reason);
                                 }
+                                if (object.warnings) {
+                                    if (!Array.isArray(object.warnings))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.warnings: array expected");
+                                    message.warnings = [];
+                                    for (var i = 0; i < object.warnings.length; ++i) {
+                                        if (typeof object.warnings[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.warnings: object expected");
+                                        message.warnings[i] = $root.org.dash.platform.dapi.v0.ContractWarning.fromObject(object.warnings[i]);
+                                    }
+                                }
                                 return message;
                             };
 
@@ -26090,6 +26417,8 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.warnings = [];
                                 if (options.defaults) {
                                     if (options.bytes === String)
                                         object.identityId = "";
@@ -26114,6 +26443,11 @@ $root.org = (function() {
                                         object.until = options.longs === String ? $util.Long.prototype.toString.call(message.until) : options.longs === Number ? new $util.LongBits(message.until.low >>> 0, message.until.high >>> 0).toNumber(true) : message.until;
                                 if (message.reason != null && message.hasOwnProperty("reason"))
                                     object.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.reason, options);
+                                if (message.warnings && message.warnings.length) {
+                                    object.warnings = [];
+                                    for (var j = 0; j < message.warnings.length; ++j)
+                                        object.warnings[j] = $root.org.dash.platform.dapi.v0.ContractWarning.toObject(message.warnings[j], options);
+                                }
                                 return object;
                             };
 
