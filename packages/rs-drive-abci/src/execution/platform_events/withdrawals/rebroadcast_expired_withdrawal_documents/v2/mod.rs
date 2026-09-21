@@ -200,12 +200,14 @@ mod tests {
     use dpp::withdrawal::Pooling;
     use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::paths::{
-        get_withdrawal_transactions_broadcasted_path,
+        get_withdrawal_root_path, get_withdrawal_transactions_broadcasted_path,
         get_withdrawal_transactions_broadcasted_path_vec,
-        get_withdrawal_transactions_queue_path_vec,
+        get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
     };
     use drive::grovedb::query_result_type::QueryResultType;
     use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
+    use drive::util::batch::drive_op_batch::WithdrawalOperationType;
+    use drive::util::grove_operations::DirectQueryType;
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
 
     /// Mainnet withdrawal 9815: 191 duffs to a P2PKH address, admitted under the 190-duff
@@ -350,6 +352,36 @@ mod tests {
             platform_version,
         );
 
+        // The withdrawal is in flight, as pooling recorded it
+        let in_flight = |transaction: &Transaction| {
+            platform
+                .drive
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected the in-flight sum")
+        };
+        platform
+            .drive
+            .apply_drive_operations(
+                vec![DriveOperation::WithdrawalOperation(
+                    WithdrawalOperationType::ReserveInFlightWithdrawals {
+                        amounts: vec![(9_815, DUST_AMOUNT_CREDITS)],
+                    },
+                )],
+                true,
+                &block_info(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to record the withdrawal in flight");
+        assert_eq!(in_flight(&transaction), DUST_AMOUNT_CREDITS as i64);
         let block_info = block_info();
 
         platform
@@ -359,6 +391,11 @@ mod tests {
                 platform_version,
             )
             .expect("expected to process expired withdrawals");
+        assert_eq!(
+            in_flight(&transaction),
+            0,
+            "a failed withdrawal stops counting against the withdrawal limit"
+        );
 
         let failed = documents_with_status(
             &platform,

@@ -373,8 +373,6 @@ mod fixtures {
         "withdrawals.queue.transaction",
         "withdrawals.sum_amount.entry",
         "withdrawals.broadcasted.transaction",
-        "withdrawals.total_credits_history.snapshot",
-        "withdrawals.credit_inflows.inflow",
         "shielded_balances.main_pool.anchors_by_height.height",
         "shielded_balances.main_pool.anchors_in_pool.anchor",
         "votes.contested_resource.identity_votes.voter",

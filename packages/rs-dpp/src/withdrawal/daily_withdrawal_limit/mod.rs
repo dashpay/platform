@@ -14,8 +14,12 @@ mod v2;
 /// total credits in Platform for version 0 (10% of it, bounded; required), ignored
 /// by version 1 (a flat 2000 Dash), and the total credits Platform held a day ago
 /// for version 2 (`daily_withdrawal_limit_percent` of it, never below one maximal
-/// withdrawal nor above `max_daily_withdrawal_amount`; the flat limit of version 1
-/// while that day-old total is not known yet).
+/// withdrawal, and never above `max_daily_withdrawal_amount` if one is set).
+/// The most that may leave Platform per window, from a reference balance: up to protocol
+/// version 13 Platform's own total credits (version 0) or nothing at all (version 1, a flat
+/// 2000 Dash); from protocol version 14 (version 2) the balance of Core's credit pool one window
+/// before the chain locked height, which `calculate_current_withdrawal_limit` always supplies,
+/// so the `None` branch of version 2 is not reached in block processing.
 pub fn daily_withdrawal_limit(
     reference_total_credits: Option<Credits>,
     platform_version: &PlatformVersion,
@@ -51,10 +55,11 @@ mod tests {
             // Below one maximal withdrawal (500 Dash) the limit is floored there.
             (dash_to_credits!(50), dash_to_credits!(500)),
             (dash_to_credits!(2000), dash_to_credits!(500)),
+            (dash_to_credits!(10000), dash_to_credits!(1500)),
             (dash_to_credits!(20000), dash_to_credits!(3000)),
-            // Above Core's unlock capacity per day (4000 Dash) the limit is capped there.
-            (dash_to_credits!(30000), dash_to_credits!(4000)),
-            (dash_to_credits!(1000000), dash_to_credits!(4000)),
+            // No absolute cap: the share scales with the pool (Core allows 20% of it).
+            (dash_to_credits!(30000), dash_to_credits!(4500)),
+            (dash_to_credits!(1000000), dash_to_credits!(150000)),
         ] {
             // v13 keeps the flat 2000 Dash whatever the total is.
             assert_eq!(
@@ -62,7 +67,7 @@ mod tests {
                     .expect("expected v13 limit"),
                 dash_to_credits!(2000)
             );
-            // v14 allows 15% of the total credits a day ago.
+            // v14 allows 15% of the reference balance (Core's credit pool one window ago).
             assert_eq!(
                 daily_withdrawal_limit(Some(total_credits_a_day_ago), v14)
                     .expect("expected v14 limit"),
@@ -70,7 +75,7 @@ mod tests {
             );
         }
 
-        // Until the total credits a day ago are known, v14 keeps v13's flat limit.
+        // Without a reference balance v14 keeps v13's flat limit (unreachable in block processing).
         assert_eq!(
             daily_withdrawal_limit(None, v14).expect("expected v14 bootstrap limit"),
             dash_to_credits!(2000)

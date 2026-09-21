@@ -183,7 +183,7 @@ impl StateTransitionsProcessingResult {
 
     /// Returns the credits the block's applied state transitions minted into Platform
     /// (their `AddToSystemCredits` operations): the state-transition share of the block's
-    /// credit inflow, recorded for the net daily withdrawal limit.
+    /// credit inflow (the amount that entered Platform through asset locks).
     pub fn credit_mints(&self) -> Credits {
         self.credit_mints
     }

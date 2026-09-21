@@ -803,7 +803,7 @@ mod tests {
             .drive
             .add_enqueue_untied_withdrawal_transaction_operations(
                 vec![(1, vec![7u8; 32])],
-                1_000_000,
+                vec![(1, 1_000_000)],
                 &mut drive_operations,
                 platform_version,
             )

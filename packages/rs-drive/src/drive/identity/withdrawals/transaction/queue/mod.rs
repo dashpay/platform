@@ -41,8 +41,8 @@ mod tests {
 
         drive
             .add_enqueue_untied_withdrawal_transaction_operations(
-                withdrawals,
-                100,
+                withdrawals.clone(),
+                withdrawals.iter().map(|(index, _)| (*index, 100)).collect(),
                 &mut drive_operations,
                 platform_version,
             )

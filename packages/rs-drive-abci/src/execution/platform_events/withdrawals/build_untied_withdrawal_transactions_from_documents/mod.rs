@@ -10,6 +10,13 @@ use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndB
 
 mod v0;
 
+/// The untied transactions built from withdrawal documents, and the amount of each withdrawal
+/// by its transaction index
+pub type UntiedWithdrawalTransactionsAndAmounts = (
+    Vec<WithdrawalTransactionIndexAndBytes>,
+    Vec<(WithdrawalTransactionIndex, Credits)>,
+);
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -36,7 +43,7 @@ where
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<WithdrawalTransactionIndexAndBytes>, Credits), Error> {
+    ) -> Result<UntiedWithdrawalTransactionsAndAmounts, Error> {
         match platform_version
             .drive_abci
             .methods

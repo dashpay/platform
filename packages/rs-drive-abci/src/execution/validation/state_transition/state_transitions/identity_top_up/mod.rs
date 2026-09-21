@@ -417,9 +417,8 @@ mod tests {
     /// Regression for the proposer-side mint accounting: a minting transition (an asset-lock
     /// top up) that executes but is then dropped from the proposal (`InternalError` ->
     /// `TxAction::Removed`) has its GroveDB writes rolled back to the savepoint — its mint
-    /// must leave the block's credit-mint accumulator with them, or the block records a
-    /// credit inflow for a transition the proposal omits and validators re-executing the
-    /// proposal compute different state.
+    /// must leave the block's credit-mint accumulator with them, or the block reports a
+    /// credit mint for a transition the proposal omits.
     #[test]
     fn test_identity_top_up_dropped_from_proposal_must_not_record_a_credit_mint() {
         use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;

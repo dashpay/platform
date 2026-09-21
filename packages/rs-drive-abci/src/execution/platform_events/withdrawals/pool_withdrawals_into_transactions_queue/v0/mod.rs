@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_pooling() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -194,7 +194,7 @@ mod tests {
     /// which exercises the first `Ok(())` early-return in v0.
     #[test]
     fn v0_returns_ok_when_current_quorum_not_in_validator_set() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -229,7 +229,7 @@ mod tests {
     /// attempting to build any transactions.
     #[test]
     fn v1_returns_ok_when_no_queued_documents() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();

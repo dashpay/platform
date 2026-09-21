@@ -7,7 +7,7 @@ mod tests {
     use dpp::dash_to_credits;
     use dpp::dash_to_duffs;
     use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::Txid;
+    use dpp::dashcore::{Amount, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{
         AssetUnlockStatus, AssetUnlockStatusResult, QuorumType,
     };
@@ -31,6 +31,7 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
+    use drive_abci::rpc::core::CreditPoolInfo;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -410,6 +411,22 @@ mod tests {
                         status: AssetUnlockStatus::Unknown,
                     })
                     .collect())
+            });
+        // Core's credit pool, read by the withdrawal limit: a large, steady pool so the limit
+        // is Platform's own share (15% of it, capped) rather than anything Core reports
+        platform
+            .core_rpc
+            .expect_get_credit_pool_info()
+            .returning(|height| {
+                Ok(CreditPoolInfo {
+                    height,
+                    balance: Amount::from_sat(dash_to_duffs!(100000)),
+                    current_limit: Amount::from_sat(dash_to_duffs!(4000)),
+                    unlocked_in_window: Amount::from_sat(0),
+                    window_blocks: 576,
+                    window_start_height: height as i64 - 576,
+                    window_start_balance: Amount::from_sat(dash_to_duffs!(100000)),
+                })
             });
 
         let outcome = run_chain_for_strategy(

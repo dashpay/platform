@@ -143,7 +143,9 @@ where
             documents_to_update.push(document);
         }
 
-        if documents_to_update.is_empty() {
+        // Every chainlocked index has a document turning COMPLETE above, so the two are empty
+        // together; the release below must run whenever there is anything to release
+        if documents_to_update.is_empty() && chainlocked_indexes.is_empty() {
             return Ok(());
         }
 

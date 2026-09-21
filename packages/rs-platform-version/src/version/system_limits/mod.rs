@@ -58,21 +58,20 @@ pub struct SystemLimits {
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
     pub max_withdrawal_amount: u64,
-    /// Daily withdrawal limit as a percentage of the total credits Platform held a day ago.
-    /// From protocol version 14 Platform pools at most this share of the total credits recorded
-    /// at the latest block at least 24 hours before the current one into asset unlock
-    /// transactions per 24 hours (`daily_withdrawal_limit` method version 2; the history is
-    /// kept by `record_total_credits_history_for_withdrawals`). `None` for the protocol versions
-    /// that predate the rule: method version 0 derived the limit from the current total, method
+    /// Withdrawal limit as a percentage of Core's credit pool balance one window (576 Core
+    /// blocks) before the block's chain locked height. From protocol version 14 Platform keeps
+    /// at most this share of that balance, adjusted for what the pool gained or lost since,
+    /// pooled into asset unlock transactions and not yet mined (`daily_withdrawal_limit`
+    /// method version 2, read by `calculate_current_withdrawal_limit` version 1). Core's own
+    /// v24 rule uses 20%, so this must stay below it. `None` for the protocol versions that
+    /// predate the rule: method version 0 derived the limit from the current total, method
     /// version 1 applied a flat 2000 Dash. Versioned: see `daily_withdrawal_limit_percent` in
     /// each `SYSTEM_LIMITS_V*`.
     pub daily_withdrawal_limit_percent: Option<u8>,
-    /// Upper bound (in credits) of the relative daily withdrawal limit from protocol version 14:
-    /// Core's credit-pool unlock capacity per day, `LimitAmountV24` = 4000 Dash per 576-block
-    /// window (Core v24). Platform cannot usefully pool more than Core will mine — the excess
-    /// only cycles through expiry and re-signing — so the limit never exceeds this whatever the
-    /// total credits are; raise it together with Core. Must be at least `max_withdrawal_amount`.
-    /// `None` for the protocol versions that predate the relative rule.
+    /// Optional absolute upper bound (in credits) of the relative withdrawal limit's base. When
+    /// set it must be at least `max_withdrawal_amount` and must stay below Core's own cap, if
+    /// Core has one. `None` for the protocol versions that predate the relative rule and from
+    /// protocol version 14, where Core's v24 rule has no cap either.
     pub max_daily_withdrawal_amount: Option<u64>,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that

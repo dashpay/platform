@@ -43,22 +43,18 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   query (pinned by `withdrawal_in_clause_placement_equivalence` in
 ///   rs-drive's query tests), so this is a structural version bump, not a
 ///   behavior change; v0 stays byte-frozen for protocol versions up to 13.
-/// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the daily
-///   maximum derives from the total credits Platform held a day ago (the
-///   relative daily withdrawal limit) instead of the current total. The
-///   `max_daily_withdrawal_amount` cap applies to that day-old base; credit
-///   inflows from the active window are added after the cap so matching
-///   deposit-withdraw cycles do not consume the capped budget.
-/// * `withdrawals.record_total_credits_history` and
-///   `withdrawals.fetch_total_credits_in_platform_a_day_ago` `None -> Some(0)`:
-///   the per-block total credits history under the withdrawals tree that the
-///   lagged limit reads; the subtree does not exist before v14, so V1 keeps
-///   both slots `None`.
-/// * `withdrawals.record_credit_inflows` `None -> Some(0)`: every credit mint
-///   (asset locks, epoch Core rewards) is recorded in the credit inflows sum
-///   tree so the daily withdrawal limit counts net outflow instead of gross —
-///   a deposit -> withdraw cycle no longer consumes the budget of other users.
-///   The subtree does not exist before v14, so V1 keeps the slot `None`.
+/// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the limit mirrors
+///   Core's v24 credit pool rule on the balances Core reports at the chain
+///   locked height (the balance now and one window ago, and Core's own limit),
+///   with Platform's smaller share (`daily_withdrawal_limit_percent`, bounded
+///   by `max_withdrawal_amount` and `max_daily_withdrawal_amount`), less the
+///   withdrawals still in flight. Version 0 derived it from Platform's own
+///   total credits and the reservations of the last day.
+/// * `withdrawals.transaction.queue.add_enqueue_untied_withdrawal_transaction_operations`
+///   0 -> 1 and `remove_broadcasted_withdrawal_transactions_after_completion_operations`
+///   0 -> 1: a pooled withdrawal is recorded in the withdrawal sum tree under its
+///   transaction index instead of a 25-hour expiry, and released when Core has
+///   mined it (or it failed for good), so the in-flight total is exact.
 pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
     DriveIdentityMethodVersions {
         fetch: DriveIdentityFetchMethodVersions {
@@ -207,15 +203,12 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                     add_update_next_withdrawal_transaction_index_operation: 0,
                 },
                 queue: DriveIdentityWithdrawalTransactionQueueMethodVersions {
-                    add_enqueue_untied_withdrawal_transaction_operations: 0,
+                    add_enqueue_untied_withdrawal_transaction_operations: 1, // changed in v14: records each pooled withdrawal as in flight by transaction index
                     dequeue_untied_withdrawal_transactions: 0,
-                    remove_broadcasted_withdrawal_transactions_after_completion_operations: 0,
+                    remove_broadcasted_withdrawal_transactions_after_completion_operations: 1, // changed in v14: also releases the completed withdrawals from the in-flight sum tree
                     move_broadcasted_withdrawal_transactions_back_to_queue_operations: 0,
                 },
             },
-            calculate_current_withdrawal_limit: 1, // changed in v14: daily maximum is a percentage of the total credits a day ago plus the credit inflows of the last 25 hours
-            record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
-            fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
-            record_credit_inflows: Some(0), // new in v14: credit inflows sum tree for the net daily withdrawal limit
+            calculate_current_withdrawal_limit: 1, // changed in v14: mirrors Core's credit pool rule on the balances Core reports, less the withdrawals still in flight
         },
     };

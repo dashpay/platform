@@ -19,14 +19,10 @@ pub struct DriveIdentityMethodVersions {
 pub struct DriveIdentityWithdrawalMethodVersions {
     pub document: DriveIdentityWithdrawalDocumentMethodVersions,
     pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
+    /// Version 0 derives the limit from Platform's own total credits and the reservations of
+    /// the last day; version 1 (protocol version 14) mirrors Core's credit pool rule on the
+    /// pool balances Core reports and the withdrawals still in flight.
     pub calculate_current_withdrawal_limit: FeatureVersion,
-    /// The total credits history under the withdrawals tree exists from protocol version 14.
-    pub record_total_credits_history: OptionalFeatureVersion,
-    pub fetch_total_credits_in_platform_a_day_ago: OptionalFeatureVersion,
-    /// Record every credit mint (asset locks, epoch Core rewards) in the credit inflows sum
-    /// tree the net daily withdrawal limit reads back. The subtree exists from protocol
-    /// version 14.
-    pub record_credit_inflows: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

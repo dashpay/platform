@@ -1,7 +1,6 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
@@ -9,50 +8,44 @@ use platform_version::version::PlatformVersion;
 mod v0;
 mod v1;
 
-/// Daily withdrawal limit information
+/// The withdrawal limit: how much may be pooled against how much already is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WithdrawalLimitInfo {
-    /// The total maximum withdrawal amount allowed in a 24-hour period.
+    /// The most that may be pooled and outstanding at once
     pub daily_maximum: Credits,
-    /// The amount already withdrawn in the last 24 hours.
+    /// What is already counted against it: the reservations of the last day up to protocol
+    /// version 13, the withdrawals in flight from 14
     pub withdrawals_amount: Credits,
 }
 
 impl WithdrawalLimitInfo {
-    /// Calculates the available credits to withdraw
+    /// What may still be pooled
     pub fn available(&self) -> Credits {
         self.daily_maximum.saturating_sub(self.withdrawals_amount)
     }
 }
 
+/// Core's credit pool as its `getcreditpoolinfo` RPC reports it at the block's chain locked
+/// height, in credits. Every validator reads the same chain locked block, so the values are
+/// deterministic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CoreCreditPoolSnapshot {
+    /// The pool balance after the chain locked block
+    pub balance: Credits,
+    /// The pool balance after the block one window (Core's `CreditPoolPeriodBlocks`) earlier;
+    /// 0 when that block predates the pool
+    pub window_start_balance: Credits,
+    /// The total of asset unlocks Core admits in the block after the chain locked one
+    pub current_limit: Credits,
+}
+
 impl Drive {
-    /// Calculates the current withdrawal limit based on the total credits available in the platform
-    /// and the amount already withdrawn in the last 24 hours, using the appropriate version-specific logic.
-    ///
-    /// This function selects the version-specific implementation based on the provided `platform_version`:
-    /// version 0 derives the daily maximum from the current total credits in Platform, version 1
-    /// from the total credits Platform held a day before `block_info.time_ms`.
-    ///
-    /// # Parameters
-    ///
-    /// * `block_info`: The block the limit is calculated for.
-    /// * `transaction`: The transaction context used for querying data.
-    /// * `platform_version`: The version of the platform being used, which contains configuration details and version-specific methods.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Credits)`: The calculated current withdrawal limit, representing the maximum amount that can still be withdrawn in the current 24-hour window.
-    /// * `Err(Error)`: Returns an error if the version specified in `platform_version` is not supported or if there is an issue in the version-specific calculation.
-    ///
-    /// # Errors
-    ///
-    /// * `Error::Drive(DriveError::UnknownVersionMismatch)`:
-    ///   - If the platform version provided does not match any known versions supported by this function.
-    ///
-    /// * `Error`: Any error propagated from the version-specific implementation, such as issues in retrieving data or calculating the withdrawal limit.
+    /// Calculates the withdrawal limit. From protocol version 14 (`calculate_current_withdrawal_limit`
+    /// method version 1) it is derived from Core's credit pool, so `core_credit_pool` must be
+    /// given there; earlier versions ignore it.
     pub fn calculate_current_withdrawal_limit(
         &self,
-        block_info: &BlockInfo,
+        core_credit_pool: Option<&CoreCreditPoolSnapshot>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<WithdrawalLimitInfo, Error> {
@@ -64,11 +57,17 @@ impl Drive {
             .calculate_current_withdrawal_limit
         {
             0 => self.calculate_current_withdrawal_limit_v0(transaction, platform_version),
-            1 => self.calculate_current_withdrawal_limit_v1(
-                block_info,
-                transaction,
-                platform_version,
-            ),
+            1 => {
+                let core_credit_pool =
+                    core_credit_pool.ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "calculate_current_withdrawal_limit v1 needs Core's credit pool",
+                    )))?;
+                self.calculate_current_withdrawal_limit_v1(
+                    core_credit_pool,
+                    transaction,
+                    platform_version,
+                )
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "calculate_current_withdrawal_limit".to_string(),
                 known_versions: vec![0, 1],

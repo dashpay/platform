@@ -11,8 +11,8 @@ pub struct ProcessedBlockFeesOutcome {
     /// A number of epochs which had refunded
     pub refunded_epochs_count: Option<u16>,
     /// The credits the applied batch minted into Platform (the epoch Core block rewards, on an
-    /// epoch change): the fee-processing share of the block's credit inflow, recorded for the
-    /// net daily withdrawal limit
+    /// epoch change): the fee-processing share of the block's credit inflow (the amount that
+    /// entered Platform in this block)
     pub credit_mints: dpp::fee::Credits,
 }
 

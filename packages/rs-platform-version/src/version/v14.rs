@@ -19,7 +19,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_
 use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
-use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
+use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v3::FEE_VERSION3;
@@ -72,42 +72,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    left orphaned (it only removed the trees that received votes), so a
 ///    resource can be contested again instead of failing with
 ///    `CorruptedContractIndexes`.
-/// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
-///    applied from v8 becomes 15% of the total credits Platform held a day ago
-///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
-///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
-///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
-///    withdrawal eventually fits and cannot block the pooling queue. The base is
-///    capped at `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity
-///    per day under V24 as written); the credit inflows of the active window —
-///    every credit mint, recorded per block by
-///    `record_credit_inflows_for_withdrawals` in the credit inflows sum tree —
-///    are added after the cap, so the limit counts net outflow and a matching
-///    deposit -> withdraw cycle does not consume the capped budget of other
-///    users (#4471). Outflow funded by same-window deposits may therefore
-///    exceed the cap; this mirrors the net credit-pool rule Core adopts for V24
-///    alongside this change (tracked in #4471), which must land before V24
-///    activates. Both the inflows and the pooled reservations count over the
-///    interval after the base snapshot only — an entry the snapshot already
-///    reflects is neither added nor subtracted again. The base is
-///    the total credits recorded at the latest block at least 24 hours before
-///    the current one: `DRIVE_ABCI_METHOD_VERSIONS_V10` turns on
-///    `record_total_credits_history_for_withdrawals`, which checks the total
-///    credits every block once fees and epoch rewards are in, writes it under
-///    the withdrawals tree keyed by block time whenever it changed (an entry
-///    describes the total until the next one) and prunes entries older than the
-///    one the limit reads, and `DRIVE_VERSION_V9`'s identity withdrawal table
-///    bumps `calculate_current_withdrawal_limit` to 1 to read that lagged
-///    value. Until an entry is a day old — the first day after activation — the
-///    flat 2000 Dash keeps applying, so the lag cannot be skipped by inflating
-///    the total before or at activation. The lag is the guardrail: a sudden
-///    jump in the total credits does not raise the limit for a day. Amounts
-///    already pooled in the last 24 hours keep counting against the maximum
-///    exactly as before. Pre-V24 Core caps unlocks at `LimitAmountV22` (2000
-///    Dash) per *block*, with the amount checked only at block level, so any
-///    daily total is still minable across blocks; V24's 4000 Dash per 576-block
-///    window matches the capped base and is raised to the same net rule before
-///    activation (see above).
+/// 4. **Withdrawal limit mirrors Core's credit pool rule**: the flat 2000 Dash
+///    per 24 hours that applied from v8 becomes a share of Core's own credit
+///    pool, read from Core at the block's chain locked height
+///    (`getcreditpoolinfo`): with `P` the pool balance there, `D` the balance
+///    `windowblocks` (576) Core blocks earlier and `L` Core's own limit for the
+///    next block, Platform may have at most
+///    `min(max(15% x D, 500 Dash) - (D - P), L)` pooled and not yet
+///    mined (`calculate_current_withdrawal_limit` 1 through `DRIVE_VERSION_V9`,
+///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3` for the
+///    clamp, `SYSTEM_LIMITS_V4` for the numbers). Core's v24 rule is the same
+///    shape with 20% and a 2000 Dash floor, so Platform is always at or
+///    below three quarters of what Core mines and a withdrawal Platform pools
+///    is one Core accepts; the gap absorbs the blocks between Platform's chain
+///    locked height and the tip that mines the unlock. The rule is net: a
+///    deposit raises `P` and is withdrawable again inside the window without
+///    consuming anyone else's budget, on both chains, because both read the
+///    same pool balances. Pooled withdrawals count while in flight, under
+///    their transaction index in the withdrawal sum tree
+///    (`add_enqueue_untied_withdrawal_transaction_operations` 1), and are
+///    released once Core reports them mined at or below the chain locked
+///    height or they fail for good
+///    1); until Core's v24 activates its reported limit is v22's flat 2000 Dash
+///    per block, which bounds Platform's in-flight total to 2000 Dash (stricter,
+///    never looser). Nothing expires by time and
+///    `cleanup_expired_locks_of_withdrawal_amounts` is off (`None` in
+///    `DRIVE_ABCI_METHOD_VERSIONS_V10`). Platform needs a Core that serves
+///    `getcreditpoolinfo` (Core v24).
 /// 5. **Time-range indexes**: an index can declare a `timeRange` transform
 ///    that buckets a required system timestamp (`$createdAt` /
 ///    `$updatedAt` / `$transferredAt`) into fixed-length, regularly-spaced,
@@ -578,9 +569,9 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: the withdrawal limit mirrors Core's credit pool rule; expired-lock cleanup off; dust withdrawals fail
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate
-        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
+        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
@@ -597,7 +588,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math; reward_distribution_max_cycle_moment v1: the epoch claim cap no longer wraps; distribution_function_cycle_epochs v1: evonode cycles weighted by the epochs they span
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
+        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of Core's credit pool balance one window ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status
@@ -605,7 +596,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
+    system_limits: SYSTEM_LIMITS_V4, // changed: withdrawal limit becomes 15% of Core's credit pool one window ago, uncapped + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

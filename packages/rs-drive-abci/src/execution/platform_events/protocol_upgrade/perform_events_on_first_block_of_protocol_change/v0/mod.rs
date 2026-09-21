@@ -5,11 +5,15 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
+use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::data_contracts::SystemDataContract;
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::system_data_contracts::load_system_data_contract;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
@@ -19,9 +23,8 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-    WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
-    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path, get_withdrawal_transactions_sum_tree_path_vec,
+    WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use drive::drive::saved_block_transactions::{
@@ -38,9 +41,14 @@ use drive::drive::tokens::paths::{
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::{Drive, RootTree};
-use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
+use drive::grovedb::{
+    Element, MaybeTree, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType,
+};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
+use drive::util::batch::drive_op_batch::WithdrawalOperationType;
+use drive::util::batch::DriveOperation;
+use drive::util::grove_operations::BatchDeleteApplyType;
 use std::collections::HashSet;
 use std::ops::RangeFull;
 
@@ -699,6 +707,81 @@ impl<C> Platform<C> {
     /// schema admits the terminal FAILED value of the `status` property, and
     /// register the app-connect contract that carries the wallet-to-app login
     /// handshake.
+    /// Empties the withdrawal sum tree of the time-keyed reservations of protocol versions up
+    /// to 13 and records the withdrawals in flight (pooled, broadcast or expired documents)
+    /// under their transaction index, the keying the limit reads from protocol version 14.
+    fn replace_withdrawal_reservations_with_in_flight_withdrawals(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let mut delete_everything = vec![];
+        let mut everything = PathQuery::new_single_query_item(
+            get_withdrawal_transactions_sum_tree_path_vec(),
+            QueryItem::RangeFull(RangeFull),
+        );
+        everything.query.limit = Some(u16::MAX);
+        self.drive.batch_delete_items_in_path_query(
+            &everything,
+            true,
+            // the entries are sum items, never subtrees
+            BatchDeleteApplyType::StatefulBatchDelete {
+                is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+            },
+            Some(transaction),
+            &mut delete_everything,
+            &platform_version.drive,
+        )?;
+        self.drive.apply_batch_low_level_drive_operations(
+            None,
+            Some(transaction),
+            delete_everything,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
+        let mut in_flight = Vec::new();
+        for status in [
+            WithdrawalStatus::POOLED,
+            WithdrawalStatus::BROADCASTED,
+            WithdrawalStatus::EXPIRED,
+        ] {
+            let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
+                status.into(),
+                u16::MAX,
+                Some(transaction),
+                platform_version,
+            )?;
+            for document in documents {
+                let index = document
+                    .properties()
+                    .get_optional_u64(withdrawal::properties::TRANSACTION_INDEX)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "a withdrawal in flight has no transaction index".to_string(),
+                    )))?;
+                let amount: u64 = document
+                    .properties()
+                    .get_integer(withdrawal::properties::AMOUNT)?;
+                in_flight.push((index, amount));
+            }
+        }
+        if in_flight.is_empty() {
+            return Ok(());
+        }
+        self.drive.apply_drive_operations(
+            vec![DriveOperation::WithdrawalOperation(
+                WithdrawalOperationType::ReserveInFlightWithdrawals { amounts: in_flight },
+            )],
+            true,
+            block_info,
+            Some(transaction),
+            platform_version,
+            None,
+        )?;
+        Ok(())
+    }
+
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
@@ -746,27 +829,16 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // Total credits history under the withdrawals tree: the daily withdrawal limit becomes
-        // a share of the total credits Platform held a day ago, recorded here every block.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Credit inflows sum tree: every credit mint is recorded here so the daily withdrawal
-        // limit counts net outflow instead of gross — credits that entered Platform within the
-        // window may leave again without consuming the withdrawal budget of other users.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-            Element::empty_sum_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
+        // The withdrawal sum tree changes meaning at this version. Up to protocol version 13
+        // it held the pooled total of each block under the expiry of a one-day reservation,
+        // pruned by time; from this version it holds each pooled withdrawal under its
+        // transaction index until Core mines it, and nothing expires by time. The time-keyed
+        // entries could never be released, so they are replaced by the withdrawals that are
+        // in flight right now: every pooled, broadcast or expired document by its index.
+        self.replace_withdrawal_reservations_with_in_flight_withdrawals(
+            block_info,
+            transaction,
+            platform_version,
         )?;
 
         // Contract version items: from this version the storage writer stores every
@@ -2027,86 +2099,162 @@ mod tests {
     }
 
     #[test]
-    fn test_transition_to_version_14_creates_total_credits_history_tree() {
-        let platform_version = PlatformVersion::latest();
+    fn test_transition_to_version_14_replaces_time_keyed_reservations_with_in_flight_withdrawals() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::identity::core_script::CoreScript;
+        use dpp::platform_value::platform_value;
+        use dpp::system_data_contracts::withdrawals_contract;
+        use dpp::tests::fixtures::get_withdrawal_document_fixture;
+        use dpp::withdrawal::Pooling;
+        use drive::util::grove_operations::DirectQueryType;
+        use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
+
+        // A chain on protocol version 13 with a day-old reservation of 700 credits in the
+        // withdrawal sum tree and two withdrawals still in flight (one pooled, one broadcast)
+        // plus one already complete
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
             .build_with_mock_rpc()
             .set_genesis_state();
-
+        let v13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let v14 = PlatformVersion::get(14).expect("expected platform version 14");
         let transaction = platform.drive.grove.start_transaction();
-
-        use drive::grovedb_path::SubtreePath;
-
-        // Not there on a v13 genesis state
-        for key in [
-            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-        ] {
-            assert!(platform
-                .drive
-                .grove
-                .get(
-                    SubtreePath::from(&get_withdrawal_root_path()),
-                    key,
-                    Some(&transaction),
-                    &platform_version.drive.grove_version,
-                )
-                .value
-                .is_err());
-        }
-
         let block_info = BlockInfo {
             time_ms: 1_000_000,
-            height: 100,
-            core_height: 10,
-            epoch: Epoch::default(),
+            height: 10,
+            core_height: 100,
+            ..Default::default()
         };
+
+        let mut reservation = vec![];
         platform
-            .transition_to_version_14(&block_info, &transaction, platform_version)
-            .expect("expected the transition to succeed");
-
-        let element = platform
             .drive
-            .grove
-            .get(
-                SubtreePath::from(&get_withdrawal_root_path()),
-                &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-                Some(&transaction),
-                &platform_version.drive.grove_version,
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                vec![(1, vec![1u8; 32]), (2, vec![2u8; 32])],
+                vec![(1, 100), (2, 600)],
+                &mut reservation,
+                v13,
             )
-            .value
-            .expect("total credits history tree should exist after the v14 transition");
-        assert!(element.is_any_tree());
-
-        let element = platform
-            .drive
-            .grove
-            .get(
-                SubtreePath::from(&get_withdrawal_root_path()),
-                &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-                Some(&transaction),
-                &platform_version.drive.grove_version,
-            )
-            .value
-            .expect("credit inflows sum tree should exist after the v14 transition");
-        assert!(element.is_sum_tree());
-
-        // Running it again is harmless and the tree stays usable
+            .expect("expected to enqueue under protocol version 13");
         platform
-            .transition_to_version_14(&block_info, &transaction, platform_version)
-            .expect("expected the transition to be idempotent");
-        assert_eq!(
+            .drive
+            .apply_drive_operations(
+                reservation,
+                true,
+                &block_info,
+                Some(&transaction),
+                v13,
+                None,
+            )
+            .expect("expected to reserve the time-keyed total");
+
+        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals, v13)
+            .expect("expected the withdrawals contract");
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+        let document_type = data_contract
+            .document_type_for_name("withdrawal")
+            .expect("expected the withdrawal document type");
+        for (index, amount, status) in [
+            (1u64, 100u64, withdrawals_contract::WithdrawalStatus::POOLED),
+            (2, 200, withdrawals_contract::WithdrawalStatus::BROADCASTED),
+            (3, 400, withdrawals_contract::WithdrawalStatus::COMPLETE),
+        ] {
+            let document = get_withdrawal_document_fixture(
+                &data_contract,
+                Identifier::new([index as u8; 32]),
+                platform_value!({
+                    "amount": amount,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": status as u8,
+                    "transactionIndex": index,
+                    "transactionSignHeight": 90u64,
+                }),
+                None,
+                v13.protocol_version,
+            )
+            .expect("expected a withdrawal document");
+            setup_document(
+                &platform.drive,
+                &document,
+                &data_contract,
+                document_type,
+                Some(&transaction),
+            );
+        }
+
+        let in_flight = |transaction: &Transaction| {
             platform
                 .drive
-                .fetch_total_credits_in_platform_a_day_ago(
-                    block_info.time_ms,
-                    Some(&transaction),
-                    platform_version,
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &v14.drive,
                 )
-                .expect("expected to read an empty history"),
-            None
+                .expect("expected the sum tree total")
+        };
+        assert_eq!(in_flight(&transaction), 700);
+
+        platform
+            .transition_to_version_14(&block_info, &transaction, v14)
+            .expect("expected the transition to succeed");
+
+        // The time-keyed reservation is gone; the pooled and broadcast withdrawals are in
+        // flight under their indexes and the complete one is not
+        let keys = |transaction: &Transaction| -> Vec<Vec<u8>> {
+            let mut everything = Query::new();
+            everything.insert_all();
+            platform
+                .drive
+                .grove_get_raw_path_query(
+                    &PathQuery::new(
+                        get_withdrawal_transactions_sum_tree_path_vec(),
+                        SizedQuery::new(everything, None, None),
+                    ),
+                    Some(transaction),
+                    QueryResultType::QueryKeyElementPairResultType,
+                    &mut vec![],
+                    &v14.drive,
+                )
+                .expect("expected the sum tree keys")
+                .0
+                .to_keys()
+        };
+        assert_eq!(
+            keys(&transaction),
+            vec![1u64.to_be_bytes().to_vec(), 2u64.to_be_bytes().to_vec()]
         );
+        assert_eq!(in_flight(&transaction), 300);
+        let mut release = vec![];
+        platform
+            .drive
+            .remove_broadcasted_withdrawal_transactions_after_completion_operations(
+                vec![2],
+                &mut release,
+                v14,
+            )
+            .expect("expected the release operations");
+        platform
+            .drive
+            .apply_drive_operations(release, true, &block_info, Some(&transaction), v14, None)
+            .expect("expected to release the broadcast withdrawal");
+        assert_eq!(in_flight(&transaction), 100);
+
+        // Running the transition again rebuilds the tree from the documents: the broadcast
+        // withdrawal is still in flight by its document, so it is recorded again, and nothing
+        // is doubled
+        platform
+            .transition_to_version_14(&block_info, &transaction, v14)
+            .expect("expected the transition to run again");
+        assert_eq!(
+            keys(&transaction),
+            vec![1u64.to_be_bytes().to_vec(), 2u64.to_be_bytes().to_vec()]
+        );
+        assert_eq!(in_flight(&transaction), 300);
     }
 
     #[test]

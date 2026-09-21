@@ -428,12 +428,9 @@ where
         #[cfg(debug_assertions)]
         phases.end_phase("pool_withdrawals_into_transactions_queue");
 
-        // Cleans up the expired locks for withdrawal amounts
-        // to update daily withdrawal limit
-        // This is for example when we make a withdrawal for 30 Dash
-        // But we can only withdraw 1000 Dash a day
-        // after the withdrawal we should only be able to withdraw 970 Dash
-        // But 24 hours later that locked 30 comes back
+        // Cleans up the expired locks for withdrawal amounts of the daily limit that applied
+        // up to protocol version 14: a reservation came back a day after the withdrawal. From
+        // protocol version 14 a withdrawal counts until Core mines it, and this does nothing.
         self.clean_up_expired_locks_of_withdrawal_amounts(
             &block_info,
             transaction,
@@ -471,35 +468,6 @@ where
 
         #[cfg(debug_assertions)]
         phases.end_phase("process_block_fees_and_validate_sum_trees");
-
-        // Record the credits this block minted into Platform (asset locks funding state
-        // transitions, epoch Core rewards) as a credit inflow: the daily withdrawal limit adds
-        // inflows younger than its day-old base to the daily maximum, so it limits net outflow.
-        // A system event, so nobody pays fees for the write.
-        self.record_credit_inflows_for_withdrawals(
-            state_transitions_result
-                .credit_mints()
-                .saturating_add(processed_block_fees.credit_mints),
-            &block_info,
-            transaction,
-            platform_version,
-        )?;
-
-        #[cfg(debug_assertions)]
-        phases.end_phase("record_credit_inflows_for_withdrawals");
-
-        // Record the total credits in Platform if this block changed it: the daily withdrawal
-        // limit is a share of the total credits Platform held a day ago, read from this history.
-        // This runs after fees and epoch rewards, the last things in a block that can move the
-        // total, and before the app hash so the entry is part of this block's state.
-        self.record_total_credits_history_for_withdrawals(
-            &block_info,
-            transaction,
-            platform_version,
-        )?;
-
-        #[cfg(debug_assertions)]
-        phases.end_phase("record_total_credits_history_for_withdrawals");
 
         let root_hash = self
             .drive

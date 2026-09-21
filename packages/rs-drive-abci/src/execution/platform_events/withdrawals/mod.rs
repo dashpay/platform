@@ -6,6 +6,4 @@ pub(in crate::execution) mod fetch_transactions_block_inclusion_status;
 pub(in crate::execution) mod has_pending_withdrawal_work;
 pub(in crate::execution) mod pool_withdrawals_into_transactions_queue;
 pub(in crate::execution) mod rebroadcast_expired_withdrawal_documents;
-pub(in crate::execution) mod record_credit_inflows_for_withdrawals;
-pub(in crate::execution) mod record_total_credits_history_for_withdrawals;
 pub(in crate::execution) mod update_broadcasted_withdrawal_statuses;

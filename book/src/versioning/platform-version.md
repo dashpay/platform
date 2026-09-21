@@ -168,9 +168,9 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 (v2 index walkers, detect_ranked_mode slot)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: the withdrawal limit mirrors Core's credit pool
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo validation
-        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
+        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
@@ -192,7 +192,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 profile payment address fields
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: relative daily withdrawal limit + time-range overlap cap
+    system_limits: SYSTEM_LIMITS_V4, // changed: withdrawal limit mirrors Core's credit pool + time-range overlap cap
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

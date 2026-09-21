@@ -139,8 +139,7 @@ where
         let mut processing_result = StateTransitionsProcessingResult::default();
 
         // Credits the block's applied operations mint into Platform (asset locks), summed
-        // across state transitions and recorded once per block as a credit inflow the net
-        // daily withdrawal limit adds to its daily maximum.
+        // across state transitions and reported with the block's processing result.
         let mut block_credit_mints: Credits = 0;
 
         for decoded_state_transition in state_transition_container.into_iter() {
@@ -235,9 +234,8 @@ where
                                         .rollback_to_savepoint()
                                         .map_err(drive::grovedb::error::Error::StorageError)?;
                                     // The rollback discarded this transition's writes; drop
-                                    // its mints with them, or the block would record a
-                                    // credit inflow for a transition the proposal omits and
-                                    // validators re-executing it would compute other state.
+                                    // its mints with them, or the block would report a
+                                    // credit mint for a transition the proposal omits.
                                     block_credit_mints = credit_mints_at_savepoint;
                                     // Any contract the transition rewrote was re-seeded into
                                     // the block cache as it was applied, and the rollback

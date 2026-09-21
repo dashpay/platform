@@ -5,6 +5,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
+use drive::drive::identity::withdrawals::calculate_current_withdrawal_limit::CoreCreditPoolSnapshot;
 use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
@@ -32,6 +33,23 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        self.pool_withdrawals_into_transactions_queue_with_core_pool(
+            block_info,
+            None,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Pools the oldest queued withdrawals that fit the withdrawal limit. Versions 1 and 2
+    /// share this body; version 2 reads the limit from Core's credit pool and passes it in.
+    pub(super) fn pool_withdrawals_into_transactions_queue_with_core_pool(
+        &self,
+        block_info: &BlockInfo,
+        core_credit_pool: Option<&CoreCreditPoolSnapshot>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             platform_version
@@ -54,7 +72,7 @@ where
 
         // Only take documents up to the withdrawal amount
         let withdrawals_info = self.drive.calculate_current_withdrawal_limit(
-            block_info,
+            core_credit_pool,
             transaction,
             platform_version,
         )?;
@@ -117,7 +135,7 @@ where
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
-        let (withdrawal_transactions, total_amount) = self
+        let (withdrawal_transactions, amounts) = self
             .build_untied_withdrawal_transactions_from_documents(
                 &mut documents_to_process,
                 start_transaction_index,
@@ -132,7 +150,7 @@ where
         self.drive
             .add_enqueue_untied_withdrawal_transaction_operations(
                 withdrawal_transactions,
-                total_amount,
+                amounts,
                 &mut drive_operations,
                 platform_version,
             )?;
@@ -210,7 +228,9 @@ mod tests {
 
     #[test]
     fn test_pooling() {
-        let platform_version = PlatformVersion::latest();
+        // Version 1 pools against Platform's own limit; from protocol version 14 the limit
+        // needs Core's credit pool (version 2)
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();

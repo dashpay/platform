@@ -4,9 +4,10 @@ use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
+use dpp::withdrawal::WithdrawalTransactionIndex;
+
+use super::UntiedWithdrawalTransactionsAndAmounts;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -19,17 +20,18 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Build list of Core transactions from withdrawal documents
+    /// Build list of Core transactions from withdrawal documents, with the amount of each
+    /// by transaction index
     pub(super) fn build_untied_withdrawal_transactions_from_documents_v0(
         &self,
         documents: &mut [Document],
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<WithdrawalTransactionIndexAndBytes>, Credits), Error> {
+    ) -> Result<UntiedWithdrawalTransactionsAndAmounts, Error> {
         documents.iter_mut().enumerate().try_fold(
-            (Vec::new(), 0u64), // Start with an empty vector for transactions and 0 for total amount.
-            |(mut transactions, mut total_amount), (i, document)| {
+            (Vec::new(), Vec::new()), // Start with empty vectors for transactions and amounts.
+            |(mut transactions, mut amounts), (i, document)| {
                 // Calculate the transaction index.
                 let transaction_index = start_index + i as WithdrawalTransactionIndex;
 
@@ -47,12 +49,7 @@ where
                     .properties()
                     .get_integer(withdrawal::properties::AMOUNT)?;
 
-                // Add the amount to the total, checking for overflow.
-                total_amount = total_amount.checked_add(amount).ok_or_else(|| {
-                    Error::Execution(ExecutionError::Overflow(
-                        "Overflow while calculating total amount",
-                    ))
-                })?;
+                amounts.push((transaction_index, amount));
 
                 // Consensus encode the withdrawal transaction into the buffer.
                 withdrawal_transaction
@@ -82,7 +79,7 @@ where
                 transactions.push((transaction_index, transaction_buffer));
 
                 // Return the updated accumulator.
-                Ok((transactions, total_amount))
+                Ok((transactions, amounts))
             },
         )
     }
@@ -212,7 +209,7 @@ mod tests {
                 ]
             );
 
-            assert_eq!(credits, 2_380_000);
+            assert_eq!(credits, vec![(50, 1_190_000), (51, 1_190_000)]);
         }
     }
 }

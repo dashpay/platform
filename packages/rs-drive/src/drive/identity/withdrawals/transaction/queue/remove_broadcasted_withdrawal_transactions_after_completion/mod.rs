@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -8,7 +9,9 @@ use dpp::withdrawal::WithdrawalTransactionIndex;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Get specified amount of withdrawal transactions from the DB
+    /// Drops the broadcast transactions of withdrawals Core has mined, or that failed for
+    /// good; from protocol version 14 that also stops counting them against the withdrawal
+    /// limit.
     pub fn remove_broadcasted_withdrawal_transactions_after_completion_operations(
         &self,
         indexes: Vec<WithdrawalTransactionIndex>,
@@ -31,10 +34,17 @@ impl Drive {
                 );
                 Ok(())
             }
+            1 => {
+                self.remove_broadcasted_withdrawal_transactions_after_completion_operations_v1(
+                    indexes,
+                    drive_operation_types,
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_broadcasted_withdrawal_transactions_after_completion_operations"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

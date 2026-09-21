@@ -49,12 +49,25 @@ pub enum WithdrawalOperationType {
         /// A vector of the indexes to be deleted
         indexes: Vec<WithdrawalTransactionIndex>,
     },
-    /// Reserve an amount in the system for withdrawals, the reservation will expire at the date given
+    /// Reserve an amount in the system for withdrawals, the reservation will expire at the date given.
+    /// Up to protocol version 13.
     ReserveWithdrawalAmount {
         /// amount to reserve
         amount: Credits,
         /// expiration date
         expiration_after: TimestampMillis,
+    },
+    /// Records each pooled withdrawal as in flight under its transaction index. From protocol
+    /// version 14.
+    ReserveInFlightWithdrawals {
+        /// the amount of each pooled withdrawal by transaction index
+        amounts: Vec<(WithdrawalTransactionIndex, Credits)>,
+    },
+    /// Releases withdrawals Core has mined, or that failed for good, from the in-flight sum
+    /// tree. Indexes without an entry are ignored. From protocol version 14.
+    ReleaseInFlightWithdrawals {
+        /// the transaction indexes to release
+        indexes: Vec<WithdrawalTransactionIndex>,
     },
 }
 
@@ -125,6 +138,60 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                         Element::SumItem(amount as SignedCredits, None),
                     )),
                     BatchInsertApplyType::StatefulBatchInsert,
+                    transaction,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )?;
+
+                Ok(drive_operations)
+            }
+            WithdrawalOperationType::ReserveInFlightWithdrawals { amounts } => {
+                let mut drive_operations = vec![];
+
+                let sum_path = get_withdrawal_transactions_sum_tree_path_vec();
+
+                for (index, amount) in amounts {
+                    drive.batch_insert(
+                        PathKeyElementInfo::PathKeyElement::<'_, 0>((
+                            sum_path.clone(),
+                            index.to_be_bytes().to_vec(),
+                            Element::SumItem(amount as SignedCredits, None),
+                        )),
+                        &mut drive_operations,
+                        &platform_version.drive,
+                    )?;
+                }
+
+                Ok(drive_operations)
+            }
+            WithdrawalOperationType::ReleaseInFlightWithdrawals { indexes } => {
+                let mut drive_operations = vec![];
+
+                if indexes.is_empty() {
+                    return Ok(drive_operations);
+                }
+
+                let mut query = Query::new();
+                let len = indexes.len();
+                query.insert_keys(
+                    indexes
+                        .into_iter()
+                        .map(|index| index.to_be_bytes().to_vec())
+                        .collect(),
+                );
+
+                let path_query = PathQuery::new(
+                    get_withdrawal_transactions_sum_tree_path_vec(),
+                    SizedQuery::new(query, Some(len as u16), None),
+                );
+
+                drive.batch_delete_items_in_path_query(
+                    &path_query,
+                    true,
+                    // the entries are sum items, never subtrees
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+                    },
                     transaction,
                     &mut drive_operations,
                     &platform_version.drive,

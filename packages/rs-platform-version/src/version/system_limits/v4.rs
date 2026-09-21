@@ -19,12 +19,15 @@ use crate::version::system_limits::SystemLimits;
 ///
 /// The withdrawal and overlap-factor changes:
 ///
-/// * The daily withdrawal limit becomes relative: `daily_withdrawal_limit_percent` is set to 15,
-///   so Platform pools at most 15% of the total credits it held a day ago into asset unlock
-///   transactions per 24 hours — never below one maximal withdrawal and never above
-///   `max_daily_withdrawal_amount`, Core's 4000 Dash unlock capacity per day — instead of the
-///   flat 2000 Dash that applied from v8 (matching Core v22's `LimitAmountV22`). v13 is already
-///   live on networks with the flat limit, so the change gates here.
+/// * The withdrawal limit becomes relative and mirrors Core: `daily_withdrawal_limit_percent`
+///   is set to 15, so Platform keeps at most 15% of the credit pool balance Core reports one
+///   window (576 Core blocks) before the chain locked height — adjusted for what the pool
+///   gained or lost since, never below one maximal withdrawal and with no absolute cap
+///   (`max_daily_withdrawal_amount` is `None`) — pooled into asset unlock transactions and not
+///   yet mined, instead of the flat 2000 Dash that applied from v8 (matching Core v22's
+///   `LimitAmountV22`). Core's v24 rule is 20% with a 2000 Dash floor and no cap, so Platform
+///   stays below Core in every regime. v13 is already live on networks with the flat limit, so
+///   the change gates here.
 /// * `max_time_range_overlap_factor` is set: a `timeRange` index transform may declare at most
 ///   24 overlapping windows per timestamp (a day-long window sliding hourly). The rule cannot
 ///   exist before v14 because the `timeRange` keyword itself is only admitted by the v14
@@ -63,9 +66,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     withdrawal_transactions_per_block_limit: 4,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
-    daily_withdrawal_limit_percent: Some(15), // 15% of the total credits a day ago (replaces the flat 2000 Dash in v14)
-    max_daily_withdrawal_amount: Some(400_000_000_000_000), // 4000 Dash: Core's unlock capacity per day (LimitAmountV24)
-    min_withdrawal_amount: 1_000_000,                       //1000 duffs (raised from 190 in v12)
+    daily_withdrawal_limit_percent: Some(15), // 15% of Core's credit pool one window ago (Core v24 allows 20%); replaces the flat 2000 Dash in v14
+    max_daily_withdrawal_amount: None, // no absolute cap: Core's v24 rule has none either (20% of the pool, at least 2000 Dash)
+    min_withdrawal_amount: 1_000_000,  //1000 duffs (raised from 190 in v12)
     core_dust_relay_fee_per_kb: Some(3000), // Core's default dust relay fee: 546-duff P2PKH threshold; expired withdrawals below it fail instead of re-signing
     max_core_fee_per_byte: Some(6_765),
     max_group_member_count: 256,

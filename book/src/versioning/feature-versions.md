@@ -354,7 +354,6 @@ The same shape recurs wherever a subsystem owns tunables:
 pub struct DriveAbciWithdrawalConstants {
     pub core_expiration_blocks: u32,
     pub cleanup_expired_locks_of_withdrawal_amounts_limit: u16,
-    pub total_credits_history_prune_limit: u16,
 }
 
 // drive_abci_versions/drive_abci_validation_versions/mod.rs

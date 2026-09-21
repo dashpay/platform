@@ -1,7 +1,7 @@
 use crate::rpc::prefetch::CorePrefetcher;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dpp::dashcore::{Amount, Header, InstantLock};
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
-use dpp::dashcore::{Header, InstantLock};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
     AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
     MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
@@ -18,6 +18,41 @@ pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
 
 /// Core height must be of type u32 (Platform heights are u64)
 pub type CoreHeight = u32;
+
+/// The credit pool as Core's `getcreditpoolinfo` RPC reports it for one block: the balance
+/// after that block, the balance one window (`window_blocks`) earlier and the asset unlock
+/// limit Core applies to the next block.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct CreditPoolInfo {
+    /// The height the pool is reported at
+    pub height: CoreHeight,
+    /// The pool balance after that block
+    #[serde(with = "dpp::dashcore::amount::serde::as_btc")]
+    pub balance: Amount,
+    /// The total of asset unlocks Core admits in the next block
+    #[serde(rename = "currentlimit", with = "dpp::dashcore::amount::serde::as_btc")]
+    pub current_limit: Amount,
+    /// The amount unlocked in the blocks of the window
+    #[serde(
+        rename = "unlockedinwindow",
+        with = "dpp::dashcore::amount::serde::as_btc"
+    )]
+    pub unlocked_in_window: Amount,
+    /// The number of blocks in the limit's window
+    #[serde(rename = "windowblocks")]
+    pub window_blocks: u32,
+    /// The height of the block whose balance the window starts from, -1 when the chain is
+    /// shorter than the window
+    #[serde(rename = "windowstartheight")]
+    pub window_start_height: i64,
+    /// The pool balance after the window start block, 0 when that block has no credit pool
+    #[serde(
+        rename = "windowstartbalance",
+        with = "dpp::dashcore::amount::serde::as_btc"
+    )]
+    pub window_start_balance: Amount,
+}
+
 /// Core RPC interface
 #[cfg_attr(any(feature = "mocks", test), mockall::automock)]
 pub trait CoreRPCLike {
@@ -45,6 +80,9 @@ pub trait CoreRPCLike {
         indices: &[u64],
         core_chain_locked_height: u32,
     ) -> Result<Vec<AssetUnlockStatusResult>, Error>;
+
+    /// Get the credit pool and the asset unlock limit at a height (`getcreditpoolinfo`)
+    fn get_credit_pool_info(&self, height: CoreHeight) -> Result<CreditPoolInfo, Error>;
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid)
@@ -386,5 +424,48 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_asset_unlock_statuses(indices, Some(core_chain_locked_height)))
+    }
+
+    fn get_credit_pool_info(&self, height: CoreHeight) -> Result<CreditPoolInfo, Error> {
+        retry!(self.inner.call("getcreditpoolinfo", &[Value::from(height)]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CreditPoolInfo;
+    use dpp::dashcore::Amount;
+
+    #[test]
+    fn credit_pool_info_deserializes_cores_getcreditpoolinfo_response() {
+        // A literal `getcreditpoolinfo 2542758` answer from a mainnet node
+        let body = r#"{
+            "height": 2542758,
+            "blockhash": "000000000000001a5c8b4e6c4b7b3b5a6a2f9d3b1e0c7a8f4d2e6b9c1a3f5e7d",
+            "balance": 36932.83216583,
+            "currentlimit": 4000.00000000,
+            "unlockedinwindow": 12.50000000,
+            "windowblocks": 576,
+            "windowstartheight": 2542182,
+            "windowstartbalance": 36685.60589396
+        }"#;
+        let info: CreditPoolInfo = serde_json::from_str(body).expect("expected to deserialize");
+        assert_eq!(info.height, 2542758);
+        assert_eq!(info.balance, Amount::from_sat(3_693_283_216_583));
+        assert_eq!(info.current_limit, Amount::from_sat(400_000_000_000));
+        assert_eq!(info.unlocked_in_window, Amount::from_sat(1_250_000_000));
+        assert_eq!(info.window_blocks, 576);
+        assert_eq!(info.window_start_height, 2542182);
+        assert_eq!(
+            info.window_start_balance,
+            Amount::from_sat(3_668_560_589_396)
+        );
+
+        // A chain shorter than the window
+        let body = r#"{"height": 10, "blockhash": "00", "balance": 0.00000000, "currentlimit": 0.00000000,
+            "unlockedinwindow": 0.00000000, "windowblocks": 576, "windowstartheight": -1, "windowstartbalance": 0.00000000}"#;
+        let info: CreditPoolInfo = serde_json::from_str(body).expect("expected to deserialize");
+        assert_eq!(info.window_start_height, -1);
+        assert_eq!(info.window_start_balance, Amount::from_sat(0));
     }
 }

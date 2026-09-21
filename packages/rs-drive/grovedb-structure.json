@@ -3354,19 +3354,19 @@
             "since": 4,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-            "description": "The amount of each recent withdrawal, summed to enforce the daily limit.",
+            "description": "The amount of each pooled withdrawal, summed to enforce the withdrawal limit. Up to protocol version 13 an entry is a pooling block's total under its reservation's expiration; from 14 an entry is one withdrawal under its transaction index, kept while it is in flight.",
             "children": [
               {
                 "id": "withdrawals.sum_amount.entry",
                 "key": {
                   "type": "dynamic",
-                  "name": "expiration_date",
+                  "name": "expiration_date_or_transaction_index",
                   "matcher": {
                     "type": "len",
                     "len": 8
                   },
                   "encoding": "u64_be",
-                  "description": "When the amount stops counting against the limit, in milliseconds"
+                  "description": "Before protocol version 14 when the amount stops counting, in milliseconds; from 14 the index of the withdrawal transaction"
                 },
                 "kinds": [
                   "SumItem"
@@ -3375,7 +3375,7 @@
                 "since": 4,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-                "description": "What was withdrawn with this expiration date. Withdrawals sharing a date are added together.",
+                "description": "What was withdrawn under this key. Before protocol version 14 withdrawals sharing an expiration date are added together.",
                 "children": []
               }
             ]
@@ -3416,86 +3416,6 @@
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
                 "description": "One broadcast transaction.",
-                "children": []
-              }
-            ]
-          },
-          {
-            "id": "withdrawals.total_credits_history",
-            "key": {
-              "type": "fixed",
-              "hex": "04",
-              "label": "TotalCreditsHistory",
-              "constant": "WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY"
-            },
-            "kinds": [
-              "Tree"
-            ],
-            "since": 14,
-            "presence": "always",
-            "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-            "description": "Snapshots of the total credits in Platform, the base of the relative withdrawal limit.",
-            "children": [
-              {
-                "id": "withdrawals.total_credits_history.snapshot",
-                "key": {
-                  "type": "dynamic",
-                  "name": "time",
-                  "matcher": {
-                    "type": "len",
-                    "len": 8
-                  },
-                  "encoding": "u64_be",
-                  "description": "The block time in milliseconds"
-                },
-                "kinds": [
-                  "Item"
-                ],
-                "value": "total credits, u64 big endian",
-                "since": 14,
-                "presence": "always",
-                "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-                "description": "Total credits at that time.",
-                "children": []
-              }
-            ]
-          },
-          {
-            "id": "withdrawals.credit_inflows",
-            "key": {
-              "type": "fixed",
-              "hex": "05",
-              "label": "CreditInflows",
-              "constant": "WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY"
-            },
-            "kinds": [
-              "SumTree"
-            ],
-            "since": 14,
-            "presence": "always",
-            "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-            "description": "Recent credit inflows, which raise the relative withdrawal limit.",
-            "children": [
-              {
-                "id": "withdrawals.credit_inflows.inflow",
-                "key": {
-                  "type": "dynamic",
-                  "name": "time",
-                  "matcher": {
-                    "type": "len",
-                    "len": 8
-                  },
-                  "encoding": "u64_be",
-                  "description": "The block time in milliseconds"
-                },
-                "kinds": [
-                  "SumItem"
-                ],
-                "value": "credits",
-                "since": 14,
-                "presence": "always",
-                "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
-                "description": "Credits that entered Platform at that time.",
                 "children": []
               }
             ]
@@ -5575,21 +5495,15 @@
     "withdrawals": {
       "origin": "genesis@14",
       "tree": {
-        "hex": "03",
+        "hex": "02",
         "left": {
           "hex": "01",
           "left": {
             "hex": "00"
-          },
-          "right": {
-            "hex": "02"
           }
         },
         "right": {
-          "hex": "05",
-          "left": {
-            "hex": "04"
-          }
+          "hex": "03"
         }
       }
     }

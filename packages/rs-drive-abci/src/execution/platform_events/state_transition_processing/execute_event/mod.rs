@@ -31,8 +31,7 @@ where
     /// * `transaction` - The transaction associated with the execution event.
     /// * `address_balances_in_update` - Optional map to track address balance changes.
     /// * `block_credit_mints` - Accumulates the credits the applied operations mint into
-    ///   Platform (`AddToSystemCredits`), which the block records as credit inflows for the
-    ///   net daily withdrawal limit.
+    ///   Platform (`AddToSystemCredits`), reported per block as the credit inflow.
     /// * `platform_version` - A `PlatformVersion` reference that dictates which version of
     ///   the method to call.
     ///

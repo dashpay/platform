@@ -1,5 +1,4 @@
 use crate::drive::identity::withdrawals::paths::{
-    WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY, WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
     WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
     WITHDRAWAL_TRANSACTIONS_QUEUE_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
@@ -69,22 +68,26 @@ pub(crate) fn structure() -> StructureNode {
         .since(4)
         .source("packages/rs-drive/src/drive/identity/withdrawals/paths.rs")
         .describe(
-            "The amount of each recent withdrawal, summed to \
-             enforce the daily limit.",
+            "The amount of each pooled withdrawal, summed to enforce the \
+             withdrawal limit. Up to protocol version 13 an entry is a \
+             pooling block's total under its reservation's expiration; \
+             from 14 an entry is one withdrawal under its transaction \
+             index, kept while it is in flight.",
         )
         .child(
             StructureNode::dynamic(
                 "entry",
-                "expiration_date",
+                "expiration_date_or_transaction_index",
                 KeyMatcher::Len(8),
                 KeyEncoding::U64Be,
-                "When the amount stops counting against the limit, in milliseconds",
+                "Before protocol version 14 when the amount stops counting, in \
+                 milliseconds; from 14 the index of the withdrawal transaction",
             )
             .kind(ElementKind::SumItem)
             .value("credits")
             .describe(
-                "What was withdrawn with this expiration date. Withdrawals sharing a date \
-                 are added together.",
+                "What was withdrawn under this key. Before protocol version 14 \
+                 withdrawals sharing an expiration date are added together.",
             ),
         ),
         StructureNode::fixed(
@@ -108,55 +111,5 @@ pub(crate) fn structure() -> StructureNode {
             "the asset unlock transaction, as it was queued",
             "One broadcast transaction.",
         )),
-        StructureNode::fixed(
-            "total_credits_history",
-            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-            "TotalCreditsHistory",
-            "WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY",
-        )
-        .kind(ElementKind::Tree)
-        .since(14)
-        .source("packages/rs-drive/src/drive/identity/withdrawals/paths.rs")
-        .describe(
-            "Snapshots of the total credits in Platform, the \
-             base of the relative withdrawal limit.",
-        )
-        .child(
-            StructureNode::dynamic(
-                "snapshot",
-                "time",
-                KeyMatcher::Len(8),
-                KeyEncoding::U64Be,
-                "The block time in milliseconds",
-            )
-            .kind(ElementKind::Item)
-            .value("total credits, u64 big endian")
-            .describe("Total credits at that time."),
-        ),
-        StructureNode::fixed(
-            "credit_inflows",
-            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-            "CreditInflows",
-            "WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY",
-        )
-        .kind(ElementKind::SumTree)
-        .since(14)
-        .source("packages/rs-drive/src/drive/identity/withdrawals/paths.rs")
-        .describe(
-            "Recent credit inflows, which raise the relative \
-             withdrawal limit.",
-        )
-        .child(
-            StructureNode::dynamic(
-                "inflow",
-                "time",
-                KeyMatcher::Len(8),
-                KeyEncoding::U64Be,
-                "The block time in milliseconds",
-            )
-            .kind(ElementKind::SumItem)
-            .value("credits")
-            .describe("Credits that entered Platform at that time."),
-        ),
     ])
 }

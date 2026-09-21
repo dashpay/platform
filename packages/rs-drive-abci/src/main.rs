@@ -364,7 +364,7 @@ mod snapshot_bake_main {
     use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformConfig;
     use drive_abci::platform_types::platform::Platform;
-    use drive_abci::rpc::core::CoreRPCLike;
+    use drive_abci::rpc::core::{CoreRPCLike, CreditPoolInfo};
     use serde_json::Value;
 
     /// Stub CoreRPCLike — Platform::open_with_client requires a CoreRPCLike,
@@ -398,6 +398,9 @@ mod snapshot_bake_main {
             _: &[u64],
             _: u32,
         ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
+            unreachable!()
+        }
+        fn get_credit_pool_info(&self, _: u32) -> Result<CreditPoolInfo, Error> {
             unreachable!()
         }
         fn get_transaction_extended_info(
