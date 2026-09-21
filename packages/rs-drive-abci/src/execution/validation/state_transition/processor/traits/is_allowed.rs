@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
+use dpp::data_contract::associated_token::token_configuration::validate_token_configurations;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -91,13 +92,12 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             _ => None,
         };
         if let Some(contract) = contract {
-            for configuration in contract.tokens().values() {
-                let result = configuration.validate_format_version(platform_version);
-                if !result.is_valid() {
-                    return Ok(result);
-                }
-            }
-            return Ok(ConsensusValidationResult::new());
+            // The pre-activation gate: a token configuration format the protocol version does
+            // not admit is refused unpaid, whatever the frozen basic structure generations do.
+            return Ok(validate_token_configurations(
+                contract.tokens(),
+                platform_version,
+            ));
         }
         match self {
             StateTransition::Batch(st) => {

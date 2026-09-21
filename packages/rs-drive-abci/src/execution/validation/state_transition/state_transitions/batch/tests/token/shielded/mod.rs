@@ -1202,6 +1202,11 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::identity::accessors::IdentityGettersV0;
@@ -1836,6 +1841,156 @@ mod token_pool_mint_burn_claim_purchase_tests {
     #[tokio::test]
     async fn test_token_claim_to_pool_pre_programmed() {
         assert_token_claim_to_pool(TokenDistributionType::PreProgrammed).await;
+    }
+
+    /// A perpetual claim into the pool must name the cycle-aligned moment it claims up to, so
+    /// the amount its bundle proves is fixed before the block lands: without it the claim is a
+    /// paid failure, with it the rewards accrued up to that moment enter the pool.
+    #[tokio::test]
+    async fn test_token_claim_to_pool_perpetual_requires_claim_up_to() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9107);
+
+        let (owner, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(|configuration: &mut TokenConfiguration| {
+                configuration.set_has_shielded_pool(true);
+                configuration
+                    .distribution_rules_mut()
+                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                        TokenPerpetualDistributionV0 {
+                            distribution_type: RewardDistributionType::BlockBasedDistribution {
+                                interval: 10,
+                                function: DistributionFunction::FixedAmount { amount: 50 },
+                            },
+                            distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                        },
+                    )));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        fast_forward_to_block(&platform, 100, 40, 42, 1, false);
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 200,
+            height: 41,
+            core_height: 42,
+            epoch: Epoch::new(1).unwrap(),
+        };
+        // Four cycles (heights 10, 20, 30 and 40) of 50 have accrued by height 41.
+        let accrued = 200;
+
+        // Without the moment the claim is refused before its proof is verified.
+        let unpinned = BatchTransition::new_token_claim_to_pool_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            TokenDistributionType::Perpetual,
+            None,
+            build_shield_bundle(accrued, 27),
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token claim to pool transition");
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[unpinned.serialize_to_bytes().expect("serialize")],
+                &platform_state,
+                &block_info,
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("process state transition");
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimPropertyMismatch(_)),
+                ..
+            }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commit");
+        assert_eq!(pool_balance(&platform, token_id), 0);
+
+        // Pinned to the current cycle, the bundle proves exactly the accrued rewards.
+        let claim_bundle = build_shield_bundle(accrued, 28);
+        let pinned = BatchTransition::new_token_claim_to_pool_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            TokenDistributionType::Perpetual,
+            Some(40),
+            claim_bundle.clone(),
+            None,
+            &key,
+            3,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token claim to pool transition");
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[pinned.serialize_to_bytes().expect("serialize")],
+                &platform_state,
+                &block_info,
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("process state transition");
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commit");
+        assert_eq!(pool_balance(&platform, token_id), accrued);
+        assert_eq!(
+            identity_token_balance(&platform, token_id, owner.id()),
+            Some(OWNER_INITIAL_BALANCE)
+        );
+        assert_eq!(
+            total_supply(&platform, token_id),
+            OWNER_INITIAL_BALANCE + accrued
+        );
+        assert_eq!(
+            pool_notes_count(&platform, token_id),
+            claim_bundle.actions.len() as u64
+        );
+        assert_tokens_conserved(&platform);
     }
 
     #[tokio::test]

@@ -262,6 +262,32 @@ mod tests {
                 );
                 configuration.set_has_shielded_pool(true);
                 contract.set_tokens(BTreeMap::from([(0, configuration)]));
+                // The fee estimate CheckTx runs (apply = false) goes through the stateless
+                // insert path and must price the pool once, while it is still to be created.
+                let estimate_before_pool = if add_by_update {
+                    drive
+                        .update_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            false,
+                            None,
+                            platform_version,
+                            None,
+                        )
+                        .expect("estimate adding a pooled token through contract update")
+                } else {
+                    drive
+                        .apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            false,
+                            StorageFlags::optional_default_as_cow(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("estimate registering a pooled token contract")
+                };
+                assert!(estimate_before_pool.processing_fee > 0);
                 if add_by_update {
                     drive
                         .update_contract(
@@ -300,8 +326,28 @@ mod tests {
                     Some(100)
                 );
 
-                // Updating an existing token must not recreate its pool or mint its supply again.
+                // Updating an existing token must not recreate its pool or mint its supply again,
+                // and its estimate must not price the pool the token already owns.
                 contract.increment_version();
+                let estimate_with_pool = drive
+                    .update_contract(
+                        &contract,
+                        BlockInfo::default(),
+                        false,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("estimate updating a contract whose token owns a pool");
+                assert!(estimate_with_pool.processing_fee > 0);
+                if platform_version.protocol_version >= 15 {
+                    assert!(
+                        estimate_with_pool.storage_fee < estimate_before_pool.storage_fee,
+                        "an existing pool must not be priced again: {} vs {}",
+                        estimate_with_pool.storage_fee,
+                        estimate_before_pool.storage_fee
+                    );
+                }
                 drive
                     .update_contract(
                         &contract,

@@ -17,6 +17,7 @@ use derive_more::From;
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt;
 
 pub mod accessors;
@@ -119,6 +120,27 @@ impl TokenConfiguration {
         }
         SimpleConsensusValidationResult::new()
     }
+}
+
+/// Validates every token configuration of a contract for `platform_version`: the format
+/// version must be admitted and a pooled token's rules must be compatible with a pool. Returns
+/// the first error. Shared by the contract create and update basic structure generations and
+/// by the pre-activation gate, so the three cannot drift.
+pub fn validate_token_configurations(
+    tokens: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+    platform_version: &PlatformVersion,
+) -> SimpleConsensusValidationResult {
+    for (position, configuration) in tokens {
+        let result = configuration.validate_format_version(platform_version);
+        if !result.is_valid() {
+            return result;
+        }
+        let result = configuration.validate_shielded_pool_rules(*position);
+        if !result.is_valid() {
+            return result;
+        }
+    }
+    SimpleConsensusValidationResult::new()
 }
 
 impl fmt::Display for TokenConfiguration {

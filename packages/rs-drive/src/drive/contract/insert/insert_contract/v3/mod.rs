@@ -111,18 +111,31 @@ impl Drive {
         )?;
 
         for (position, configuration) in contract.tokens() {
-            if configuration.has_shielded_pool() {
-                let token_id = calculate_token_id(contract.id().as_bytes(), *position);
-                batch_operations.extend(self.create_token_shielded_pool_trees_operations(
-                    token_id,
-                    false,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )?);
+            if !configuration.has_shielded_pool() {
+                continue;
             }
+            let token_id = calculate_token_id(contract.id().as_bytes(), *position);
+            // An update is estimated through the insert path (the stateless existence read
+            // reports nothing), so a pool the token already owns must not be priced as created
+            // again; a real insert never finds one.
+            if estimated_costs_only_with_layer_info.is_some()
+                && self.has_token_shielded_pool(
+                    token_id,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?
+            {
+                continue;
+            }
+            batch_operations.extend(self.create_token_shielded_pool_trees_operations(
+                token_id,
+                false,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
         }
-
         Ok(batch_operations)
     }
 }

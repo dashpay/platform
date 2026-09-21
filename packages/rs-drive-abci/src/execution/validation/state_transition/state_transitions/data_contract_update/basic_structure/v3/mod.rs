@@ -1,5 +1,6 @@
 use crate::error::Error;
 use dpp::dashcore::Network;
+use dpp::data_contract::associated_token::token_configuration::validate_token_configurations;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -26,16 +27,9 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV3 for DataContrac
         if !result.is_valid() {
             return Ok(result);
         }
-        for (position, configuration) in self.data_contract().tokens() {
-            let result = configuration.validate_format_version(platform_version);
-            if !result.is_valid() {
-                return Ok(result);
-            }
-            let result = configuration.validate_shielded_pool_rules(*position);
-            if !result.is_valid() {
-                return Ok(result);
-            }
-        }
-        Ok(SimpleConsensusValidationResult::new())
+        Ok(validate_token_configurations(
+            self.data_contract().tokens(),
+            platform_version,
+        ))
     }
 }
