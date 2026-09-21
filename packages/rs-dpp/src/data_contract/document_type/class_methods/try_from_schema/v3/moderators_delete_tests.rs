@@ -320,3 +320,33 @@ fn should_refuse_a_window_that_is_not_a_positive_number_of_seconds_on_the_stored
         }
     }
 }
+
+#[test]
+fn should_refuse_a_schema_that_is_not_an_object_as_an_invalid_contract_structure() {
+    // The window is read off the raw schema before the core parser checks that
+    // the schema is an object. It must not be the reader that fails first: a
+    // schema that is no object carries no keyword, and the core parser is the
+    // one that names the real problem.
+    let platform_version = PlatformVersion::latest();
+    for full_validation in [true, false] {
+        for schema in [
+            platform_value!(null),
+            platform_value!("post"),
+            platform_value!([]),
+        ] {
+            let error = parse_with_config(
+                schema.clone(),
+                &moderated_config(platform_version),
+                platform_version.protocol_version,
+                full_validation,
+            )
+            .expect_err("a schema that is not an object must be refused");
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("InvalidContractStructure"),
+                "schema {schema:?} must be refused as an invalid contract structure (full \
+                 validation: {full_validation}), got {message}"
+            );
+        }
+    }
+}
