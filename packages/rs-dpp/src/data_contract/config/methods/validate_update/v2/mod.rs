@@ -236,7 +236,8 @@ mod tests {
         let kept = unchanged.validate_update_v2(&unchanged, contract_id, platform_version);
         assert!(kept.is_valid(), "{:?}", kept.errors);
 
-        let changes: [(&str, fn(&mut ElectedModerators)); 8] = [
+        type Change = (&'static str, fn(&mut ElectedModerators));
+        let changes: [Change; 8] = [
             ("join window", |d| d.join_window += 1),
             ("vote window", |d| d.vote_window += 1),
             ("challenge cool-down", |d| d.challenge_cool_down += 1),

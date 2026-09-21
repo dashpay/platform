@@ -3066,10 +3066,6 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
             "an appointed interim set",
         ),
         (
-            elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE, POST]),
-            "a wider moderated set",
-        ),
-        (
             moderation(true, true, setup.moderator.id()),
             "leaving elected moderation",
         ),
@@ -3077,6 +3073,18 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
         let update = setup.contract_update(with_config(moderation)).await;
         assert_config_update_refused(&setup.process(&update, &transaction), what);
     }
+    // A wider moderated set is frozen too, even when the same update adds the type it names
+    // (without the type, the declaration's own validation refuses first).
+    let mut wider = with_config(elected(
+        InterimModerators::ContractOwner,
+        &[DOCUMENT_TYPE, POST],
+    ));
+    add_document_type(&mut wider, POST, post_schema(false));
+    let update = setup.contract_update(wider).await;
+    assert_config_update_refused(
+        &setup.process(&update, &transaction),
+        "a wider moderated set",
+    );
 
     // An update that leaves the declaration alone goes through, and may add a type.
     let mut widened = setup.contract.clone();
@@ -3193,8 +3201,14 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
         moderation
     };
     for (moderation, what) in [
-        (with(|d| d.join_window -= 1), "a join window under a day"),
-        (with(|d| d.vote_window -= 1), "a vote window under a day"),
+        (
+            with(|d| d.join_window = 86_399),
+            "a join window under a day",
+        ),
+        (
+            with(|d| d.vote_window = 86_399),
+            "a vote window under a day",
+        ),
         (
             with(|d| d.challenge_cool_down = 94_608_001),
             "a cool-down over three years",

@@ -550,6 +550,7 @@ impl JsonSafeFields for ElectedModerators {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::ConsensusError;
     use crate::data_contract::config::moderation::ContractModerators;
     use platform_value::platform_value;
 
@@ -597,7 +598,17 @@ mod tests {
         let result = config
             .validate(&schemas(), PlatformVersion::latest())
             .expect("validate");
-        (!result.is_valid()).then(|| format!("{:?}", result.errors))
+        (!result.is_valid()).then(|| rendered(&result.errors))
+    }
+
+    /// The errors' messages, one per line; `Debug` would escape the quotes the messages
+    /// put around document type names.
+    fn rendered(errors: &[ConsensusError]) -> String {
+        errors
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
@@ -714,9 +725,7 @@ mod tests {
             .expect("validate");
         assert!(!no_deletable_type.is_valid());
         // The moderated set is checked first: `post` is not in that contract.
-        assert!(
-            format!("{:?}", no_deletable_type.errors).contains("\"post\" is not a document type")
-        );
+        assert!(rendered(&no_deletable_type.errors).contains("\"post\" is not a document type"));
     }
 
     #[test]

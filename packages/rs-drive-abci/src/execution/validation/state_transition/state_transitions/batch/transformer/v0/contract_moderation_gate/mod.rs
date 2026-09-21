@@ -505,12 +505,14 @@ mod tests {
                 BatchedTransitionRef::Token(_) => None,
             })
             .collect();
-        let by_type = |transitions: &[&'_ DocumentTransition]| {
+        fn by_type<'a>(
+            transitions: &[&'a DocumentTransition],
+        ) -> BTreeMap<&'a String, Vec<&'a DocumentTransition>> {
             transitions
                 .iter()
                 .map(|transition| (transition.base().document_type_name(), vec![*transition]))
-                .collect::<BTreeMap<_, _>>()
-        };
+                .collect()
+        }
 
         // Both types: the moderated one refused, the other passed, one read.
         let document_transitions = by_type(&transitions);
