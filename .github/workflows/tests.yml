@@ -2,6 +2,13 @@ name: Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      coverage:
+        # What the nightly schedule does. Off by default so a manual "run
+        # everything on this branch" stays as fast as a PR run.
+        description: Instrument the Rust workspace tests with cargo-llvm-cov and upload the reports to Codecov
+        type: boolean
+        default: false
   push:
     branches:
       - master
@@ -443,7 +450,13 @@ jobs:
     name: Rust workspace tests
     needs:
       - changes
-    if: ${{ (needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true') && needs.changes.outputs.rs-scope != 'wallet' }}
+    # The nightly schedule (and a manual dispatch) always runs this job: the
+    # nightly is the only run that collects code coverage, so it must not
+    # depend on the change filter.
+    if: >-
+      ${{ ((needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true') && needs.changes.outputs.rs-scope != 'wallet')
+      || github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-workspace.yml
     with:
@@ -451,6 +464,9 @@ jobs:
       # Anything other than an explicit 'false' (including an empty output
       # from a skipped detector step) fails safe into running the suite.
       shielded-changed: ${{ needs.changes.outputs.shielded-changed != 'false' }}
+      # Code coverage runs nightly only. PR and push runs execute the same
+      # test phases without instrumentation and upload nothing to Codecov.
+      coverage: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.coverage == true) }}
 
   # Fast path: only wallet crates changed, so run the scoped wallet suite
   # instead of the full workspace job above (the two are mutually exclusive
