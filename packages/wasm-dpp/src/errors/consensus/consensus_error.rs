@@ -163,6 +163,8 @@ use dpp::consensus::state::voting::masternode_vote_already_present_error::Master
 use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use dpp::consensus::state::voting::identity_contender_vote_poll_not_available_for_voting_error::IdentityContenderVotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
@@ -358,6 +360,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::VotePollNotFoundError(e) => {
             generic_consensus_error!(VotePollNotFoundError, e).into()
+        }
+        StateError::VoteChoiceNotAllowedForVotePollError(e) => {
+            generic_consensus_error!(VoteChoiceNotAllowedForVotePollError, e).into()
+        }
+        StateError::IdentityContenderVotePollNotAvailableForVotingError(e) => {
+            generic_consensus_error!(IdentityContenderVotePollNotAvailableForVotingError, e).into()
         }
         StateError::VotePollNotAvailableForVotingError(e) => {
             generic_consensus_error!(VotePollNotAvailableForVotingError, e).into()

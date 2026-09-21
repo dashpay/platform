@@ -464,7 +464,11 @@ impl Sdk {
             for (timestamp, polls) in result.0 {
                 let mut dpns_polls_count = 0;
 
-                for VotePoll::ContestedDocumentResourceVotePoll(contested_poll) in polls {
+                for poll in polls {
+                    // Only the contested document resource polls are DPNS name contests
+                    let VotePoll::ContestedDocumentResourceVotePoll(contested_poll) = poll else {
+                        continue;
+                    };
                     if contested_poll.contract_id == dpns_contract_id
                         && contested_poll.document_type_name == "domain"
                     {

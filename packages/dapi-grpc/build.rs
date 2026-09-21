@@ -86,7 +86,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 66] = [
+    const VERSIONED_REQUESTS: [&str; 67] = [
+        "GetIdentityContenderVotePollStateRequest",
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
@@ -167,7 +168,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 63] = [
+    const VERSIONED_RESPONSES: [&str; 64] = [
+        "GetIdentityContenderVotePollStateResponse",
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",

@@ -564,6 +564,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_identity_contender_vote_poll_state,
+        dapi_grpc::platform::v0::GetIdentityContenderVotePollStateRequest,
+        dapi_grpc::platform::v0::GetIdentityContenderVotePollStateResponse
+    );
+
+    drive_method!(
         get_contested_resource_voters_for_identity,
         dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityRequest,
         dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityResponse

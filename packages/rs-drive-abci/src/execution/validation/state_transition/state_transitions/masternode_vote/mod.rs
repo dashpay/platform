@@ -1,5 +1,7 @@
 mod advanced_structure;
 mod balance;
+#[cfg(test)]
+mod identity_contender_vote_poll_tests;
 mod nonce;
 mod state;
 mod transform_into_action;

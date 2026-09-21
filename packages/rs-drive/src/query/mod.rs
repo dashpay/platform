@@ -182,6 +182,10 @@ mod test_index;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote poll vote state query module
 pub mod vote_poll_vote_state_query;
+
+/// The state of an identity contender vote poll
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod identity_contender_vote_poll_state_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote Query module
 pub mod vote_query;

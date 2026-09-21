@@ -6,12 +6,17 @@ use crate::error::Error;
 
 use crate::verify::RootHash;
 
-use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
-use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
+use crate::drive::votes::paths::{
+    vote_contested_resource_identity_votes_tree_path_for_identity_vec,
+    vote_identity_contender_identity_votes_tree_path_for_identity_vec,
+};
+use crate::drive::votes::storage_form::vote_storage_form::VoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::error::proof::ProofError;
 use crate::query::Query;
 use crate::verify::bounded_decode::decode_vote_reference;
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use platform_version::version::PlatformVersion;
 
@@ -47,14 +52,24 @@ impl Drive {
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
         vote: &Vote,
-        data_contract: &DataContract,
+        data_contract: Option<&DataContract>,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vote>), Error> {
-        // First we should get the overall document_type_path
-        let path = vote_contested_resource_identity_votes_tree_path_for_identity_vec(
-            &masternode_pro_tx_hash,
-        );
+        // Each poll kind keeps the masternodes' vote references in its own tree
+        let Vote::ResourceVote(resource_vote) = vote;
+        let path = match resource_vote.vote_poll() {
+            VotePoll::ContestedDocumentResourceVotePoll(_) => {
+                vote_contested_resource_identity_votes_tree_path_for_identity_vec(
+                    &masternode_pro_tx_hash,
+                )
+            }
+            VotePoll::IdentityContenderVotePoll(_) => {
+                vote_identity_contender_identity_votes_tree_path_for_identity_vec(
+                    &masternode_pro_tx_hash,
+                )
+            }
+        };
 
         let vote_id = vote.vote_poll_unique_id()?;
 
@@ -85,20 +100,44 @@ impl Drive {
                     let absolute_path = reference_storage_form
                         .reference_path_type
                         .absolute_path(path.as_slice(), Some(key.as_slice()))?;
-                    let vote_storage_form =
-                        ContestedDocumentResourceVoteStorageForm::try_from_tree_path(
-                            absolute_path,
-                        )?;
-                    let resource_vote =
-                        vote_storage_form.resolve_with_contract(data_contract, platform_version)?;
-                    let proved_vote = resource_vote.into();
-                    if &proved_vote != vote {
-                        Err(Error::Proof(ProofError::IncorrectProof(format!(
-                            "returned vote {:?} does not match the vote that was sent {:?}",
-                            proved_vote, vote
-                        ))))
-                    } else {
-                        Ok::<Vote, Error>(proved_vote)
+                    match VoteStorageForm::try_from_tree_path(absolute_path)? {
+                        VoteStorageForm::ContestedDocumentResource(vote_storage_form) => {
+                            let data_contract = data_contract.ok_or(Error::Proof(
+                                ProofError::IncorrectProof(
+                                    "a vote on a contested document resource needs its contract to be verified"
+                                        .to_string(),
+                                ),
+                            ))?;
+                            let resource_vote = vote_storage_form
+                                .resolve_with_contract(data_contract, platform_version)?;
+                            let proved_vote = resource_vote.into();
+                            if &proved_vote != vote {
+                                Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                    "returned vote {:?} does not match the vote that was sent {:?}",
+                                    proved_vote, vote
+                                ))))
+                            } else {
+                                Ok::<Vote, Error>(proved_vote)
+                            }
+                        }
+                        VoteStorageForm::IdentityContender(vote_storage_form) => {
+                            // The tree holds the poll's id and the choice, not the resource
+                            // path: the vote sent is the proved vote when both match it.
+                            let sent_vote_poll_id = resource_vote.vote_poll().unique_id()?;
+                            if vote_storage_form.vote_poll_id != sent_vote_poll_id
+                                || vote_storage_form.resource_vote_choice
+                                    != resource_vote.resource_vote_choice()
+                            {
+                                Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                    "returned vote on poll {} with choice {} does not match the vote that was sent {:?}",
+                                    vote_storage_form.vote_poll_id,
+                                    vote_storage_form.resource_vote_choice,
+                                    vote
+                                ))))
+                            } else {
+                                Ok::<Vote, Error>(vote.clone())
+                            }
+                        }
                     }
                 })
                 .transpose()?;
@@ -171,7 +210,7 @@ mod tests {
             proof.as_slice(),
             masternode_pro_tx_hash,
             &vote,
-            &data_contract,
+            Some(&data_contract),
             false,
             platform_version,
         )

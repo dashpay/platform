@@ -91,6 +91,9 @@ service Platform {
       GetContestedResourceIdentityVotesRequest)
       returns (GetContestedResourceIdentityVotesResponse);
   // What vote polls will end soon?
+  rpc getIdentityContenderVotePollState(
+      GetIdentityContenderVotePollStateRequest)
+      returns (GetIdentityContenderVotePollStateResponse);
   rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest)
       returns (GetVotePollsByEndDateResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest)
@@ -2773,6 +2776,84 @@ message GetContestedResourceIdentityVotesResponse {
   }
 
   oneof version { GetContestedResourceIdentityVotesResponseV0 v0 = 1; }
+}
+
+// The state of a poll electing one identity among contenders (an identity
+// contender vote poll), keyed by the poll's unique id: its phase and its
+// windows, its contenders with their tallies, and its result once it resolved.
+message GetIdentityContenderVotePollStateRequest {
+  message GetIdentityContenderVotePollStateRequestV0 {
+    message StartAtIdentifierInfo {
+      bytes start_identifier = 1;
+      bool start_identifier_included = 2;
+    }
+    // The double sha256 of the serialized vote poll
+    bytes vote_poll_id = 1;
+    // The contender to start at. A read that starts at a contender returns
+    // contenders only: no poll info and no abstain tally.
+    optional StartAtIdentifierInfo start_at_identifier_info = 2;
+    // At most this many contenders
+    optional uint32 count = 3;
+    bool prove = 4;
+  }
+
+  oneof version { GetIdentityContenderVotePollStateRequestV0 v0 = 1; }
+}
+
+message GetIdentityContenderVotePollStateResponse {
+  message GetIdentityContenderVotePollStateResponseV0 {
+    enum Status {
+      JOINING = 0;
+      VOTING = 1;
+      RESOLVED = 2;
+    }
+
+    message Contender {
+      bytes identity_id = 1;
+      // Absent once the poll resolved and the votes are gone
+      optional uint32 vote_tally = 2;
+      uint64 joined_at_block_height = 3 [ jstype = JS_STRING ];
+      uint64 joined_at_block_time_ms = 4 [ jstype = JS_STRING ];
+      // The id of what made the identity a contender, the last tie-break key
+      bytes reference_id = 5;
+    }
+
+    message FinishedVoteInfo {
+      // Absent when the join phase ended with no contender
+      optional bytes winner_id = 1;
+      // False when a single contender won at the end of the join phase
+      bool vote_phase_held = 2;
+      uint64 finished_at_block_height = 3 [ jstype = JS_STRING ];
+      uint32 finished_at_core_block_height = 4;
+      uint64 finished_at_block_time_ms = 5 [ jstype = JS_STRING ];
+      uint32 finished_at_epoch = 6;
+    }
+
+    message PollInfo {
+      Status status = 1;
+      uint64 join_end_time_ms = 2 [ jstype = JS_STRING ];
+      uint64 vote_end_time_ms = 3 [ jstype = JS_STRING ];
+      optional FinishedVoteInfo finished_vote_info = 4;
+    }
+
+    message IdentityContenderVotePollState {
+      // Absent for a poll that never opened, and for a read that started at a
+      // contender
+      optional PollInfo info = 1;
+      repeated Contender contenders = 2;
+      // Absent once the poll resolved, and for a read that started at a
+      // contender
+      optional uint32 abstain_vote_tally = 3;
+    }
+
+    oneof result {
+      IdentityContenderVotePollState state = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentityContenderVotePollStateResponseV0 v0 = 1; }
 }
 
 message GetPrefundedSpecializedBalanceRequest {

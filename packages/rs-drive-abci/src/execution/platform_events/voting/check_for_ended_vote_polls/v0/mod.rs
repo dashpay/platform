@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -175,6 +176,12 @@ where
                                 identifiers_voting_for_contenders,
                             ))
                         }
+                        ResolvedVotePoll::IdentityContenderVotePoll(_) => {
+                            // The testnet clean up predates identity contender vote polls
+                            Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "identity contender vote polls did not exist at the testnet clean up",
+                            )))
+                        }
                     }
                 }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
                 Ok((end_date, vote_polls_with_votes))
@@ -299,6 +306,17 @@ where
                                 platform_version,
                             )?;
                             Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
+                        }
+                        ResolvedVotePoll::IdentityContenderVotePoll(identity_contender_vote_poll) => {
+                            // The join phase or the vote phase ended: the poll moves on or resolves
+                            let outcome = self.process_ended_identity_contender_vote_poll(
+                                block_platform_state,
+                                block_info,
+                                &identity_contender_vote_poll,
+                                transaction,
+                                platform_version,
+                            )?;
+                            Ok(ResolvedVotePollWithVotes::IdentityContenderVotePollWithEndOutcome(identity_contender_vote_poll, outcome))
                         }
                     }
                 }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;

@@ -181,6 +181,8 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_contests_proof: FeatureVersion,
     pub verify_vote_polls_by_end_date_proof: FeatureVersion,
     pub verify_specialized_balance: FeatureVersion,
+    /// The state of an identity contender vote poll (protocol version 14).
+    pub verify_identity_contender_vote_poll_state_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

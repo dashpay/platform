@@ -40,6 +40,7 @@ pub mod document_split_sum;
 /// Lights up alongside grovedb PR 670; see the file's docs.
 pub mod document_sum;
 pub mod groups;
+pub mod identity_contender_vote_poll_state;
 pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
 pub mod token_contract_info;
@@ -51,6 +52,7 @@ pub mod token_status;
 pub mod token_total_supply;
 
 use crate::from_request::TryFromRequest;
+use crate::types::identity_contender_vote_poll_state::IdentityContenderVotePollState;
 use crate::verify::{
     supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_tenderdash_proof, verify_tenderdash_signature,
 };
@@ -2897,6 +2899,10 @@ define_length!(
 );
 define_length!(ContestedResources, |x: &ContestedResources| x.0.len());
 define_length!(Contenders, |x: &Contenders| x.contenders.len());
+define_length!(
+    IdentityContenderVotePollState,
+    |x: &IdentityContenderVotePollState| x.contenders.len()
+);
 define_length!(Voters, |x: &Voters| x.0.len());
 define_length!(
     VotePollsGroupedByTimestamp,

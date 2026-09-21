@@ -1,0 +1,4 @@
+mod add_identity_contender_operations;
+mod insert_stored_info_for_identity_contender_vote_poll;
+mod open_identity_contender_vote_poll_operations;
+mod register_identity_contender_vote_poll_identity_vote;

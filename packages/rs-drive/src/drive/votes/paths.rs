@@ -8,6 +8,9 @@
 /// |- Contested Resource [key: "c"]
 ///    |- Active polls [key: "p"]
 ///    |- Identifier Votes Query [key: "i"]
+/// |- Identity Contender Polls [key: "n"] (protocol version 14, created by the first poll)
+///    |- Polls [key: "p"]
+///    |- Identifier Votes Query [key: "i"]
 /// ```
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
@@ -39,6 +42,14 @@ pub const ACTIVE_POLLS_TREE_KEY: char = 'p';
 
 /// A subtree made for being able to query votes that an identity has made
 pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
+
+/// A subtree for the polls electing one identity among contenders, keyed by the poll's unique id.
+/// Created by the first such poll rather than at genesis (protocol version 14).
+pub const IDENTITY_CONTENDER_POLLS_TREE_KEY: char = 'n';
+
+/// Under a contender of an identity contender vote poll, the key of the item holding when the
+/// identity joined and through what.
+pub const IDENTITY_CONTENDER_INFO_KEY: u8 = 0;
 
 /// The finished info
 pub const RESOURCE_STORED_INFO_KEY_U8_32: [u8; 32] = [
@@ -541,6 +552,124 @@ pub fn vote_contested_resource_identity_votes_tree_path_for_identity_vec(
     vec![
         vec![RootTree::Votes as u8],
         vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![IDENTITY_VOTES_TREE_KEY as u8],
+        identity_id.to_vec(),
+    ]
+}
+
+/// The root of the identity contender vote polls
+pub fn vote_identity_contender_polls_tree_path<'a>() -> [&'a [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+    ]
+}
+
+/// The root of the identity contender vote polls as a vec
+pub fn vote_identity_contender_polls_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+    ]
+}
+
+/// The tree holding the active identity contender vote polls, each under its unique id
+pub fn vote_identity_contender_active_polls_tree_path<'a>() -> [&'a [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        &[ACTIVE_POLLS_TREE_KEY as u8],
+    ]
+}
+
+/// The tree holding the active identity contender vote polls as a vec
+pub fn vote_identity_contender_active_polls_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+    ]
+}
+
+/// The tree of one identity contender vote poll: its stored info, its abstain votes and its
+/// contenders
+pub fn vote_identity_contender_poll_tree_path(vote_poll_id: &[u8]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        &[ACTIVE_POLLS_TREE_KEY as u8],
+        vote_poll_id,
+    ]
+}
+
+/// The tree of one identity contender vote poll as a vec
+pub fn vote_identity_contender_poll_tree_path_vec(vote_poll_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        vote_poll_id.to_vec(),
+    ]
+}
+
+/// The tree of one choice of an identity contender vote poll: a contender's identity id or the
+/// abstain key
+pub fn vote_identity_contender_poll_choice_tree_path_vec(
+    vote_poll_id: &[u8],
+    vote_choice: &ResourceVoteChoice,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        vote_poll_id.to_vec(),
+        vote_choice.to_key(),
+    ]
+}
+
+/// The sum tree holding the votes for one choice of an identity contender vote poll
+pub fn vote_identity_contender_poll_choice_votes_path_vec(
+    vote_poll_id: &[u8],
+    vote_choice: &ResourceVoteChoice,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        vote_poll_id.to_vec(),
+        vote_choice.to_key(),
+        vec![VOTING_STORAGE_TREE_KEY],
+    ]
+}
+
+/// The votes each masternode cast on identity contender vote polls
+pub fn vote_identity_contender_identity_votes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        vec![IDENTITY_VOTES_TREE_KEY as u8],
+    ]
+}
+
+/// The votes one masternode cast on identity contender vote polls
+pub fn vote_identity_contender_identity_votes_tree_path_for_identity(
+    identity_id: &[u8; 32],
+) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        &[IDENTITY_VOTES_TREE_KEY as u8],
+        identity_id,
+    ]
+}
+
+/// The votes one masternode cast on identity contender vote polls as a vec
+pub fn vote_identity_contender_identity_votes_tree_path_for_identity_vec(
+    identity_id: &[u8; 32],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
         vec![IDENTITY_VOTES_TREE_KEY as u8],
         identity_id.to_vec(),
     ]

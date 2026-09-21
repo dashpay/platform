@@ -313,6 +313,9 @@ impl<C> Platform<C> {
                     VotePoll::ContestedDocumentResourceVotePoll(contested) => {
                         contested.specialized_balance_id().map_err(Error::Protocol)
                     }
+                    VotePoll::IdentityContenderVotePoll(identity_contender) => identity_contender
+                        .specialized_balance_id()
+                        .map_err(Error::Protocol),
                 }
             })
             .collect::<Result<HashSet<Identifier>, Error>>()?;

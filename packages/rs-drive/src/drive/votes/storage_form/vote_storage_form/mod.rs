@@ -1,5 +1,8 @@
-use crate::drive::votes::paths::{CONTESTED_RESOURCE_TREE_KEY, VOTE_DECISIONS_TREE_KEY};
+use crate::drive::votes::paths::{
+    CONTESTED_RESOURCE_TREE_KEY, IDENTITY_CONTENDER_POLLS_TREE_KEY, VOTE_DECISIONS_TREE_KEY,
+};
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
+use crate::drive::votes::storage_form::identity_contender_vote_storage_form::IdentityContenderVoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::drive::RootTree::Votes;
 use dpp::ProtocolError;
@@ -8,6 +11,8 @@ use dpp::ProtocolError;
 pub enum VoteStorageForm {
     /// Storage form for contested document resource votes.
     ContestedDocumentResource(ContestedDocumentResourceVoteStorageForm),
+    /// Storage form for votes on identity contender vote polls.
+    IdentityContender(IdentityContenderVoteStorageForm),
 }
 
 impl TreePathStorageForm for VoteStorageForm {
@@ -60,13 +65,17 @@ impl TreePathStorageForm for VoteStorageForm {
             CONTESTED_RESOURCE_TREE_KEY => Ok(VoteStorageForm::ContestedDocumentResource(
                 ContestedDocumentResourceVoteStorageForm::try_from_tree_path(path)?,
             )),
+            IDENTITY_CONTENDER_POLLS_TREE_KEY => Ok(VoteStorageForm::IdentityContender(
+                IdentityContenderVoteStorageForm::try_from_tree_path(path)?,
+            )),
             VOTE_DECISIONS_TREE_KEY => Err(ProtocolError::NotSupported(
                 "decision votes not supported yet".to_string(),
             )),
             _ => Err(ProtocolError::VoteError(format!(
-                "path {} second element must be a byte for CONTESTED_RESOURCE_TREE_KEY {}, got {}",
+                "path {} second element must be a byte for CONTESTED_RESOURCE_TREE_KEY {} or IDENTITY_CONTENDER_POLLS_TREE_KEY {}, got {}",
                 path.iter().map(hex::encode).collect::<Vec<_>>().join("/"),
                 CONTESTED_RESOURCE_TREE_KEY as u8,
+                IDENTITY_CONTENDER_POLLS_TREE_KEY as u8,
                 *key_1_byte
             ))),
         }

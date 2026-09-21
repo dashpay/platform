@@ -1,2 +1,3 @@
 pub mod contested_document_vote_poll_stored_info;
 pub mod contested_document_vote_poll_winner_info;
+pub mod identity_contender_vote_poll_stored_info;

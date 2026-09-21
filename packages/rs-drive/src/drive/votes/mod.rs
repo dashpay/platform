@@ -94,6 +94,10 @@ impl TreePath for ResourceVote {
                 }
                 Ok(path)
             }
+            VotePoll::IdentityContenderVotePoll(_) => Err(ProtocolError::NotSupported(
+                "an identity contender vote poll is keyed by its unique id, not by a contract path; use IdentityContenderVotePollPaths"
+                    .to_string(),
+            )),
         }
     }
 }

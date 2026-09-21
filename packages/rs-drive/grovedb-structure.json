@@ -3904,7 +3904,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Masternode votes, today on contested resources such as premium DPNS names.",
+        "description": "Masternode votes: on contested resources such as premium DPNS names, and from protocol version 14 on polls electing one identity among contenders.",
         "children": [
           {
             "id": "votes.contested_resource",
@@ -4465,9 +4465,10 @@
                   "Tree"
                 ],
                 "flags": [
-                  "EpochOwned"
+                  "EpochOwned",
+                  "None"
                 ],
-                "flags_note": "The owner is the identity whose contested document started the poll.",
+                "flags_note": "The owner is the identity whose contested document started the poll. An identity contender vote poll's entry is written without storage flags and carries none.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4489,15 +4490,295 @@
                       "Item"
                     ],
                     "flags": [
-                      "EpochOwned"
+                      "EpochOwned",
+                      "None"
                     ],
-                    "flags_note": "The owner is the identity whose contested document started the poll.",
+                    "flags_note": "The owner is the identity whose contested document started the poll. An identity contender vote poll's entry is written without storage flags and carries none.",
                     "value": "serialized VotePoll",
                     "since": 1,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
                     "description": "One poll ending at this time.",
                     "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "votes.identity_contender_polls",
+            "key": {
+              "type": "fixed",
+              "hex": "6e",
+              "label": "IdentityContenderPolls",
+              "constant": "IDENTITY_CONTENDER_POLLS_TREE_KEY",
+              "ascii": true
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 14,
+            "presence": "lazy",
+            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+            "description": "Polls electing one identity among contenders, keyed by a resource path the opener chooses. Created by the first poll.",
+            "children": [
+              {
+                "id": "votes.identity_contender_polls.identity_votes",
+                "key": {
+                  "type": "fixed",
+                  "hex": "69",
+                  "label": "IdentityContenderIdentityVotes",
+                  "constant": "IDENTITY_VOTES_TREE_KEY",
+                  "ascii": true
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The votes each masternode cast on these polls, so they can be listed and changed.",
+                "children": [
+                  {
+                    "id": "votes.identity_contender_polls.identity_votes.voter",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "pro_tx_hash",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The voting masternode's pro tx hash"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "One masternode's votes.",
+                    "children": [
+                      {
+                        "id": "votes.identity_contender_polls.identity_votes.voter.vote",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "vote_poll_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The double sha256 of the serialized vote poll"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "bincode ContestedDocumentResourceVoteReferenceStorageForm: a reference path to the vote and how many times the masternode voted on the poll",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Where the masternode's vote on this poll is, as in the contested resource identity votes.",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "votes.identity_contender_polls.active_polls",
+                "key": {
+                  "type": "fixed",
+                  "hex": "70",
+                  "label": "IdentityContenderActivePolls",
+                  "constant": "ACTIVE_POLLS_TREE_KEY",
+                  "ascii": true
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The polls, each under its unique id.",
+                "children": [
+                  {
+                    "id": "votes.identity_contender_polls.active_polls.poll",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "vote_poll_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "hash32",
+                      "description": "The double sha256 of the serialized vote poll"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "One poll: its state, its abstain votes and its contenders. The contenders and the votes go when the poll ends; the state stays with the result.",
+                    "children": [
+                      {
+                        "id": "votes.identity_contender_polls.active_polls.poll.stored_info",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "0000000000000000000000000000000000000000000000000000000000000000",
+                          "label": "IdentityContenderStoredInfo",
+                          "constant": "RESOURCE_STORED_INFO_KEY_U8_32"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "serialized IdentityContenderVotePollStoredInfo",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "The poll's phase, when each phase ends and, once it ends, its result.",
+                        "children": []
+                      },
+                      {
+                        "id": "votes.identity_contender_polls.active_polls.poll.abstain",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "0000000000000000000000000000000000000000000000000000000000000001",
+                          "label": "IdentityContenderAbstain",
+                          "constant": "RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "since": 14,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Votes to abstain.",
+                        "children": [
+                          {
+                            "id": "votes.identity_contender_polls.active_polls.poll.abstain.votes",
+                            "key": {
+                              "type": "fixed",
+                              "hex": "01",
+                              "label": "IdentityContenderVotingStorage",
+                              "constant": "VOTING_STORAGE_TREE_KEY"
+                            },
+                            "kinds": [
+                              "SumTree"
+                            ],
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "The votes for this choice; the sum is the tally.",
+                            "children": [
+                              {
+                                "id": "votes.identity_contender_polls.active_polls.poll.abstain.votes.voter",
+                                "key": {
+                                  "type": "dynamic",
+                                  "name": "pro_tx_hash",
+                                  "matcher": {
+                                    "type": "len",
+                                    "len": 32
+                                  },
+                                  "encoding": "identifier32",
+                                  "description": "The voting masternode's pro tx hash"
+                                },
+                                "kinds": [
+                                  "SumItem"
+                                ],
+                                "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                                "since": 14,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                                "description": "One masternode's vote.",
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "id": "votes.identity_contender_polls.active_polls.poll.contender",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "identity_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "identifier32",
+                          "description": "The contending identity's id"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "since": 14,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "One contender.",
+                        "children": [
+                          {
+                            "id": "votes.identity_contender_polls.active_polls.poll.contender.info",
+                            "key": {
+                              "type": "fixed",
+                              "hex": "00",
+                              "label": "IdentityContenderInfo",
+                              "constant": "IDENTITY_CONTENDER_INFO_KEY"
+                            },
+                            "kinds": [
+                              "Item"
+                            ],
+                            "value": "serialized IdentityContenderInfo",
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "When the identity joined and the id of what made it a contender: the order of the tie-break.",
+                            "children": []
+                          },
+                          {
+                            "id": "votes.identity_contender_polls.active_polls.poll.contender.votes",
+                            "key": {
+                              "type": "fixed",
+                              "hex": "01",
+                              "label": "IdentityContenderVotingStorage",
+                              "constant": "VOTING_STORAGE_TREE_KEY"
+                            },
+                            "kinds": [
+                              "SumTree"
+                            ],
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "The votes for this choice; the sum is the tally.",
+                            "children": [
+                              {
+                                "id": "votes.identity_contender_polls.active_polls.poll.contender.votes.voter",
+                                "key": {
+                                  "type": "dynamic",
+                                  "name": "pro_tx_hash",
+                                  "matcher": {
+                                    "type": "len",
+                                    "len": 32
+                                  },
+                                  "encoding": "identifier32",
+                                  "description": "The voting masternode's pro tx hash"
+                                },
+                                "kinds": [
+                                  "SumItem"
+                                ],
+                                "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                                "since": 14,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                                "description": "One masternode's vote.",
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
                   }
                 ]
               }
@@ -5521,6 +5802,15 @@
     },
     "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
       "origin": "fixture contested_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        }
+      }
+    },
+    "votes.identity_contender_polls.active_polls.poll.contender": {
+      "origin": "fixture identity_contender_polls@14",
       "tree": {
         "hex": "01",
         "left": {

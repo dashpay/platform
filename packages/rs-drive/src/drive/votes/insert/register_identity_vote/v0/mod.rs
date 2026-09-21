@@ -39,6 +39,18 @@ impl Drive {
                         transaction,
                         platform_version,
                     ),
+                    ResolvedVotePoll::IdentityContenderVotePoll(identity_contender_vote_poll) => {
+                        self.register_identity_contender_vote_poll_identity_vote(
+                            voter_pro_tx_hash,
+                            strength,
+                            identity_contender_vote_poll,
+                            vote_choice,
+                            previous_resource_vote_choice_to_remove,
+                            block_info,
+                            transaction,
+                            platform_version,
+                        )
+                    }
                 }
             }
         }
@@ -68,6 +80,17 @@ impl Drive {
                         transaction,
                         platform_version,
                     ),
+                    ResolvedVotePoll::IdentityContenderVotePoll(identity_contender_vote_poll) => {
+                        self.register_identity_contender_vote_poll_identity_vote_operations(
+                            voter_pro_tx_hash,
+                            strength,
+                            identity_contender_vote_poll,
+                            vote_choice,
+                            previous_resource_vote_choice_to_remove,
+                            transaction,
+                            platform_version,
+                        )
+                    }
                 }
             }
         }

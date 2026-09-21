@@ -45,6 +45,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
+    GetIdentityContenderVotePollStateRequest, GetIdentityContenderVotePollStateResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse,
     GetIdentityKeysRemainingBudgetsRequest, GetIdentityKeysRemainingBudgetsResponse,
     GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest,
@@ -676,6 +677,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contested_resource_identity_votes,
             "get_contested_resource_identity_votes",
+        )
+        .await
+    }
+
+    async fn get_identity_contender_vote_poll_state(
+        &self,
+        request: Request<GetIdentityContenderVotePollStateRequest>,
+    ) -> Result<Response<GetIdentityContenderVotePollStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_contender_vote_poll_state,
+            "get_identity_contender_vote_poll_state",
         )
         .await
     }

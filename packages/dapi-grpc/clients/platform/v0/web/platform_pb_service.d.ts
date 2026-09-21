@@ -346,6 +346,15 @@ type PlatformgetContestedResourceIdentityVotes = {
   readonly responseType: typeof platform_pb.GetContestedResourceIdentityVotesResponse;
 };
 
+type PlatformgetIdentityContenderVotePollState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityContenderVotePollStateRequest;
+  readonly responseType: typeof platform_pb.GetIdentityContenderVotePollStateResponse;
+};
+
 type PlatformgetVotePollsByEndDate = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -674,6 +683,7 @@ export class Platform {
   static readonly getContestedResourceVoteState: PlatformgetContestedResourceVoteState;
   static readonly getContestedResourceVotersForIdentity: PlatformgetContestedResourceVotersForIdentity;
   static readonly getContestedResourceIdentityVotes: PlatformgetContestedResourceIdentityVotes;
+  static readonly getIdentityContenderVotePollState: PlatformgetIdentityContenderVotePollState;
   static readonly getVotePollsByEndDate: PlatformgetVotePollsByEndDate;
   static readonly getPrefundedSpecializedBalance: PlatformgetPrefundedSpecializedBalance;
   static readonly getTotalCreditsInPlatform: PlatformgetTotalCreditsInPlatform;
@@ -1081,6 +1091,15 @@ export class PlatformClient {
   getContestedResourceIdentityVotes(
     requestMessage: platform_pb.GetContestedResourceIdentityVotesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetContestedResourceIdentityVotesResponse|null) => void
+  ): UnaryResponse;
+  getIdentityContenderVotePollState(
+    requestMessage: platform_pb.GetIdentityContenderVotePollStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityContenderVotePollStateResponse|null) => void
+  ): UnaryResponse;
+  getIdentityContenderVotePollState(
+    requestMessage: platform_pb.GetIdentityContenderVotePollStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityContenderVotePollStateResponse|null) => void
   ): UnaryResponse;
   getVotePollsByEndDate(
     requestMessage: platform_pb.GetVotePollsByEndDateRequest,

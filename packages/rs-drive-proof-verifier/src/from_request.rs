@@ -1,5 +1,8 @@
 //! Conversions between Drive queries and dapi-grpc requests.
 
+use crate::types::identity_contender_vote_poll_state::{
+    state_query_from_request, state_request_from_query,
+};
 use dapi_grpc::platform::v0::{
     self as proto,
     get_contested_resource_vote_state_request::{
@@ -8,15 +11,18 @@ use dapi_grpc::platform::v0::{
     get_contested_resources_request::{
         self, get_contested_resources_request_v0, GetContestedResourcesRequestV0,
     },
+    get_identity_contender_vote_poll_state_request::{self},
     get_vote_polls_by_end_date_request::{self},
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetPrefundedSpecializedBalanceRequest, GetVotePollsByEndDateRequest,
+    GetIdentityContenderVotePollStateRequest, GetPrefundedSpecializedBalanceRequest,
+    GetVotePollsByEndDateRequest,
 };
 use dpp::{
     identifier::Identifier, platform_value::Value,
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
+use drive::query::identity_contender_vote_poll_state_query::IdentityContenderVotePollStateQuery;
 use drive::query::{
     contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery,
     vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery,
@@ -476,6 +482,28 @@ fn bincode_encode_values<'a, T: IntoIterator<Item = &'a Value>>(
             })
         })
         .collect::<Result<Vec<_>, _>>()
+}
+
+impl TryFromRequest<GetIdentityContenderVotePollStateRequest>
+    for IdentityContenderVotePollStateQuery
+{
+    fn try_from_request(
+        grpc_request: GetIdentityContenderVotePollStateRequest,
+    ) -> Result<Self, Error> {
+        match grpc_request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_contender_vote_poll_state_request::Version::V0(v0) => {
+                state_query_from_request(&v0, dpp::version::PlatformVersion::latest())
+            }
+        }
+    }
+
+    fn try_to_request(&self) -> Result<GetIdentityContenderVotePollStateRequest, Error> {
+        Ok(GetIdentityContenderVotePollStateRequest {
+            version: Some(get_identity_contender_vote_poll_state_request::Version::V0(
+                state_request_from_query(self),
+            )),
+        })
+    }
 }
 
 #[cfg(test)]

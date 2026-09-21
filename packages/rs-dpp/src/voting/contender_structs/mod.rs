@@ -1,4 +1,5 @@
 mod contender;
+mod identity_contender_info;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -12,6 +13,7 @@ use std::fmt;
 
 pub use contender::v0::{ContenderV0, ContenderWithSerializedDocumentV0};
 pub use contender::{Contender, ContenderWithSerializedDocument};
+pub use identity_contender_info::{IdentityContenderInfo, IdentityContenderInfoV0};
 
 /// Represents a finalized contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form

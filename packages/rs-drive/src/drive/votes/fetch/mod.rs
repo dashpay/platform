@@ -1,3 +1,8 @@
 mod fetch_contested_document_vote_poll_stored_info;
 mod fetch_identities_voting_for_contenders;
+mod fetch_identities_voting_in_identity_contender_vote_poll;
+mod fetch_identity_contender_info;
+mod fetch_identity_contender_vote_poll_contenders;
+mod fetch_identity_contender_vote_poll_identity_vote;
+mod fetch_identity_contender_vote_poll_stored_info;
 mod fetch_identity_contested_resource_vote;

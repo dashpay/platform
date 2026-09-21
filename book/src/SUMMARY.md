@@ -59,6 +59,7 @@
 - [Documents](data-model/documents.md)
 - [Identities](data-model/identities.md)
 - [Key Budgets and Expiry](data-model/key-limits.md)
+- [Vote Polls](data-model/vote-polls.md)
 
 # Drive
 

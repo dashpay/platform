@@ -152,6 +152,12 @@ pub struct DriveAbciVotingMethodVersions {
     pub delay_vote_poll: FeatureVersion,
     pub run_dao_platform_events: FeatureVersion,
     pub remove_votes_for_removed_masternodes: FeatureVersion,
+    /// Identity contender vote polls (protocol version 14): ending a phase of one, keeping its
+    /// record, cleaning up after it and acting on its outcome.
+    pub process_ended_identity_contender_vote_poll: FeatureVersion,
+    pub keep_record_of_finished_identity_contender_vote_poll: FeatureVersion,
+    pub clean_up_after_identity_contender_vote_polls_end: FeatureVersion,
+    pub on_identity_contender_vote_poll_resolved: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

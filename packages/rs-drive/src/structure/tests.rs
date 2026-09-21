@@ -1140,6 +1140,67 @@ mod fixtures {
         conformance_of(&drive, "contested_documents", run);
     }
 
+    /// An identity contender vote poll with two contenders, a vote towards one of them and an
+    /// abstain vote, so every level of the branch the first such poll creates holds something.
+    fn identity_contender_polls(run: &mut FixtureRun) {
+        use dpp::identifier::Identifier;
+        use dpp::voting::contender_structs::IdentityContenderInfo;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use dpp::voting::vote_polls::identity_contender_vote_poll::IdentityContenderVotePoll;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let vote_poll = IdentityContenderVotePoll::new(vec![vec![7; 32], b"election".to_vec()]);
+        drive
+            .open_identity_contender_vote_poll(
+                &vote_poll,
+                1_000,
+                2_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        for (identity, reference) in [(0xa1, 1), (0xb2, 2)] {
+            drive
+                .add_identity_contender(
+                    &vote_poll,
+                    Identifier::new([identity; 32]),
+                    IdentityContenderInfo::new(
+                        BlockInfo::default(),
+                        Identifier::new([reference; 32]),
+                        platform_version,
+                    )
+                    .expect("expected the contender info"),
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the contender");
+        }
+        for (voter, choice) in [
+            (
+                [0x11; 32],
+                ResourceVoteChoice::TowardsIdentity(Identifier::new([0xa1; 32])),
+            ),
+            ([0x22; 32], ResourceVoteChoice::Abstain),
+        ] {
+            drive
+                .register_identity_contender_vote_poll_identity_vote(
+                    voter,
+                    1,
+                    vote_poll.clone(),
+                    choice,
+                    None,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to register the vote");
+        }
+        conformance_of(&drive, "identity_contender_polls", run);
+    }
+
     fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
         drive
             .apply_batch_low_level_drive_operations(
@@ -1455,6 +1516,7 @@ mod fixtures {
         address_balances(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
+        identity_contender_polls(&mut run);
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);

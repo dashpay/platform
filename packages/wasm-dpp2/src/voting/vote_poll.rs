@@ -31,28 +31,39 @@ export interface VotePollOptions {
 /**
  * VotePoll serialized as a plain object.
  *
- * Internally tagged with `type` (plain — no `$`-prefixed neighbors at
- * this level). Inner ContestedDocumentResourceVotePoll fields flatten at
- * the same level — no `data` wrapper.
+ * Internally tagged with `$type`. The inner poll's fields flatten at the
+ * same level, with no `data` wrapper. A contested document resource vote poll
+ * names a contested index; an identity contender vote poll (protocol
+ * version 14) names the resource path it elects an identity for.
  */
-export interface VotePollObject {
-    $type: "contestedDocumentResourceVotePoll";
-    contractId: Uint8Array;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
-}
+export type VotePollObject =
+    | {
+          $type: "contestedDocumentResourceVotePoll";
+          contractId: Uint8Array;
+          documentTypeName: string;
+          indexName: string;
+          indexValues: any[];
+      }
+    | {
+          $type: "identityContenderVotePoll";
+          resourcePath: Uint8Array[];
+      };
 
 /**
  * VotePoll serialized as JSON.
  */
-export interface VotePollJSON {
-    $type: "contestedDocumentResourceVotePoll";
-    contractId: string;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
-}
+export type VotePollJSON =
+    | {
+          $type: "contestedDocumentResourceVotePoll";
+          contractId: string;
+          documentTypeName: string;
+          indexName: string;
+          indexValues: any[];
+      }
+    | {
+          $type: "identityContenderVotePoll";
+          resourcePath: number[][];
+      };
 "#;
 
 #[wasm_bindgen]
@@ -118,27 +129,39 @@ impl VotePollWasm {
         self.0.to_string()
     }
 
-    #[wasm_bindgen(getter = "contractId")]
-    pub fn contract_id(&self) -> IdentifierWasm {
+    /// The kind of poll: "contestedDocumentResourceVotePoll" or "identityContenderVotePoll".
+    #[wasm_bindgen(getter = "type")]
+    pub fn poll_type(&self) -> String {
         match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => {
-                IdentifierWasm::from(poll.contract_id)
+            VotePoll::ContestedDocumentResourceVotePoll(_) => {
+                "contestedDocumentResourceVotePoll".to_string()
             }
+            VotePoll::IdentityContenderVotePoll(_) => "identityContenderVotePoll".to_string(),
         }
+    }
+
+    fn contested(&self) -> WasmDppResult<&ContestedDocumentResourceVotePoll> {
+        match &self.0 {
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => Ok(poll),
+            VotePoll::IdentityContenderVotePoll(_) => Err(WasmDppError::invalid_argument(
+                "an identity contender vote poll has no contract, document type or index",
+            )),
+        }
+    }
+
+    #[wasm_bindgen(getter = "contractId")]
+    pub fn contract_id(&self) -> WasmDppResult<IdentifierWasm> {
+        Ok(IdentifierWasm::from(self.contested()?.contract_id))
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
-    pub fn document_type_name(&self) -> String {
-        match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.document_type_name.clone(),
-        }
+    pub fn document_type_name(&self) -> WasmDppResult<String> {
+        Ok(self.contested()?.document_type_name.clone())
     }
 
     #[wasm_bindgen(getter = "indexName")]
-    pub fn index_name(&self) -> String {
-        match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.index_name.clone(),
-        }
+    pub fn index_name(&self) -> WasmDppResult<String> {
+        Ok(self.contested()?.index_name.clone())
     }
 
     #[wasm_bindgen(getter = "indexValues")]
@@ -147,26 +170,23 @@ impl VotePollWasm {
             .with_big_endian()
             .with_no_limit();
 
-        match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => {
-                let encoded: WasmDppResult<Vec<Vec<u8>>> = poll
-                    .index_values
-                    .iter()
-                    .map(|value| {
-                        bincode::encode_to_vec(value, config)
-                            .map_err(|err| WasmDppError::serialization(err.to_string()))
-                    })
-                    .collect();
+        let poll = self.contested()?;
+        let encoded: WasmDppResult<Vec<Vec<u8>>> = poll
+            .index_values
+            .iter()
+            .map(|value| {
+                bincode::encode_to_vec(value, config)
+                    .map_err(|err| WasmDppError::serialization(err.to_string()))
+            })
+            .collect();
 
-                let js_array = Array::new();
+        let js_array = Array::new();
 
-                for bytes in encoded? {
-                    js_array.push(&JsValue::from(bytes));
-                }
-
-                Ok(js_array)
-            }
+        for bytes in encoded? {
+            js_array.push(&JsValue::from(bytes));
         }
+
+        Ok(js_array)
     }
 
     #[wasm_bindgen(setter = "contractId")]
@@ -181,6 +201,11 @@ impl VotePollWasm {
                 poll.contract_id = contract_id;
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
+            }
+            VotePoll::IdentityContenderVotePoll(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "an identity contender vote poll has no contract",
+                ));
             }
         };
 
@@ -198,6 +223,7 @@ impl VotePollWasm {
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }
+            VotePoll::IdentityContenderVotePoll(poll) => VotePoll::IdentityContenderVotePoll(poll),
         }
     }
 
@@ -209,6 +235,7 @@ impl VotePollWasm {
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }
+            VotePoll::IdentityContenderVotePoll(poll) => VotePoll::IdentityContenderVotePoll(poll),
         };
     }
 
@@ -228,6 +255,11 @@ impl VotePollWasm {
                 poll.index_values = values;
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
+            }
+            VotePoll::IdentityContenderVotePoll(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "an identity contender vote poll has no index values",
+                ));
             }
         };
 

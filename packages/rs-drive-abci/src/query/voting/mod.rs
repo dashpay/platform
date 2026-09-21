@@ -3,6 +3,7 @@ mod contested_resource_vote_state;
 mod contested_resource_voters_for_identity;
 mod contested_resources;
 mod decode_index_value;
+mod identity_contender_vote_poll_state;
 mod vote_polls_by_end_date_query;
 
 pub(crate) use decode_index_value::{

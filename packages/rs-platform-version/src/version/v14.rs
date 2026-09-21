@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts six consensus changes:
+/// v14 hosts these consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -455,6 +455,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (40132), with one to other amounts or another pricing (40133), or
 ///     whose epoch's multiplier rose beyond the tolerance (40134), so a
 ///     contract whose fees change cannot make a signed transition pay them.
+/// 21. **Identity contender vote polls**: a second kind of masternode vote
+///     poll, `VotePoll::IdentityContenderVotePoll`, elects one identity among
+///     contenders over a resource path the opener chooses, for the moderation
+///     team elections. It has no lock choice (40307 refuses one, or a vote
+///     towards an identity that is not a contender), runs a join phase and
+///     then a vote phase with explicit end times (40308 refuses a vote outside
+///     the vote phase), resolves by plurality with a tie going to the earliest
+///     contender (block time, block height, then the reference id, the
+///     opposite of the contested document ordering, which is untouched), and
+///     with a single contender resolves when the join phase ends. Its state
+///     lives in a `votes` branch the first poll creates, so no migration runs
+///     at the upgrade. `DRIVE_VOTE_METHOD_VERSIONS_V3` (`DRIVE_VERSION_V9`)
+///     adds its Drive methods and bumps `remove_all_votes_given_by_identities`
+///     to 1, which also removes a departed masternode's votes on these polls;
+///     `DRIVE_ABCI_METHOD_VERSIONS_V10` gains the events that end its phases,
+///     keep its record, clean up after it and hand its outcome on; and
+///     `getIdentityContenderVotePollState` serves its state with a proof.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

@@ -103,6 +103,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V2: DriveAbciMethodVersions = DriveAbciMeth
         delay_vote_poll: 0,
         run_dao_platform_events: 0,
         remove_votes_for_removed_masternodes: 0,
+        process_ended_identity_contender_vote_poll: 0,
+        keep_record_of_finished_identity_contender_vote_poll: 0,
+        clean_up_after_identity_contender_vote_polls_end: 0,
+        on_identity_contender_vote_poll_resolved: 0,
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,

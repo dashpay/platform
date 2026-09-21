@@ -18,6 +18,9 @@ impl Drive {
     /// - `proof`: A byte slice representing the grovedb proof of authenticity for the vote.
     /// - `masternode_pro_tx_hash`: A 32-byte array representing the masternode identifier.
     /// - `vote`: A reference to the vote being verified.
+    /// - `data_contract`: The contract of a vote on a contested document resource, which the
+    ///   proved vote's index values are read back with. A vote on an identity contender vote
+    ///   poll needs none.
     /// - `verify_subset_of_proof`: A boolean indicating whether a subset of a larger proof is being verified.
     /// - `platform_version`: A reference to the platform version against which to verify the vote.
     ///
@@ -40,7 +43,7 @@ impl Drive {
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
         vote: &Vote,
-        data_contract: &DataContract,
+        data_contract: Option<&DataContract>,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vote>), Error> {
@@ -98,7 +101,7 @@ mod tests {
             &[],
             [0u8; 32],
             &vote,
-            &data_contract,
+            Some(&data_contract),
             false,
             &platform_version,
         );

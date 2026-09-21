@@ -302,6 +302,8 @@ impl MasternodeVoteTransitionWasm {
 
                         Some(js_object)
                     }
+                    // Not a contested document resource: nothing to describe here
+                    VotePoll::IdentityContenderVotePoll(_) => None,
                 }
             }
         }

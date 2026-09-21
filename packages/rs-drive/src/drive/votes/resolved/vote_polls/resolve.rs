@@ -63,6 +63,9 @@ impl VotePollResolver for VotePoll {
                     ),
                 )
             }
+            VotePoll::IdentityContenderVotePoll(identity_contender_vote_poll) => Ok(
+                ResolvedVotePoll::IdentityContenderVotePoll(identity_contender_vote_poll.clone()),
+            ),
         }
     }
 
@@ -84,6 +87,9 @@ impl VotePollResolver for VotePoll {
                     ),
                 )
             }
+            VotePoll::IdentityContenderVotePoll(identity_contender_vote_poll) => Ok(
+                ResolvedVotePoll::IdentityContenderVotePoll(identity_contender_vote_poll),
+            ),
         }
     }
 }

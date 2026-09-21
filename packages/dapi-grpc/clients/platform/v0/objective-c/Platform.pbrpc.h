@@ -94,6 +94,8 @@
 @class GetIdentityByNonUniquePublicKeyHashResponse;
 @class GetIdentityByPublicKeyHashRequest;
 @class GetIdentityByPublicKeyHashResponse;
+@class GetIdentityContenderVotePollStateRequest;
+@class GetIdentityContenderVotePollStateResponse;
 @class GetIdentityContractNonceRequest;
 @class GetIdentityContractNonceResponse;
 @class GetIdentityKeysRemainingBudgetsRequest;
@@ -352,11 +354,15 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (GRPCUnaryProtoCall *)getContestedResourceIdentityVotesWithMessage:(GetContestedResourceIdentityVotesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
+#pragma mark getIdentityContenderVotePollState(GetIdentityContenderVotePollStateRequest) returns (GetIdentityContenderVotePollStateResponse)
 
 /**
  * What vote polls will end soon?
  */
+- (GRPCUnaryProtoCall *)getIdentityContenderVotePollStateWithMessage:(GetIdentityContenderVotePollStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
+
 - (GRPCUnaryProtoCall *)getVotePollsByEndDateWithMessage:(GetVotePollsByEndDateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
@@ -817,20 +823,27 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetContestedResourceIdentityVotesWithRequest:(GetContestedResourceIdentityVotesRequest *)request handler:(void(^)(GetContestedResourceIdentityVotesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
+#pragma mark getIdentityContenderVotePollState(GetIdentityContenderVotePollStateRequest) returns (GetIdentityContenderVotePollStateResponse)
+
+/**
+ * What vote polls will end soon?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getIdentityContenderVotePollStateWithRequest:(GetIdentityContenderVotePollStateRequest *)request handler:(void(^)(GetIdentityContenderVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * What vote polls will end soon?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetIdentityContenderVotePollStateWithRequest:(GetIdentityContenderVotePollStateRequest *)request handler:(void(^)(GetIdentityContenderVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
 
-/**
- * What vote polls will end soon?
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
 - (void)getVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler;
 
-/**
- * What vote polls will end soon?
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
 - (GRPCProtoCall *)RPCTogetVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler;
 
 

@@ -1341,6 +1341,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityContenderVotePollState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getIdentityContenderVotePollStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse} [response] GetIdentityContenderVotePollStateResponse
+                         */
+
+                        /**
+                         * Calls getIdentityContenderVotePollState.
+                         * @function getIdentityContenderVotePollState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateRequest} request GetIdentityContenderVotePollStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentityContenderVotePollStateCallback} callback Node-style callback called with the error, if any, and GetIdentityContenderVotePollStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getIdentityContenderVotePollState = function getIdentityContenderVotePollState(request, callback) {
+                            return this.rpcCall(getIdentityContenderVotePollState, $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest, $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse, request, callback);
+                        }, "name", { value: "getIdentityContenderVotePollState" });
+
+                        /**
+                         * Calls getIdentityContenderVotePollState.
+                         * @function getIdentityContenderVotePollState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateRequest} request GetIdentityContenderVotePollStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getVotePollsByEndDate}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getVotePollsByEndDateCallback
@@ -66861,6 +66894,2425 @@ $root.org = (function() {
                         })();
 
                         return GetContestedResourceIdentityVotesResponse;
+                    })();
+
+                    v0.GetIdentityContenderVotePollStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetIdentityContenderVotePollStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentityContenderVotePollStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.IGetIdentityContenderVotePollStateRequestV0|null} [v0] GetIdentityContenderVotePollStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentityContenderVotePollStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentityContenderVotePollStateRequest.
+                         * @implements IGetIdentityContenderVotePollStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateRequest=} [properties] Properties to set
+                         */
+                        function GetIdentityContenderVotePollStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentityContenderVotePollStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.IGetIdentityContenderVotePollStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @instance
+                         */
+                        GetIdentityContenderVotePollStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityContenderVotePollStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityContenderVotePollStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentityContenderVotePollStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest} GetIdentityContenderVotePollStateRequest instance
+                         */
+                        GetIdentityContenderVotePollStateRequest.create = function create(properties) {
+                            return new GetIdentityContenderVotePollStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityContenderVotePollStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateRequest} message GetIdentityContenderVotePollStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityContenderVotePollStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityContenderVotePollStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateRequest} message GetIdentityContenderVotePollStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityContenderVotePollStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentityContenderVotePollStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest} GetIdentityContenderVotePollStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityContenderVotePollStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentityContenderVotePollStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest} GetIdentityContenderVotePollStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityContenderVotePollStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentityContenderVotePollStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentityContenderVotePollStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentityContenderVotePollStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest} GetIdentityContenderVotePollStateRequest
+                         */
+                        GetIdentityContenderVotePollStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentityContenderVotePollStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest} message GetIdentityContenderVotePollStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentityContenderVotePollStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentityContenderVotePollStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentityContenderVotePollStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityContenderVotePollStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                             * @interface IGetIdentityContenderVotePollStateRequestV0
+                             * @property {Uint8Array|null} [votePollId] GetIdentityContenderVotePollStateRequestV0 votePollId
+                             * @property {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.IStartAtIdentifierInfo|null} [startAtIdentifierInfo] GetIdentityContenderVotePollStateRequestV0 startAtIdentifierInfo
+                             * @property {number|null} [count] GetIdentityContenderVotePollStateRequestV0 count
+                             * @property {boolean|null} [prove] GetIdentityContenderVotePollStateRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityContenderVotePollStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest
+                             * @classdesc Represents a GetIdentityContenderVotePollStateRequestV0.
+                             * @implements IGetIdentityContenderVotePollStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.IGetIdentityContenderVotePollStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetIdentityContenderVotePollStateRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityContenderVotePollStateRequestV0 votePollId.
+                             * @member {Uint8Array} votePollId
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @instance
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.prototype.votePollId = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentityContenderVotePollStateRequestV0 startAtIdentifierInfo.
+                             * @member {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.IStartAtIdentifierInfo|null|undefined} startAtIdentifierInfo
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @instance
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.prototype.startAtIdentifierInfo = null;
+
+                            /**
+                             * GetIdentityContenderVotePollStateRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @instance
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.prototype.count = 0;
+
+                            /**
+                             * GetIdentityContenderVotePollStateRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @instance
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentityContenderVotePollStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.IGetIdentityContenderVotePollStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0} GetIdentityContenderVotePollStateRequestV0 instance
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.create = function create(properties) {
+                                return new GetIdentityContenderVotePollStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityContenderVotePollStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.IGetIdentityContenderVotePollStateRequestV0} message GetIdentityContenderVotePollStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.votePollId != null && Object.hasOwnProperty.call(message, "votePollId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.votePollId);
+                                if (message.startAtIdentifierInfo != null && Object.hasOwnProperty.call(message, "startAtIdentifierInfo"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo.encode(message.startAtIdentifierInfo, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.count);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityContenderVotePollStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.IGetIdentityContenderVotePollStateRequestV0} message GetIdentityContenderVotePollStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityContenderVotePollStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0} GetIdentityContenderVotePollStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.votePollId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.startAtIdentifierInfo = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.count = reader.uint32();
+                                        break;
+                                    case 4:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityContenderVotePollStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0} GetIdentityContenderVotePollStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityContenderVotePollStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.votePollId != null && message.hasOwnProperty("votePollId"))
+                                    if (!(message.votePollId && typeof message.votePollId.length === "number" || $util.isString(message.votePollId)))
+                                        return "votePollId: buffer expected";
+                                if (message.startAtIdentifierInfo != null && message.hasOwnProperty("startAtIdentifierInfo")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo.verify(message.startAtIdentifierInfo);
+                                    if (error)
+                                        return "startAtIdentifierInfo." + error;
+                                }
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityContenderVotePollStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0} GetIdentityContenderVotePollStateRequestV0
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0();
+                                if (object.votePollId != null)
+                                    if (typeof object.votePollId === "string")
+                                        $util.base64.decode(object.votePollId, message.votePollId = $util.newBuffer($util.base64.length(object.votePollId)), 0);
+                                    else if (object.votePollId.length >= 0)
+                                        message.votePollId = object.votePollId;
+                                if (object.startAtIdentifierInfo != null) {
+                                    if (typeof object.startAtIdentifierInfo !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.startAtIdentifierInfo: object expected");
+                                    message.startAtIdentifierInfo = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo.fromObject(object.startAtIdentifierInfo);
+                                }
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityContenderVotePollStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0} message GetIdentityContenderVotePollStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.votePollId = "";
+                                    else {
+                                        object.votePollId = [];
+                                        if (options.bytes !== Array)
+                                            object.votePollId = $util.newBuffer(object.votePollId);
+                                    }
+                                    object.startAtIdentifierInfo = null;
+                                    object.count = 0;
+                                    object.prove = false;
+                                }
+                                if (message.votePollId != null && message.hasOwnProperty("votePollId"))
+                                    object.votePollId = options.bytes === String ? $util.base64.encode(message.votePollId, 0, message.votePollId.length) : options.bytes === Array ? Array.prototype.slice.call(message.votePollId) : message.votePollId;
+                                if (message.startAtIdentifierInfo != null && message.hasOwnProperty("startAtIdentifierInfo"))
+                                    object.startAtIdentifierInfo = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo.toObject(message.startAtIdentifierInfo, options);
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityContenderVotePollStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityContenderVotePollStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo = (function() {
+
+                                /**
+                                 * Properties of a StartAtIdentifierInfo.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                                 * @interface IStartAtIdentifierInfo
+                                 * @property {Uint8Array|null} [startIdentifier] StartAtIdentifierInfo startIdentifier
+                                 * @property {boolean|null} [startIdentifierIncluded] StartAtIdentifierInfo startIdentifierIncluded
+                                 */
+
+                                /**
+                                 * Constructs a new StartAtIdentifierInfo.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0
+                                 * @classdesc Represents a StartAtIdentifierInfo.
+                                 * @implements IStartAtIdentifierInfo
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.IStartAtIdentifierInfo=} [properties] Properties to set
+                                 */
+                                function StartAtIdentifierInfo(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * StartAtIdentifierInfo startIdentifier.
+                                 * @member {Uint8Array} startIdentifier
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @instance
+                                 */
+                                StartAtIdentifierInfo.prototype.startIdentifier = $util.newBuffer([]);
+
+                                /**
+                                 * StartAtIdentifierInfo startIdentifierIncluded.
+                                 * @member {boolean} startIdentifierIncluded
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @instance
+                                 */
+                                StartAtIdentifierInfo.prototype.startIdentifierIncluded = false;
+
+                                /**
+                                 * Creates a new StartAtIdentifierInfo instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.IStartAtIdentifierInfo=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo} StartAtIdentifierInfo instance
+                                 */
+                                StartAtIdentifierInfo.create = function create(properties) {
+                                    return new StartAtIdentifierInfo(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified StartAtIdentifierInfo message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.IStartAtIdentifierInfo} message StartAtIdentifierInfo message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StartAtIdentifierInfo.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.startIdentifier != null && Object.hasOwnProperty.call(message, "startIdentifier"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.startIdentifier);
+                                    if (message.startIdentifierIncluded != null && Object.hasOwnProperty.call(message, "startIdentifierIncluded"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.startIdentifierIncluded);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified StartAtIdentifierInfo message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.IStartAtIdentifierInfo} message StartAtIdentifierInfo message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StartAtIdentifierInfo.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a StartAtIdentifierInfo message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo} StartAtIdentifierInfo
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StartAtIdentifierInfo.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.startIdentifier = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.startIdentifierIncluded = reader.bool();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a StartAtIdentifierInfo message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo} StartAtIdentifierInfo
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StartAtIdentifierInfo.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a StartAtIdentifierInfo message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                StartAtIdentifierInfo.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.startIdentifier != null && message.hasOwnProperty("startIdentifier"))
+                                        if (!(message.startIdentifier && typeof message.startIdentifier.length === "number" || $util.isString(message.startIdentifier)))
+                                            return "startIdentifier: buffer expected";
+                                    if (message.startIdentifierIncluded != null && message.hasOwnProperty("startIdentifierIncluded"))
+                                        if (typeof message.startIdentifierIncluded !== "boolean")
+                                            return "startIdentifierIncluded: boolean expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a StartAtIdentifierInfo message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo} StartAtIdentifierInfo
+                                 */
+                                StartAtIdentifierInfo.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo();
+                                    if (object.startIdentifier != null)
+                                        if (typeof object.startIdentifier === "string")
+                                            $util.base64.decode(object.startIdentifier, message.startIdentifier = $util.newBuffer($util.base64.length(object.startIdentifier)), 0);
+                                        else if (object.startIdentifier.length >= 0)
+                                            message.startIdentifier = object.startIdentifier;
+                                    if (object.startIdentifierIncluded != null)
+                                        message.startIdentifierIncluded = Boolean(object.startIdentifierIncluded);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a StartAtIdentifierInfo message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo} message StartAtIdentifierInfo
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                StartAtIdentifierInfo.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.startIdentifier = "";
+                                        else {
+                                            object.startIdentifier = [];
+                                            if (options.bytes !== Array)
+                                                object.startIdentifier = $util.newBuffer(object.startIdentifier);
+                                        }
+                                        object.startIdentifierIncluded = false;
+                                    }
+                                    if (message.startIdentifier != null && message.hasOwnProperty("startIdentifier"))
+                                        object.startIdentifier = options.bytes === String ? $util.base64.encode(message.startIdentifier, 0, message.startIdentifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.startIdentifier) : message.startIdentifier;
+                                    if (message.startIdentifierIncluded != null && message.hasOwnProperty("startIdentifierIncluded"))
+                                        object.startIdentifierIncluded = message.startIdentifierIncluded;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this StartAtIdentifierInfo to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateRequest.GetIdentityContenderVotePollStateRequestV0.StartAtIdentifierInfo
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                StartAtIdentifierInfo.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return StartAtIdentifierInfo;
+                            })();
+
+                            return GetIdentityContenderVotePollStateRequestV0;
+                        })();
+
+                        return GetIdentityContenderVotePollStateRequest;
+                    })();
+
+                    v0.GetIdentityContenderVotePollStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetIdentityContenderVotePollStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentityContenderVotePollStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.IGetIdentityContenderVotePollStateResponseV0|null} [v0] GetIdentityContenderVotePollStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentityContenderVotePollStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentityContenderVotePollStateResponse.
+                         * @implements IGetIdentityContenderVotePollStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateResponse=} [properties] Properties to set
+                         */
+                        function GetIdentityContenderVotePollStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentityContenderVotePollStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.IGetIdentityContenderVotePollStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @instance
+                         */
+                        GetIdentityContenderVotePollStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityContenderVotePollStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityContenderVotePollStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentityContenderVotePollStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse} GetIdentityContenderVotePollStateResponse instance
+                         */
+                        GetIdentityContenderVotePollStateResponse.create = function create(properties) {
+                            return new GetIdentityContenderVotePollStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityContenderVotePollStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateResponse} message GetIdentityContenderVotePollStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityContenderVotePollStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityContenderVotePollStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityContenderVotePollStateResponse} message GetIdentityContenderVotePollStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityContenderVotePollStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentityContenderVotePollStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse} GetIdentityContenderVotePollStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityContenderVotePollStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentityContenderVotePollStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse} GetIdentityContenderVotePollStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityContenderVotePollStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentityContenderVotePollStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentityContenderVotePollStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentityContenderVotePollStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse} GetIdentityContenderVotePollStateResponse
+                         */
+                        GetIdentityContenderVotePollStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentityContenderVotePollStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse} message GetIdentityContenderVotePollStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentityContenderVotePollStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentityContenderVotePollStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentityContenderVotePollStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityContenderVotePollStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                             * @interface IGetIdentityContenderVotePollStateResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IIdentityContenderVotePollState|null} [state] GetIdentityContenderVotePollStateResponseV0 state
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityContenderVotePollStateResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityContenderVotePollStateResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityContenderVotePollStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse
+                             * @classdesc Represents a GetIdentityContenderVotePollStateResponseV0.
+                             * @implements IGetIdentityContenderVotePollStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.IGetIdentityContenderVotePollStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetIdentityContenderVotePollStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityContenderVotePollStateResponseV0 state.
+                             * @member {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IIdentityContenderVotePollState|null|undefined} state
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @instance
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.prototype.state = null;
+
+                            /**
+                             * GetIdentityContenderVotePollStateResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @instance
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetIdentityContenderVotePollStateResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @instance
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentityContenderVotePollStateResponseV0 result.
+                             * @member {"state"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentityContenderVotePollStateResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["state", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentityContenderVotePollStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.IGetIdentityContenderVotePollStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0} GetIdentityContenderVotePollStateResponseV0 instance
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.create = function create(properties) {
+                                return new GetIdentityContenderVotePollStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityContenderVotePollStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.IGetIdentityContenderVotePollStateResponseV0} message GetIdentityContenderVotePollStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.state != null && Object.hasOwnProperty.call(message, "state"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.encode(message.state, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityContenderVotePollStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.IGetIdentityContenderVotePollStateResponseV0} message GetIdentityContenderVotePollStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityContenderVotePollStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0} GetIdentityContenderVotePollStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.state = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityContenderVotePollStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0} GetIdentityContenderVotePollStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityContenderVotePollStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.state != null && message.hasOwnProperty("state")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.verify(message.state);
+                                        if (error)
+                                            return "state." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityContenderVotePollStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0} GetIdentityContenderVotePollStateResponseV0
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0();
+                                if (object.state != null) {
+                                    if (typeof object.state !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.state: object expected");
+                                    message.state = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.fromObject(object.state);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityContenderVotePollStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0} message GetIdentityContenderVotePollStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.state != null && message.hasOwnProperty("state")) {
+                                    object.state = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.toObject(message.state, options);
+                                    if (options.oneofs)
+                                        object.result = "state";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityContenderVotePollStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            /**
+                             * Status enum.
+                             * @name org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Status
+                             * @enum {number}
+                             * @property {number} JOINING=0 JOINING value
+                             * @property {number} VOTING=1 VOTING value
+                             * @property {number} RESOLVED=2 RESOLVED value
+                             */
+                            GetIdentityContenderVotePollStateResponseV0.Status = (function() {
+                                var valuesById = {}, values = Object.create(valuesById);
+                                values[valuesById[0] = "JOINING"] = 0;
+                                values[valuesById[1] = "VOTING"] = 1;
+                                values[valuesById[2] = "RESOLVED"] = 2;
+                                return values;
+                            })();
+
+                            GetIdentityContenderVotePollStateResponseV0.Contender = (function() {
+
+                                /**
+                                 * Properties of a Contender.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @interface IContender
+                                 * @property {Uint8Array|null} [identityId] Contender identityId
+                                 * @property {number|null} [voteTally] Contender voteTally
+                                 * @property {number|Long|null} [joinedAtBlockHeight] Contender joinedAtBlockHeight
+                                 * @property {number|Long|null} [joinedAtBlockTimeMs] Contender joinedAtBlockTimeMs
+                                 * @property {Uint8Array|null} [referenceId] Contender referenceId
+                                 */
+
+                                /**
+                                 * Constructs a new Contender.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @classdesc Represents a Contender.
+                                 * @implements IContender
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IContender=} [properties] Properties to set
+                                 */
+                                function Contender(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Contender identityId.
+                                 * @member {Uint8Array} identityId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @instance
+                                 */
+                                Contender.prototype.identityId = $util.newBuffer([]);
+
+                                /**
+                                 * Contender voteTally.
+                                 * @member {number} voteTally
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @instance
+                                 */
+                                Contender.prototype.voteTally = 0;
+
+                                /**
+                                 * Contender joinedAtBlockHeight.
+                                 * @member {number|Long} joinedAtBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @instance
+                                 */
+                                Contender.prototype.joinedAtBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Contender joinedAtBlockTimeMs.
+                                 * @member {number|Long} joinedAtBlockTimeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @instance
+                                 */
+                                Contender.prototype.joinedAtBlockTimeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Contender referenceId.
+                                 * @member {Uint8Array} referenceId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @instance
+                                 */
+                                Contender.prototype.referenceId = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new Contender instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IContender=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender} Contender instance
+                                 */
+                                Contender.create = function create(properties) {
+                                    return new Contender(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Contender message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IContender} message Contender message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Contender.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                    if (message.voteTally != null && Object.hasOwnProperty.call(message, "voteTally"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.voteTally);
+                                    if (message.joinedAtBlockHeight != null && Object.hasOwnProperty.call(message, "joinedAtBlockHeight"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.joinedAtBlockHeight);
+                                    if (message.joinedAtBlockTimeMs != null && Object.hasOwnProperty.call(message, "joinedAtBlockTimeMs"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.joinedAtBlockTimeMs);
+                                    if (message.referenceId != null && Object.hasOwnProperty.call(message, "referenceId"))
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.referenceId);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Contender message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IContender} message Contender message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Contender.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Contender message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender} Contender
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Contender.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identityId = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.voteTally = reader.uint32();
+                                            break;
+                                        case 3:
+                                            message.joinedAtBlockHeight = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.joinedAtBlockTimeMs = reader.uint64();
+                                            break;
+                                        case 5:
+                                            message.referenceId = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Contender message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender} Contender
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Contender.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Contender message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Contender.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                            return "identityId: buffer expected";
+                                    if (message.voteTally != null && message.hasOwnProperty("voteTally"))
+                                        if (!$util.isInteger(message.voteTally))
+                                            return "voteTally: integer expected";
+                                    if (message.joinedAtBlockHeight != null && message.hasOwnProperty("joinedAtBlockHeight"))
+                                        if (!$util.isInteger(message.joinedAtBlockHeight) && !(message.joinedAtBlockHeight && $util.isInteger(message.joinedAtBlockHeight.low) && $util.isInteger(message.joinedAtBlockHeight.high)))
+                                            return "joinedAtBlockHeight: integer|Long expected";
+                                    if (message.joinedAtBlockTimeMs != null && message.hasOwnProperty("joinedAtBlockTimeMs"))
+                                        if (!$util.isInteger(message.joinedAtBlockTimeMs) && !(message.joinedAtBlockTimeMs && $util.isInteger(message.joinedAtBlockTimeMs.low) && $util.isInteger(message.joinedAtBlockTimeMs.high)))
+                                            return "joinedAtBlockTimeMs: integer|Long expected";
+                                    if (message.referenceId != null && message.hasOwnProperty("referenceId"))
+                                        if (!(message.referenceId && typeof message.referenceId.length === "number" || $util.isString(message.referenceId)))
+                                            return "referenceId: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Contender message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender} Contender
+                                 */
+                                Contender.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender();
+                                    if (object.identityId != null)
+                                        if (typeof object.identityId === "string")
+                                            $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                        else if (object.identityId.length >= 0)
+                                            message.identityId = object.identityId;
+                                    if (object.voteTally != null)
+                                        message.voteTally = object.voteTally >>> 0;
+                                    if (object.joinedAtBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.joinedAtBlockHeight = $util.Long.fromValue(object.joinedAtBlockHeight)).unsigned = true;
+                                        else if (typeof object.joinedAtBlockHeight === "string")
+                                            message.joinedAtBlockHeight = parseInt(object.joinedAtBlockHeight, 10);
+                                        else if (typeof object.joinedAtBlockHeight === "number")
+                                            message.joinedAtBlockHeight = object.joinedAtBlockHeight;
+                                        else if (typeof object.joinedAtBlockHeight === "object")
+                                            message.joinedAtBlockHeight = new $util.LongBits(object.joinedAtBlockHeight.low >>> 0, object.joinedAtBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.joinedAtBlockTimeMs != null)
+                                        if ($util.Long)
+                                            (message.joinedAtBlockTimeMs = $util.Long.fromValue(object.joinedAtBlockTimeMs)).unsigned = true;
+                                        else if (typeof object.joinedAtBlockTimeMs === "string")
+                                            message.joinedAtBlockTimeMs = parseInt(object.joinedAtBlockTimeMs, 10);
+                                        else if (typeof object.joinedAtBlockTimeMs === "number")
+                                            message.joinedAtBlockTimeMs = object.joinedAtBlockTimeMs;
+                                        else if (typeof object.joinedAtBlockTimeMs === "object")
+                                            message.joinedAtBlockTimeMs = new $util.LongBits(object.joinedAtBlockTimeMs.low >>> 0, object.joinedAtBlockTimeMs.high >>> 0).toNumber(true);
+                                    if (object.referenceId != null)
+                                        if (typeof object.referenceId === "string")
+                                            $util.base64.decode(object.referenceId, message.referenceId = $util.newBuffer($util.base64.length(object.referenceId)), 0);
+                                        else if (object.referenceId.length >= 0)
+                                            message.referenceId = object.referenceId;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Contender message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender} message Contender
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Contender.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.identityId = "";
+                                        else {
+                                            object.identityId = [];
+                                            if (options.bytes !== Array)
+                                                object.identityId = $util.newBuffer(object.identityId);
+                                        }
+                                        object.voteTally = 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.joinedAtBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.joinedAtBlockHeight = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.joinedAtBlockTimeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.joinedAtBlockTimeMs = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.referenceId = "";
+                                        else {
+                                            object.referenceId = [];
+                                            if (options.bytes !== Array)
+                                                object.referenceId = $util.newBuffer(object.referenceId);
+                                        }
+                                    }
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                    if (message.voteTally != null && message.hasOwnProperty("voteTally"))
+                                        object.voteTally = message.voteTally;
+                                    if (message.joinedAtBlockHeight != null && message.hasOwnProperty("joinedAtBlockHeight"))
+                                        if (typeof message.joinedAtBlockHeight === "number")
+                                            object.joinedAtBlockHeight = options.longs === String ? String(message.joinedAtBlockHeight) : message.joinedAtBlockHeight;
+                                        else
+                                            object.joinedAtBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.joinedAtBlockHeight) : options.longs === Number ? new $util.LongBits(message.joinedAtBlockHeight.low >>> 0, message.joinedAtBlockHeight.high >>> 0).toNumber(true) : message.joinedAtBlockHeight;
+                                    if (message.joinedAtBlockTimeMs != null && message.hasOwnProperty("joinedAtBlockTimeMs"))
+                                        if (typeof message.joinedAtBlockTimeMs === "number")
+                                            object.joinedAtBlockTimeMs = options.longs === String ? String(message.joinedAtBlockTimeMs) : message.joinedAtBlockTimeMs;
+                                        else
+                                            object.joinedAtBlockTimeMs = options.longs === String ? $util.Long.prototype.toString.call(message.joinedAtBlockTimeMs) : options.longs === Number ? new $util.LongBits(message.joinedAtBlockTimeMs.low >>> 0, message.joinedAtBlockTimeMs.high >>> 0).toNumber(true) : message.joinedAtBlockTimeMs;
+                                    if (message.referenceId != null && message.hasOwnProperty("referenceId"))
+                                        object.referenceId = options.bytes === String ? $util.base64.encode(message.referenceId, 0, message.referenceId.length) : options.bytes === Array ? Array.prototype.slice.call(message.referenceId) : message.referenceId;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Contender to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Contender.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Contender;
+                            })();
+
+                            GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo = (function() {
+
+                                /**
+                                 * Properties of a FinishedVoteInfo.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @interface IFinishedVoteInfo
+                                 * @property {Uint8Array|null} [winnerId] FinishedVoteInfo winnerId
+                                 * @property {boolean|null} [votePhaseHeld] FinishedVoteInfo votePhaseHeld
+                                 * @property {number|Long|null} [finishedAtBlockHeight] FinishedVoteInfo finishedAtBlockHeight
+                                 * @property {number|null} [finishedAtCoreBlockHeight] FinishedVoteInfo finishedAtCoreBlockHeight
+                                 * @property {number|Long|null} [finishedAtBlockTimeMs] FinishedVoteInfo finishedAtBlockTimeMs
+                                 * @property {number|null} [finishedAtEpoch] FinishedVoteInfo finishedAtEpoch
+                                 */
+
+                                /**
+                                 * Constructs a new FinishedVoteInfo.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @classdesc Represents a FinishedVoteInfo.
+                                 * @implements IFinishedVoteInfo
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IFinishedVoteInfo=} [properties] Properties to set
+                                 */
+                                function FinishedVoteInfo(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * FinishedVoteInfo winnerId.
+                                 * @member {Uint8Array} winnerId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @instance
+                                 */
+                                FinishedVoteInfo.prototype.winnerId = $util.newBuffer([]);
+
+                                /**
+                                 * FinishedVoteInfo votePhaseHeld.
+                                 * @member {boolean} votePhaseHeld
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @instance
+                                 */
+                                FinishedVoteInfo.prototype.votePhaseHeld = false;
+
+                                /**
+                                 * FinishedVoteInfo finishedAtBlockHeight.
+                                 * @member {number|Long} finishedAtBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @instance
+                                 */
+                                FinishedVoteInfo.prototype.finishedAtBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * FinishedVoteInfo finishedAtCoreBlockHeight.
+                                 * @member {number} finishedAtCoreBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @instance
+                                 */
+                                FinishedVoteInfo.prototype.finishedAtCoreBlockHeight = 0;
+
+                                /**
+                                 * FinishedVoteInfo finishedAtBlockTimeMs.
+                                 * @member {number|Long} finishedAtBlockTimeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @instance
+                                 */
+                                FinishedVoteInfo.prototype.finishedAtBlockTimeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * FinishedVoteInfo finishedAtEpoch.
+                                 * @member {number} finishedAtEpoch
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @instance
+                                 */
+                                FinishedVoteInfo.prototype.finishedAtEpoch = 0;
+
+                                /**
+                                 * Creates a new FinishedVoteInfo instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IFinishedVoteInfo=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo} FinishedVoteInfo instance
+                                 */
+                                FinishedVoteInfo.create = function create(properties) {
+                                    return new FinishedVoteInfo(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified FinishedVoteInfo message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IFinishedVoteInfo} message FinishedVoteInfo message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                FinishedVoteInfo.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.winnerId != null && Object.hasOwnProperty.call(message, "winnerId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.winnerId);
+                                    if (message.votePhaseHeld != null && Object.hasOwnProperty.call(message, "votePhaseHeld"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.votePhaseHeld);
+                                    if (message.finishedAtBlockHeight != null && Object.hasOwnProperty.call(message, "finishedAtBlockHeight"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.finishedAtBlockHeight);
+                                    if (message.finishedAtCoreBlockHeight != null && Object.hasOwnProperty.call(message, "finishedAtCoreBlockHeight"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.finishedAtCoreBlockHeight);
+                                    if (message.finishedAtBlockTimeMs != null && Object.hasOwnProperty.call(message, "finishedAtBlockTimeMs"))
+                                        writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.finishedAtBlockTimeMs);
+                                    if (message.finishedAtEpoch != null && Object.hasOwnProperty.call(message, "finishedAtEpoch"))
+                                        writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.finishedAtEpoch);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified FinishedVoteInfo message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IFinishedVoteInfo} message FinishedVoteInfo message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                FinishedVoteInfo.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a FinishedVoteInfo message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo} FinishedVoteInfo
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                FinishedVoteInfo.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.winnerId = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.votePhaseHeld = reader.bool();
+                                            break;
+                                        case 3:
+                                            message.finishedAtBlockHeight = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.finishedAtCoreBlockHeight = reader.uint32();
+                                            break;
+                                        case 5:
+                                            message.finishedAtBlockTimeMs = reader.uint64();
+                                            break;
+                                        case 6:
+                                            message.finishedAtEpoch = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a FinishedVoteInfo message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo} FinishedVoteInfo
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                FinishedVoteInfo.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a FinishedVoteInfo message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                FinishedVoteInfo.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.winnerId != null && message.hasOwnProperty("winnerId"))
+                                        if (!(message.winnerId && typeof message.winnerId.length === "number" || $util.isString(message.winnerId)))
+                                            return "winnerId: buffer expected";
+                                    if (message.votePhaseHeld != null && message.hasOwnProperty("votePhaseHeld"))
+                                        if (typeof message.votePhaseHeld !== "boolean")
+                                            return "votePhaseHeld: boolean expected";
+                                    if (message.finishedAtBlockHeight != null && message.hasOwnProperty("finishedAtBlockHeight"))
+                                        if (!$util.isInteger(message.finishedAtBlockHeight) && !(message.finishedAtBlockHeight && $util.isInteger(message.finishedAtBlockHeight.low) && $util.isInteger(message.finishedAtBlockHeight.high)))
+                                            return "finishedAtBlockHeight: integer|Long expected";
+                                    if (message.finishedAtCoreBlockHeight != null && message.hasOwnProperty("finishedAtCoreBlockHeight"))
+                                        if (!$util.isInteger(message.finishedAtCoreBlockHeight))
+                                            return "finishedAtCoreBlockHeight: integer expected";
+                                    if (message.finishedAtBlockTimeMs != null && message.hasOwnProperty("finishedAtBlockTimeMs"))
+                                        if (!$util.isInteger(message.finishedAtBlockTimeMs) && !(message.finishedAtBlockTimeMs && $util.isInteger(message.finishedAtBlockTimeMs.low) && $util.isInteger(message.finishedAtBlockTimeMs.high)))
+                                            return "finishedAtBlockTimeMs: integer|Long expected";
+                                    if (message.finishedAtEpoch != null && message.hasOwnProperty("finishedAtEpoch"))
+                                        if (!$util.isInteger(message.finishedAtEpoch))
+                                            return "finishedAtEpoch: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a FinishedVoteInfo message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo} FinishedVoteInfo
+                                 */
+                                FinishedVoteInfo.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo();
+                                    if (object.winnerId != null)
+                                        if (typeof object.winnerId === "string")
+                                            $util.base64.decode(object.winnerId, message.winnerId = $util.newBuffer($util.base64.length(object.winnerId)), 0);
+                                        else if (object.winnerId.length >= 0)
+                                            message.winnerId = object.winnerId;
+                                    if (object.votePhaseHeld != null)
+                                        message.votePhaseHeld = Boolean(object.votePhaseHeld);
+                                    if (object.finishedAtBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.finishedAtBlockHeight = $util.Long.fromValue(object.finishedAtBlockHeight)).unsigned = true;
+                                        else if (typeof object.finishedAtBlockHeight === "string")
+                                            message.finishedAtBlockHeight = parseInt(object.finishedAtBlockHeight, 10);
+                                        else if (typeof object.finishedAtBlockHeight === "number")
+                                            message.finishedAtBlockHeight = object.finishedAtBlockHeight;
+                                        else if (typeof object.finishedAtBlockHeight === "object")
+                                            message.finishedAtBlockHeight = new $util.LongBits(object.finishedAtBlockHeight.low >>> 0, object.finishedAtBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.finishedAtCoreBlockHeight != null)
+                                        message.finishedAtCoreBlockHeight = object.finishedAtCoreBlockHeight >>> 0;
+                                    if (object.finishedAtBlockTimeMs != null)
+                                        if ($util.Long)
+                                            (message.finishedAtBlockTimeMs = $util.Long.fromValue(object.finishedAtBlockTimeMs)).unsigned = true;
+                                        else if (typeof object.finishedAtBlockTimeMs === "string")
+                                            message.finishedAtBlockTimeMs = parseInt(object.finishedAtBlockTimeMs, 10);
+                                        else if (typeof object.finishedAtBlockTimeMs === "number")
+                                            message.finishedAtBlockTimeMs = object.finishedAtBlockTimeMs;
+                                        else if (typeof object.finishedAtBlockTimeMs === "object")
+                                            message.finishedAtBlockTimeMs = new $util.LongBits(object.finishedAtBlockTimeMs.low >>> 0, object.finishedAtBlockTimeMs.high >>> 0).toNumber(true);
+                                    if (object.finishedAtEpoch != null)
+                                        message.finishedAtEpoch = object.finishedAtEpoch >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a FinishedVoteInfo message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo} message FinishedVoteInfo
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                FinishedVoteInfo.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.winnerId = "";
+                                        else {
+                                            object.winnerId = [];
+                                            if (options.bytes !== Array)
+                                                object.winnerId = $util.newBuffer(object.winnerId);
+                                        }
+                                        object.votePhaseHeld = false;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.finishedAtBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.finishedAtBlockHeight = options.longs === String ? "0" : 0;
+                                        object.finishedAtCoreBlockHeight = 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.finishedAtBlockTimeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.finishedAtBlockTimeMs = options.longs === String ? "0" : 0;
+                                        object.finishedAtEpoch = 0;
+                                    }
+                                    if (message.winnerId != null && message.hasOwnProperty("winnerId"))
+                                        object.winnerId = options.bytes === String ? $util.base64.encode(message.winnerId, 0, message.winnerId.length) : options.bytes === Array ? Array.prototype.slice.call(message.winnerId) : message.winnerId;
+                                    if (message.votePhaseHeld != null && message.hasOwnProperty("votePhaseHeld"))
+                                        object.votePhaseHeld = message.votePhaseHeld;
+                                    if (message.finishedAtBlockHeight != null && message.hasOwnProperty("finishedAtBlockHeight"))
+                                        if (typeof message.finishedAtBlockHeight === "number")
+                                            object.finishedAtBlockHeight = options.longs === String ? String(message.finishedAtBlockHeight) : message.finishedAtBlockHeight;
+                                        else
+                                            object.finishedAtBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.finishedAtBlockHeight) : options.longs === Number ? new $util.LongBits(message.finishedAtBlockHeight.low >>> 0, message.finishedAtBlockHeight.high >>> 0).toNumber(true) : message.finishedAtBlockHeight;
+                                    if (message.finishedAtCoreBlockHeight != null && message.hasOwnProperty("finishedAtCoreBlockHeight"))
+                                        object.finishedAtCoreBlockHeight = message.finishedAtCoreBlockHeight;
+                                    if (message.finishedAtBlockTimeMs != null && message.hasOwnProperty("finishedAtBlockTimeMs"))
+                                        if (typeof message.finishedAtBlockTimeMs === "number")
+                                            object.finishedAtBlockTimeMs = options.longs === String ? String(message.finishedAtBlockTimeMs) : message.finishedAtBlockTimeMs;
+                                        else
+                                            object.finishedAtBlockTimeMs = options.longs === String ? $util.Long.prototype.toString.call(message.finishedAtBlockTimeMs) : options.longs === Number ? new $util.LongBits(message.finishedAtBlockTimeMs.low >>> 0, message.finishedAtBlockTimeMs.high >>> 0).toNumber(true) : message.finishedAtBlockTimeMs;
+                                    if (message.finishedAtEpoch != null && message.hasOwnProperty("finishedAtEpoch"))
+                                        object.finishedAtEpoch = message.finishedAtEpoch;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this FinishedVoteInfo to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                FinishedVoteInfo.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return FinishedVoteInfo;
+                            })();
+
+                            GetIdentityContenderVotePollStateResponseV0.PollInfo = (function() {
+
+                                /**
+                                 * Properties of a PollInfo.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @interface IPollInfo
+                                 * @property {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Status|null} [status] PollInfo status
+                                 * @property {number|Long|null} [joinEndTimeMs] PollInfo joinEndTimeMs
+                                 * @property {number|Long|null} [voteEndTimeMs] PollInfo voteEndTimeMs
+                                 * @property {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IFinishedVoteInfo|null} [finishedVoteInfo] PollInfo finishedVoteInfo
+                                 */
+
+                                /**
+                                 * Constructs a new PollInfo.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @classdesc Represents a PollInfo.
+                                 * @implements IPollInfo
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IPollInfo=} [properties] Properties to set
+                                 */
+                                function PollInfo(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * PollInfo status.
+                                 * @member {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Status} status
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @instance
+                                 */
+                                PollInfo.prototype.status = 0;
+
+                                /**
+                                 * PollInfo joinEndTimeMs.
+                                 * @member {number|Long} joinEndTimeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @instance
+                                 */
+                                PollInfo.prototype.joinEndTimeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * PollInfo voteEndTimeMs.
+                                 * @member {number|Long} voteEndTimeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @instance
+                                 */
+                                PollInfo.prototype.voteEndTimeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * PollInfo finishedVoteInfo.
+                                 * @member {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IFinishedVoteInfo|null|undefined} finishedVoteInfo
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @instance
+                                 */
+                                PollInfo.prototype.finishedVoteInfo = null;
+
+                                /**
+                                 * Creates a new PollInfo instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IPollInfo=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo} PollInfo instance
+                                 */
+                                PollInfo.create = function create(properties) {
+                                    return new PollInfo(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified PollInfo message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IPollInfo} message PollInfo message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PollInfo.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.status != null && Object.hasOwnProperty.call(message, "status"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.status);
+                                    if (message.joinEndTimeMs != null && Object.hasOwnProperty.call(message, "joinEndTimeMs"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.joinEndTimeMs);
+                                    if (message.voteEndTimeMs != null && Object.hasOwnProperty.call(message, "voteEndTimeMs"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.voteEndTimeMs);
+                                    if (message.finishedVoteInfo != null && Object.hasOwnProperty.call(message, "finishedVoteInfo"))
+                                        $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo.encode(message.finishedVoteInfo, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified PollInfo message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IPollInfo} message PollInfo message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PollInfo.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a PollInfo message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo} PollInfo
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PollInfo.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.status = reader.int32();
+                                            break;
+                                        case 2:
+                                            message.joinEndTimeMs = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.voteEndTimeMs = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.finishedVoteInfo = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a PollInfo message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo} PollInfo
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PollInfo.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a PollInfo message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                PollInfo.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.status != null && message.hasOwnProperty("status"))
+                                        switch (message.status) {
+                                        default:
+                                            return "status: enum value expected";
+                                        case 0:
+                                        case 1:
+                                        case 2:
+                                            break;
+                                        }
+                                    if (message.joinEndTimeMs != null && message.hasOwnProperty("joinEndTimeMs"))
+                                        if (!$util.isInteger(message.joinEndTimeMs) && !(message.joinEndTimeMs && $util.isInteger(message.joinEndTimeMs.low) && $util.isInteger(message.joinEndTimeMs.high)))
+                                            return "joinEndTimeMs: integer|Long expected";
+                                    if (message.voteEndTimeMs != null && message.hasOwnProperty("voteEndTimeMs"))
+                                        if (!$util.isInteger(message.voteEndTimeMs) && !(message.voteEndTimeMs && $util.isInteger(message.voteEndTimeMs.low) && $util.isInteger(message.voteEndTimeMs.high)))
+                                            return "voteEndTimeMs: integer|Long expected";
+                                    if (message.finishedVoteInfo != null && message.hasOwnProperty("finishedVoteInfo")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo.verify(message.finishedVoteInfo);
+                                        if (error)
+                                            return "finishedVoteInfo." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a PollInfo message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo} PollInfo
+                                 */
+                                PollInfo.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo();
+                                    switch (object.status) {
+                                    case "JOINING":
+                                    case 0:
+                                        message.status = 0;
+                                        break;
+                                    case "VOTING":
+                                    case 1:
+                                        message.status = 1;
+                                        break;
+                                    case "RESOLVED":
+                                    case 2:
+                                        message.status = 2;
+                                        break;
+                                    }
+                                    if (object.joinEndTimeMs != null)
+                                        if ($util.Long)
+                                            (message.joinEndTimeMs = $util.Long.fromValue(object.joinEndTimeMs)).unsigned = true;
+                                        else if (typeof object.joinEndTimeMs === "string")
+                                            message.joinEndTimeMs = parseInt(object.joinEndTimeMs, 10);
+                                        else if (typeof object.joinEndTimeMs === "number")
+                                            message.joinEndTimeMs = object.joinEndTimeMs;
+                                        else if (typeof object.joinEndTimeMs === "object")
+                                            message.joinEndTimeMs = new $util.LongBits(object.joinEndTimeMs.low >>> 0, object.joinEndTimeMs.high >>> 0).toNumber(true);
+                                    if (object.voteEndTimeMs != null)
+                                        if ($util.Long)
+                                            (message.voteEndTimeMs = $util.Long.fromValue(object.voteEndTimeMs)).unsigned = true;
+                                        else if (typeof object.voteEndTimeMs === "string")
+                                            message.voteEndTimeMs = parseInt(object.voteEndTimeMs, 10);
+                                        else if (typeof object.voteEndTimeMs === "number")
+                                            message.voteEndTimeMs = object.voteEndTimeMs;
+                                        else if (typeof object.voteEndTimeMs === "object")
+                                            message.voteEndTimeMs = new $util.LongBits(object.voteEndTimeMs.low >>> 0, object.voteEndTimeMs.high >>> 0).toNumber(true);
+                                    if (object.finishedVoteInfo != null) {
+                                        if (typeof object.finishedVoteInfo !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.finishedVoteInfo: object expected");
+                                        message.finishedVoteInfo = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo.fromObject(object.finishedVoteInfo);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a PollInfo message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo} message PollInfo
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                PollInfo.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.status = options.enums === String ? "JOINING" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.joinEndTimeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.joinEndTimeMs = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.voteEndTimeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.voteEndTimeMs = options.longs === String ? "0" : 0;
+                                        object.finishedVoteInfo = null;
+                                    }
+                                    if (message.status != null && message.hasOwnProperty("status"))
+                                        object.status = options.enums === String ? $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Status[message.status] : message.status;
+                                    if (message.joinEndTimeMs != null && message.hasOwnProperty("joinEndTimeMs"))
+                                        if (typeof message.joinEndTimeMs === "number")
+                                            object.joinEndTimeMs = options.longs === String ? String(message.joinEndTimeMs) : message.joinEndTimeMs;
+                                        else
+                                            object.joinEndTimeMs = options.longs === String ? $util.Long.prototype.toString.call(message.joinEndTimeMs) : options.longs === Number ? new $util.LongBits(message.joinEndTimeMs.low >>> 0, message.joinEndTimeMs.high >>> 0).toNumber(true) : message.joinEndTimeMs;
+                                    if (message.voteEndTimeMs != null && message.hasOwnProperty("voteEndTimeMs"))
+                                        if (typeof message.voteEndTimeMs === "number")
+                                            object.voteEndTimeMs = options.longs === String ? String(message.voteEndTimeMs) : message.voteEndTimeMs;
+                                        else
+                                            object.voteEndTimeMs = options.longs === String ? $util.Long.prototype.toString.call(message.voteEndTimeMs) : options.longs === Number ? new $util.LongBits(message.voteEndTimeMs.low >>> 0, message.voteEndTimeMs.high >>> 0).toNumber(true) : message.voteEndTimeMs;
+                                    if (message.finishedVoteInfo != null && message.hasOwnProperty("finishedVoteInfo"))
+                                        object.finishedVoteInfo = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.FinishedVoteInfo.toObject(message.finishedVoteInfo, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this PollInfo to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                PollInfo.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return PollInfo;
+                            })();
+
+                            GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState = (function() {
+
+                                /**
+                                 * Properties of an IdentityContenderVotePollState.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @interface IIdentityContenderVotePollState
+                                 * @property {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IPollInfo|null} [info] IdentityContenderVotePollState info
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IContender>|null} [contenders] IdentityContenderVotePollState contenders
+                                 * @property {number|null} [abstainVoteTally] IdentityContenderVotePollState abstainVoteTally
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityContenderVotePollState.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0
+                                 * @classdesc Represents an IdentityContenderVotePollState.
+                                 * @implements IIdentityContenderVotePollState
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IIdentityContenderVotePollState=} [properties] Properties to set
+                                 */
+                                function IdentityContenderVotePollState(properties) {
+                                    this.contenders = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityContenderVotePollState info.
+                                 * @member {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IPollInfo|null|undefined} info
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @instance
+                                 */
+                                IdentityContenderVotePollState.prototype.info = null;
+
+                                /**
+                                 * IdentityContenderVotePollState contenders.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IContender>} contenders
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @instance
+                                 */
+                                IdentityContenderVotePollState.prototype.contenders = $util.emptyArray;
+
+                                /**
+                                 * IdentityContenderVotePollState abstainVoteTally.
+                                 * @member {number} abstainVoteTally
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @instance
+                                 */
+                                IdentityContenderVotePollState.prototype.abstainVoteTally = 0;
+
+                                /**
+                                 * Creates a new IdentityContenderVotePollState instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IIdentityContenderVotePollState=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState} IdentityContenderVotePollState instance
+                                 */
+                                IdentityContenderVotePollState.create = function create(properties) {
+                                    return new IdentityContenderVotePollState(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityContenderVotePollState message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IIdentityContenderVotePollState} message IdentityContenderVotePollState message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityContenderVotePollState.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.info != null && Object.hasOwnProperty.call(message, "info"))
+                                        $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.encode(message.info, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.contenders != null && message.contenders.length)
+                                        for (var i = 0; i < message.contenders.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender.encode(message.contenders[i], writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    if (message.abstainVoteTally != null && Object.hasOwnProperty.call(message, "abstainVoteTally"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.abstainVoteTally);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityContenderVotePollState message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IIdentityContenderVotePollState} message IdentityContenderVotePollState message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityContenderVotePollState.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityContenderVotePollState message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState} IdentityContenderVotePollState
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityContenderVotePollState.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.info = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            if (!(message.contenders && message.contenders.length))
+                                                message.contenders = [];
+                                            message.contenders.push($root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender.decode(reader, reader.uint32()));
+                                            break;
+                                        case 3:
+                                            message.abstainVoteTally = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityContenderVotePollState message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState} IdentityContenderVotePollState
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityContenderVotePollState.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityContenderVotePollState message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityContenderVotePollState.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.info != null && message.hasOwnProperty("info")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.verify(message.info);
+                                        if (error)
+                                            return "info." + error;
+                                    }
+                                    if (message.contenders != null && message.hasOwnProperty("contenders")) {
+                                        if (!Array.isArray(message.contenders))
+                                            return "contenders: array expected";
+                                        for (var i = 0; i < message.contenders.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender.verify(message.contenders[i]);
+                                            if (error)
+                                                return "contenders." + error;
+                                        }
+                                    }
+                                    if (message.abstainVoteTally != null && message.hasOwnProperty("abstainVoteTally"))
+                                        if (!$util.isInteger(message.abstainVoteTally))
+                                            return "abstainVoteTally: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityContenderVotePollState message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState} IdentityContenderVotePollState
+                                 */
+                                IdentityContenderVotePollState.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState();
+                                    if (object.info != null) {
+                                        if (typeof object.info !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.info: object expected");
+                                        message.info = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.fromObject(object.info);
+                                    }
+                                    if (object.contenders) {
+                                        if (!Array.isArray(object.contenders))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.contenders: array expected");
+                                        message.contenders = [];
+                                        for (var i = 0; i < object.contenders.length; ++i) {
+                                            if (typeof object.contenders[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState.contenders: object expected");
+                                            message.contenders[i] = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender.fromObject(object.contenders[i]);
+                                        }
+                                    }
+                                    if (object.abstainVoteTally != null)
+                                        message.abstainVoteTally = object.abstainVoteTally >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityContenderVotePollState message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState} message IdentityContenderVotePollState
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityContenderVotePollState.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.contenders = [];
+                                    if (options.defaults) {
+                                        object.info = null;
+                                        object.abstainVoteTally = 0;
+                                    }
+                                    if (message.info != null && message.hasOwnProperty("info"))
+                                        object.info = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.PollInfo.toObject(message.info, options);
+                                    if (message.contenders && message.contenders.length) {
+                                        object.contenders = [];
+                                        for (var j = 0; j < message.contenders.length; ++j)
+                                            object.contenders[j] = $root.org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.Contender.toObject(message.contenders[j], options);
+                                    }
+                                    if (message.abstainVoteTally != null && message.hasOwnProperty("abstainVoteTally"))
+                                        object.abstainVoteTally = message.abstainVoteTally;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityContenderVotePollState to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityContenderVotePollStateResponse.GetIdentityContenderVotePollStateResponseV0.IdentityContenderVotePollState
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityContenderVotePollState.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityContenderVotePollState;
+                            })();
+
+                            return GetIdentityContenderVotePollStateResponseV0;
+                        })();
+
+                        return GetIdentityContenderVotePollStateResponse;
                     })();
 
                     v0.GetPrefundedSpecializedBalanceRequest = (function() {

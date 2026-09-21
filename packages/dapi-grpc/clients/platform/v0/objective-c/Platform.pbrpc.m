@@ -908,15 +908,15 @@
              responseClass:[GetContestedResourceIdentityVotesResponse class]];
 }
 
-#pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
+#pragma mark getIdentityContenderVotePollState(GetIdentityContenderVotePollStateRequest) returns (GetIdentityContenderVotePollStateResponse)
 
 /**
  * What vote polls will end soon?
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
-- (void)getVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetVotePollsByEndDateWithRequest:request handler:handler] start];
+- (void)getIdentityContenderVotePollStateWithRequest:(GetIdentityContenderVotePollStateRequest *)request handler:(void(^)(GetIdentityContenderVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityContenderVotePollStateWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
 /**
@@ -924,15 +924,35 @@
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
+- (GRPCProtoCall *)RPCTogetIdentityContenderVotePollStateWithRequest:(GetIdentityContenderVotePollStateRequest *)request handler:(void(^)(GetIdentityContenderVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityContenderVotePollState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityContenderVotePollStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * What vote polls will end soon?
+ */
+- (GRPCUnaryProtoCall *)getIdentityContenderVotePollStateWithMessage:(GetIdentityContenderVotePollStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityContenderVotePollState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityContenderVotePollStateResponse class]];
+}
+
+#pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
+
+- (void)getVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetVotePollsByEndDateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
 - (GRPCProtoCall *)RPCTogetVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getVotePollsByEndDate"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[GetVotePollsByEndDateResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-/**
- * What vote polls will end soon?
- */
 - (GRPCUnaryProtoCall *)getVotePollsByEndDateWithMessage:(GetVotePollsByEndDateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getVotePollsByEndDate"
                    message:message

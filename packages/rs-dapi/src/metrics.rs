@@ -581,6 +581,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getFinalizedEpochInfos",
                 "getContestedResources",
                 "getContestedResourceVoteState",
+                "getIdentityContenderVotePollState",
                 "getContestedResourceVotersForIdentity",
                 "getContestedResourceIdentityVotes",
                 "getVotePollsByEndDate",

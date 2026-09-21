@@ -204,6 +204,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetContestedResourceIdentityVotesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetContestedResourceIdentityVotesResponse.FromString,
                 )
+        self.getIdentityContenderVotePollState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentityContenderVotePollState',
+                request_serializer=platform__pb2.GetIdentityContenderVotePollStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityContenderVotePollStateResponse.FromString,
+                )
         self.getVotePollsByEndDate = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getVotePollsByEndDate',
                 request_serializer=platform__pb2.GetVotePollsByEndDateRequest.SerializeToString,
@@ -603,9 +608,15 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getVotePollsByEndDate(self, request, context):
+    def getIdentityContenderVotePollState(self, request, context):
         """What vote polls will end soon?
         """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getVotePollsByEndDate(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -988,6 +999,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getContestedResourceIdentityVotes,
                     request_deserializer=platform__pb2.GetContestedResourceIdentityVotesRequest.FromString,
                     response_serializer=platform__pb2.GetContestedResourceIdentityVotesResponse.SerializeToString,
+            ),
+            'getIdentityContenderVotePollState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentityContenderVotePollState,
+                    request_deserializer=platform__pb2.GetIdentityContenderVotePollStateRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityContenderVotePollStateResponse.SerializeToString,
             ),
             'getVotePollsByEndDate': grpc.unary_unary_rpc_method_handler(
                     servicer.getVotePollsByEndDate,
@@ -1802,6 +1818,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContestedResourceIdentityVotes',
             platform__pb2.GetContestedResourceIdentityVotesRequest.SerializeToString,
             platform__pb2.GetContestedResourceIdentityVotesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentityContenderVotePollState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityContenderVotePollState',
+            platform__pb2.GetIdentityContenderVotePollStateRequest.SerializeToString,
+            platform__pb2.GetIdentityContenderVotePollStateResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

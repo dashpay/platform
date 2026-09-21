@@ -1,9 +1,9 @@
 use crate::drive::votes::paths::{
     ACTIVE_POLLS_TREE_KEY, CONTESTED_DOCUMENT_INDEXES_TREE_KEY,
     CONTESTED_DOCUMENT_STORAGE_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY, END_DATE_QUERIES_TREE_KEY,
-    IDENTITY_VOTES_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32,
-    RESOURCE_LOCK_VOTE_TREE_KEY_U8_32, RESOURCE_STORED_INFO_KEY_U8_32, VOTE_DECISIONS_TREE_KEY,
-    VOTING_STORAGE_TREE_KEY,
+    IDENTITY_CONTENDER_INFO_KEY, IDENTITY_CONTENDER_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+    RESOURCE_STORED_INFO_KEY_U8_32, VOTE_DECISIONS_TREE_KEY, VOTING_STORAGE_TREE_KEY,
 };
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
@@ -12,7 +12,9 @@ const SOURCE: &str = "packages/rs-drive/src/drive/votes/paths.rs";
 const CONTENDER_FLAGS: &str =
     "The owner is the contender whose document created the level, who is \
      refunded when the poll is cleaned up. Written without storage flags, it carries none.";
-const POLL_FLAGS: &str = "The owner is the identity whose contested document started the poll.";
+const POLL_FLAGS: &str = "The owner is the identity whose contested document started the poll. \
+     An identity contender vote poll's entry is written without storage flags and carries none.";
+const END_DATE_FLAGS: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const OWNED: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const CONTESTED_DOCUMENT: &str =
     "votes.contested_resource.active_polls.contract.document_type.storage.document";
@@ -55,8 +57,9 @@ pub(crate) fn structure() -> StructureNode {
     .kind(ElementKind::Tree)
     .source("packages/rs-drive/src/drive/mod.rs")
     .describe(
-        "Masternode votes, today on contested resources \
-         such as premium DPNS names.",
+        "Masternode votes: on contested resources such as \
+         premium DPNS names, and from protocol version 14 \
+         on polls electing one identity among contenders.",
     )
     .children(vec![
         StructureNode::fixed(
@@ -109,7 +112,7 @@ pub(crate) fn structure() -> StructureNode {
                  with the sign bit flipped",
             )
             .kind(ElementKind::Tree)
-            .flags(&[FlagsKind::EpochOwned], POLL_FLAGS)
+            .flags(&END_DATE_FLAGS, POLL_FLAGS)
             .describe("The polls ending at this time.")
             .child(
                 StructureNode::dynamic(
@@ -120,12 +123,171 @@ pub(crate) fn structure() -> StructureNode {
                     "The double sha256 of the serialized vote poll",
                 )
                 .kind(ElementKind::Item)
-                .flags(&[FlagsKind::EpochOwned], POLL_FLAGS)
+                .flags(&END_DATE_FLAGS, POLL_FLAGS)
                 .value("serialized VotePoll")
                 .describe("One poll ending at this time."),
             ),
         ),
+        identity_contender_polls(),
     ])
+}
+
+fn identity_contender_polls() -> StructureNode {
+    StructureNode::fixed(
+        "identity_contender_polls",
+        &[IDENTITY_CONTENDER_POLLS_TREE_KEY as u8],
+        "IdentityContenderPolls",
+        "IDENTITY_CONTENDER_POLLS_TREE_KEY",
+    )
+    .ascii()
+    .kind(ElementKind::Tree)
+    .source(SOURCE)
+    .since(14)
+    .lazy()
+    .describe(
+        "Polls electing one identity among contenders, \
+         keyed by a resource path the opener chooses. \
+         Created by the first poll.",
+    )
+    .children(vec![
+        StructureNode::fixed(
+            "identity_votes",
+            &[IDENTITY_VOTES_TREE_KEY as u8],
+            "IdentityContenderIdentityVotes",
+            "IDENTITY_VOTES_TREE_KEY",
+        )
+        .ascii()
+        .kind(ElementKind::Tree)
+        .describe(
+            "The votes each masternode cast on these polls, \
+             so they can be listed and changed.",
+        )
+        .child(
+            StructureNode::identifier(
+                "voter",
+                "pro_tx_hash",
+                "The voting masternode's pro tx hash",
+            )
+            .kind(ElementKind::Tree)
+            .describe("One masternode's votes.")
+            .child(
+                StructureNode::dynamic(
+                    "vote",
+                    "vote_poll_id",
+                    KeyMatcher::Len(32),
+                    KeyEncoding::Hash32,
+                    "The double sha256 of the serialized vote poll",
+                )
+                .kind(ElementKind::Item)
+                .value(
+                    "bincode \
+                     ContestedDocumentResourceVoteReferenceStorageForm: \
+                     a reference path to the vote and how many times \
+                     the masternode voted on the poll",
+                )
+                .describe(
+                    "Where the masternode's vote on this poll is, \
+                     as in the contested resource identity votes.",
+                ),
+            ),
+        ),
+        StructureNode::fixed(
+            "active_polls",
+            &[ACTIVE_POLLS_TREE_KEY as u8],
+            "IdentityContenderActivePolls",
+            "ACTIVE_POLLS_TREE_KEY",
+        )
+        .ascii()
+        .kind(ElementKind::Tree)
+        .describe("The polls, each under its unique id.")
+        .child(
+            StructureNode::dynamic(
+                "poll",
+                "vote_poll_id",
+                KeyMatcher::Len(32),
+                KeyEncoding::Hash32,
+                "The double sha256 of the serialized vote poll",
+            )
+            .kind(ElementKind::Tree)
+            .describe(
+                "One poll: its state, its abstain votes and its \
+                 contenders. The contenders and the votes go when \
+                 the poll ends; the state stays with the result.",
+            )
+            .children(vec![
+                StructureNode::fixed(
+                    "stored_info",
+                    &RESOURCE_STORED_INFO_KEY_U8_32,
+                    "IdentityContenderStoredInfo",
+                    "RESOURCE_STORED_INFO_KEY_U8_32",
+                )
+                .kind(ElementKind::Item)
+                .value("serialized IdentityContenderVotePollStoredInfo")
+                .describe(
+                    "The poll's phase, when each phase ends and, \
+                     once it ends, its result.",
+                ),
+                StructureNode::fixed(
+                    "abstain",
+                    &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32,
+                    "IdentityContenderAbstain",
+                    "RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32",
+                )
+                .kind(ElementKind::Tree)
+                .until_deleted()
+                .describe("Votes to abstain.")
+                .child(identity_contender_voting_storage()),
+                StructureNode::identifier(
+                    "contender",
+                    "identity_id",
+                    "The contending identity's id",
+                )
+                .kind(ElementKind::Tree)
+                .until_deleted()
+                .describe("One contender.")
+                .children(vec![
+                    StructureNode::fixed(
+                        "info",
+                        &[IDENTITY_CONTENDER_INFO_KEY],
+                        "IdentityContenderInfo",
+                        "IDENTITY_CONTENDER_INFO_KEY",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("serialized IdentityContenderInfo")
+                    .describe(
+                        "When the identity joined and the id of \
+                         what made it a contender: the order of \
+                         the tie-break.",
+                    ),
+                    identity_contender_voting_storage(),
+                ]),
+            ]),
+        ),
+    ])
+}
+
+fn identity_contender_voting_storage() -> StructureNode {
+    StructureNode::fixed(
+        "votes",
+        &[VOTING_STORAGE_TREE_KEY],
+        "IdentityContenderVotingStorage",
+        "VOTING_STORAGE_TREE_KEY",
+    )
+    .kind(ElementKind::SumTree)
+    .describe("The votes for this choice; the sum is the tally.")
+    .child(
+        StructureNode::identifier(
+            "voter",
+            "pro_tx_hash",
+            "The voting masternode's pro tx hash",
+        )
+        .kind(ElementKind::SumItem)
+        .value(
+            "vote strength: 1 for a masternode, 4 for an \
+             evonode",
+        )
+        .describe("One masternode's vote."),
+    )
 }
 
 fn identity_votes() -> StructureNode {

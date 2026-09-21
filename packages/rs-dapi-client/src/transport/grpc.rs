@@ -533,6 +533,15 @@ impl_transport_request_grpc!(
     get_contested_resource_vote_state
 );
 
+// rpc getIdentityContenderVotePollState(GetIdentityContenderVotePollStateRequest) returns (GetIdentityContenderVotePollStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityContenderVotePollStateRequest,
+    platform_proto::GetIdentityContenderVotePollStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_contender_vote_poll_state
+);
+
 // rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
 impl_transport_request_grpc!(
     platform_proto::GetContestedResourceVotersForIdentityRequest,

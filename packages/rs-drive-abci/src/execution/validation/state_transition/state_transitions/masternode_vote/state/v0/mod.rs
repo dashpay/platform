@@ -1,9 +1,15 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::voting::identity_contender_vote_poll_not_available_for_voting_error::IdentityContenderVotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 use dpp::consensus::ConsensusError;
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_info_storage::identity_contender_vote_poll_stored_info::{
+    IdentityContenderVotePollStatus, IdentityContenderVotePollStoredInfoV0Getters,
+};
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -91,6 +97,61 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
                                 ))
                             }
                         }
+                    }
+                    ResolvedVotePoll::IdentityContenderVotePoll(identity_contender_vote_poll) => {
+                        let Some(stored_info) = platform
+                            .drive
+                            .fetch_identity_contender_vote_poll_stored_info(
+                                identity_contender_vote_poll,
+                                tx,
+                                platform_version,
+                            )?
+                        else {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                ConsensusError::StateError(StateError::VotePollNotFoundError(
+                                    VotePollNotFoundError::new(vote_poll.into()),
+                                )),
+                            ));
+                        };
+                        // Votes are cast during the vote phase only: contenders still join
+                        // before it, and the record is final after it
+                        let status = stored_info.status();
+                        if status != IdentityContenderVotePollStatus::Voting {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                IdentityContenderVotePollNotAvailableForVotingError::new(
+                                    vote_poll.into(),
+                                    status,
+                                )
+                                .into(),
+                            ));
+                        }
+                        // A vote goes to one of the contenders, or abstains
+                        let vote_choice = resource_vote.resource_vote_choice();
+                        let allowed = match vote_choice {
+                            ResourceVoteChoice::TowardsIdentity(identity_id) => platform
+                                .drive
+                                .fetch_identity_contender_info(
+                                    identity_contender_vote_poll,
+                                    identity_id,
+                                    tx,
+                                    platform_version,
+                                )?
+                                .is_some(),
+                            ResourceVoteChoice::Abstain => true,
+                            ResourceVoteChoice::Lock => false,
+                        };
+                        if !allowed {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                VoteChoiceNotAllowedForVotePollError::new(
+                                    vote_poll.into(),
+                                    vote_choice,
+                                )
+                                .into(),
+                            ));
+                        }
+                        Ok(ConsensusValidationResult::new_with_data(
+                            masternode_vote_action.into(),
+                        ))
                     }
                 }
             }

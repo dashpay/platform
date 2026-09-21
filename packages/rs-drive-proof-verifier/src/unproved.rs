@@ -13,6 +13,9 @@ use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
 use crate::types::evonode_status::EvoNodeStatus;
+use crate::types::identity_contender_vote_poll_state::{
+    state_from_response, state_query_from_request, IdentityContenderVotePollState,
+};
 use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
@@ -1760,5 +1763,58 @@ mod contract_moderation_tests {
         .expect("expected the removals to convert")
         .expect("expected removals");
         assert_eq!(partial.removals().len(), 1);
+    }
+}
+
+impl FromUnproved<platform::GetIdentityContenderVotePollStateRequest>
+    for IdentityContenderVotePollState
+{
+    type Request = platform::GetIdentityContenderVotePollStateRequest;
+    type Response = platform::GetIdentityContenderVotePollStateResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_identity_contender_vote_poll_state_response::get_identity_contender_vote_poll_state_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // The request is read back under the rules the node applied, so a request the node
+        // refuses is refused here too
+        let platform::get_identity_contender_vote_poll_state_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        state_query_from_request(&request_v0, platform_version)?;
+
+        let platform::get_identity_contender_vote_poll_state_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let state = match v0.result {
+            Some(V0Result::State(state)) => {
+                let state = state_from_response(state)?;
+                // A poll that never opened reads as nothing at all
+                if state.is_empty() {
+                    None
+                } else {
+                    Some(state)
+                }
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected an unproved identity contender vote poll state, got a proof"
+                        .to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((state, metadata))
     }
 }

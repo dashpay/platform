@@ -246,6 +246,13 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
+@class GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0;
+@class GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_StartAtIdentifierInfo;
+@class GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0;
+@class GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender;
+@class GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo;
+@class GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState;
+@class GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo;
 @class GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0;
 @class GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0;
 @class GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0;
@@ -696,6 +703,28 @@ GPBEnumDescriptor *GetContestedResourceIdentityVotesResponse_GetContestedResourc
  * the time this source was generated.
  **/
 BOOL GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status_Joining = 0,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status_Voting = 1,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status_Resolved = 2,
+};
+
+GPBEnumDescriptor *GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetGroupActionsRequest_ActionStatus
 
@@ -8462,6 +8491,261 @@ GPB_FINAL @interface GetContestedResourceIdentityVotesResponse_GetContestedResou
 /** Test to see if @c voteChoice has been set. */
 @property(nonatomic, readwrite) BOOL hasVoteChoice;
 
+@end
+
+#pragma mark - GetIdentityContenderVotePollStateRequest
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateRequest_FieldNumber) {
+  GetIdentityContenderVotePollStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateRequest_Version_OneOfCase) {
+  GetIdentityContenderVotePollStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityContenderVotePollStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * The state of a poll electing one identity among contenders (an identity
+ * contender vote poll), keyed by the poll's unique id: its phase and its
+ * windows, its contenders with their tallies, and its result once it resolved.
+ **/
+GPB_FINAL @interface GetIdentityContenderVotePollStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityContenderVotePollStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityContenderVotePollStateRequest_ClearVersionOneOfCase(GetIdentityContenderVotePollStateRequest *message);
+
+#pragma mark - GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_FieldNumber) {
+  GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_FieldNumber_VotePollId = 1,
+  GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_FieldNumber_StartAtIdentifierInfo = 2,
+  GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_FieldNumber_Count = 3,
+  GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_FieldNumber_Prove = 4,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0 : GPBMessage
+
+/** The double sha256 of the serialized vote poll */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *votePollId;
+
+/**
+ * The contender to start at. A read that starts at a contender returns
+ * contenders only: no poll info and no abstain tally.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_StartAtIdentifierInfo *startAtIdentifierInfo;
+/** Test to see if @c startAtIdentifierInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAtIdentifierInfo;
+
+/** At most this many contenders */
+@property(nonatomic, readwrite) uint32_t count;
+
+@property(nonatomic, readwrite) BOOL hasCount;
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_StartAtIdentifierInfo
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_StartAtIdentifierInfo_FieldNumber) {
+  GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifier = 1,
+  GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifierIncluded = 2,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateRequest_GetIdentityContenderVotePollStateRequestV0_StartAtIdentifierInfo : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startIdentifier;
+
+@property(nonatomic, readwrite) BOOL startIdentifierIncluded;
+
+@end
+
+#pragma mark - GetIdentityContenderVotePollStateResponse
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_FieldNumber) {
+  GetIdentityContenderVotePollStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_Version_OneOfCase) {
+  GetIdentityContenderVotePollStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityContenderVotePollStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityContenderVotePollStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityContenderVotePollStateResponse_ClearVersionOneOfCase(GetIdentityContenderVotePollStateResponse *message);
+
+#pragma mark - GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FieldNumber) {
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FieldNumber_State = 1,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FieldNumber_Proof = 2,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Result_OneOfCase) {
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Result_OneOfCase_State = 1,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState *state;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_ClearResultOneOfCase(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0 *message);
+
+#pragma mark - GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender_FieldNumber) {
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender_FieldNumber_IdentityId = 1,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender_FieldNumber_VoteTally = 2,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender_FieldNumber_JoinedAtBlockHeight = 3,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender_FieldNumber_JoinedAtBlockTimeMs = 4,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender_FieldNumber_ReferenceId = 5,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+/** Absent once the poll resolved and the votes are gone */
+@property(nonatomic, readwrite) uint32_t voteTally;
+
+@property(nonatomic, readwrite) BOOL hasVoteTally;
+@property(nonatomic, readwrite) uint64_t joinedAtBlockHeight;
+
+@property(nonatomic, readwrite) uint64_t joinedAtBlockTimeMs;
+
+/** The id of what made the identity a contender, the last tie-break key */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *referenceId;
+
+@end
+
+#pragma mark - GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo_FieldNumber) {
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo_FieldNumber_WinnerId = 1,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo_FieldNumber_VotePhaseHeld = 2,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtBlockHeight = 3,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtCoreBlockHeight = 4,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtBlockTimeMs = 5,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtEpoch = 6,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo : GPBMessage
+
+/** Absent when the join phase ended with no contender */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *winnerId;
+/** Test to see if @c winnerId has been set. */
+@property(nonatomic, readwrite) BOOL hasWinnerId;
+
+/** False when a single contender won at the end of the join phase */
+@property(nonatomic, readwrite) BOOL votePhaseHeld;
+
+@property(nonatomic, readwrite) uint64_t finishedAtBlockHeight;
+
+@property(nonatomic, readwrite) uint32_t finishedAtCoreBlockHeight;
+
+@property(nonatomic, readwrite) uint64_t finishedAtBlockTimeMs;
+
+@property(nonatomic, readwrite) uint32_t finishedAtEpoch;
+
+@end
+
+#pragma mark - GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo_FieldNumber) {
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo_FieldNumber_Status = 1,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo_FieldNumber_JoinEndTimeMs = 2,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo_FieldNumber_VoteEndTimeMs = 3,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo_FieldNumber_FinishedVoteInfo = 4,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo : GPBMessage
+
+@property(nonatomic, readwrite) GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Status status;
+
+@property(nonatomic, readwrite) uint64_t joinEndTimeMs;
+
+@property(nonatomic, readwrite) uint64_t voteEndTimeMs;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_FinishedVoteInfo *finishedVoteInfo;
+/** Test to see if @c finishedVoteInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasFinishedVoteInfo;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo's @c status property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo_Status_RawValue(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo *message);
+/**
+ * Sets the raw value of an @c GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo's @c status property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo_Status_RawValue(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo *message, int32_t value);
+
+#pragma mark - GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState
+
+typedef GPB_ENUM(GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState_FieldNumber) {
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState_FieldNumber_Info = 1,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState_FieldNumber_ContendersArray = 2,
+  GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState_FieldNumber_AbstainVoteTally = 3,
+};
+
+GPB_FINAL @interface GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_IdentityContenderVotePollState : GPBMessage
+
+/**
+ * Absent for a poll that never opened, and for a read that started at a
+ * contender
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_PollInfo *info;
+/** Test to see if @c info has been set. */
+@property(nonatomic, readwrite) BOOL hasInfo;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentityContenderVotePollStateResponse_GetIdentityContenderVotePollStateResponseV0_Contender*> *contendersArray;
+/** The number of items in @c contendersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger contendersArray_Count;
+
+/**
+ * Absent once the poll resolved, and for a read that started at a
+ * contender
+ **/
+@property(nonatomic, readwrite) uint32_t abstainVoteTally;
+
+@property(nonatomic, readwrite) BOOL hasAbstainVoteTally;
 @end
 
 #pragma mark - GetPrefundedSpecializedBalanceRequest

@@ -89,11 +89,13 @@ use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_avail
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError};
+use crate::consensus::state::voting::identity_contender_vote_poll_not_available_for_voting_error::IdentityContenderVotePollNotAvailableForVotingError;
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 use crate::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use crate::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
+use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
@@ -550,6 +552,15 @@ pub enum StateError {
     // The moderators' deletion window (protocol version 14).
     #[error(transparent)]
     DocumentModerationWindowElapsedError(DocumentModerationWindowElapsedError),
+
+    // Identity contender vote polls (protocol version 14).
+    #[error(transparent)]
+    VoteChoiceNotAllowedForVotePollError(VoteChoiceNotAllowedForVotePollError),
+
+    #[error(transparent)]
+    IdentityContenderVotePollNotAvailableForVotingError(
+        IdentityContenderVotePollNotAvailableForVotingError,
+    ),
 }
 
 impl From<StateError> for ConsensusError {
@@ -571,6 +582,9 @@ mod tests {
         ActionFeePricing, ContractFeePot, DocumentActionFee,
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_info_storage::identity_contender_vote_poll_stored_info::IdentityContenderVotePollStatus;
+    use crate::voting::vote_polls::VotePoll;
     use platform_value::Identifier;
 
     /// `StateError` is encoded by variant position, so inserting a variant
@@ -973,12 +987,33 @@ mod tests {
             )),
             133
         );
-        // The moderators' deletion window (protocol version 14): the tail of the enum.
+        // The moderators' deletion window (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::DocumentModerationWindowElapsedError(
                 DocumentModerationWindowElapsedError::new(group_id, identity_id, 1, 2, 3)
             )),
             134
+        );
+        // Identity contender vote polls (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::VoteChoiceNotAllowedForVotePollError(
+                VoteChoiceNotAllowedForVotePollError::new(
+                    VotePoll::default(),
+                    ResourceVoteChoice::Lock
+                )
+            )),
+            135
+        );
+        assert_eq!(
+            discriminant_of(
+                StateError::IdentityContenderVotePollNotAvailableForVotingError(
+                    IdentityContenderVotePollNotAvailableForVotingError::new(
+                        VotePoll::default(),
+                        IdentityContenderVotePollStatus::Joining
+                    )
+                )
+            ),
+            136
         );
     }
 }

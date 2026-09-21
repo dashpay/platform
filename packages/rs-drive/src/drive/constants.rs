@@ -58,6 +58,12 @@ pub const ESTIMATED_NON_UNIQUE_KEY_DUPLICATES: u32 = 2;
 /// The average size of an item that is acting as a tree reference towards the contested item vote
 pub const AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE: u32 = 150;
 
+/// The estimated size of the stored info of an identity contender vote poll while it runs
+pub const AVERAGE_IDENTITY_CONTENDER_VOTE_POLL_STORED_INFO_SIZE: u32 = 96;
+
+/// The estimated size of the record of one contender of an identity contender vote poll
+pub const AVERAGE_IDENTITY_CONTENDER_INFO_SIZE: u32 = 64;
+
 /// Contested document reference size
 // we need to construct the reference from the split height of the contract document
 // type which is at 4

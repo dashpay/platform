@@ -8,4 +8,8 @@ pub struct DPPVotingVersions {
     pub default_vote_poll_time_duration_mainnet_ms: u64,
     pub default_vote_poll_time_duration_test_network_ms: u64,
     pub contested_document_vote_poll_stored_info_version: FeatureVersion,
+    /// The stored info of an identity contender vote poll (protocol version 14).
+    pub identity_contender_vote_poll_stored_info_version: FeatureVersion,
+    /// The record of one contender of an identity contender vote poll (protocol version 14).
+    pub identity_contender_info_version: FeatureVersion,
 }

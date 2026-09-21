@@ -1193,6 +1193,37 @@ public final class PlatformGrpc {
     return getGetContestedResourceIdentityVotesMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse> getGetIdentityContenderVotePollStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getIdentityContenderVotePollState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse> getGetIdentityContenderVotePollStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse> getGetIdentityContenderVotePollStateMethod;
+    if ((getGetIdentityContenderVotePollStateMethod = PlatformGrpc.getGetIdentityContenderVotePollStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetIdentityContenderVotePollStateMethod = PlatformGrpc.getGetIdentityContenderVotePollStateMethod) == null) {
+          PlatformGrpc.getGetIdentityContenderVotePollStateMethod = getGetIdentityContenderVotePollStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityContenderVotePollState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityContenderVotePollState"))
+              .build();
+        }
+      }
+    }
+    return getGetIdentityContenderVotePollStateMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> getGetVotePollsByEndDateMethod;
 
@@ -2522,6 +2553,13 @@ public final class PlatformGrpc {
      * What vote polls will end soon?
      * </pre>
      */
+    public void getIdentityContenderVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityContenderVotePollStateMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetVotePollsByEndDateMethod(), responseObserver);
@@ -3012,6 +3050,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse>(
                   this, METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES)))
+          .addMethod(
+            getGetIdentityContenderVotePollStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse>(
+                  this, METHODID_GET_IDENTITY_CONTENDER_VOTE_POLL_STATE)))
           .addMethod(
             getGetVotePollsByEndDateMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3581,6 +3626,14 @@ public final class PlatformGrpc {
      * What vote polls will end soon?
      * </pre>
      */
+    public void getIdentityContenderVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetIdentityContenderVotePollStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -4138,6 +4191,13 @@ public final class PlatformGrpc {
      * <pre>
      * What vote polls will end soon?
      * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse getIdentityContenderVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetIdentityContenderVotePollStateMethod(), getCallOptions(), request);
+    }
+
+    /**
      */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
@@ -4703,6 +4763,14 @@ public final class PlatformGrpc {
      * What vote polls will end soon?
      * </pre>
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse> getIdentityContenderVotePollState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetIdentityContenderVotePollStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> getVotePollsByEndDate(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -4996,38 +5064,39 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 35;
   private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 36;
   private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 37;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 38;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 39;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 40;
-  private static final int METHODID_GET_PATH_ELEMENTS = 41;
-  private static final int METHODID_GET_STATUS = 42;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 43;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 44;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 45;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 46;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 47;
-  private static final int METHODID_GET_TOKEN_STATUSES = 48;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 49;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 50;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 51;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 52;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 53;
-  private static final int METHODID_GET_GROUP_INFO = 54;
-  private static final int METHODID_GET_GROUP_INFOS = 55;
-  private static final int METHODID_GET_GROUP_ACTIONS = 56;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 57;
-  private static final int METHODID_GET_ADDRESS_INFO = 58;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 59;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 60;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 61;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 62;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 63;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 64;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 65;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 66;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 67;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 68;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 69;
+  private static final int METHODID_GET_IDENTITY_CONTENDER_VOTE_POLL_STATE = 38;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 39;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 40;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 41;
+  private static final int METHODID_GET_PATH_ELEMENTS = 42;
+  private static final int METHODID_GET_STATUS = 43;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 44;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 45;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 46;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 47;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 48;
+  private static final int METHODID_GET_TOKEN_STATUSES = 49;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 50;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 51;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 52;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 53;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 54;
+  private static final int METHODID_GET_GROUP_INFO = 55;
+  private static final int METHODID_GET_GROUP_INFOS = 56;
+  private static final int METHODID_GET_GROUP_ACTIONS = 57;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 58;
+  private static final int METHODID_GET_ADDRESS_INFO = 59;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 60;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 61;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 62;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 63;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 64;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 65;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 66;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 67;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 68;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 69;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 70;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5197,6 +5266,10 @@ public final class PlatformGrpc {
         case METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES:
           serviceImpl.getContestedResourceIdentityVotes((org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContestedResourceIdentityVotesResponse>) responseObserver);
+          break;
+        case METHODID_GET_IDENTITY_CONTENDER_VOTE_POLL_STATE:
+          serviceImpl.getIdentityContenderVotePollState((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContenderVotePollStateResponse>) responseObserver);
           break;
         case METHODID_GET_VOTE_POLLS_BY_END_DATE:
           serviceImpl.getVotePollsByEndDate((org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest) request,
@@ -5425,6 +5498,7 @@ public final class PlatformGrpc {
               .addMethod(getGetContestedResourceVoteStateMethod())
               .addMethod(getGetContestedResourceVotersForIdentityMethod())
               .addMethod(getGetContestedResourceIdentityVotesMethod())
+              .addMethod(getGetIdentityContenderVotePollStateMethod())
               .addMethod(getGetVotePollsByEndDateMethod())
               .addMethod(getGetPrefundedSpecializedBalanceMethod())
               .addMethod(getGetTotalCreditsInPlatformMethod())

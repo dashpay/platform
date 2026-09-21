@@ -62,7 +62,7 @@ pub fn verify_masternode_vote(
         supported_grovedb_proof(&proof_vec, platform_version)?,
         masternode_pro_tx_hash_bytes,
         &vote,
-        &data_contract,
+        Some(&data_contract),
         verify_subset_of_proof,
         platform_version,
     )

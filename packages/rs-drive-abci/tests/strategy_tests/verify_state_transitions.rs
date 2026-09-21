@@ -939,7 +939,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         {
                             ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
                                 contested_document_resource_vote_poll,
-                            ) => contested_document_resource_vote_poll.contract.as_ref(),
+                            ) => Some(contested_document_resource_vote_poll.contract.as_ref()),
+                            ResolvedVotePoll::IdentityContenderVotePoll(_) => None,
                         },
                     };
 

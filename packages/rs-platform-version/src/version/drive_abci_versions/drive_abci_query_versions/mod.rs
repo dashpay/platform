@@ -148,6 +148,8 @@ pub struct DriveAbciQueryVotingVersions {
     pub contested_resource_voters_for_identity: FeatureVersionBounds,
     pub contested_resource_identity_vote_status: FeatureVersionBounds,
     pub contested_resources: FeatureVersionBounds,
+    /// The state of an identity contender vote poll (protocol version 14).
+    pub identity_contender_vote_poll_state: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

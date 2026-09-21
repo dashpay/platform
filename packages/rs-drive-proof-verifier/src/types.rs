@@ -21,6 +21,8 @@ pub mod data_contracts_latest_versions;
 pub mod evonode_status;
 /// Groups
 pub mod groups;
+/// The state of an identity contender vote poll
+pub mod identity_contender_vote_poll_state;
 /// Remaining budgets of identity keys
 pub mod identity_keys_remaining_budgets;
 /// Identity token balance

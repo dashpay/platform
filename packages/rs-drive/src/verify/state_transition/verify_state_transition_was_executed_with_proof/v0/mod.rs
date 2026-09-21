@@ -1417,19 +1417,23 @@ impl Drive {
             StateTransition::MasternodeVote(masternode_vote) => {
                 let pro_tx_hash = masternode_vote.pro_tx_hash();
                 let vote = masternode_vote.vote();
+                // Only a vote on a contested document resource needs its contract
                 let contract = match vote {
                     Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
                         VotePoll::ContestedDocumentResourceVotePoll(
                             contested_document_resource_vote_poll,
-                        ) => known_contracts_provider_fn(
-                            &contested_document_resource_vote_poll.contract_id,
-                        )?
-                        .ok_or(Error::Proof(
-                            ProofError::UnknownContract(format!(
-                                "unknown contract with id {} in resource vote verification",
-                                contested_document_resource_vote_poll.contract_id
-                            )),
-                        ))?,
+                        ) => Some(
+                            known_contracts_provider_fn(
+                                &contested_document_resource_vote_poll.contract_id,
+                            )?
+                            .ok_or(Error::Proof(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {} in resource vote verification",
+                                    contested_document_resource_vote_poll.contract_id
+                                )),
+                            ))?,
+                        ),
+                        VotePoll::IdentityContenderVotePoll(_) => None,
                     },
                 };
 
@@ -1438,7 +1442,7 @@ impl Drive {
                     proof,
                     pro_tx_hash.to_buffer(),
                     vote,
-                    &contract,
+                    contract.as_deref(),
                     false,
                     platform_version,
                 )?;

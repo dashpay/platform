@@ -57,6 +57,14 @@ impl From<ResolvedVote> for Vote {
                                 ),
                                 resource_vote_choice: vote_choice,
                             })),
+                            ResolvedVotePoll::IdentityContenderVotePoll(
+                                identity_contender_vote_poll,
+                            ) => Self::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                                vote_poll: VotePoll::IdentityContenderVotePoll(
+                                    identity_contender_vote_poll,
+                                ),
+                                resource_vote_choice: vote_choice,
+                            })),
                         }
                     }
                 }
