@@ -39,8 +39,10 @@ pub mod property_names {
     pub const CHALLENGE_COOL_DOWN: &str = "challengeCoolDown";
     /// The moderated document types, each with the abilities a charter may claim on it
     pub const MODERATED_DOCUMENT_TYPES: &str = "moderatedDocumentTypes";
-    /// The moderators action fee maximums, by document type
+    /// The moderators action fee maximums of a moderated document type, inside its entry
     pub const MODERATORS_ACTION_FEE_MAXIMUMS: &str = "moderatorsActionFeeMaximums";
+    /// The abilities of a moderated document type, inside its entry
+    pub const ABILITIES: &str = "abilities";
     /// The interim moderators
     pub const INTERIM: &str = "interim";
     /// Whether the owner is protected from the team
@@ -373,6 +375,24 @@ impl ModeratorsActionFeeMaximums {
     }
 }
 
+/// What a charter may claim on one moderated document type: the abilities, and the most it
+/// may charge the moderators part of each action on the type's documents.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ModeratedDocumentType {
+    /// The abilities a charter may claim on the type: non-empty, each backed by the contract
+    /// (`Ban`, `Suspend` and `Warn` by the list the contract keeps, `DeleteDocuments` by the
+    /// type being flagged `canBeDeletedByModerators`). The lists themselves stay
+    /// contract-wide: an ability on a type is what a team may do over the documents of that
+    /// type.
+    pub abilities: BTreeSet<ModerationAbility>,
+    /// The most a charter may charge the moderators part of each action on the type's
+    /// documents; `None` lets a charter charge nothing on it. The owner part of every action
+    /// stays what the type's `actionFees` declare.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moderators_action_fee_maximums: Option<ModeratorsActionFeeMaximums>,
+}
+
 /// The declaration that a contract's moderators are an elected team. Every field is fixed
 /// at the contract's creation.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
@@ -390,18 +410,10 @@ pub struct ElectedModerators {
     /// `SystemLimits::max_contract_moderation_challenge_cool_down_seconds` (two weeks to
     /// three years), always declared.
     pub challenge_cool_down: u32,
-    /// The document types the team moderates, each with the abilities a charter may claim
-    /// on it: non-empty, each type a document type of the contract, each ability set
-    /// non-empty and backed by the contract (`Ban`, `Suspend` and `Warn` by the list the
-    /// contract keeps, `DeleteDocuments` by the type being flagged
-    /// `canBeDeletedByModerators`). The lists themselves stay contract-wide: an ability on
-    /// a type is what a team may do over the documents of that type. The set also bounds
-    /// the interim block.
-    pub moderated_document_types: BTreeMap<DocumentName, BTreeSet<ModerationAbility>>,
-    /// The most a charter may charge the moderators part of each document action, by
-    /// document type. A type left out lets a charter charge nothing on it. The owner part
-    /// of every action stays what the type's `actionFees` declare.
-    pub moderators_action_fee_maximums: BTreeMap<DocumentName, ModeratorsActionFeeMaximums>,
+    /// The document types the team moderates, each with what a charter may claim on it (see
+    /// [`ModeratedDocumentType`]): non-empty, each type a document type of the contract. The
+    /// set also bounds the interim block.
+    pub moderated_document_types: BTreeMap<DocumentName, ModeratedDocumentType>,
     /// Who moderates until the first team is seated.
     pub interim: InterimModerators,
     /// Whether the contract owner is protected from the team, as the owner and the
@@ -422,7 +434,7 @@ impl ElectedModerators {
     pub fn allows(&self, document_type_name: &str, ability: ModerationAbility) -> bool {
         self.moderated_document_types
             .get(document_type_name)
-            .is_some_and(|abilities| abilities.contains(&ability))
+            .is_some_and(|moderated| moderated.abilities.contains(&ability))
     }
 
     /// The most a charter may charge the moderators part of `action` on the documents of
@@ -432,8 +444,9 @@ impl ElectedModerators {
         document_type_name: &str,
         action: DocumentTransitionActionType,
     ) -> Credits {
-        self.moderators_action_fee_maximums
+        self.moderated_document_types
             .get(document_type_name)
+            .and_then(|moderated| moderated.moderators_action_fee_maximums.as_ref())
             .and_then(|maximums| maximums.maximum(action))
             .unwrap_or_default()
     }
@@ -484,7 +497,8 @@ impl ElectedModerators {
         if self.moderated_document_types.is_empty() {
             return Some("the moderated document type set is empty".to_string());
         }
-        for (document_type_name, abilities) in &self.moderated_document_types {
+        for (document_type_name, moderated) in &self.moderated_document_types {
+            let abilities = &moderated.abilities;
             let Some(schema) = document_schemas.get(document_type_name) else {
                 return Some(format!(
                     "the moderated document type \"{document_type_name}\" is not a document \
@@ -521,15 +535,9 @@ impl ElectedModerators {
                     ));
                 }
             }
-        }
-
-        for (document_type_name, maximums) in &self.moderators_action_fee_maximums {
-            if !document_schemas.contains_key(document_type_name) {
-                return Some(format!(
-                    "a moderators action fee maximum names \"{document_type_name}\", which is not \
-                     a document type of the contract"
-                ));
-            }
+            let Some(maximums) = &moderated.moderators_action_fee_maximums else {
+                continue;
+            };
             let mut any = false;
             for (action, maximum) in maximums.all() {
                 any = true;
@@ -549,7 +557,7 @@ impl ElectedModerators {
             if !any {
                 return Some(format!(
                     "the moderators action fee maximums of \"{document_type_name}\" price no \
-                     action; leave the type out instead"
+                     action; leave the key out instead"
                 ));
             }
         }
@@ -606,11 +614,18 @@ mod tests {
             challenge_cool_down: 1_209_600,
             moderated_document_types: BTreeMap::from([(
                 "post".to_string(),
-                BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]),
+                moderated(&[ModerationAbility::Ban, ModerationAbility::Suspend]),
             )]),
-            moderators_action_fee_maximums: BTreeMap::new(),
             interim: InterimModerators::ContractOwner,
             owner_protected: false,
+        }
+    }
+
+    /// A moderated type with the abilities and no fee maximums
+    fn moderated(abilities: &[ModerationAbility]) -> ModeratedDocumentType {
+        ModeratedDocumentType {
+            abilities: abilities.iter().copied().collect(),
+            moderators_action_fee_maximums: None,
         }
     }
 
@@ -619,10 +634,11 @@ mod tests {
         declaration: &'a mut ElectedModerators,
         name: &str,
     ) -> &'a mut BTreeSet<ModerationAbility> {
-        declaration
+        &mut declaration
             .moderated_document_types
             .get_mut(name)
             .expect("the type is moderated")
+            .abilities
     }
 
     fn config(elected: ElectedModerators) -> ContractModerationConfig {
@@ -710,10 +726,9 @@ mod tests {
             .contains("moderated document type set is empty"));
 
         let mut unknown = elected();
-        unknown.moderated_document_types.insert(
-            "comment".to_string(),
-            BTreeSet::from([ModerationAbility::Ban]),
-        );
+        unknown
+            .moderated_document_types
+            .insert("comment".to_string(), moderated(&[ModerationAbility::Ban]));
         assert!(refusal(&config(unknown))
             .expect("refused")
             .contains("\"comment\" is not a document type"));
@@ -721,7 +736,7 @@ mod tests {
         // A moderated type need not be deletable by moderators.
         let mut not_deletable = elected();
         not_deletable.moderated_document_types =
-            BTreeMap::from([("like".to_string(), BTreeSet::from([ModerationAbility::Ban]))]);
+            BTreeMap::from([("like".to_string(), moderated(&[ModerationAbility::Ban]))]);
         assert_eq!(refusal(&config(not_deletable)), None);
     }
 
@@ -763,7 +778,7 @@ mod tests {
         let mut deletions_on_like = elected();
         deletions_on_like.moderated_document_types.insert(
             "like".to_string(),
-            BTreeSet::from([ModerationAbility::DeleteDocuments]),
+            moderated(&[ModerationAbility::DeleteDocuments]),
         );
         assert!(refusal(&config(deletions_on_like))
             .expect("refused")
@@ -776,11 +791,14 @@ mod tests {
             create,
             ..Default::default()
         };
+        // Maximums live on a moderated type: a type not yet moderated gets bans.
         let with = |name: &str, maximums: ModeratorsActionFeeMaximums| {
             let mut declaration = elected();
             declaration
-                .moderators_action_fee_maximums
-                .insert(name.to_string(), maximums);
+                .moderated_document_types
+                .entry(name.to_string())
+                .or_insert_with(|| moderated(&[ModerationAbility::Ban]))
+                .moderators_action_fee_maximums = Some(maximums);
             config(declaration)
         };
 
@@ -788,7 +806,7 @@ mod tests {
         assert_eq!(refusal(&with("post", maximum(Some(MAX_CREDITS)))), None);
         assert!(refusal(&with("comment", maximum(Some(1))))
             .expect("refused")
-            .contains("names \"comment\""));
+            .contains("\"comment\" is not a document type"));
         assert!(refusal(&with("post", maximum(None)))
             .expect("refused")
             .contains("price no action"));
@@ -882,14 +900,15 @@ mod tests {
     fn should_round_trip_through_json_and_platform_value() {
         let mut declaration = elected();
         declaration.interim = InterimModerators::AppointedModerators(set(&[1, 2]));
-        declaration.moderators_action_fee_maximums.insert(
-            "post".to_string(),
-            ModeratorsActionFeeMaximums {
-                create: Some(1_000),
-                delete: Some(MAX_CREDITS),
-                ..Default::default()
-            },
-        );
+        declaration
+            .moderated_document_types
+            .get_mut("post")
+            .expect("moderated")
+            .moderators_action_fee_maximums = Some(ModeratorsActionFeeMaximums {
+            create: Some(1_000),
+            delete: Some(MAX_CREDITS),
+            ..Default::default()
+        });
         declaration.owner_protected = true;
         let moderators = ContractModerators::Elected(Box::new(declaration));
 
@@ -897,23 +916,28 @@ mod tests {
         assert_eq!(json["$type"], "elected");
         assert_eq!(json["joinWindow"], 604_800);
         assert_eq!(
-            json["moderatedDocumentTypes"],
-            serde_json::json!({ "post": ["ban", "suspend"] })
+            json["moderatedDocumentTypes"]["post"]["abilities"],
+            serde_json::json!(["ban", "suspend"])
         );
         assert_eq!(json["interim"]["$type"], "appointedModerators");
         assert_eq!(
             json["interim"]["identities"].as_array().map(|a| a.len()),
             Some(2)
         );
-        assert_eq!(json["moderatorsActionFeeMaximums"]["post"]["create"], 1_000);
+        assert_eq!(
+            json["moderatedDocumentTypes"]["post"]["moderatorsActionFeeMaximums"]["create"],
+            1_000
+        );
         // Past 2^53 a credit amount travels as a string in JSON, and never in a value.
         assert_eq!(
-            json["moderatorsActionFeeMaximums"]["post"]["delete"],
+            json["moderatedDocumentTypes"]["post"]["moderatorsActionFeeMaximums"]["delete"],
             MAX_CREDITS.to_string()
         );
-        assert!(json["moderatorsActionFeeMaximums"]["post"]
-            .get("replace")
-            .is_none());
+        assert!(
+            json["moderatedDocumentTypes"]["post"]["moderatorsActionFeeMaximums"]
+                .get("replace")
+                .is_none()
+        );
         assert_eq!(json["ownerProtected"], true);
         let back: ContractModerators = serde_json::from_value(json).expect("deserialize");
         assert_eq!(back, moderators);
@@ -938,7 +962,7 @@ mod tests {
         let minimal = serde_json::json!({
             "$type": "elected",
             "challengeCoolDown": 1_209_600,
-            "moderatedDocumentTypes": { "post": ["ban"] },
+            "moderatedDocumentTypes": { "post": { "abilities": ["ban"] } },
             "interim": { "$type": "notYetUsable" },
         });
         let parsed: ContractModerators = serde_json::from_value(minimal).expect("deserialize");
@@ -946,7 +970,10 @@ mod tests {
         assert_eq!(elected.join_window, DEFAULT_ELECTION_WINDOW_SECONDS);
         assert_eq!(elected.vote_window, DEFAULT_ELECTION_WINDOW_SECONDS);
         assert!(!elected.owner_protected);
-        assert!(elected.moderators_action_fee_maximums.is_empty());
+        assert_eq!(
+            elected.moderated_document_types["post"].moderators_action_fee_maximums,
+            None
+        );
         assert_eq!(elected.interim, InterimModerators::NotYetUsable);
         let no_moderation: InterimModerators =
             serde_json::from_value(serde_json::json!({ "$type": "noModeration" }))
@@ -961,14 +988,14 @@ mod tests {
             // The cool-down has no default.
             serde_json::json!({
                 "$type": "elected",
-                "moderatedDocumentTypes": { "post": ["ban"] },
+                "moderatedDocumentTypes": { "post": { "abilities": ["ban"] } },
                 "interim": { "$type": "contractOwner" },
             }),
             // A misspelled key is refused, not dropped.
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": { "post": ["ban"] },
+                "moderatedDocumentTypes": { "post": { "abilities": ["ban"] } },
                 "interim": { "$type": "contractOwner" },
                 "ownerProtcted": true,
             }),
@@ -976,27 +1003,36 @@ mod tests {
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": { "post": ["ban"] },
+                "moderatedDocumentTypes": { "post": { "abilities": ["ban"] } },
                 "interim": { "$type": "contractOwner", "identity": [] },
             }),
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": { "post": ["ban"] },
+                "moderatedDocumentTypes": { "post": { "abilities": ["ban"] } },
                 "interim": { "$type": "seatedTeam" },
             }),
             // An unknown ability, and an unknown fee action.
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": { "post": ["silence"] },
+                "moderatedDocumentTypes": { "post": { "abilities": ["silence"] } },
                 "interim": { "$type": "contractOwner" },
             }),
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": { "post": ["ban"] },
-                "moderatorsActionFeeMaximums": { "post": { "updatePrice": 1 } },
+                "moderatedDocumentTypes": {
+                    "post": { "abilities": ["ban"], "moderatorsActionFeeMaximums": { "updatePrice": 1 } }
+                },
+                "interim": { "$type": "contractOwner" },
+            }),
+            // The fee maximums live inside the moderated type's entry, not beside the set.
+            serde_json::json!({
+                "$type": "elected",
+                "challengeCoolDown": 1_209_600,
+                "moderatedDocumentTypes": { "post": { "abilities": ["ban"] } },
+                "moderatorsActionFeeMaximums": { "post": { "create": 1 } },
                 "interim": { "$type": "contractOwner" },
             }),
             // The abilities live under each moderated type, not beside them.
@@ -1012,7 +1048,7 @@ mod tests {
             serde_json::json!({
                 "$type": "elected",
                 "challengeCoolDown": 1_209_600,
-                "moderatedDocumentTypes": { "post": ["ban"] },
+                "moderatedDocumentTypes": { "post": { "abilities": ["ban"] } },
                 "interim": { "$type": "contractOwner" },
                 "identities": [],
             }),

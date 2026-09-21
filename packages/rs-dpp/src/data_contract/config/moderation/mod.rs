@@ -38,8 +38,8 @@ pub mod elected;
 mod reason;
 pub use document_removal::{ContractDocumentRemoval, ContractDocumentRestoration};
 pub use elected::{
-    ElectedModerators, InterimModerators, ModerationAbility, ModeratorsActionFeeMaximums,
-    DEFAULT_ELECTION_WINDOW_SECONDS,
+    ElectedModerators, InterimModerators, ModeratedDocumentType, ModerationAbility,
+    ModeratorsActionFeeMaximums, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 pub use reason::{ContractModerationDocument, ContractModerationReason};
 
@@ -172,7 +172,7 @@ impl Serialize for ContractModerators {
                 m.end()
             }
             ContractModerators::Elected(elected) => {
-                let mut m = serializer.serialize_map(Some(8))?;
+                let mut m = serializer.serialize_map(Some(7))?;
                 m.serialize_entry("$type", "elected")?;
                 m.serialize_entry(elected_names::JOIN_WINDOW, &elected.join_window)?;
                 m.serialize_entry(elected_names::VOTE_WINDOW, &elected.vote_window)?;
@@ -183,10 +183,6 @@ impl Serialize for ContractModerators {
                 m.serialize_entry(
                     elected_names::MODERATED_DOCUMENT_TYPES,
                     &elected.moderated_document_types,
-                )?;
-                m.serialize_entry(
-                    elected_names::MODERATORS_ACTION_FEE_MAXIMUMS,
-                    &elected.moderators_action_fee_maximums,
                 )?;
                 m.serialize_entry(elected_names::INTERIM, &elected.interim)?;
                 m.serialize_entry(elected_names::OWNER_PROTECTED, &elected.owner_protected)?;
@@ -208,7 +204,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
             elected_names::VOTE_WINDOW,
             elected_names::CHALLENGE_COOL_DOWN,
             elected_names::MODERATED_DOCUMENT_TYPES,
-            elected_names::MODERATORS_ACTION_FEE_MAXIMUMS,
             elected_names::INTERIM,
             elected_names::OWNER_PROTECTED,
         ];
@@ -219,9 +214,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
             join_window: Option<u32>,
             vote_window: Option<u32>,
             challenge_cool_down: Option<u32>,
-            moderated_document_types: Option<BTreeMap<DocumentName, BTreeSet<ModerationAbility>>>,
-            moderators_action_fee_maximums:
-                Option<BTreeMap<DocumentName, ModeratorsActionFeeMaximums>>,
+            moderated_document_types: Option<BTreeMap<DocumentName, ModeratedDocumentType>>,
             interim: Option<InterimModerators>,
             owner_protected: Option<bool>,
         }
@@ -232,7 +225,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
                     || self.vote_window.is_some()
                     || self.challenge_cool_down.is_some()
                     || self.moderated_document_types.is_some()
-                    || self.moderators_action_fee_maximums.is_some()
                     || self.interim.is_some()
                     || self.owner_protected.is_some()
             }
@@ -296,11 +288,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             elected_names::MODERATED_DOCUMENT_TYPES,
                             &mut elected.moderated_document_types,
                         )?,
-                        elected_names::MODERATORS_ACTION_FEE_MAXIMUMS => read_once(
-                            &mut map,
-                            elected_names::MODERATORS_ACTION_FEE_MAXIMUMS,
-                            &mut elected.moderators_action_fee_maximums,
-                        )?,
                         elected_names::INTERIM => {
                             read_once(&mut map, elected_names::INTERIM, &mut elected.interim)?
                         }
@@ -356,9 +343,6 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             moderated_document_types: elected
                                 .moderated_document_types
                                 .ok_or_else(required(elected_names::MODERATED_DOCUMENT_TYPES))?,
-                            moderators_action_fee_maximums: elected
-                                .moderators_action_fee_maximums
-                                .unwrap_or_default(),
                             interim: elected
                                 .interim
                                 .ok_or_else(required(elected_names::INTERIM))?,

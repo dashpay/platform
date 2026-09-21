@@ -23,7 +23,7 @@ use dpp::data_contract::config::moderation::{
     ContractModerationDocument, ContractModerationList, ContractModerationListStatus,
     ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
     ContractModerators, ContractSuspension, ContractWarning, ElectedModerators, InterimModerators,
-    ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+    ModeratedDocumentType, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -3052,11 +3052,16 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
                 .map(|name| {
                     (
                         name.to_string(),
-                        BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]),
+                        ModeratedDocumentType {
+                            abilities: BTreeSet::from([
+                                ModerationAbility::Ban,
+                                ModerationAbility::Suspend,
+                            ]),
+                            moderators_action_fee_maximums: None,
+                        },
                     )
                 })
                 .collect(),
-            moderators_action_fee_maximums: BTreeMap::new(),
             interim,
             owner_protected: false,
         })),
@@ -3317,15 +3322,23 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
             with(|d| {
                 d.moderated_document_types = BTreeMap::from([(
                     "comment".to_string(),
-                    BTreeSet::from([ModerationAbility::Ban]),
+                    ModeratedDocumentType {
+                        abilities: BTreeSet::from([ModerationAbility::Ban]),
+                        moderators_action_fee_maximums: None,
+                    },
                 )]);
             }),
             "an unknown moderated type",
         ),
         (
             with(|d| {
-                d.moderated_document_types
-                    .insert(DOCUMENT_TYPE.to_string(), BTreeSet::new());
+                d.moderated_document_types.insert(
+                    DOCUMENT_TYPE.to_string(),
+                    ModeratedDocumentType {
+                        abilities: BTreeSet::new(),
+                        moderators_action_fee_maximums: None,
+                    },
+                );
             }),
             "an empty ability set",
         ),
@@ -3334,6 +3347,7 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
                 d.moderated_document_types
                     .get_mut(DOCUMENT_TYPE)
                     .expect("moderated")
+                    .abilities
                     .insert(ModerationAbility::DeleteDocuments);
             }),
             "deletions on a type moderators can not delete from",

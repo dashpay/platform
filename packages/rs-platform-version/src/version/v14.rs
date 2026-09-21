@@ -494,8 +494,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     one week by default) and the challenge cool-down (two weeks to three
 ///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; the document
 ///     types the team moderates, each with the abilities a charter may claim on
-///     it; the most it may charge the moderators part of each document action,
-///     by type; who moderates until the first team is seated (the owner, an
+///     it and the most it may charge the moderators part of each action on its
+///     documents; who moderates until the first team is seated (the owner, an
 ///     appointed set, or nobody, with the moderated types not yet usable or
 ///     used unmoderated meanwhile); and whether the owner is protected from the
 ///     team. `validate_moderation_config` v0 checks

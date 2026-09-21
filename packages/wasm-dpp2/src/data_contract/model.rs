@@ -140,22 +140,28 @@ export type ContractModerators =
       joinWindow?: number;
       voteWindow?: number;
       challengeCoolDown: number;
-      /**
-       * The moderated document types of the contract, each with the non-empty abilities a
-       * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
-       * keeps, `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay
-       * contract-wide.
-       */
-      moderatedDocumentTypes: Record<string, ModerationAbility[]>;
-      /**
-       * The most a charter may charge the moderators part of each action, by document type,
-       * in the units of the type's `actionFees`. A type or an action left out allows nothing.
-       */
-      moderatorsActionFeeMaximums?: Record<string, ModeratorsActionFeeMaximums>;
+      /** The moderated document types of the contract, each with what a charter may claim on it. */
+      moderatedDocumentTypes: Record<string, ModeratedDocumentType>;
       interim: InterimModerators;
       /** Whether the owner is protected from the team; false when left out. */
       ownerProtected?: boolean;
     };
+
+/** What a charter may claim on one moderated document type. */
+export interface ModeratedDocumentType {
+    /**
+     * Non-empty: `ban`, `suspend` and `warn` need the list the contract keeps,
+     * `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay
+     * contract-wide.
+     */
+    abilities: ModerationAbility[];
+    /**
+     * The most a charter may charge the moderators part of each action on the type's
+     * documents, in the units of the type's `actionFees`. Left out, or an action left out,
+     * allows nothing.
+     */
+    moderatorsActionFeeMaximums?: ModeratorsActionFeeMaximums;
+}
 
 /** What a charter may claim on an elected contract. */
 export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn";
