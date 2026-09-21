@@ -1762,6 +1762,8 @@ mod contract_moderation_tests {
             document_owner_id: vec![seed + 0x10; 32],
             moderator_id: vec![0x77; 32],
             removed_at: 1_000 + u64::from(seed),
+            document_hash: vec![seed + 0x20; 32],
+            restoration: None,
             reason: Some(ContractModerationReasonProto {
                 code: None,
                 text: "spam".to_string(),

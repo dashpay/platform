@@ -3395,6 +3395,32 @@ export namespace GetContractDocumentRemovalsResponse {
     v0?: GetContractDocumentRemovalsResponse.GetContractDocumentRemovalsResponseV0.AsObject,
   }
 
+  export class ContractDocumentRestoration extends jspb.Message {
+    getModeratorId(): Uint8Array | string;
+    getModeratorId_asU8(): Uint8Array;
+    getModeratorId_asB64(): string;
+    setModeratorId(value: Uint8Array | string): void;
+
+    getRestoredAt(): number;
+    setRestoredAt(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractDocumentRestoration.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractDocumentRestoration): ContractDocumentRestoration.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractDocumentRestoration, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractDocumentRestoration;
+    static deserializeBinaryFromReader(message: ContractDocumentRestoration, reader: jspb.BinaryReader): ContractDocumentRestoration;
+  }
+
+  export namespace ContractDocumentRestoration {
+    export type AsObject = {
+      moderatorId: Uint8Array | string,
+      restoredAt: number,
+    }
+  }
+
   export class ContractDocumentRemoval extends jspb.Message {
     getDocumentId(): Uint8Array | string;
     getDocumentId_asU8(): Uint8Array;
@@ -3419,6 +3445,16 @@ export namespace GetContractDocumentRemovalsResponse {
     getReason(): ContractModerationReason | undefined;
     setReason(value?: ContractModerationReason): void;
 
+    getDocumentHash(): Uint8Array | string;
+    getDocumentHash_asU8(): Uint8Array;
+    getDocumentHash_asB64(): string;
+    setDocumentHash(value: Uint8Array | string): void;
+
+    hasRestoration(): boolean;
+    clearRestoration(): void;
+    getRestoration(): GetContractDocumentRemovalsResponse.ContractDocumentRestoration | undefined;
+    setRestoration(value?: GetContractDocumentRemovalsResponse.ContractDocumentRestoration): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractDocumentRemoval.AsObject;
     static toObject(includeInstance: boolean, msg: ContractDocumentRemoval): ContractDocumentRemoval.AsObject;
@@ -3436,6 +3472,8 @@ export namespace GetContractDocumentRemovalsResponse {
       moderatorId: Uint8Array | string,
       removedAt: number,
       reason?: ContractModerationReason.AsObject,
+      documentHash: Uint8Array | string,
+      restoration?: GetContractDocumentRemovalsResponse.ContractDocumentRestoration.AsObject,
     }
   }
 

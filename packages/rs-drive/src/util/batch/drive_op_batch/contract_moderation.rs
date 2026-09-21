@@ -79,9 +79,12 @@ pub enum ContractModerationOperationType {
         /// The identity whose warnings are cleared.
         identity_id: Identifier,
     },
-    /// Records that a moderator deleted a document. The deletion itself is a document
-    /// operation of the same batch. A document id is produced at most once, so a record is
-    /// written once and never replaced.
+    /// Writes the record of a moderator's deletion of a document: a fresh one, or the
+    /// replacement of the record the document already has. A record is replaced when a
+    /// moderator restores the document (the record then carries the restoration, the
+    /// deletion itself undone by a document operation of the same batch) and when a restored
+    /// document is deleted again (a fresh record, in place of the restored one). A document id
+    /// is produced at most once, so those are the only ways a record can exist already.
     AddDocumentRemoval {
         /// The moderated contract.
         contract_id: Identifier,
@@ -89,8 +92,15 @@ pub enum ContractModerationOperationType {
         document_type_name: String,
         /// The id the document had.
         document_id: Identifier,
-        /// Whose it was, who removed it (and pays for the record), why and when.
+        /// Whose it was, who removed it, why and when, what it was, and whether it was
+        /// restored since.
         removal: ContractDocumentRemoval,
+        /// Whether the document already has a record, which is then replaced.
+        replaces_existing: bool,
+        /// The identity that pays for the record, or for the bytes a replacement adds, and
+        /// receives its refund: the moderator that removed the document, or the one that
+        /// restored it.
+        moderator_id: Identifier,
     },
     /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
     /// (`Drive::apply_drive_operations` generation 1). A moderator's document deletion carries
@@ -199,11 +209,15 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 document_type_name,
                 document_id,
                 removal,
+                replaces_existing,
+                moderator_id,
             } => drive.add_contract_document_removal_operations(
                 contract_id,
                 &document_type_name,
                 document_id,
                 &removal,
+                replaces_existing,
+                moderator_id,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

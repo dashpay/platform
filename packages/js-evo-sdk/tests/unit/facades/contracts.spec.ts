@@ -351,6 +351,7 @@ describe('ContractsFacade', () => {
       moderatorId: contractId,
       reason: { code: 2, text: 'spam' },
       removedAt: BigInt(1800000000000),
+      documentHash: '11'.repeat(32),
     };
 
     it('should forward moderatorDeleteDocument() to contractDeleteDocument() and return the removal record', async function run() {
@@ -390,6 +391,31 @@ describe('ContractsFacade', () => {
 
       expect(stub).to.be.calledOnceWithExactly(options);
       expect(result.reason).to.deep.equal({ text: '' });
+    });
+
+    it('should forward moderatorRestoreDocument() to contractRestoreDocument() and return the marked record', async function run() {
+      const record = {
+        contractId,
+        documentTypeName,
+        documentId,
+        ...removal,
+        restoredBy: identityId,
+        restoredAt: BigInt(1800000001000),
+      };
+      const stub = this.sinon.stub(wasmSdk, 'contractRestoreDocument').resolves(record);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        document: Object.create(wasmSDKPackage.Document.prototype),
+        signer,
+      };
+
+      const result = await client.contracts.moderatorRestoreDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(record);
+      expect(result.restoredBy).to.equal(identityId);
     });
 
     it('should fetch the removal records of the documents named, which carry no cursor', async function run() {

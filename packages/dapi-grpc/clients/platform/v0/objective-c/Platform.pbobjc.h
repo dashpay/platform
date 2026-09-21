@@ -83,6 +83,7 @@ CF_EXTERN_C_BEGIN
 @class GetContractDocumentRemovalsRequest_Page;
 @class GetContractDocumentRemovalsResponse_ContractDocumentRemoval;
 @class GetContractDocumentRemovalsResponse_ContractDocumentRemovals;
+@class GetContractDocumentRemovalsResponse_ContractDocumentRestoration;
 @class GetContractDocumentRemovalsResponse_GetContractDocumentRemovalsResponseV0;
 @class GetContractFeePotsRequest_GetContractFeePotsRequestV0;
 @class GetContractFeePotsResponse_ContractFeePot;
@@ -3518,6 +3519,23 @@ GPB_FINAL @interface GetContractDocumentRemovalsResponse : GPBMessage
  **/
 void GetContractDocumentRemovalsResponse_ClearVersionOneOfCase(GetContractDocumentRemovalsResponse *message);
 
+#pragma mark - GetContractDocumentRemovalsResponse_ContractDocumentRestoration
+
+typedef GPB_ENUM(GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber) {
+  GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber_ModeratorId = 1,
+  GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber_RestoredAt = 2,
+};
+
+GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRestoration : GPBMessage
+
+/** The contract owner or moderator that restored the document */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *moderatorId;
+
+/** The time of the block that restored it, in milliseconds */
+@property(nonatomic, readwrite) uint64_t restoredAt;
+
+@end
+
 #pragma mark - GetContractDocumentRemovalsResponse_ContractDocumentRemoval
 
 typedef GPB_ENUM(GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber) {
@@ -3526,6 +3544,8 @@ typedef GPB_ENUM(GetContractDocumentRemovalsResponse_ContractDocumentRemoval_Fie
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_ModeratorId = 3,
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_RemovedAt = 4,
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Reason = 5,
+  GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_DocumentHash = 6,
+  GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Restoration = 7,
 };
 
 GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRemoval : GPBMessage
@@ -3546,6 +3566,17 @@ GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRemoval
 @property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *reason;
 /** Test to see if @c reason has been set. */
 @property(nonatomic, readwrite) BOOL hasReason;
+
+/** A 32-byte double SHA-256 of the document as it was serialized */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentHash;
+
+/**
+ * under its document type when it was removed: what a restore must
+ * bring back byte for byte
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetContractDocumentRemovalsResponse_ContractDocumentRestoration *restoration;
+/** Test to see if @c restoration has been set. */
+@property(nonatomic, readwrite) BOOL hasRestoration;
 
 @end
 

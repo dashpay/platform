@@ -22,7 +22,8 @@ use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListPro
 use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
 use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
 pub use dpp::data_contract::config::moderation::{
-    ContractBan, ContractDocumentRemoval, ContractModerationDocument, ContractModerationList,
+    ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
+    ContractModerationList,
     ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
     ContractModerationStatus, ContractSuspension, ContractWarning,
 };
@@ -360,9 +361,10 @@ pub fn removals_query_from_request(
     Ok(query)
 }
 
-/// The records of an unproved response. Every record names three identities and carries a
-/// reason, so a response missing any of them is refused, and so is one that answers with more
-/// records than the query could hold or with the record of a document it did not name.
+/// The records of an unproved response. Every record names three identities, carries a
+/// reason and a 32 byte document hash, and a restored one names a fourth identity, so a
+/// response missing any of them is refused, and so is one that answers with more records than
+/// the query could hold or with the record of a document it did not name.
 pub fn removals_from_response(
     removals: Vec<ContractDocumentRemovalProto>,
     query: &ContractDocumentRemovalsQuery,
@@ -392,6 +394,26 @@ pub fn removals_from_response(
                     )?,
                     reason: reason_from_response(removal.reason)?,
                     removed_at: removal.removed_at,
+                    document_hash: removal.document_hash.as_slice().try_into().map_err(|_| {
+                        Error::ResponseDecodeError {
+                            error: format!(
+                                "removal document hash holds {} bytes, expected 32",
+                                removal.document_hash.len()
+                            ),
+                        }
+                    })?,
+                    restoration: removal
+                        .restoration
+                        .map(|restoration| {
+                            Ok::<_, Error>(ContractDocumentRestoration {
+                                moderator_id: identifier_from_response(
+                                    &restoration.moderator_id,
+                                    "restoration moderator id",
+                                )?,
+                                restored_at: restoration.restored_at,
+                            })
+                        })
+                        .transpose()?,
                 },
             })
         })
@@ -468,6 +490,7 @@ pub fn fee_pots_from_response(pots: ContractFeePotsProto) -> Result<ContractFeeP
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dapi_grpc::platform::v0::get_contract_document_removals_response::ContractDocumentRestoration as ContractDocumentRestorationProto;
 
     fn id(seed: u8) -> Identifier {
         Identifier::from([seed; 32])
@@ -853,6 +876,12 @@ mod tests {
             moderator_id: id(0x77),
             reason: ContractModerationReason::from_text("spam"),
             removed_at: 1_000 + u64::from(seed),
+            document_hash: [seed + 0x20; 32],
+            // Every other record was restored.
+            restoration: (seed % 2 == 0).then(|| ContractDocumentRestoration {
+                moderator_id: id(0x78),
+                restored_at: 2_000 + u64::from(seed),
+            }),
         }
     }
 
@@ -868,6 +897,13 @@ mod tests {
                 text: "spam".to_string(),
                 documents: vec![],
             }),
+            document_hash: removal.document_hash.to_vec(),
+            restoration: removal
+                .restoration
+                .map(|restoration| ContractDocumentRestorationProto {
+                    moderator_id: restoration.moderator_id.to_vec(),
+                    restored_at: restoration.restored_at,
+                }),
         }
     }
 
@@ -993,17 +1029,32 @@ mod tests {
             ]
         );
 
-        // Every identifier of a record is 32 bytes.
+        // Every identifier of a record is 32 bytes, the restoring moderator's included.
         for spoil in [
             |proto: &mut ContractDocumentRemovalProto| proto.document_id = vec![1; 5],
             |proto: &mut ContractDocumentRemovalProto| proto.document_owner_id = vec![1; 5],
             |proto: &mut ContractDocumentRemovalProto| proto.moderator_id = vec![1; 5],
+            |proto: &mut ContractDocumentRemovalProto| {
+                proto.restoration = Some(ContractDocumentRestorationProto {
+                    moderator_id: vec![1; 5],
+                    restored_at: 5,
+                })
+            },
         ] {
             let mut proto = removal_proto(1);
             spoil(&mut proto);
             let err = removals_from_response(vec![proto], &ids_query(&[1])).unwrap_err();
             assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
         }
+
+        // And its document hash 32 bytes.
+        let mut proto = removal_proto(1);
+        proto.document_hash = vec![1; 31];
+        let err = removals_from_response(vec![proto], &ids_query(&[1])).unwrap_err();
+        assert!(
+            matches!(&err, Error::ResponseDecodeError { error } if error.contains("expected 32")),
+            "got: {err:?}"
+        );
 
         // Every record carries a reason, with a code that fits a u16.
         for reason in [
