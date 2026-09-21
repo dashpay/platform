@@ -126,7 +126,7 @@ impl DriveDocumentQuery<'_> {
         // and the exact-set assembly refuses any divergence between
         // them and the proven outer documents, in either direction.
         let join_values = self.chained_join_values(&inner_documents)?;
-        let outer_documents =
+        let (outer_documents, missing_outer_ids) =
             self.assemble_chained_outer_documents(&join_values, outer_documents)?;
 
         Ok((
@@ -134,6 +134,7 @@ impl DriveDocumentQuery<'_> {
             ChainedDocumentsResult {
                 inner_documents,
                 outer_documents,
+                missing_outer_ids,
             },
         ))
     }

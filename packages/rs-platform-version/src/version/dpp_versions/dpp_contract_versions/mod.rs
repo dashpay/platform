@@ -29,6 +29,8 @@ pub struct DataContractMethodVersions {
     pub validate_update: FeatureVersion,
     pub schema: FeatureVersion,
     pub validate_groups: FeatureVersion,
+    /// `ContractModerationConfig::validate` (protocol version 14); never reached before.
+    pub validate_moderation_config: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
 }
@@ -57,6 +59,9 @@ pub struct DocumentTypeVersions {
 #[derive(Clone, Debug, Default)]
 pub struct TokenVersions {
     pub validate_structure_interval: FeatureVersion,
+    /// `TokenPreProgrammedDistribution::validate_amounts`. Called from protocol version 14 on
+    /// (data contract create `basic_structure` v2 and `DataContract::validate_update` v1).
+    pub validate_pre_programmed_distribution_amounts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -23,8 +23,10 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_credit_withdrawal::transform_into_action::v0::IdentityCreditWithdrawalStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_credit_withdrawal::transform_into_action::v1::IdentityCreditWithdrawalStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::identity_credit_withdrawal::structure::v0::IdentityCreditWithdrawalStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_credit_withdrawal::structure::v1::IdentityCreditWithdrawalStateTransitionStructureValidationV1;
+use crate::execution::validation::state_transition::identity_credit_withdrawal::structure::v2::IdentityCreditWithdrawalStateTransitionStructureValidationV2;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -58,9 +60,16 @@ impl StateTransitionActionTransformer for IdentityCreditWithdrawalTransition {
                 tx,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -85,16 +94,17 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTrans
                 self.validate_basic_structure_v0(platform_version)
             }
             Some(1) => self.validate_basic_structure_v1(platform_version),
+            Some(2) => self.validate_basic_structure_v2(platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_basic_structure"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "identity credit withdrawal transition: validate_basic_structure"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1, 2],
             })),
         }
     }

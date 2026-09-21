@@ -38,6 +38,7 @@ impl DocumentUpdatePriceTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_update_price_token_cost(),
+                |action_fees| action_fees.document_price_update_action_fee(),
                 "update_price",
             )?;
 

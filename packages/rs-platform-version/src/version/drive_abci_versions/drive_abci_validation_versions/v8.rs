@@ -28,6 +28,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                     verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                 },
                 validate_identity_public_key_contract_bounds: 1,
+                validate_identity_public_keys_limits: None,
                 validate_identity_public_key_ids_dont_exist_in_state: 0,
                 validate_identity_public_key_ids_exist_in_state: 0,
                 validate_state_transition_identity_signed: 0,
@@ -53,6 +54,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            identity_key_limits_update_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
             identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
                 advanced_structure: None,
@@ -115,6 +125,22 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            contract_fee_claim_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
             data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
@@ -152,6 +178,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 // ownership/revision check). v0 stays for chain
                 // reproducibility on PROTOCOL_VERSION_11 and below.
                 failed_per_transition_action: 1,
+                contract_moderation_gate: None,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): fetch_documents
                 // helpers bumped to v1 which bill the grovedb cost of
                 // their query_documents calls. v0 stays for PV11 chain
@@ -179,6 +206,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                     },
                 },
                 is_allowed: 0,
+                identity_minimum_balance_pre_check: 0,
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
                 document_index_only_delete_transition_structure_validation: 0,

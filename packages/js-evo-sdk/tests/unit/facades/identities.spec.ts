@@ -21,6 +21,8 @@ describe('IdentitiesFacade', () => {
   let getIdentityNonceWithProofInfoStub: SinonStub;
   let getIdentityContractNonceStub: SinonStub;
   let getIdentityContractNonceWithProofInfoStub: SinonStub;
+  let getIdentityKeysRemainingBudgetsStub: SinonStub;
+  let getIdentityKeysRemainingBudgetsWithProofInfoStub: SinonStub;
   let getIdentityBalanceStub: SinonStub;
   let getIdentityBalanceWithProofInfoStub: SinonStub;
   let getIdentitiesBalancesStub: SinonStub;
@@ -41,6 +43,7 @@ describe('IdentitiesFacade', () => {
   let identityCreditTransferStub: SinonStub;
   let identityCreditWithdrawalStub: SinonStub;
   let identityUpdateStub: SinonStub;
+  let identityUpdateKeyLimitsStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
@@ -104,6 +107,14 @@ describe('IdentitiesFacade', () => {
         proof: {},
         metadata: {},
       });
+    getIdentityKeysRemainingBudgetsStub = this.sinon
+      .stub(wasmSdk, 'getIdentityKeysRemainingBudgets').resolves(new Map());
+    getIdentityKeysRemainingBudgetsWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentityKeysRemainingBudgetsWithProofInfo').resolves({
+        data: new Map(),
+        proof: {},
+        metadata: {},
+      });
     getIdentityByPublicKeyHashStub = this.sinon.stub(wasmSdk, 'getIdentityByPublicKeyHash').resolves(identity);
     getIdentityByPublicKeyHashWithProofInfoStub = this.sinon
       .stub(wasmSdk, 'getIdentityByPublicKeyHashWithProofInfo').resolves({
@@ -143,6 +154,7 @@ describe('IdentitiesFacade', () => {
     });
     identityCreditWithdrawalStub = this.sinon.stub(wasmSdk, 'identityCreditWithdrawal').resolves(BigInt(80000000));
     identityUpdateStub = this.sinon.stub(wasmSdk, 'identityUpdate').resolves();
+    identityUpdateKeyLimitsStub = this.sinon.stub(wasmSdk, 'identityUpdateKeyLimits').resolves();
   });
 
   describe('fetch()', () => {
@@ -248,6 +260,31 @@ describe('IdentitiesFacade', () => {
 
       expect(getIdentityContractNonceWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId, contractId);
+    });
+  });
+
+  describe('keysRemainingBudgets()', () => {
+    it('should fetch the remaining budgets of the given keys', async () => {
+      const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
+      getIdentityKeysRemainingBudgetsStub.resolves(new Map([[3, BigInt(1000)], [4, null]]));
+
+      const budgets = await client.identities.keysRemainingBudgets(identityId, [3, 4]);
+
+      expect(getIdentityKeysRemainingBudgetsStub)
+        .to.be.calledOnceWithExactly(identityId, [3, 4]);
+      expect(budgets.get(3)).to.equal(BigInt(1000));
+      expect(budgets.get(4)).to.equal(null);
+    });
+  });
+
+  describe('keysRemainingBudgetsWithProof()', () => {
+    it('should fetch the remaining budgets of the given keys with proof', async () => {
+      const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
+
+      await client.identities.keysRemainingBudgetsWithProof(identityId, [3, 4]);
+
+      expect(getIdentityKeysRemainingBudgetsWithProofInfoStub)
+        .to.be.calledOnceWithExactly(identityId, [3, 4]);
     });
   });
 
@@ -479,6 +516,22 @@ describe('IdentitiesFacade', () => {
       await client.identities.update(options);
 
       expect(identityUpdateStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('updateKeyLimits()', () => {
+    it('should raise the budget or the expiry of a key', async () => {
+      const options = {
+        identity,
+        keyId: 5,
+        addBudget: BigInt(100000000),
+        expiresAt: BigInt(1800000000000),
+        signer,
+      };
+
+      await client.identities.updateKeyLimits(options);
+
+      expect(identityUpdateKeyLimitsStub).to.be.calledOnceWithExactly(options);
     });
   });
 });

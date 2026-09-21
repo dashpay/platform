@@ -34,6 +34,8 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
+use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -41,6 +43,7 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 pub mod fetch_contender;
 pub mod fetch_documents;
+mod index_only_batch_entries;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
@@ -84,6 +87,13 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         } else {
             vec![]
         };
+
+        // The entries every accepted indexOnly create of THIS batch writes.
+        // The per-create state probe reads committed state, which none of
+        // the batch's own creates have reached yet, and the batch applies as
+        // one grove batch where a second insert at the same path and key
+        // silently replaces the first — see `index_only_batch_entries`.
+        let mut index_only_batch_entries = IndexOnlyBatchEntries::default();
 
         // Next we need to validate the structure of all actions (this means with the data contract)
         for transition in state_transition_action.transitions_take() {
@@ -276,7 +286,10 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         state_transition_action.user_fee_increase(),
                     )?,
                 ));
-            } else if platform.config.execution.use_document_triggers {
+                continue;
+            }
+
+            if platform.config.execution.use_document_triggers {
                 if let BatchedTransitionAction::DocumentAction(document_transition) = &transition {
                     // Pre-PR this site allocated a default-initialized local
                     // `StateTransitionExecutionContext` and passed `&local` to
@@ -338,15 +351,41 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                                     state_transition_action.user_fee_increase(),
                                 ),
                             ));
-                    } else {
-                        validated_transitions.push(transition);
+                        continue;
                     }
-                } else {
-                    validated_transitions.push(transition);
                 }
-            } else {
-                validated_transitions.push(transition);
             }
+
+            // An accepted indexOnly create claims the entries it writes for
+            // the rest of the batch; a later create addressing any of them
+            // is refused here exactly as the state probe refuses the same
+            // collision against committed state. Only reachable for PV14+
+            // contracts (`index_only()` cannot be true below that), so no
+            // historical batch takes this path.
+            if let BatchedTransitionAction::DocumentAction(
+                DocumentTransitionAction::CreateAction(create_action),
+            ) = &transition
+            {
+                let batch_entries_result = index_only_batch_entries.validate_and_record_create(
+                    create_action,
+                    owner_id,
+                    platform_version,
+                )?;
+                if !batch_entries_result.is_valid() {
+                    validation_result.add_errors(batch_entries_result.errors);
+                    validated_transitions
+                        .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                                create_action.base(),
+                                owner_id,
+                                state_transition_action.user_fee_increase(),
+                            ),
+                        ));
+                    continue;
+                }
+            }
+
+            validated_transitions.push(transition);
         }
 
         state_transition_action.set_transitions(validated_transitions);

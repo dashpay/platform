@@ -21,7 +21,15 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_daily_withdrawal_amount: None,
     min_withdrawal_amount: 1_000_000, //1000 duffs (raised from 190 in v12)
     core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
-    max_contract_group_size: 256,
+    max_core_fee_per_byte: None,
+    max_group_member_count: 256,
+    max_contract_group_memberships_per_contract: 16,
+    max_contract_group_admins: 16,
+    max_contract_group_name_length: 64,
+    max_contract_group_description_length: 256,
+    max_contract_moderators: 16,
+    max_contract_suspension_until: 9_007_199_254_740_991,
+    max_contract_moderation_reason_length: 1024,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

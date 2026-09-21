@@ -1,15 +1,18 @@
-use crate::drive::contract::paths::{contract_root_path, CONTRACT_VERSION_KEY};
+use crate::drive::contract::paths::{
+    contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
+};
 use crate::drive::contract::version_item::encode_contract_version;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::grove_operations::DirectQueryType;
 use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, Transaction};
 
 impl Drive {
-    /// Writes the version item (`[64, id] / 2`, the version as four big-endian bytes) of
+    /// Writes the version item (`[64, id, 2] / 64`, the version as four big-endian bytes) of
     /// every contract in state.
     ///
     /// Runs once, on the first block of protocol version 14: from that version the storage
@@ -78,12 +81,34 @@ impl Drive {
             .map(StorageFlags::to_element_flags);
         let version_element = Element::Item(
             encode_contract_version(fetch_info.contract.version()),
-            element_flags,
+            element_flags.clone(),
         );
+        // The contract's other tree first (`[64, id, 2]`), then the version item inside it.
         let contract_root_path = contract_root_path(&contract_id);
-
-        self.grove_insert(
+        // A contract that already has the tree keeps it: it may hold more than the item.
+        let has_other_tree = self.grove_has_raw(
             (&contract_root_path).into(),
+            &[CONTRACT_OTHER_KEY],
+            DirectQueryType::StatefulDirectQuery,
+            Some(transaction),
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+        if !has_other_tree {
+            self.grove_insert(
+                (&contract_root_path).into(),
+                &[CONTRACT_OTHER_KEY],
+                Element::empty_tree_with_flags(element_flags),
+                Some(transaction),
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+        }
+
+        let contract_other_path = contract_other_path(&contract_id);
+        self.grove_insert(
+            (&contract_other_path).into(),
             &[CONTRACT_VERSION_KEY],
             version_element,
             Some(transaction),

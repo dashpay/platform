@@ -28,8 +28,20 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
+use crate::drive::contract::moderation::types::{
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+};
+use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionWitnessSigned};
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dpp::state_transition::batch_transition::document_replace_transition::DocumentFromReplaceTransition;
@@ -48,7 +60,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1140,6 +1152,215 @@ impl Drive {
                         }
                     }
                 }
+                Ok((root_hash, VerifiedPartialIdentity(identity)))
+            }
+            StateTransition::ContractUserModeration(transition)
+                if transition.action().document().is_some() =>
+            {
+                verify_contract_document_deletion_execution(proof, transition, platform_version)
+            }
+            StateTransition::ContractUserModeration(transition) => {
+                // The proof holds the entries of the lists the moderation touched, present or
+                // absent, and nothing more. A ban touched both lists the contract keeps (it
+                // removes a suspension too), so the contract's config says which to expect.
+                let contract_id = transition.data_contract_id();
+                let identity_id = transition.target_identity_id().ok_or(Error::Proof(
+                    ProofError::CorruptedProof(
+                        "a moderation that names no document names an identity".to_string(),
+                    ),
+                ))?;
+                let lists = match transition.action() {
+                    ContractUserModerationAction::Ban { .. } => {
+                        let contract = known_contracts_provider_fn(&contract_id)?.ok_or(
+                            Error::Proof(ProofError::UnknownContract(format!(
+                                "unknown contract with id {} in contract moderation verification",
+                                contract_id
+                            ))),
+                        )?;
+                        contract
+                            .config()
+                            .moderation()
+                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                            .unwrap_or_else(|| vec![ContractModerationList::Banlist])
+                    }
+                    ContractUserModerationAction::Unban { .. } => {
+                        vec![ContractModerationList::Banlist]
+                    }
+                    ContractUserModerationAction::Suspend { .. }
+                    | ContractUserModerationAction::Unsuspend { .. } => {
+                        vec![ContractModerationList::Suspensions]
+                    }
+                    ContractUserModerationAction::DeleteDocument { .. } => {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "a document deletion is verified above".to_string(),
+                        )))
+                    }
+                };
+                // Only `lists` are proved: the verifier says nothing about the rest.
+                let (root_hash, statuses) = Drive::verify_contract_moderation_status(
+                    proof,
+                    contract_id,
+                    identity_id,
+                    &lists,
+                    platform_version,
+                )?;
+                let as_expected = match transition.action() {
+                    // Banned for the reason the transition gives, and no suspension left behind
+                    // on a contract that keeps them.
+                    ContractUserModerationAction::Ban { reason, .. } => {
+                        statuses
+                            .ban()
+                            .flatten()
+                            .is_some_and(|ban| ban.reason == *reason)
+                            && statuses.suspension().flatten().is_none()
+                    }
+                    ContractUserModerationAction::Unban { .. } => statuses.banned() == Some(false),
+                    // Suspended until the time and for the reason the transition gives.
+                    ContractUserModerationAction::Suspend { until, reason, .. } => {
+                        statuses.suspension().flatten().is_some_and(|suspension| {
+                            suspension.until == *until && suspension.reason == *reason
+                        })
+                    }
+                    ContractUserModerationAction::Unsuspend { .. } => {
+                        statuses.suspended_until() == Some(None)
+                    }
+                    ContractUserModerationAction::DeleteDocument { .. } => false,
+                };
+                if !as_expected {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "proof of state transition execution does not show the {} of {} on contract {}",
+                        transition.action(),
+                        identity_id,
+                        contract_id
+                    ))));
+                }
+                Ok((
+                    root_hash,
+                    VerifiedContractModerationListStatuses(contract_id, identity_id, statuses),
+                ))
+            }
+            StateTransition::ContractFeeClaim(transition) => {
+                let contract_id = transition.data_contract_id();
+                let pot = transition.pot();
+                let contract = known_contracts_provider_fn(&contract_id)?.ok_or(Error::Proof(
+                    ProofError::UnknownContract(format!(
+                        "unknown contract with id {} in contract fee claim verification",
+                        contract_id
+                    )),
+                ))?;
+                let recipients: Vec<[u8; 32]> = pot
+                    .recipients(&contract)
+                    .into_iter()
+                    .map(|recipient| recipient.to_buffer())
+                    .collect();
+
+                // The proof holds the pot with its last claim and the recipients'
+                // balances; each part is verified as a subset of it, and they must agree on
+                // the state they are read from.
+                let (root_hash, fee_pots) = Drive::verify_contract_fee_pots(
+                    proof,
+                    contract_id,
+                    &[pot],
+                    true,
+                    platform_version,
+                )?;
+                let (balances_root_hash, balances): (
+                    RootHash,
+                    BTreeMap<Identifier, Option<Credits>>,
+                ) = Drive::verify_identity_balances_for_identity_ids(
+                    proof,
+                    true,
+                    &recipients,
+                    platform_version,
+                )?;
+                if balances_root_hash != root_hash {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "the pot and the balances of a contract fee claim proof are read from different states"
+                            .to_string(),
+                    )));
+                }
+
+                let fee_pot = fee_pots.pot(pot);
+                // A pot that was never claimed has no last claim: the claim did not execute.
+                // A later claim leaves its own and verifies just the same, so this only
+                // authenticates the affected state. The last claim names its claimant and
+                // its block time, which tell the caller whether it is this claim.
+                let last_claim =
+                    fee_pot
+                        .last_claim
+                        .ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                            "proof of state transition execution does not show a claim of the {} fee pot of contract {}",
+                            pot, contract_id
+                        ))))?;
+                let balances = balances
+                    .into_iter()
+                    .map(|(recipient, balance)| {
+                        balance.map(|balance| (recipient, balance)).ok_or(Error::Proof(
+                            ProofError::IncorrectProof(format!(
+                                "proof did not contain the balance of {}, a recipient of the {} fee pot of contract {}",
+                                recipient, pot, contract_id
+                            )),
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<Identifier, Credits>, Error>>()?;
+                Ok((
+                    root_hash,
+                    VerifiedContractFeeClaim(
+                        contract_id,
+                        pot,
+                        last_claim,
+                        fee_pot.credits,
+                        balances,
+                    ),
+                ))
+            }
+            StateTransition::IdentityKeyLimitsUpdate(transition) => {
+                // The proof holds the rewritten key, nothing more.
+                let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
+                    proof,
+                    IdentityKeysRequest::new_specific_key_query_without_limit(
+                        &transition.identity_id().into_buffer(),
+                        transition.key_id(),
+                    ),
+                    false,
+                    false,
+                    false,
+                    platform_version,
+                )?;
+                let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                    "proof did not contain identity {} expected to exist because of state transition (key limits update)",
+                    transition.identity_id()
+                ))))?;
+
+                let Some(key) = identity.loaded_public_keys.get(&transition.key_id()) else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof does not contain key {}",
+                        transition.key_id()
+                    ))));
+                };
+
+                // Both limits carry the value the transition asked for, so the proved key must
+                // hold exactly that value.
+                if transition.total_budget().is_some()
+                    && key.total_budget() != transition.total_budget()
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof shows key {} with total budget {:?}, expected {:?}",
+                        transition.key_id(),
+                        key.total_budget(),
+                        transition.total_budget()
+                    ))));
+                }
+                if transition.expires_at().is_some() && key.expires_at() != transition.expires_at()
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof shows key {} expiring at {:?}, expected {:?}",
+                        transition.key_id(),
+                        key.expires_at(),
+                        transition.expires_at()
+                    ))));
+                }
+
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
             StateTransition::IdentityCreditTransfer(identity_credit_transfer) => {
@@ -2390,6 +2611,18 @@ impl Drive {
             // Binds the transition's revision and its exact key additions
             // and disabling timestamps.
             StateTransition::IdentityUpdate(_) => true,
+            // The proof shows the key holding the limits the transition named, no more: any
+            // later state of that key with those limits verifies just the same, so this only
+            // authenticates the affected state.
+            StateTransition::IdentityKeyLimitsUpdate(_) => false,
+            // The proven entry shows the target's state on the list; an earlier or later
+            // moderation leaving the same entry verifies just the same, so this only
+            // authenticates the affected state.
+            StateTransition::ContractUserModeration(_) => false,
+            // The proven pot shows that it was claimed and what it holds now; a later claim
+            // of the same pot verifies just the same, so this only authenticates the affected
+            // state.
+            StateTransition::ContractFeeClaim(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.
             StateTransition::MasternodeVote(_) => true,
@@ -2479,7 +2712,60 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "server")]
+/// A moderator's document deletion is proved by the record it left: the one of the document
+/// named, saying that the transition's signer removed it for the transition's reason. When is
+/// the block's to say, and whose the document was only the record knows. A document id is
+/// produced at most once, so the record is of that document and of no other.
+fn verify_contract_document_deletion_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let ContractUserModerationAction::DeleteDocument {
+        document_type_name,
+        document_id,
+        reason,
+    } = transition.action()
+    else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only a document deletion is verified by its removal record".to_string(),
+        )));
+    };
+    let (root_hash, mut entries) = Drive::verify_contract_document_removals(
+        proof,
+        contract_id,
+        &ContractDocumentRemovalsQuery {
+            document_type_name: document_type_name.clone(),
+            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![*document_id]),
+        },
+        platform_version,
+    )?;
+    match (entries.pop(), entries.is_empty()) {
+        (Some(entry), true)
+            if entry.document_id == *document_id
+                && entry.removal.moderator_id == transition.owner_id()
+                && entry.removal.reason == *reason =>
+        {
+            Ok((
+                root_hash,
+                VerifiedContractDocumentRemoval(
+                    contract_id,
+                    document_type_name.clone(),
+                    *document_id,
+                    entry.removal,
+                ),
+            ))
+        }
+        _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
+            "proof of state transition execution does not show the {} on contract {} by {}",
+            transition.action(),
+            contract_id,
+            transition.owner_id()
+        )))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4831,6 +5117,7 @@ mod tests {
         use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
         use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
         use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
         use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
@@ -4840,6 +5127,12 @@ mod tests {
             (
                 "identity top up",
                 StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(Default::default())),
+            ),
+            (
+                "identity key limits update",
+                StateTransition::IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition::V0(
+                    Default::default(),
+                )),
             ),
             (
                 "identity credit withdrawal",

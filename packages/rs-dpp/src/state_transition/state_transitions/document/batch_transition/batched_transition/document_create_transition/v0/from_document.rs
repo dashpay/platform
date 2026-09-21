@@ -18,6 +18,18 @@ impl DocumentCreateTransitionV0 {
         platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
+        // Once the id depends on the nonce, the id the document was given
+        // when it was built (before a nonce was assigned) is a placeholder:
+        // the transition carries the id consensus will recompute.
+        let mut document = document;
+        if Document::document_id_depends_on_nonce(platform_version)? {
+            document.set_id_for_creation(
+                document_type,
+                &entropy,
+                identity_contract_nonce,
+                platform_version,
+            )?;
+        }
         let prefunded_voting_balance =
             document_type.prefunded_voting_balance_for_document(&document, platform_version)?;
         Ok(DocumentCreateTransitionV0 {

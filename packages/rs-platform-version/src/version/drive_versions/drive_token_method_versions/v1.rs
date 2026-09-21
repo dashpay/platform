@@ -18,6 +18,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         pre_programmed_distributions: 0,
         perpetual_distribution_last_paid_time: 0,
         pre_programmed_distribution_last_paid_time: 0,
+        once_per_identity_distribution_claim: 0,
         token_direct_purchase_price: 0,
         token_direct_purchase_prices: 0,
         token_contract_info: 0,
@@ -58,5 +59,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         add_pre_programmed_distributions: 0,
         mark_perpetual_release_as_distributed: 0,
         mark_pre_programmed_release_as_distributed: 0,
+        add_once_per_identity_distribution: 0,
+        mark_once_per_identity_release_as_distributed: 0,
     },
 };

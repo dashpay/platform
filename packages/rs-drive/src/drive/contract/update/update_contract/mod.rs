@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -73,9 +74,17 @@ impl Drive {
                 platform_version,
                 previous_fee_versions,
             ),
+            2 => self.update_contract_v2(
+                contract,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -144,9 +153,18 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            2 => self.update_contract_element_v2(
+                contract_element,
+                contract,
+                original_contract,
+                block_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_element".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -222,9 +240,19 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            2 => self.update_contract_add_operations_v2(
+                contract_element,
+                contract,
+                original_contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_add_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

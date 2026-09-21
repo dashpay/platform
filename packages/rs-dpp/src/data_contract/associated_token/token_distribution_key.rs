@@ -33,6 +33,9 @@ pub enum TokenDistributionType {
 
     /// A perpetual distribution that occurs at regular intervals.
     Perpetual = 1,
+
+    /// A fixed amount every identity may claim exactly once (protocol version 14).
+    OncePerIdentity = 2,
 }
 
 /// Represents a token distribution with a resolved recipient.
@@ -52,6 +55,9 @@ pub enum TokenDistributionTypeWithResolvedRecipient {
 
     /// A perpetual distribution with a resolved recipient.
     Perpetual(TokenDistributionResolvedRecipient),
+
+    /// A once-per-identity distribution claimed by the given identity.
+    OncePerIdentity(Identifier),
 }
 
 // Internal-`$type` serde shape with a uniform `value` payload (single-payload
@@ -65,6 +71,9 @@ enum TokenDistributionTypeWithResolvedRecipientRepr {
     Perpetual {
         value: TokenDistributionResolvedRecipient,
     },
+    OncePerIdentity {
+        value: Identifier,
+    },
 }
 
 impl From<TokenDistributionTypeWithResolvedRecipient>
@@ -77,6 +86,9 @@ impl From<TokenDistributionTypeWithResolvedRecipient>
             }
             TokenDistributionTypeWithResolvedRecipient::Perpetual(value) => {
                 Self::Perpetual { value }
+            }
+            TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(value) => {
+                Self::OncePerIdentity { value }
             }
         }
     }
@@ -92,6 +104,9 @@ impl From<TokenDistributionTypeWithResolvedRecipientRepr>
             }
             TokenDistributionTypeWithResolvedRecipientRepr::Perpetual { value } => {
                 Self::Perpetual(value)
+            }
+            TokenDistributionTypeWithResolvedRecipientRepr::OncePerIdentity { value } => {
+                Self::OncePerIdentity(value)
             }
         }
     }
@@ -115,6 +130,9 @@ pub enum TokenDistributionInfo {
     /// The moment is the beginning of the perpetual distribution cycle
     /// Includes the last and next distribution times and the resolved recipient.
     Perpetual(RewardDistributionMoment, TokenDistributionResolvedRecipient),
+
+    /// A once-per-identity claim: the block time of the claim and the claimant.
+    OncePerIdentity(TimestampMillis, Identifier),
 }
 
 // Internal-`$type` serde shape with named fields (multi-field variants).
@@ -136,6 +154,14 @@ enum TokenDistributionInfoRepr {
         moment: RewardDistributionMoment,
         recipient: TokenDistributionResolvedRecipient,
     },
+    OncePerIdentity {
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        timestamp: TimestampMillis,
+        identity: Identifier,
+    },
 }
 
 impl From<TokenDistributionInfo> for TokenDistributionInfoRepr {
@@ -148,6 +174,10 @@ impl From<TokenDistributionInfo> for TokenDistributionInfoRepr {
             TokenDistributionInfo::Perpetual(moment, recipient) => {
                 Self::Perpetual { moment, recipient }
             }
+            TokenDistributionInfo::OncePerIdentity(timestamp, identity) => Self::OncePerIdentity {
+                timestamp,
+                identity,
+            },
         }
     }
 }
@@ -162,6 +192,10 @@ impl From<TokenDistributionInfoRepr> for TokenDistributionInfo {
             TokenDistributionInfoRepr::Perpetual { moment, recipient } => {
                 Self::Perpetual(moment, recipient)
             }
+            TokenDistributionInfoRepr::OncePerIdentity {
+                timestamp,
+                identity,
+            } => Self::OncePerIdentity(timestamp, identity),
         }
     }
 }
@@ -174,6 +208,9 @@ impl From<TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient 
             }
             TokenDistributionInfo::Perpetual(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient)
+            }
+            TokenDistributionInfo::OncePerIdentity(_, recipient) => {
+                TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(recipient)
             }
         }
     }
@@ -188,6 +225,9 @@ impl From<&TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient
             TokenDistributionInfo::Perpetual(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient.clone())
             }
+            TokenDistributionInfo::OncePerIdentity(_, recipient) => {
+                TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(*recipient)
+            }
         }
     }
 }
@@ -197,6 +237,7 @@ impl fmt::Display for TokenDistributionType {
         match self {
             TokenDistributionType::PreProgrammed => write!(f, "PreProgrammed"),
             TokenDistributionType::Perpetual => write!(f, "Perpetual"),
+            TokenDistributionType::OncePerIdentity => write!(f, "OncePerIdentity"),
         }
     }
 }
@@ -266,6 +307,7 @@ mod json_convertible_tests_token_distribution_type_and_key {
         let cases = [
             (TokenDistributionType::PreProgrammed, "PreProgrammed"),
             (TokenDistributionType::Perpetual, "Perpetual"),
+            (TokenDistributionType::OncePerIdentity, "OncePerIdentity"),
         ];
         for (original, expected) in cases {
             let json_v = original.to_json().expect("to_json");
@@ -421,5 +463,42 @@ mod json_convertible_tests_token_distribution_info {
         assert_eq!(json["$type"], json!("perpetual"));
         let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_once_per_identity_variant() {
+        use crate::serialization::JsonConvertible;
+        let original =
+            TokenDistributionInfo::OncePerIdentity(1_700_000_000_000, Identifier::new([0x42; 32]));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$type": "oncePerIdentity",
+                "timestamp": 1_700_000_000_000u64,
+                "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+            })
+        );
+        let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+
+        let resolved: TokenDistributionTypeWithResolvedRecipient = (&original).into();
+        assert_eq!(
+            resolved,
+            TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(Identifier::new(
+                [0x42; 32]
+            ))
+        );
+        let resolved_json = resolved.to_json().expect("to_json");
+        assert_eq!(
+            resolved_json,
+            json!({
+                "$type": "oncePerIdentity",
+                "value": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+            })
+        );
+        let recovered = TokenDistributionTypeWithResolvedRecipient::from_json(resolved_json)
+            .expect("from_json");
+        assert_eq!(resolved, recovered);
     }
 }

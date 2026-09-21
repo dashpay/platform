@@ -78,6 +78,7 @@ pub mod voting;
 pub mod core_types;
 
 pub mod address_funds;
+pub mod contract_group;
 pub mod group;
 pub mod shielded;
 pub mod withdrawal;

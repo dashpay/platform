@@ -192,6 +192,89 @@ fn should_preallocate_referring_like_trees_on_post_insert() {
     assert_grovedb_is_consistent(&drive);
 }
 
+/// A referring index may be preallocated through an agreement on the
+/// referenced document's `$ownerId`: inserting a post creates the
+/// `authorLike` type's `byAuthorPost` trees `authorId -> <poster> -> postId
+/// -> <post> -> 0`, keyed from the post's owner exactly as an entry insert
+/// would key them, and an agreeing entry then lands in the member bucket.
+#[test]
+fn should_preallocate_trees_bound_to_the_referenced_owner_id() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = setup_contract(
+        &drive,
+        "tests/supporting_files/contract/yappr-likes/yappr-likes-author-preallocated-contract.json",
+    );
+    let post = build_post(&contract, "dash", 1);
+    let post_id = post.id().to_buffer();
+    insert_post(&drive, &contract, &post, true).expect("insert post");
+
+    let mut level = vec![
+        vec![crate::drive::RootTree::DataContractDocuments as u8],
+        contract.id().as_bytes().to_vec(),
+        vec![1],
+        b"authorLike".to_vec(),
+    ];
+    level.push(b"authorId".to_vec());
+    assert!(
+        read_grove_element(&drive, &level, &OWNER_POSTER).is_some(),
+        "the poster's value tree must be preallocated from the post's $ownerId"
+    );
+    level.push(OWNER_POSTER.to_vec());
+    assert!(
+        read_grove_element(&drive, &level, b"postId").is_some(),
+        "the continuation property-name tree must be preallocated"
+    );
+    level.push(b"postId".to_vec());
+    assert!(
+        read_grove_element(&drive, &level, &post_id).is_some(),
+        "the post's value tree must be preallocated"
+    );
+    level.push(post_id.to_vec());
+    assert!(
+        read_grove_element(&drive, &level, &[0]).is_some(),
+        "the empty member bucket must be preallocated"
+    );
+
+    // An entry agreeing with the post lands in the preallocated bucket.
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name("authorLike")
+        .expect("authorLike doctype exists");
+    let mut entry = document_type
+        .random_document(Some(2), pv)
+        .expect("random author like");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("authorId".to_string(), Value::Identifier(OWNER_POSTER));
+    props.insert("postId".to_string(), Value::Identifier(post_id));
+    entry.set_properties(props);
+    entry.set_owner_id(Identifier::from(OWNER_1));
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&entry, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("insert author like");
+    level.push(vec![0]);
+    assert!(
+        read_grove_element(&drive, &level, &OWNER_1).is_some(),
+        "the agreeing entry must sit in the preallocated member bucket"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
 /// The empty preallocated index is queryable: zero results, working proofs
 /// — a present-but-empty member bucket, a state the pruning delete path
 /// never used to leave behind.

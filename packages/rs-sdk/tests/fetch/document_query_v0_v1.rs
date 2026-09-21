@@ -126,6 +126,7 @@ async fn should_fetch_composite_documents_with_the_unified_query() {
             }]),
             CompositeSubQueryResult::Documents(vec![quoted]),
         ],
+        sub_result_missing_ids: vec![vec![], vec![dpp::identifier::Identifier::from([9u8; 32])]],
         page_documents: vec![post],
     };
     sdk.mock()

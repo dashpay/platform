@@ -7,9 +7,9 @@ use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_state_transition_versions::v4::STATE_TRANSITION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
@@ -17,7 +17,7 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
-use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
+use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
@@ -196,8 +196,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   create state validation to 2, enforcing `refersTo` document references
 ///   and rejecting a non-contested create whose id is already present in the
 ///   contested tree. Document replace state validation 1 enforces the same
-///   reference checks. v13 keeps the v9 table and therefore keeps
-///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
+///   reference checks, re-validates a `refersTo: deletableDocument`
+///   reference on every replace (a dead one must be repointed or cleared),
+///   and lets an `immutable` one be cleared once its target is deleted.
+///   v13 keeps the v9 table and therefore keeps accepting all of these, so
+///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
@@ -254,6 +257,197 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     so such a contract registered and every claim on it failed as an
 ///     internal error, since no cycle can be computed from a zero step. Block
 ///     and time minimums are unchanged.
+/// 11. **Gas paid by the contract owner**: a token-paid document action's
+///     `gasFeesPaidBy` (offered by the document type's token cost, asked for by
+///     the transition's `$tokenPaymentInfo`) is acted on. Both values were
+///     carried but ignored up to v13, where the signer always paid. Batch
+///     transform v2 resolves one payer for the batch (`GasFeesPaidBy::resolve`)
+///     and reads the contract owner's balance into the action; batch advanced
+///     structure v1 refuses a request the document type does not offer
+///     (`GasFeesPaidByNotAllowedError`, 40129) or a batch naming two payers
+///     (`InconsistentGasFeesPaidByInBatchError`, 40130); `validate_fees_of_event`
+///     v1 judges the fee against the sponsor's balance, refusing an insisting
+///     batch unpaid when it falls short (`GasSponsorInsufficientBalanceError`,
+///     40222) and handing a preferring one back to the signer; `execute_event`
+///     v1 charges whoever was admitted. The batch's signer only funds the
+///     principal, and its minimum balance pre-check v1
+///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
+///     requests sponsorship. A failed batch is never sponsored, so check tx
+///     validates the state of a sponsored batch whose signer is under the fee
+///     minimum in full, on the first check and on every recheck (mempool
+///     policy, not consensus).
+/// 12. **Optional token costs**: a document type's token cost may declare
+///     `optional: true` (v3 meta-schema). A transition that leaves
+///     `$tokenPaymentInfo` out then pays no token and its signer pays the gas
+///     in credits, as on an action without a token cost (the base action
+///     transformer waives the cost, and no sponsorship applies). With the
+///     payment info present the token is charged exactly as for a required
+///     cost, and too small a token balance stays a rejection. Contracts up to
+///     v13 cannot carry the flag, so the waiver is inert before this version.
+/// 13. **Pre-programmed distribution amounts are bounded**:
+///     `TokenPreProgrammedDistribution::validate_amounts` rejects a release
+///     whose amounts total more than `i64::MAX` with the new
+///     `PreProgrammedDistributionAmountOverLimitError` (code 10277). It runs
+///     on contract create (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`'s create
+///     `basic_structure` 2) and, for the tokens an update adds, on contract
+///     update (`CONTRACT_VERSIONS_V6`'s `validate_update` 1). A release is
+///     stored as a sum tree, so up to v13 such a create passed validation and
+///     failed inside Drive as an internal error: never paid for, and stripped
+///     from every proposal. An update failed the same way on a single amount
+///     over the limit (its fee estimation takes the insert path), but was
+///     accepted when only the total overflowed, since it wrote no distribution
+///     storage; from v14 it writes it (`update_contract` 2) and would fail.
+///     Tokens a contract already has are not judged, so a contract holding
+///     such a token stays updatable.
+/// 14. **Tokens of one contract sharing a pre-programmed release time**:
+///     `DRIVE_TOKEN_METHOD_VERSIONS_V2` bumps
+///     `add_pre_programmed_distributions` to 1, which queues the release-time
+///     tree the tokens share once instead of once per token. Queued twice,
+///     the batch is refused as an internal error by a node with
+///     `batching_consistency_verification` on; the default is off, and there
+///     GroveDB folds the identical inserts, so the stored state is unchanged
+///     and only the processing fee drops, by the existence read the later
+///     tokens no longer make.
+///
+/// 15. **Tokens added by a contract update are set up like registered ones**:
+///     `update_contract` v2 (`DRIVE_CONTRACT_METHOD_VERSIONS_V4`) creates the
+///     perpetual, pre-programmed and once-per-identity distribution storage
+///     of a token the update adds, and mints its base supply to the token's
+///     `newTokensDestinationIdentity`, or to the contract owner without one,
+///     with the total supply starting at the base supply. v1 did neither: a
+///     claim on such a token failed as an internal error, and the token sat at
+///     a total supply of zero with nobody holding any of it. Nothing is minted
+///     retroactively for a token an update added under an earlier version.
+///
+/// 16. **Contract moderation**: a data contract may declare, in its config,
+///     a banlist and/or a suspension list of identities and who edits them
+///     (the owner, or the owner and up to `SystemLimits::max_contract_moderators`
+///     named identities, each of which must exist). `CONTRACT_VERSIONS_V6`
+///     makes config V2 the config of every new contract (`max_version` and
+///     `default_current_version` 2), which carries
+///     the declaration; a contract create or update carrying a V2 config is
+///     inactive before this version (`StateTransition::active_version_range`).
+///     `DPP_VALIDATION_VERSIONS_V5.validate_config_update = 2` fixes the lists
+///     a contract keeps at its creation: an update turns none on and none off,
+///     and may only change the moderators.
+///     `ContractUserModeration` (state transition type 24, gated by
+///     `CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION`) bans, unbans,
+///     suspends until a block time (at most
+///     `SystemLimits::max_contract_suspension_until`) and unsuspends one
+///     identity, signed by the owner or a moderator with a CRITICAL key; a
+///     ban and a suspension carry a reason, stored with the entry: a text of
+///     at most `SystemLimits::max_contract_moderation_reason_length` bytes and
+///     an optional code nothing checks, reserved for ban codes a contract may
+///     declare in a later version;
+///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates on, moves the
+///     contract update's basic structure to 2 and the contract create and
+///     update state validation (already 1 here) checks the named moderators.
+///     `batch_state_transition.contract_moderation_gate = Some(0)` makes the
+///     batch transformer refuse, paid, the document transitions of a banned or
+///     suspended signer, its deletions excepted, and collect a lapsed
+///     suspension, which
+///     `documents_batch_transition` 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`)
+///     deletes when the batch executes; the same field gates the other
+///     party of a transfer or a purchase, so a barred identity neither
+///     receives nor sells a document. Token transitions are not gated.
+///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2,
+///     which creates the list trees (`[64, contract, 2] / 128` and `/ 192`, inside the contract's other tree), and
+///     adds the `moderation` method table; the verify and
+///     query tables gain the status and entries methods.
+///
+/// 17. **Document action fees and the contract fee claim**: a document type
+///     may charge a fixed fee in credits for an action on one of its documents
+///     (the `actionFees` keyword of the v3 document meta-schema, read by
+///     `try_from_schema` 3), split between the contract's owner pot and its
+///     moderators pot and priced as written or scaled by the fee multiplier of
+///     the epoch. The fees of a document type never change (document type
+///     `validate_update` 1), and a `moderators` part needs declared moderation
+///     (contract create and update basic structure 2). Whoever pays the gas
+///     pays the fee, the contract owner never into their own owner pot, and
+///     only for an action that executes: `validate_fees_of_event` 1 and
+///     `execute_event` 1 (`DRIVE_ABCI_METHOD_VERSIONS_V10`) settle the payer
+///     and move the credits with the batch's own operations, outside the fee.
+///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` gains the `fee_pots` method table:
+///     the pots are sum items under two sum trees of the prefunded specialized
+///     balances (`[40, 64]` and `[40, 192]`), which `create_initial_state_structure`
+///     4 and the upgrade to this version create, so they stay inside the total
+///     credits the platform checks every block, and the epoch each pot was
+///     last claimed in is an item of the contract's other tree (`32` and `96`).
+///     `ContractFeeClaim` (state transition type 25, gated by
+///     `CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION`) pays a pot out, at most
+///     once per epoch each: the owner pot to the contract owner, the moderators
+///     pot in equal shares to the moderation team, what the split leaves over
+///     staying in the pot. `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates
+///     on, `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds its converter, and
+///     the verify table gains `verify_contract_fee_pots`.
+/// 18. **Document ids commit to the identity contract nonce**: up to v13 a new
+///     document's id hashed the contract, owner, document type and the entropy
+///     of the create transition, and the create check only asks whether a
+///     document exists under the id right now. The owner of a deleted
+///     document could therefore create another one under the same id by
+///     reusing the entropy, with different content, and everything that
+///     referenced the id (a `refersTo` property, a like, a moderation removal
+///     record) then pointed at the new content, which defeats
+///     `documentsMutable: false` for a deletable document type.
+///     `DOCUMENT_VERSIONS_V4` sets `generate_document_id` to 1: the id also
+///     hashes a domain tag and the identity contract nonce of the create
+///     transition, which is consumed at most once, so an id can be produced
+///     at most once. The entropy stays in the hash (ids remain
+///     unpredictable) and on the wire (the transition format is unchanged);
+///     batch advanced structure validation 1, which only this version
+///     selects, recomputes the id through `Document::generate_document_id`
+///     and bills both passes of the double SHA-256 by the real preimage
+///     length (4 blocks for most document type names) where v13 bills a
+///     flat 2.
+///     Ids of documents created before the upgrade can not be produced by
+///     the new derivation either. A client that still derives the entropy
+///     only id has every create rejected with
+///     `InvalidDocumentTransitionIdError`.
+/// 19. **Document deletion by moderators**: a document type of a contract
+///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
+///     v3, fixed when the type is created, refused on a type that keeps
+///     history, is indexOnly or restricts creation; for references such a type
+///     is deletable, so a permanentDocument reference refuses it and a
+///     deletableDocument reference accepts it). A moderation declaration may then keep
+///     no list at all. `ContractUserModeration` gains the `DeleteDocument`
+///     action: the owner or a moderator deletes a document of such a type,
+///     except the owner's and the moderators' own, with a reason like a
+///     ban's. The deletion leaves a record under the contract
+///     (`[64, contract, 2] / 16 / <document type> / <document id>`: the
+///     document's owner, the moderator, the block time and the reason), paid
+///     for by the moderator and never deleted; `insert_contract` 2 creates
+///     the records tree of each such document type, `update_contract` 2 the
+///     tree of one an update adds, and either the tree above them with the
+///     contract's first. The deleted document's
+///     owner gets no storage refund: `apply_drive_operations = 1`
+///     (`DRIVE_VERSION_V9`) attributes the removal of a batch that carries
+///     the forfeiture to nobody, so the credits stay in the storage pools.
+///     A record is final, since a document id is produced at most once (18).
+///     Neither the type's deletion token cost nor its `actionFees` deletion
+///     fee is charged.
+///     The moderation method table, the verify table and the query table gain
+///     the document removal methods (`getContractDocumentRemovals`).
+///     `canBeDeletedByModeratorsFor` bounds the deletion in time: so many
+///     seconds after a document's last modification (`$updatedAt`, or
+///     `$createdAt` on a type whose documents never change; the type must
+///     require its clock), past which no moderator deletes it, the
+///     contract owner included (`DocumentModerationWindowElapsedError`); a
+///     document's own owner still deletes it as `canBeDeleted` allows. A
+///     replace opens the window again. Fixed with the type, like the flag.
+///
+/// 20. **Document transitions agree to their action fee**: version 2 of the
+///     document base transition, the default from this version
+///     (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`) and inactive before it
+///     (`StateTransition::active_version_range`, since earlier software
+///     cannot decode it), carries an action fee agreement: the owner and moderators amounts the signer saw declared,
+///     which must match the document type's exactly, and for a fee priced by
+///     the fee multiplier the multiplier they knew with the increase, in
+///     percent, they accept. Batch advanced structure 1
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`) refuses, as a paid nonce bump
+///     that charges no fee, an action that charges a fee without an agreement
+///     (40132), with one to other amounts or another pricing (40133), or
+///     whose epoch's multiplier rose beyond the tolerance (40134), so a
+///     contract whose fees change cannot make a signed transition pay them.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
@@ -281,25 +475,53 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// where-clause operator enum gains `IN_TIME_RANGE = 11`, which pre-v14
 /// servers reject as an unknown operator rather than misread (the v0 wire
 /// has no time-range operator at all).
+/// Contract-bound authentication keys activate through contract-bounds validation v2,
+/// identity-signature validation v1 and batch advanced-structure v1. Identity creation
+/// validates key bounds (state v1) and identity-update state v1 retains the contract
+/// lookup fees; Drive identity methods v2 index and refresh the bound keys. The same v1
+/// contract-info methods also store the current-key alias of a contract-level encryption or
+/// decryption key bound under `MultipleReferenceToLatest` in its purpose subtree, where the
+/// current-key query reads it; v0 wrote it one level up, where its sibling reference could
+/// not resolve, so registering such a key failed inside Drive on every earlier version.
+/// Contract group bounds on authentication keys ride the same versions: contract-bounds
+/// validation v2 admits them, batch transform v2 resolves the member contract's group
+/// memberships into the action (only for a group-bound signing key) for advanced-structure v1 to judge, and shielded-proof validation v1 refuses them in identity creation from the
+/// shielded pool, whose sighash preimage layout predates them.
+/// A transition carrying such a key is inactive before this version (`active_version_range`),
+/// so earlier protocol versions reject it without charging, as a binary that cannot decode it does.
+/// Authentication keys may carry a budget and an expiry (the version 1 public key format, which
+/// `StateTransition::active_version_range` admits from 14). Key structure validation v1
+/// (`STATE_TRANSITION_METHOD_VERSIONS_V2`) and `validate_identity_public_keys_limits` decide
+/// which keys may carry them; Drive identity methods v2 write the remaining budget when the key
+/// is added; identity-signature validation v1 refuses a key whose budget is spent;
+/// `validate_fees_of_event` v1 refuses an expired key and a spend the remaining budget does not
+/// cover (only metered processing may overshoot); `execute_event` v1 deducts what was spent.
+/// Shielded-proof validation v1 refuses a key that carries a budget or an expiry in identity
+/// creation from the shielded pool, whose sighash preimage does not cover the limits.
+/// `IdentityKeyLimitsUpdate` (state transition type 23, gated by
+/// `IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION`) raises a key's total budget, and the
+/// remaining budget with it, or moves its expiry later; it only ever loosens limits. Signed by a
+/// MASTER key or by a CRITICAL key without limits (`DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns
+/// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody)
     drive_abci: DriveAbciVersion {
-        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
+        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V5,
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire
+        validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
-        state_transitions: STATE_TRANSITION_VERSIONS_V3,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
+        state_transitions: STATE_TRANSITION_VERSIONS_V4,
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -312,8 +534,8 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1)
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until and max_contract_moderation_reason_length
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -325,7 +547,7 @@ mod tests {
     use crate::version::v13::PLATFORM_V13;
 
     #[test]
-    fn should_halve_only_the_contested_document_fee_at_protocol_14() {
+    fn should_change_only_the_contested_document_and_once_per_identity_fees_at_protocol_14() {
         for protocol_version in 1..14 {
             let version = PlatformVersion::get(protocol_version).expect("known protocol version");
             assert_eq!(
@@ -342,6 +564,17 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        // The once-per-identity token distribution exists from protocol version 14 on, and a
+        // token that uses it pays the surcharge of the other distribution kinds.
+        assert_eq!(
+            expected_fees
+                .data_contract_registration
+                .token_uses_once_per_identity_distribution_fee,
+            0
+        );
+        expected_fees
+            .data_contract_registration
+            .token_uses_once_per_identity_distribution_fee = 10_000_000_000;
         assert_eq!(PLATFORM_V14.fee_version, expected_fees);
     }
 

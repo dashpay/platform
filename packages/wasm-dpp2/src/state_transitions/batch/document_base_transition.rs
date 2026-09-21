@@ -1,13 +1,16 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::action_fee_agreement::DocumentActionFeeAgreementWasm;
+use crate::state_transitions::batch::generators::document_base_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::utils::{try_from_options, try_from_options_optional, try_to_u64};
+use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::batch_transition::document_base_transition::v2::v2_methods::DocumentBaseTransitionV2Methods;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -27,6 +30,7 @@ export interface DocumentBaseTransitionOptions {
     documentTypeName: string;
     dataContractId: IdentifierLike;
     tokenPaymentInfo?: TokenPaymentInfo;
+    actionFeeAgreement?: DocumentActionFeeAgreement;
 }
 "#;
 
@@ -69,20 +73,25 @@ impl DocumentBaseTransitionWasm {
             try_from_options_optional::<TokenPaymentInfoWasm>(&options, "tokenPaymentInfo")?
                 .map(Into::into);
 
+        // Extract actionFeeAgreement (optional)
+        let action_fee_agreement: Option<DocumentActionFeeAgreement> =
+            try_from_options_optional::<DocumentActionFeeAgreementWasm>(
+                &options,
+                "actionFeeAgreement",
+            )?
+            .map(Into::into);
+
         // Extract simple fields via serde
         let opts: DocumentBaseTransitionOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        let rs_base_v1 = DocumentBaseTransitionV1 {
-            id: document_id.into(),
-            identity_contract_nonce: opts.identity_contract_nonce,
-            document_type_name: opts.document_type_name,
-            data_contract_id: data_contract_id.into(),
+        Ok(DocumentBaseTransitionWasm(document_base_transition(
+            document_id.into(),
+            opts.identity_contract_nonce,
+            opts.document_type_name,
+            data_contract_id.into(),
             token_payment_info,
-        };
-
-        Ok(DocumentBaseTransitionWasm(DocumentBaseTransition::from(
-            rs_base_v1,
+            action_fee_agreement,
         )))
     }
 
@@ -109,6 +118,15 @@ impl DocumentBaseTransitionWasm {
     #[wasm_bindgen(getter = "tokenPaymentInfo")]
     pub fn token_payment_info(&self) -> Option<TokenPaymentInfoWasm> {
         self.0.token_payment_info().map(|info| info.into())
+    }
+
+    /// The action fees this transition agrees to pay. A base older than version 2, which a
+    /// transition decoded from the wire can carry, has none.
+    #[wasm_bindgen(getter = "actionFeeAgreement")]
+    pub fn action_fee_agreement(&self) -> Option<DocumentActionFeeAgreementWasm> {
+        self.0
+            .action_fee_agreement()
+            .map(|agreement| agreement.into())
     }
 
     #[wasm_bindgen(setter = "id")]
@@ -151,6 +169,32 @@ impl DocumentBaseTransitionWasm {
         match token_payment_info {
             Some(info) => self.0.set_token_payment_info(info.into()),
             None => self.0.clear_token_payment_info(),
+        }
+    }
+
+    /// Sets the action fees this transition agrees to pay, `undefined` clears them.
+    ///
+    /// Only a base of version 2 carries an agreement, so an older base, which the constructor
+    /// builds when it is given none, is rebuilt as version 2 to take one.
+    #[wasm_bindgen(setter = "actionFeeAgreement")]
+    pub fn set_action_fee_agreement(
+        &mut self,
+        #[wasm_bindgen(js_name = "actionFeeAgreement")] action_fee_agreement: Option<
+            DocumentActionFeeAgreementWasm,
+        >,
+    ) {
+        match action_fee_agreement {
+            Some(agreement) => {
+                self.0 = document_base_transition(
+                    self.0.id(),
+                    self.0.identity_contract_nonce(),
+                    self.0.document_type_name().clone(),
+                    self.0.data_contract_id(),
+                    self.0.token_payment_info(),
+                    Some(agreement.into()),
+                )
+            }
+            None => self.0.clear_action_fee_agreement(),
         }
     }
 }

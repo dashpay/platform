@@ -1,4 +1,5 @@
 pub mod accessors;
+pub mod action_fees;
 mod property;
 pub use property::*;
 pub mod class_methods;
@@ -69,6 +70,22 @@ pub(crate) mod property_names {
     pub const REQUIRED: &str = "required";
     pub const REQUIRED_SINCE: &str = "requiredSince";
     pub const TRANSIENT: &str = "transient";
+    /// Doctype-level array naming the top-level properties of a **mutable**
+    /// document type whose values are frozen at creation: a replace that
+    /// changes, adds or removes any of them is rejected. Meta-schema v3+
+    /// (protocol version 14). See `apply_immutable_fields` in
+    /// `try_from_schema::common` for the structural rules.
+    pub const IMMUTABLE: &str = "immutable";
+    /// Doctype-level object declaring a fixed fee in credits for actions on documents of
+    /// the type, split between the contract's owner pot and its moderators pot. Meta-schema
+    /// v3+ (protocol version 14). See `parse_action_fees_keyword` in
+    /// `try_from_schema::common`.
+    pub const ACTION_FEES: &str = "actionFees";
+    /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
+    /// still set when the stored document has no value for them. Once set
+    /// they are frozen like the rest of the list. Every entry must also be in
+    /// [`IMMUTABLE`]. Meta-schema v3+ (protocol version 14).
+    pub const IMMUTABLE_ALLOW_SETTING: &str = "immutableAllowSetting";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";
@@ -126,6 +143,21 @@ pub(crate) mod property_names {
     /// 14). See `apply_index_only` in `try_from_schema::common` for the
     /// structural constraints the flag imposes.
     pub const INDEX_ONLY: &str = "indexOnly";
+    /// Doctype-level flag letting the contract's moderators (its owner and the
+    /// identities its moderation config appoints) delete documents of this type
+    /// with a `ContractUserModeration` transition, whatever `canBeDeleted` says
+    /// about the documents' own owners. Meta-schema v3+ (protocol version 14).
+    /// See `apply_can_be_deleted_by_moderators` in `try_from_schema::common`
+    /// for what the flag requires of the type and of the contract.
+    pub const CAN_BE_DELETED_BY_MODERATORS: &str = "canBeDeletedByModerators";
+    /// Doctype-level limit on `canBeDeletedByModerators`: for how many seconds
+    /// after a document's last modification (`$updatedAt`, or `$createdAt` on a
+    /// type whose documents never change and carry no `$updatedAt`) the moderators may
+    /// still delete it. Past that the document is settled and no moderator can
+    /// remove it; a replace moves `$updatedAt` and opens the window again.
+    /// Absent means no limit. Meta-schema v3+ (protocol version 14). See
+    /// `apply_can_be_deleted_by_moderators_for` in `try_from_schema::common`.
+    pub const CAN_BE_DELETED_BY_MODERATORS_FOR: &str = "canBeDeletedByModeratorsFor";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

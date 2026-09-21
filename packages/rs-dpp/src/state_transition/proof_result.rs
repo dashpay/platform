@@ -1,6 +1,10 @@
 use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::config::moderation::{
+    ContractDocumentRemoval, ContractModerationListStatuses,
+};
+use crate::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
@@ -128,6 +132,35 @@ pub enum StateTransitionProofResult {
     /// STRICT merged multi-root GroveDB proof. A light/SDK client can cryptographically confirm both
     /// that the identity was created and that the funding nullifiers were consumed.
     VerifiedIdentityWithShieldedNullifiers(Identity, Vec<(Vec<u8>, bool)>),
+    /// Returned by `ContractUserModeration`: the target identity's status on the lists the
+    /// moderation touched (contract id, identity id, one status per list proved) after the
+    /// moderation. A ban proves both lists the contract keeps, since it also removes a
+    /// suspension; an unban, a suspend and an unsuspend prove the one list they edit, and say
+    /// nothing about the other.
+    VerifiedContractModerationListStatuses(Identifier, Identifier, ContractModerationListStatuses),
+    /// A contract fee claim's execution proof shows the pot it paid out (contract id, pot, the
+    /// pot's last claim, the credits left in it) and the balance of every identity it paid,
+    /// after the claim. A pot is paid out at most once per epoch, so within its epoch the last
+    /// claim is this claim, and its claimant and block time say so.
+    VerifiedContractFeeClaim(
+        Identifier,
+        ContractFeePot,
+        ContractFeePotLastClaim,
+        Credits,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(
+                with = "crate::serialization::json::safe_integer_map::json_safe_identifier_u64_map"
+            )
+        )]
+        BTreeMap<Identifier, Credits>,
+    ),
+    /// Returned by a `ContractUserModeration` that deletes a document: the record the removal
+    /// left under the contract (contract id, document type name, document id, record). The
+    /// proof shows the record, and the verifier checks that it names the transition's signer
+    /// and carries the transition's reason. A document id is produced at most once, so the
+    /// record is of this document and of no other.
+    VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
 }
 
 /// A verified state-transition proof result, tagged with the guarantee the

@@ -36,7 +36,7 @@ export class StateTransitionsFacade {
    * Like `waitForResponse`, but accepts proofs that only authenticate the
    * state the transition affects (balance top-ups, credit transfers and
    * withdrawals, address funds movements, shields, no-history token
-   * operations). The result is a verified, height-pinned snapshot — NOT
+   * operations, key limits updates). The result is a verified, height-pinned snapshot — NOT
    * evidence that this specific transition executed.
    */
   async waitForAffectedState(

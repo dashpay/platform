@@ -51,6 +51,7 @@ impl DocumentCreateTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_creation_token_cost(),
+                |action_fees| action_fees.document_creation_action_fee(),
                 "create",
             )?;
 

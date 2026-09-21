@@ -24,6 +24,8 @@ use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
+use drive::structure::conformance::check_conformance;
+use drive::structure::drive_structure;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -1228,6 +1230,8 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             .index
     };
 
+    assert_state_conforms_to_structure(platform);
+
     ChainExecutionOutcome {
         abci_app,
         masternode_identity_balances,
@@ -1248,4 +1252,26 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         instant_lock_quorums,
         signer,
     }
+}
+
+/// Every element the chain wrote must be covered by the GroveDB structure
+/// description in `drive::structure`. This is what makes a change that adds
+/// structure describe it: whatever its own strategy tests write gets walked.
+fn assert_state_conforms_to_structure(platform: &Platform<MockCoreRPCLike>) {
+    let state = platform.state.load();
+    // A chain whose genesis block failed has written nothing yet
+    if state.last_committed_block_info().is_none() {
+        return;
+    }
+    let Ok(platform_version) = state.current_platform_version() else {
+        return;
+    };
+    // Mock protocol versions used by upgrade tests say nothing about which
+    // structure should exist
+    if platform_version.protocol_version > PlatformVersion::latest().protocol_version {
+        return;
+    }
+    check_conformance(&platform.drive, &drive_structure(), None, platform_version)
+        .expect("expected to walk the state")
+        .assert_conforms();
 }

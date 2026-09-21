@@ -280,6 +280,10 @@ pub struct IdentityKeyEntryFFI {
     //     both the `id` and the heap-allocated UTF-8 doc-type
     //     C-string are meaningful. Doc-type string is released by
     //     [`free_identity_key_entry_ffi`].
+    //   * `contract_bounds_kind == 3`: `ContractGroup`; the 32-byte
+    //     `id` is the contract group id, doc-type pointer is null.
+    //     The client must persist the kind itself: an id without a
+    //     doc-type name is otherwise indistinguishable from kind 1.
     //
     // Keeping the kind tag inline (vs. always nulling fields) lets
     // the Swift side switch on a single discriminant without
@@ -298,6 +302,17 @@ pub struct IdentityKeyEntryFFI {
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *const c_char,
+
+    // Usage limits (protocol version 14). `total_budget` is the credits
+    // the key may take from the identity over its lifetime when
+    // `total_budget_is_some`; `expires_at` is the block time in
+    // milliseconds from which it can no longer sign when
+    // `expires_at_is_some`. A version 0 key has neither, and the client
+    // must persist both so a limited key restores as limited.
+    pub total_budget_is_some: bool,
+    pub total_budget: u64,
+    pub expires_at_is_some: bool,
+    pub expires_at: u64,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -344,9 +359,15 @@ pub struct IdentityKeyRemovalFFI {
 //   137..=168 contract_bounds_id      [u8; 32]
 //   169..=175 (padding to 8 for pointer alignment)
 //   176..=183 contract_bounds_document_type *const c_char
+//   184       total_budget_is_some    bool
+//   185..=191 (padding to 8)
+//   192..=199 total_budget            u64
+//   200       expires_at_is_some      bool
+//   201..=207 (padding to 8)
+//   208..=215 expires_at              u64
 //
-// Total size = 184, alignment = 8 (from u64 / pointer).
-const _: [u8; 184] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+// Total size = 216, alignment = 8 (from u64 / pointer).
+const _: [u8; 216] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -655,6 +676,7 @@ impl IdentityKeyEntryFFI {
     /// [`free_identity_key_entry_ffi`].
     pub fn from_entry(entry: &IdentityKeyEntry) -> Self {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
         use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 
         let pk_bytes = entry.public_key.data().as_slice().to_vec();
@@ -663,6 +685,14 @@ impl IdentityKeyEntryFFI {
         let public_key_data_ptr = Box::into_raw(pk_boxed) as *mut u8;
 
         let (disabled_some, disabled_at) = match entry.public_key.disabled_at() {
+            Some(ts) => (true, ts),
+            None => (false, 0u64),
+        };
+        let (total_budget_is_some, total_budget) = match entry.public_key.total_budget() {
+            Some(credits) => (true, credits),
+            None => (false, 0u64),
+        };
+        let (expires_at_is_some, expires_at) = match entry.public_key.expires_at() {
             Some(ts) => (true, ts),
             None => (false, 0u64),
         };
@@ -699,6 +729,7 @@ impl IdentityKeyEntryFFI {
                     Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
                     Err(_) => (1u8, id.to_buffer(), ptr::null()),
                 },
+                Some(ContractBounds::ContractGroup { id }) => (3u8, id.to_buffer(), ptr::null()),
                 None => (0u8, [0u8; 32], ptr::null()),
             };
 
@@ -722,6 +753,10 @@ impl IdentityKeyEntryFFI {
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
+            total_budget_is_some,
+            total_budget,
+            expires_at_is_some,
+            expires_at,
         }
     }
 }
@@ -1236,6 +1271,37 @@ mod tests {
         assert!(ffi.disabled_at_is_some);
         assert_eq!(ffi.disabled_at, 1_700_000_000);
         assert_eq!(ffi.contract_bounds_kind, 0);
+        assert!(ffi.contract_bounds_document_type.is_null());
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn should_flatten_contract_group_bounds_as_kind_3() {
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+        let contract_group_id = Identifier::from([0x47; 32]);
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::ContractGroup {
+                id: contract_group_id,
+            }),
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0x01; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([1u8; 32]),
+            key_id: 1,
+            public_key,
+            public_key_hash: [0x11; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        assert_eq!(ffi.contract_bounds_kind, 3);
+        assert_eq!(ffi.contract_bounds_id, [0x47; 32]);
         assert!(ffi.contract_bounds_document_type.is_null());
         unsafe { free_identity_key_entry_ffi(&mut ffi) };
     }

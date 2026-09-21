@@ -116,9 +116,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             resolved_options.method_feature_version,
             resolved_options.base_feature_version,
         )?;
+        let create_transition = resolved_options.apply_action_fee_agreement(create_transition)?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
-            transitions: vec![create_transition.into()],
+            transitions: vec![create_transition],
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
@@ -160,9 +161,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             resolved_options.method_feature_version,
             resolved_options.base_feature_version,
         )?;
+        let replace_transition = resolved_options.apply_action_fee_agreement(replace_transition)?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
-            transitions: vec![replace_transition.into()],
+            transitions: vec![replace_transition],
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
@@ -206,9 +208,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             resolved_options.method_feature_version,
             resolved_options.base_feature_version,
         )?;
+        let transfer_transition =
+            resolved_options.apply_action_fee_agreement(transfer_transition)?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
-            transitions: vec![transfer_transition.into()],
+            transitions: vec![transfer_transition],
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
@@ -270,6 +274,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             )?
             .into()
         };
+        let delete_transition = resolved_options.apply_action_fee_agreement(delete_transition)?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
             transitions: vec![delete_transition],
@@ -316,9 +321,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             resolved_options.method_feature_version,
             resolved_options.base_feature_version,
         )?;
+        let transfer_transition =
+            resolved_options.apply_action_fee_agreement(transfer_transition)?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
-            transitions: vec![transfer_transition.into()],
+            transitions: vec![transfer_transition],
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
@@ -362,9 +369,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             resolved_options.method_feature_version,
             resolved_options.base_feature_version,
         )?;
+        let purchase_transition =
+            resolved_options.apply_action_fee_agreement(purchase_transition)?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id: new_owner_id,
-            transitions: vec![purchase_transition.into()],
+            transitions: vec![purchase_transition],
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),

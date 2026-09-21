@@ -11,6 +11,7 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_distribution_key::{TokenDistributionType, TokenDistributionTypeWithResolvedRecipient};
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use crate::data_contract::DataContract;
@@ -644,6 +645,15 @@ impl TokenTransitionV0Methods for TokenTransition {
                             }
                         };
                         TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient)
+                    }
+                    TokenDistributionType::OncePerIdentity => {
+                        if distribution_rules
+                            .once_per_identity_distribution()
+                            .is_none()
+                        {
+                            return Err(ProtocolError::NotSupported("Token claiming of once per identity distribution is not supported on this token".to_string()));
+                        }
+                        TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(owner_id)
                     }
                 };
 

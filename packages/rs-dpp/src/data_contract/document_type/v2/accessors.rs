@@ -2,6 +2,7 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters, DocumentTypeV1Getters,
     DocumentTypeV2Getters, DocumentTypeV2Setters,
 };
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
@@ -229,6 +230,26 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn index_only(&self) -> bool {
         self.index_only
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        self.documents_can_be_deleted_by_moderators
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        self.documents_can_be_deleted_by_moderators_for
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        &self.immutable_fields
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        &self.immutable_fields_allow_setting
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        self.action_fees.as_ref()
     }
 }
 

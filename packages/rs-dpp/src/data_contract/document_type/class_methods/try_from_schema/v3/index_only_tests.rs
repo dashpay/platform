@@ -1095,6 +1095,54 @@ fn rejects_preallocated_on_owner_prefixed_index() {
 }
 
 #[test]
+fn rejects_preallocated_through_a_deletable_document_reference() {
+    // A deletableDocument reference shapes the path exactly as a
+    // permanentDocument one would, but its target may be deleted: the
+    // trees created alongside it would outlive it with other owners'
+    // entries inside, so it is not a preallocation binding.
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "deletableDocument",
+            "documentType": "post",
+            "propertyAgreement": { "hashtag": "hashtag" }
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "not determined by a reference",
+    );
+}
+
+#[test]
+fn accepts_a_deletable_document_reference_as_the_terminal() {
+    // The member key is an Item holding the referenced id, not a
+    // Reference, so an entry simply outlives a deleted target.
+    for full_validation in [false, true] {
+        let mut schema = likes_schema();
+        set_post_id_refers_to(
+            &mut schema,
+            platform_value!({
+                "type": "deletableDocument",
+                "documentType": "post"
+            }),
+        );
+        let document_type = parse_with(schema, PlatformVersion::latest(), full_validation)
+            .expect("a deletableDocument terminal parses");
+        assert_eq!(
+            document_type
+                .indices
+                .get("byLiker")
+                .unwrap()
+                .terminal
+                .as_deref(),
+            Some("postId")
+        );
+    }
+}
+
+#[test]
 fn rejects_preallocated_on_cross_contract_reference() {
     // The reference names a DIFFERENT contract — its document inserts
     // happen in a subtree this contract's insert path never touches.

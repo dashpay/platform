@@ -5,6 +5,8 @@ mod fetch_elements;
 pub mod genesis_time;
 /// Protocol version module
 pub mod protocol_version;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 use crate::drive::RootTree;
 

@@ -26,10 +26,11 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     fetch_asset_lock_transaction_output_sync: 0,
                     verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                 },
-                validate_identity_public_key_contract_bounds: 1,
+                validate_identity_public_key_contract_bounds: 2,
+                validate_identity_public_keys_limits: Some(0),
                 validate_identity_public_key_ids_dont_exist_in_state: 0,
                 validate_identity_public_key_ids_exist_in_state: 0,
-                validate_state_transition_identity_signed: 0,
+                validate_state_transition_identity_signed: 1,
                 validate_unique_identity_public_key_hashes_in_state: 1,
                 validate_master_key_uniqueness: 0,
                 validate_non_masternode_identity_exists: 0,
@@ -41,7 +42,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: Some(0),
                 nonce: None,
-                state: 0,
+                state: 1,
                 transform_into_action: 0,
             },
             identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -49,9 +50,18 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: Some(0),
                 nonce: Some(0),
-                state: 0,
+                state: 1,
                 transform_into_action: 0,
             },
+            identity_key_limits_update_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: Some(0),
+                    nonce: Some(0),
+                    state: 0,
+                    transform_into_action: 0,
+                },
             identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
                 advanced_structure: None,
@@ -62,14 +72,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             },
             identity_credit_withdrawal_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    // v1 adds config min_version enforcement: since protocol version 12, V0 config is no longer
-                    // accepted because it lacks sized_integer_types support.
-                    basic_structure: Some(1),
+                    // v2 adds the protocol-14 Core fee limit and post-fee output floor.
+                    basic_structure: Some(2),
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: Some(0),
                     state: 0,
-                    transform_into_action: 0,
+                    transform_into_action: 1,
                 },
             identity_credit_withdrawal_state_transition_purpose_matches_requirements: 0,
             identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -107,17 +116,33 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: Some(1),
+                basic_structure: Some(2), // changed: validates the contract moderation declaration of a config V2
                 advanced_structure: None,
                 identity_signatures: None,
                 nonce: Some(0),
                 state: 1, // changed: runs data_contract_reference_validation on the updated contract's refersTo declarations
                 transform_into_action: 0,
             },
+            contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(0),
+                advanced_structure: None,
+                identity_signatures: Some(0),
+                nonce: Some(0),
+                state: 0,
+                transform_into_action: 0,
+            },
+            contract_fee_claim_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(0),
+                advanced_structure: None,
+                identity_signatures: Some(0),
+                nonce: Some(0),
+                state: 0,
+                transform_into_action: 0,
+            },
             data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
-                advanced_structure: 0,
+                advanced_structure: 1,
                 state: 0,
                 revision: 0,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): batch state transition
@@ -143,7 +168,11 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 //   * T3 — DashPay data trigger recipient identity-balance
                 //     fetch cost (switched to `fetch_identity_balance_with_costs`).
                 //   * T4 — withdrawals data trigger `query_documents` cost.
-                transform_into_action: 1,
+                // `transform_into_action: 2` (protocol version 14): when the batch is
+                // signed by a key bound to a contract group, it also resolves the
+                // contract group memberships of the batch's contracts into the action.
+                // Any other batch is transformed exactly as under 1.
+                transform_into_action: 2,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
                 // failure paths in `transform_document_transition` now emit
                 // a `BumpIdentityDataContractNonce` action so the user pays
@@ -151,6 +180,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // ownership/revision check). v0 stays for chain
                 // reproducibility on PROTOCOL_VERSION_11 and below.
                 failed_per_transition_action: 1,
+                // Contract moderation (protocol version 14): the batch transformer gates the
+                // document transitions of a moderated contract on the signer's status.
+                contract_moderation_gate: Some(0),
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): fetch_documents
                 // helpers bumped to v1 which bill the grovedb cost of
                 // their query_documents calls. v0 stays for PV11 chain
@@ -184,6 +216,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     },
                 },
                 is_allowed: 0,
+                // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
+                // only has to fund its principal (purchases, contest collateral) itself.
+                identity_minimum_balance_pre_check: 1,
                 document_create_transition_structure_validation: 1,
                 // Reject deletes on legacy keep-history types as paid consensus errors.
                 // Protocols through 13 retain the original internal-error outcome.
@@ -234,7 +269,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     advanced_structure: Some(0),
                     identity_signatures: Some(0),
                     nonce: Some(0),
-                    state: 0,
+                    state: 1,
                     transform_into_action: 0,
                 },
             identity_top_up_from_addresses_state_transition:
@@ -252,7 +287,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: Some(0),
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1,
             },
             address_funds_from_asset_lock: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -308,7 +343,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1,
             },
             identity_create_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
@@ -316,7 +351,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: None,
-                    state: 0,
+                    state: 1,
                     transform_into_action: 0,
                 },
             shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -340,7 +375,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
         has_nonce_validation: 1,
         has_address_witness_validation: 0,
         validate_address_witnesses: 0,
-        validate_shielded_proof: 0,
+        validate_shielded_proof: 1,
         validate_minimum_shielded_fee: 0,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
