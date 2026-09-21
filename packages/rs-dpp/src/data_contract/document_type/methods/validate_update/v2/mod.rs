@@ -12,9 +12,10 @@
 //!   itself immutable, so an erasable type that stopped allowing deletion could
 //!   never again reach a state erase acts on.
 //!
-//! Every other check is v1's: index definitions compared by name, byte array
-//! encodings frozen, top-level requiredness frozen except for `requiredSince`
-//! additions, and schema compatibility.
+//! Every other check is v1's, which v2 delegates to once the two lifecycle
+//! rules above have passed. The one case where v1 alone would decide
+//! differently, an erasable type withdrawing deletion, is refused here before
+//! v1 sees it, so v1's option computation stays what it was.
 
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::{
@@ -24,8 +25,6 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
-
-use super::common::UpdateValidationOptions;
 
 impl DocumentTypeRef<'_> {
     #[inline(always)]
@@ -50,37 +49,21 @@ impl DocumentTypeRef<'_> {
             ));
         }
 
-        let options = UpdateValidationOptions {
-            allow_history_delete_repair: self.documents_keep_history()
-                && new_document_type.documents_keep_history()
-                && self.documents_can_be_deleted()
-                && !new_document_type.documents_can_be_deleted()
-                && !self.documents_can_be_erased(),
-        };
-        let result = self.validate_config_with_options(new_document_type, &options);
-
-        if !result.is_valid() {
-            return Ok(result);
+        if self.documents_can_be_erased()
+            && self.documents_can_be_deleted()
+            && !new_document_type.documents_can_be_deleted()
+        {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    "document type whose documents can be erased can not stop allowing deletion"
+                        .to_string(),
+                )
+                .into(),
+            ));
         }
 
-        let result = self.validate_index_definitions_unchanged(new_document_type);
-
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result = self.validate_byte_array_encoding_stability(new_document_type);
-
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result = self.validate_required_fields_update(new_document_type, new_contract_version);
-
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        self.validate_schema_with_options(new_document_type, platform_version, &options)
+        self.validate_update_v1(new_document_type, new_contract_version, platform_version)
     }
 }
