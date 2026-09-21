@@ -10,6 +10,7 @@ mod contract_moderation_status;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use dapi_grpc::platform::v0::ContractModerationDocument as ContractModerationDocumentProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
 use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
 use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
@@ -65,6 +66,14 @@ pub(super) fn reason_to_response(
     ContractModerationReasonProto {
         code: reason.code.map(u32::from),
         text: reason.text,
+        documents: reason
+            .documents
+            .into_iter()
+            .map(|document| ContractModerationDocumentProto {
+                document_type_name: document.document_type_name,
+                document_id: document.document_id.to_vec(),
+            })
+            .collect(),
     }
 }
 
@@ -246,6 +255,7 @@ pub(super) mod tests {
                 &ContractModerationReason {
                     code: Some(SUSPENSION_REASON_CODE),
                     text: SUSPENSION_REASON.to_string(),
+                    documents: vec![],
                 },
                 false,
                 contract.owner_id(),

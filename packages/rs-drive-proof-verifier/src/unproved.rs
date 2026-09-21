@@ -1573,10 +1573,12 @@ mod contract_moderation_tests {
                 ban_reason: Some(ContractModerationReasonProto {
                     code: None,
                     text: "spam".to_string(),
+                    documents: vec![],
                 }),
                 suspension_reason: Some(ContractModerationReasonProto {
                     code: Some(9),
                     text: "flooding".to_string(),
+                    documents: vec![],
                 }),
                 warnings: vec![],
             },
@@ -1597,6 +1599,7 @@ mod contract_moderation_tests {
             Some(&ContractModerationReason {
                 code: Some(9),
                 text: "flooding".to_string(),
+                documents: vec![],
             })
         );
     }
@@ -1621,6 +1624,7 @@ mod contract_moderation_tests {
                 suspension_reason: Some(ContractModerationReasonProto {
                     code: Some(u16::MAX as u32 + 1),
                     text: String::new(),
+                    documents: vec![],
                 }),
                 ..Default::default()
             },
@@ -1649,6 +1653,7 @@ mod contract_moderation_tests {
             reason: Some(ContractModerationReasonProto {
                 code: None,
                 text: text.to_string(),
+                documents: vec![],
             }),
         };
         let warned = status(
@@ -1760,6 +1765,7 @@ mod contract_moderation_tests {
             reason: Some(ContractModerationReasonProto {
                 code: None,
                 text: "spam".to_string(),
+                documents: vec![],
             }),
         }
     }

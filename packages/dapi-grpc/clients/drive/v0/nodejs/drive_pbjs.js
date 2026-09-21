@@ -24083,6 +24083,225 @@ $root.org = (function() {
                         return values;
                     })();
 
+                    v0.ContractModerationDocument = (function() {
+
+                        /**
+                         * Properties of a ContractModerationDocument.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IContractModerationDocument
+                         * @property {string|null} [documentTypeName] ContractModerationDocument documentTypeName
+                         * @property {Uint8Array|null} [documentId] ContractModerationDocument documentId
+                         */
+
+                        /**
+                         * Constructs a new ContractModerationDocument.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a ContractModerationDocument.
+                         * @implements IContractModerationDocument
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IContractModerationDocument=} [properties] Properties to set
+                         */
+                        function ContractModerationDocument(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * ContractModerationDocument documentTypeName.
+                         * @member {string} documentTypeName
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @instance
+                         */
+                        ContractModerationDocument.prototype.documentTypeName = "";
+
+                        /**
+                         * ContractModerationDocument documentId.
+                         * @member {Uint8Array} documentId
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @instance
+                         */
+                        ContractModerationDocument.prototype.documentId = $util.newBuffer([]);
+
+                        /**
+                         * Creates a new ContractModerationDocument instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractModerationDocument=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationDocument} ContractModerationDocument instance
+                         */
+                        ContractModerationDocument.create = function create(properties) {
+                            return new ContractModerationDocument(properties);
+                        };
+
+                        /**
+                         * Encodes the specified ContractModerationDocument message. Does not implicitly {@link org.dash.platform.dapi.v0.ContractModerationDocument.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractModerationDocument} message ContractModerationDocument message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        ContractModerationDocument.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).string(message.documentTypeName);
+                            if (message.documentId != null && Object.hasOwnProperty.call(message, "documentId"))
+                                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.documentId);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified ContractModerationDocument message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.ContractModerationDocument.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractModerationDocument} message ContractModerationDocument message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        ContractModerationDocument.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a ContractModerationDocument message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationDocument} ContractModerationDocument
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        ContractModerationDocument.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.ContractModerationDocument();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.documentTypeName = reader.string();
+                                    break;
+                                case 2:
+                                    message.documentId = reader.bytes();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a ContractModerationDocument message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationDocument} ContractModerationDocument
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        ContractModerationDocument.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a ContractModerationDocument message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        ContractModerationDocument.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                if (!$util.isString(message.documentTypeName))
+                                    return "documentTypeName: string expected";
+                            if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                if (!(message.documentId && typeof message.documentId.length === "number" || $util.isString(message.documentId)))
+                                    return "documentId: buffer expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a ContractModerationDocument message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationDocument} ContractModerationDocument
+                         */
+                        ContractModerationDocument.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.ContractModerationDocument)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.ContractModerationDocument();
+                            if (object.documentTypeName != null)
+                                message.documentTypeName = String(object.documentTypeName);
+                            if (object.documentId != null)
+                                if (typeof object.documentId === "string")
+                                    $util.base64.decode(object.documentId, message.documentId = $util.newBuffer($util.base64.length(object.documentId)), 0);
+                                else if (object.documentId.length >= 0)
+                                    message.documentId = object.documentId;
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a ContractModerationDocument message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ContractModerationDocument} message ContractModerationDocument
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        ContractModerationDocument.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                object.documentTypeName = "";
+                                if (options.bytes === String)
+                                    object.documentId = "";
+                                else {
+                                    object.documentId = [];
+                                    if (options.bytes !== Array)
+                                        object.documentId = $util.newBuffer(object.documentId);
+                                }
+                            }
+                            if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                object.documentTypeName = message.documentTypeName;
+                            if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                object.documentId = options.bytes === String ? $util.base64.encode(message.documentId, 0, message.documentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentId) : message.documentId;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this ContractModerationDocument to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationDocument
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        ContractModerationDocument.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return ContractModerationDocument;
+                    })();
+
                     v0.ContractModerationReason = (function() {
 
                         /**
@@ -24091,6 +24310,7 @@ $root.org = (function() {
                          * @interface IContractModerationReason
                          * @property {number|null} [code] ContractModerationReason code
                          * @property {string|null} [text] ContractModerationReason text
+                         * @property {Array.<org.dash.platform.dapi.v0.IContractModerationDocument>|null} [documents] ContractModerationReason documents
                          */
 
                         /**
@@ -24102,6 +24322,7 @@ $root.org = (function() {
                          * @param {org.dash.platform.dapi.v0.IContractModerationReason=} [properties] Properties to set
                          */
                         function ContractModerationReason(properties) {
+                            this.documents = [];
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -24123,6 +24344,14 @@ $root.org = (function() {
                          * @instance
                          */
                         ContractModerationReason.prototype.text = "";
+
+                        /**
+                         * ContractModerationReason documents.
+                         * @member {Array.<org.dash.platform.dapi.v0.IContractModerationDocument>} documents
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @instance
+                         */
+                        ContractModerationReason.prototype.documents = $util.emptyArray;
 
                         /**
                          * Creates a new ContractModerationReason instance using the specified properties.
@@ -24152,6 +24381,9 @@ $root.org = (function() {
                                 writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.code);
                             if (message.text != null && Object.hasOwnProperty.call(message, "text"))
                                 writer.uint32(/* id 2, wireType 2 =*/18).string(message.text);
+                            if (message.documents != null && message.documents.length)
+                                for (var i = 0; i < message.documents.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.ContractModerationDocument.encode(message.documents[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                             return writer;
                         };
 
@@ -24191,6 +24423,11 @@ $root.org = (function() {
                                     break;
                                 case 2:
                                     message.text = reader.string();
+                                    break;
+                                case 3:
+                                    if (!(message.documents && message.documents.length))
+                                        message.documents = [];
+                                    message.documents.push($root.org.dash.platform.dapi.v0.ContractModerationDocument.decode(reader, reader.uint32()));
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -24233,6 +24470,15 @@ $root.org = (function() {
                             if (message.text != null && message.hasOwnProperty("text"))
                                 if (!$util.isString(message.text))
                                     return "text: string expected";
+                            if (message.documents != null && message.hasOwnProperty("documents")) {
+                                if (!Array.isArray(message.documents))
+                                    return "documents: array expected";
+                                for (var i = 0; i < message.documents.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.ContractModerationDocument.verify(message.documents[i]);
+                                    if (error)
+                                        return "documents." + error;
+                                }
+                            }
                             return null;
                         };
 
@@ -24252,6 +24498,16 @@ $root.org = (function() {
                                 message.code = object.code >>> 0;
                             if (object.text != null)
                                 message.text = String(object.text);
+                            if (object.documents) {
+                                if (!Array.isArray(object.documents))
+                                    throw TypeError(".org.dash.platform.dapi.v0.ContractModerationReason.documents: array expected");
+                                message.documents = [];
+                                for (var i = 0; i < object.documents.length; ++i) {
+                                    if (typeof object.documents[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.ContractModerationReason.documents: object expected");
+                                    message.documents[i] = $root.org.dash.platform.dapi.v0.ContractModerationDocument.fromObject(object.documents[i]);
+                                }
+                            }
                             return message;
                         };
 
@@ -24268,6 +24524,8 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
+                            if (options.arrays || options.defaults)
+                                object.documents = [];
                             if (options.defaults) {
                                 object.code = 0;
                                 object.text = "";
@@ -24276,6 +24534,11 @@ $root.org = (function() {
                                 object.code = message.code;
                             if (message.text != null && message.hasOwnProperty("text"))
                                 object.text = message.text;
+                            if (message.documents && message.documents.length) {
+                                object.documents = [];
+                                for (var j = 0; j < message.documents.length; ++j)
+                                    object.documents[j] = $root.org.dash.platform.dapi.v0.ContractModerationDocument.toObject(message.documents[j], options);
+                            }
                             return object;
                         };
 

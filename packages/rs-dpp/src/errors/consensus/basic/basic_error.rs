@@ -14,6 +14,7 @@ use crate::consensus::basic::contract_group::{
 use crate::consensus::basic::contract_moderation::{
     ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
+    InvalidContractModerationReasonDocumentsError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -800,6 +801,10 @@ pub enum BasicError {
     // Document action fees (protocol version 14).
     #[error(transparent)]
     DocumentActionFeesWithoutModerationError(DocumentActionFeesWithoutModerationError),
+
+    // Documents cited by a contract moderation reason (protocol version 14).
+    #[error(transparent)]
+    InvalidContractModerationReasonDocumentsError(InvalidContractModerationReasonDocumentsError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -870,12 +875,20 @@ mod tests {
             )),
             191
         );
-        // Document action fees (protocol version 14): the tail of the enum.
+        // Document action fees (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::DocumentActionFeesWithoutModerationError(
                 DocumentActionFeesWithoutModerationError::new("post".to_string())
             )),
             192
+        );
+        // Documents cited by a contract moderation reason (protocol version 14): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(BasicError::InvalidContractModerationReasonDocumentsError(
+                InvalidContractModerationReasonDocumentsError::new("x".to_string())
+            )),
+            193
         );
     }
 }

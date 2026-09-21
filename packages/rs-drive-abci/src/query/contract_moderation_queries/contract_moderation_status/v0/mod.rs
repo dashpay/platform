@@ -290,6 +290,7 @@ mod tests {
                         reason: ContractModerationReason {
                             code: Some(SUSPENSION_REASON_CODE),
                             text: SUSPENSION_REASON.to_string(),
+                            documents: vec![],
                         },
                     }),
                     warnings: vec![],
