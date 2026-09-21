@@ -260,6 +260,37 @@ impl DriveDocumentQuery<'_> {
                          bound while an earlier one is not",
                     ));
                 }
+                // All terminal components share one lexicographically ordered
+                // member key. After ignoring equality-bound fields, ORDER BY
+                // must follow the remaining components without gaps, in one
+                // direction; reversing the key reverses every component.
+                let mut direction = None;
+                for (position, order) in self
+                    .order_by
+                    .values()
+                    .filter(|order| {
+                        is_component(&order.field)
+                            && !self
+                                .internal_clauses
+                                .equal_clauses
+                                .contains_key(&order.field)
+                    })
+                    .enumerate()
+                {
+                    if components.get(bound + position) != Some(&order.field) {
+                        return Err(shape_error(
+                            "orderBy on a composite indexOnly terminal must follow its \
+                             unbound components contiguously from the first one",
+                        ));
+                    }
+                    if direction.is_some_and(|ascending| ascending != order.ascending) {
+                        return Err(shape_error(
+                            "orderBy on unbound composite indexOnly terminal components \
+                             must use the same direction",
+                        ));
+                    }
+                    direction = Some(order.ascending);
+                }
                 let tail_candidates: Vec<&crate::query::WhereClause> = self
                     .internal_clauses
                     .range_clause

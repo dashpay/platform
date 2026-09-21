@@ -48,6 +48,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
@@ -1300,4 +1301,212 @@ fn prefixed_composite_terminal_ranges_over_the_leading_component() {
     assert_eq!(outcome.documents().len(), 3);
 
     assert_grovedb_is_consistent(&drive);
+}
+
+#[test]
+fn should_reject_unrepresentable_composite_terminal_ordering() {
+    let (drive, contract) = setup();
+    for (kind, owner, seed) in [(3, OWNER_1, 1), (3, OWNER_3, 2), (7, OWNER_2, 3)] {
+        insert(
+            &drive,
+            &contract,
+            "reaction",
+            &build_reaction(&contract, kind, owner, seed),
+            true,
+        )
+        .expect("insert reaction");
+    }
+    let (valid_proof, _) = query_ordered(
+        &contract,
+        "reaction",
+        vec![equal("postId", Value::Identifier(POST))],
+        vec![("kind", true), ("$ownerId", true)],
+        Some(10),
+    )
+    .execute_with_proof(&drive, None, None, platform_version())
+    .expect("prove the actual member-key order");
+    for order_by in [
+        vec![("$ownerId", true)],
+        vec![("$ownerId", true), ("kind", true)],
+        vec![("kind", true), ("$ownerId", false)],
+    ] {
+        let query = query_ordered(
+            &contract,
+            "reaction",
+            vec![equal("postId", Value::Identifier(POST))],
+            order_by,
+            Some(10),
+        );
+        let error = drive
+            .query_documents(query.clone(), None, false, None, None)
+            .expect_err("one member-key walk cannot implement this ordering");
+        assert!(error.to_string().contains("orderBy"), "{error}");
+        let error = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version())
+            .expect_err("the prover must reject the same ordering");
+        assert!(error.to_string().contains("orderBy"), "{error}");
+        let error = query
+            .verify_proof(&valid_proof, platform_version())
+            .expect_err("a proof of member-key order cannot prove a different sort order");
+        assert!(error.to_string().contains("orderBy"), "{error}");
+    }
+}
+
+#[test]
+fn should_order_composite_terminal_components_in_both_directions() {
+    let (drive, contract) = setup();
+    for (kind, owner, seed) in [(3, OWNER_1, 1), (3, OWNER_3, 2), (7, OWNER_2, 3)] {
+        insert(
+            &drive,
+            &contract,
+            "reaction",
+            &build_reaction(&contract, kind, owner, seed),
+            true,
+        )
+        .expect("insert reaction");
+    }
+    for (order_by, kind, expected) in [
+        (
+            vec![("kind", true), ("$ownerId", true)],
+            None,
+            vec![OWNER_1, OWNER_3, OWNER_2],
+        ),
+        (
+            vec![("kind", false), ("$ownerId", false)],
+            None,
+            vec![OWNER_2, OWNER_3, OWNER_1],
+        ),
+        // Equality-bound components do not affect ordering, so their
+        // direction need not agree with the remaining member-key order.
+        (
+            vec![("kind", true), ("$ownerId", false)],
+            Some(3),
+            vec![OWNER_3, OWNER_1],
+        ),
+        (vec![("$ownerId", true)], Some(3), vec![OWNER_1, OWNER_3]),
+    ] {
+        let mut clauses = vec![equal("postId", Value::Identifier(POST))];
+        if let Some(kind) = kind {
+            clauses.push(equal("kind", Value::U64(kind)));
+        }
+        let query = query_ordered(&contract, "reaction", clauses, order_by, Some(10));
+        let outcome = drive
+            .query_documents(query.clone(), None, false, None, None)
+            .expect("representable ordering executes");
+        let owners: Vec<_> = outcome
+            .documents()
+            .iter()
+            .map(|d| d.owner_id().to_buffer())
+            .collect();
+        assert_eq!(owners, expected);
+        let (proof, _) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version())
+            .expect("prove representable ordering");
+        let (_, verified) = query
+            .verify_proof(&proof, platform_version())
+            .expect("verify ordering");
+        let owners: Vec<_> = verified.iter().map(|d| d.owner_id().to_buffer()).collect();
+        assert_eq!(owners, expected);
+    }
+}
+
+#[test]
+fn should_roundtrip_empty_and_nul_entry_payloads_and_bind_deletes() {
+    let (drive, contract) = setup();
+    // Full contract validation admits both zero-length payloads and a NUL
+    // string. Neither needs the sentinels used for property tree keys.
+    json_document_to_contract(FIXTURE, true, platform_version()).expect("fixture validates");
+    for (text, bytes) in [("", vec![]), ("\0", vec![]), ("héllo", vec![0, 1])] {
+        let document = build(
+            &contract,
+            "payloadValues",
+            vec![
+                ("bytes", Value::Bytes(bytes)),
+                ("text", Value::Text(text.to_string())),
+            ],
+            OWNER_1,
+            1,
+        );
+        insert(&drive, &contract, "payloadValues", &document, true).expect("insert payload");
+        let query = query(&contract, "payloadValues", vec![], Some(10));
+        let (serialized, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version())
+            .expect("a covering flat scan serializes its payload");
+        assert_eq!(serialized.len(), 1);
+        let decoded = Document::from_bytes(&serialized[0], query.document_type, platform_version())
+            .expect("deserialize response");
+        assert_eq!(decoded.properties(), document.properties());
+        let (proof, _) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version())
+            .expect("prove payload");
+        let (_, verified) = query
+            .verify_proof(&proof, platform_version())
+            .expect("verify payload");
+        assert_eq!(verified.len(), 1);
+        assert_eq!(verified[0].properties(), document.properties());
+
+        let mut wrong = document.clone();
+        let mut properties = wrong.properties().clone();
+        properties.insert(
+            "text".to_string(),
+            Value::Text(if text.is_empty() { "\0" } else { "" }.to_string()),
+        );
+        wrong.set_properties(properties);
+        assert!(
+            delete(&drive, &contract, "payloadValues", wrong, true).is_err(),
+            "empty and NUL strings must have different commitments"
+        );
+        delete(&drive, &contract, "payloadValues", document, true).expect("delete exact payload");
+    }
+    assert_grovedb_is_consistent(&drive);
+}
+
+#[test]
+fn should_refuse_serializing_an_incomplete_flat_scan() {
+    let (drive, contract) = setup();
+    let document = build(
+        &contract,
+        "tagged",
+        vec![("tag", Value::Text("hello".to_string()))],
+        OWNER_1,
+        1,
+    );
+    insert(&drive, &contract, "tagged", &document, true).expect("insert tagged document");
+    let query = query(&contract, "tagged", vec![], Some(10));
+    let error = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version())
+        .expect_err("the flat projection cannot assert that the stored tag is absent");
+    assert!(
+        error.to_string().contains("does not cover every property"),
+        "{error}"
+    );
+
+    // A proof still exposes an explicit projection, while querying the
+    // covering tag index may return a complete serialized document.
+    let (proof, _) = query
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("prove partial flat projection");
+    let (_, projected) = query
+        .verify_proof(&proof, platform_version())
+        .expect("verify projection");
+    assert_eq!(projected.len(), 1);
+    assert_eq!(projected[0].owner_id(), document.owner_id());
+    assert!(!projected[0].properties().contains_key("tag"));
+
+    let covering = self::query(
+        &contract,
+        "tagged",
+        vec![equal("tag", Value::Text("hello".to_string()))],
+        Some(10),
+    );
+    let (serialized, _, _) = covering
+        .execute_raw_results_no_proof(&drive, None, None, platform_version())
+        .expect("the covering index can serialize the tag");
+    let decoded = Document::from_bytes(&serialized[0], covering.document_type, platform_version())
+        .expect("deserialize covering response");
+    assert_eq!(decoded.properties(), document.properties());
 }

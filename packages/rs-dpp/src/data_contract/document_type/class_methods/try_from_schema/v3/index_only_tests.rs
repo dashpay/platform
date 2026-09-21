@@ -1139,6 +1139,62 @@ fn rejects_a_variable_width_leading_component() {
 }
 
 #[test]
+fn should_bound_flat_level_names_independently_of_member_values() {
+    // Four booleans and an owner encode to only 36 member-key bytes, but
+    // the names used for their flat level can exceed GroveDB's key limit.
+    for last_name_length in [50, 51, 64] {
+        let names = [
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64),
+            "d".repeat(last_name_length),
+        ];
+        let mut schema = platform_value!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        });
+        for (position, name) in names.iter().enumerate() {
+            with_required_property(
+                &mut schema,
+                name,
+                platform_value!({ "type": "boolean", "position": position }),
+            );
+        }
+        let mut terminal: Vec<Value> = names.into_iter().map(Value::Text).collect();
+        terminal.push(Value::Text("$ownerId".to_string()));
+        schema
+            .set_value(
+                "indices",
+                platform_value!([{
+                    "name": "byValues",
+                    "terminal": terminal
+                }]),
+            )
+            .expect("indices apply");
+
+        for full_validation in [false, true] {
+            let result = parse_with(schema.clone(), PlatformVersion::latest(), full_validation);
+            if last_name_length == 50 {
+                let document_type = result.expect("a 255-byte flat level key is accepted");
+                assert_eq!(
+                    document_type.indices["byValues"]
+                        .flat_level_key()
+                        .unwrap()
+                        .len(),
+                    255
+                );
+            } else {
+                expect_structure_error(result, "flat level key cap");
+            }
+        }
+    }
+}
+
+#[test]
 fn rejects_a_composite_terminal_over_the_key_cap() {
     // Two 200-byte arrays: 400 bytes, over grovedb's 255-byte key cap.
     let mut schema =

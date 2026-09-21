@@ -189,6 +189,70 @@
       ],
       "additionalProperties": false
     },
+    "payloadValues": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwner",
+          "terminal": "$ownerId"
+        }
+      ],
+      "entryPayload": [
+        "bytes",
+        "text"
+      ],
+      "properties": {
+        "bytes": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 0,
+          "maxItems": 16,
+          "position": 0
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 1
+        }
+      },
+      "required": [
+        "bytes",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "tagged": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwner",
+          "terminal": "$ownerId"
+        },
+        {
+          "name": "byTag",
+          "properties": [
+            {
+              "tag": "asc"
+            }
+          ],
+          "skipIfAbsent": true
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 0
+        }
+      },
+      "additionalProperties": false
+    },
     "reaction": {
       "type": "object",
       "indexOnly": true,

@@ -2802,6 +2802,22 @@ pub(super) fn apply_index_only(
             )));
         }
 
+        // The flat level is itself a GroveDB key. Bounding the encoded
+        // values above does not bound the concatenated component names.
+        if let Some(flat_key) = index.flat_level_key() {
+            if flat_key.len() > usize::from(super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
+                return Err(structure_error(format!(
+                    "the flat level of index \"{}\" on indexOnly document type \"{}\" \
+                     encodes to {} bytes, over the {}-byte flat level key cap: shorten \
+                     or drop a terminal component name",
+                    index_name,
+                    name,
+                    flat_key.len(),
+                    super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
+                )));
+            }
+        }
+
         // Prefix properties: schema properties plus exactly two system
         // properties — `$ownerId` (ownership) and `$createdAt` (assigned
         // from block time at create, recoverable from the path). Every

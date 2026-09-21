@@ -927,7 +927,7 @@
       "minItems": 1,
       "maxItems": 16,
       "uniqueItems": true,
-      "description": "Only on indexOnly document types: the top-level properties stored in every entry's value, after the 32-byte row commitment, instead of in a key — the type's value slot. Each is length-framed in its tree-key encoding, in property-name order, and recovered by decoding the proved element. Listed properties must be required, bounded (maxItems on byte arrays, maxLength on strings), scalar, and must not appear in any index as a property or a terminal component; their summed bounds are capped by the field value limit. With more than one index the payload rides in every entry. Fixed when the document type is created. Available from protocol version 14."
+      "description": "Only on indexOnly document types: the top-level properties stored in every entry's value, after the 32-byte row commitment, instead of in a key — the type's value slot. Each is length-framed in property-name order and recovered by decoding the proved element: raw bytes for byte arrays, UTF-8 for strings, and tree-key encoding for other scalars. Empty byte arrays and strings remain distinct from null, and an empty string remains distinct from a NUL string. Listed properties must be required, bounded (maxItems on byte arrays, maxLength on strings), scalar, and must not appear in any index as a property or a terminal component; their summed bounds are capped by the field value limit. With more than one index the payload rides in every entry. Fixed when the document type is created. Available from protocol version 14."
     },
     "actionFees": {
       "type": "object",

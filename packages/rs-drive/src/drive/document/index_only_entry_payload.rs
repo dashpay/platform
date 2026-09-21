@@ -10,8 +10,9 @@
 //!
 //! Layout: for every payload property in property-name order (the order
 //! the parsed `BTreeSet` iterates), a big-endian `u16` length followed by
-//! the value in its tree-key encoding — the same encoding a prefix level
-//! would key by, so decoding is `decode_value_for_tree_keys`. The parser
+//! the value's bytes: raw bytes for byte arrays, UTF-8 for strings, and
+//! tree-key encoding for other scalars. Length framing preserves empty
+//! values without the tree-key encoding's empty/null sentinels. The parser
 //! bounds every payload property and caps their sum, which is what lets
 //! the length frame be two bytes and fee estimation size the entry value
 //! by the bounds.
@@ -85,9 +86,9 @@ pub fn index_only_item_estimated_value_size(
     )
 }
 
-/// The bytes one entry payload value contributes: the value's tree-key
-/// encoding (raw bytes for a byte array, UTF-8 for a string, the fixed
-/// order-preserving widths for the numeric kinds). Unlike a key, a payload
+/// The bytes one entry payload value contributes: raw bytes for a byte
+/// array, UTF-8 for a string, and the tree-key encoding's fixed
+/// order-preserving widths for the numeric kinds. Unlike a key, a payload
 /// value is not capped at 255 bytes — the parser bounds it by the field
 /// value limit instead. Also what the row commitment hashes for a payload
 /// property, so the commitment and the stored value agree byte for byte.
@@ -96,13 +97,19 @@ pub fn encode_index_only_entry_payload_value(
     property_type: &DocumentPropertyType,
     value: &Value,
 ) -> Result<Vec<u8>, Error> {
+    // Payload lengths already distinguish empty values; the tree-key
+    // string sentinel would conflate "" and "\0" in both the stored
+    // payload and its row commitment.
+    if let (DocumentPropertyType::String(_), Value::Text(text)) = (property_type, value) {
+        return Ok(text.as_bytes().to_vec());
+    }
     property_type
         .encode_value_for_tree_keys(value)
         .map_err(|e| Error::Protocol(Box::new(e)))
 }
 
 /// Encode `document`'s entry payload — every `entryPayload` property in
-/// name order, length-framed in its tree-key encoding. Empty on a type
+/// name order, length-framed in its payload encoding. Empty on a type
 /// without an entry payload. A missing payload property is a corrupted
 /// document: the parser requires every payload property.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -171,10 +178,18 @@ pub fn decode_index_only_entry_payload(
             "indexOnly entry payload is truncated inside a property",
         ))?;
         cursor += length;
-        let value = property
-            .property_type
-            .decode_value_for_tree_keys(encoded)
-            .map_err(|e| Error::Protocol(Box::new(e)))?;
+        let value = match &property.property_type {
+            // These are required values, so an empty frame is an empty
+            // byte array or string, never the tree-key null sentinel.
+            DocumentPropertyType::ByteArray(_) => Value::Bytes(encoded.to_vec()),
+            DocumentPropertyType::String(_) => Value::Text(
+                String::from_utf8(encoded.to_vec())
+                    .map_err(|_| corrupted("indexOnly entry payload contains invalid UTF-8"))?,
+            ),
+            property_type => property_type
+                .decode_value_for_tree_keys(encoded)
+                .map_err(|e| Error::Protocol(Box::new(e)))?,
+        };
         properties.insert(property_name.clone(), value);
     }
     if cursor != payload.len() {

@@ -68,13 +68,18 @@ clauses on the leading ones, then at most one range or `in` clause on the
 next (ordered by it), nothing on the rest — the lowering pads the bound
 prefix with `0xFF` to the key cap for the upper bound of "every key under
 this prefix", and addresses the key itself when the bound component is
-the last one.
+the last one. After equality-bound components are ignored, `orderBy` must
+start at the first remaining component and follow component order without
+gaps, with the same direction for every listed component. A single member-key
+walk cannot sort by a later component alone or mix ascending and descending
+components.
 
 **Flat indexes.** An index with no `properties` at all is *flat*: its
 entries live directly under a level of their own, keyed by a zero byte
 followed by each terminal component name preceded by a zero byte
 (`"\0appEphemeralPubKeyHash\0$ownerId"`), which no property-name tree can
-collide with since property names never contain a zero byte:
+collide with since property names never contain a zero byte. This level key,
+including its separators, must also fit within 255 bytes:
 
 ```text
 [DataContractDocuments, contract_id, 1, <doctype>, "\0<c1>\0<c2>…", 0, <c1 ‖ c2 ‖ …>]
@@ -87,13 +92,18 @@ its `0` bucket, as on a preallocated index), so every entry costs the same.
 There is no prefix level for an aggregate, a ranking, a time grid, a skip
 trigger or a preallocation to apply to, so a flat index admits none of
 those keywords. A clause-free query on a type with a flat index scans the
-flat level (every other indexOnly type refuses the by-id shape).
+flat level (every other indexOnly type refuses the by-id shape). Non-proof
+responses require this index to cover every property, including optional
+ones, just as filtered queries do; otherwise use a proved projection.
 
 **The entry payload.** `entryPayload: ["walletEphemeralPubKey",
 "encryptedPayload"]` on the document type names top-level properties that
 live in no index: every entry's item carries them after the 32-byte row
-commitment, each length-framed (`u16` big-endian) in its tree-key
-encoding, in property-name order — the type's value slot. A payload
+commitment, each length-framed (`u16` big-endian), in property-name order —
+the type's value slot. Byte arrays store their raw bytes and strings store
+UTF-8; other scalars use their tree-key encoding. The length frame preserves
+empty byte arrays and strings without null sentinels, and distinguishes an
+empty string from a NUL string. A payload
 property must be required, scalar and bounded (the sum of the bounds is
 capped by the field value limit), and appears in no index as a property
 or a terminal component. It is still committed (the commitment hashes

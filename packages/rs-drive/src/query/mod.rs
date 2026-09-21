@@ -2967,7 +2967,12 @@ impl<'a> DriveDocumentQuery<'a> {
                 // the route (no primary-key tree; keyset pagination) — let
                 // them reach it instead of preempting with the coverage
                 // refusal below, which would misdescribe the problem.
-                if !self.is_for_primary_key() && self.start_at.is_none() {
+                // A clause-free flat scan is classified as a primary-key
+                // query, but still synthesizes an index projection and must
+                // pass the same coverage check as a filtered query.
+                if (!self.is_for_primary_key() || self.index_only_flat_scan_applies())
+                    && self.start_at.is_none()
+                {
                     let index = self.index_only_query_index(platform_version)?;
                     let covers_every_property = self
                         .document_type
