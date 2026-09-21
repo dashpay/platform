@@ -77,6 +77,8 @@ pub enum ContractUserModerationAction {
     Unsuspend { identity_id },
     Warn { identity_id, reason: ContractModerationReason },
     ClearWarnings { identity_id },
+    DeleteDocument { document_type_name, document_id, reason: ContractModerationReason },
+    RestoreDocument { document_type_name, document: BinaryData },
 }
 ```
 
@@ -161,7 +163,7 @@ The hash is of the document as `Document::serialize` writes it under its documen
 
 ## Restoring Documents
 
-A deletion can be undone. The sixth action of the same transition brings a deleted document back, as it was:
+A deletion can be undone. The eighth action of the same transition brings a deleted document back, as it was:
 
 ```rust
 ContractUserModerationAction::RestoreDocument {
@@ -174,7 +176,7 @@ It names no identity and no id: the document is inside the bytes, and its id and
 
 The action carries the contract, the decoded document and the record marked restored by the signer at the block's time, so Drive puts the document back through the ordinary insert (`DocumentOperationType::AddDocument`, every index and aggregate of the type included) and replaces the record in place, without reading again. The restored document's storage flags name its owner, as they did before the deletion: the signer pays for the bytes, and the refund of a later deletion is the owner's, as it always was. Nothing the document type prices is charged, neither its creation token cost nor its `actionFees` creation fee, and no fee agreement is asked: a moderator undoes a moderation, it does not create content. The restore is proved by the record, now marked restored and holding the hash of the bytes the transition carried; the verifier reads the document's id out of those bytes under the contract's document type, so it needs the contract, which the SDKs register with their context provider before broadcasting.
 
-Two consequences follow from the document coming back byte for byte. Its `$updatedAt` does not move, so a type with `canBeDeletedByModeratorsFor` may have settled it while it was gone: the moderators can not delete it again until its author edits it, though the author still can. And a type with a contested index can not carry `canBeDeletedByModerators` at all (`InvalidContractStructure`, 10231): a contested index only takes a document through a vote, which no restore can go through, so such a deletion could never be undone.
+Two consequences follow from the document coming back byte for byte. Its `$updatedAt` does not move, so a type with `canBeDeletedByModeratorsFor` may have settled it while it was gone: the moderators can not delete it again until its author edits it, though the author still can. And a type with a contested index can not carry `canBeDeletedByModerators` at all (`InvalidContractStructure`, 10231): a contested index only takes a document through a vote, which no restore can go through, so such a deletion could never be undone. The bytes are decoded under the type as the contract holds it when the restore is processed, and the hash is of the document serialized under the type as it was when the document was deleted: a contract update that changes the type's layout inside the window (a property added, say) leaves the record unrestorable, since bytes that decode under the new layout cannot hash to what the record holds. A client therefore serializes under the contract's current version, as Drive does, and keeps the document rather than the bytes.
 
 ## Storage
 

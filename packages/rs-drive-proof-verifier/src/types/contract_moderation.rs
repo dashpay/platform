@@ -878,7 +878,7 @@ mod tests {
             removed_at: 1_000 + u64::from(seed),
             document_hash: [seed + 0x20; 32],
             // Every other record was restored.
-            restoration: (seed % 2 == 0).then(|| ContractDocumentRestoration {
+            restoration: seed.is_multiple_of(2).then(|| ContractDocumentRestoration {
                 moderator_id: id(0x78),
                 restored_at: 2_000 + u64::from(seed),
             }),

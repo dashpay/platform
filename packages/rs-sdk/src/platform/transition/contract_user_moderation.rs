@@ -401,6 +401,11 @@ impl ModerateContractUser for Identity {
         let document_type = contract
             .document_type_for_name(&document_type_name)
             .map_err(dpp::ProtocolError::from)?;
+        // Serialized under the contract as given, which must be its current version: Drive
+        // decodes the bytes under the type as the contract holds it now and hashes them
+        // against the document as it was serialized when deleted, so a type whose layout
+        // changed inside the restore window leaves the record unrestorable whatever the
+        // caller serializes with.
         let document_bytes = document.serialize(document_type, contract, sdk.version())?;
         // The verifier reads the document's id out of the bytes under the contract's document
         // type, through the context provider: what the caller serialized with is what it must

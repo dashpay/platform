@@ -227,7 +227,7 @@ mod tests {
             removed_at: 1_000 + seed as u64,
             document_hash: [seed + 0x20; 32],
             // Every other record was restored: the response carries the restoration too.
-            restoration: (seed % 2 == 0).then(|| ContractDocumentRestoration {
+            restoration: seed.is_multiple_of(2).then(|| ContractDocumentRestoration {
                 moderator_id: Identifier::from([0x78; 32]),
                 restored_at: 2_000 + seed as u64,
             }),
