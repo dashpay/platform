@@ -54,6 +54,7 @@ use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
+use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tests::json_document::json_document_to_contract;
 use grovedb::Element;
 use std::collections::BTreeMap;
@@ -1779,5 +1780,135 @@ fn composite_tail_in_clauses_on_last_and_leading_components() {
         .expect("proof verification");
     assert_eq!(verified.len(), 2);
 
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Exercise the shipped system schema, not just the generic feature fixture.
+#[test]
+fn should_query_and_relogin_with_the_app_connect_system_contract() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = load_system_data_contract(SystemDataContract::AppConnect, pv)
+        .expect("app-connect system contract");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("apply system contract");
+
+    let original = build_login_response(
+        &contract,
+        REQUEST_HASH,
+        WALLET_KEY_1,
+        cipher(0xC1, 60),
+        OWNER_1,
+        1,
+    );
+    let other_owner = build_login_response(
+        &contract,
+        REQUEST_HASH,
+        WALLET_KEY_2,
+        cipher(0xC2, 572),
+        OWNER_2,
+        2,
+    );
+    for document in [&other_owner, &original] {
+        insert(&drive, &contract, "loginKeyResponse", document, true)
+            .expect("an earlier response by another identity cannot squat the request");
+    }
+    let duplicate = build_login_response(
+        &contract,
+        REQUEST_HASH,
+        WALLET_KEY_3,
+        cipher(0xC3, 92),
+        OWNER_1,
+        3,
+    );
+    assert!(
+        insert(&drive, &contract, "loginKeyResponse", &duplicate, true).is_err(),
+        "each owner may answer a request only once"
+    );
+
+    let by_request = query(
+        &contract,
+        "loginKeyResponse",
+        vec![equal(
+            "appEphemeralPubKeyHash",
+            Value::Bytes(REQUEST_HASH.to_vec()),
+        )],
+        Some(10),
+    );
+    let (proof, _) = by_request
+        .clone()
+        .execute_with_proof(&drive, None, None, pv)
+        .expect("request proof");
+    let (_, documents) = by_request
+        .clone()
+        .verify_proof(&proof, pv)
+        .expect("verify request proof");
+    assert_eq!(documents.len(), 2);
+    for document in documents {
+        let expected = if document.owner_id().to_buffer() == OWNER_1 {
+            &original
+        } else {
+            &other_owner
+        };
+        assert_eq!(document.properties(), expected.properties());
+    }
+
+    assert!(
+        delete(&drive, &contract, "loginKeyResponse", duplicate, true).is_err(),
+        "deletion must supply the original ciphertext and wallet key"
+    );
+    delete(&drive, &contract, "loginKeyResponse", original, true).expect("delete old response");
+    let renewed = build_login_response(
+        &contract,
+        OTHER_REQUEST_HASH,
+        WALLET_KEY_3,
+        cipher(0xC3, 572),
+        OWNER_1,
+        4,
+    );
+    insert(&drive, &contract, "loginKeyResponse", &renewed, true).expect("publish re-login");
+
+    assert!(login_entry(&drive, &contract, REQUEST_HASH, OWNER_1).is_none());
+    assert!(login_entry(&drive, &contract, REQUEST_HASH, OWNER_2).is_some());
+    assert!(login_entry(&drive, &contract, OTHER_REQUEST_HASH, OWNER_1).is_some());
+    let (proof, _) = by_request
+        .clone()
+        .execute_with_proof(&drive, None, None, pv)
+        .expect("old request proof");
+    let (_, documents) = by_request
+        .verify_proof(&proof, pv)
+        .expect("verify old request");
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].owner_id().to_buffer(), OWNER_2);
+
+    let new_request = query(
+        &contract,
+        "loginKeyResponse",
+        vec![
+            equal(
+                "appEphemeralPubKeyHash",
+                Value::Bytes(OTHER_REQUEST_HASH.to_vec()),
+            ),
+            equal("$ownerId", Value::Identifier(OWNER_1)),
+        ],
+        Some(1),
+    );
+    let (proof, _) = new_request
+        .clone()
+        .execute_with_proof(&drive, None, None, pv)
+        .expect("new request proof");
+    let (_, documents) = new_request
+        .verify_proof(&proof, pv)
+        .expect("verify new request");
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].properties(), renewed.properties());
     assert_grovedb_is_consistent(&drive);
 }

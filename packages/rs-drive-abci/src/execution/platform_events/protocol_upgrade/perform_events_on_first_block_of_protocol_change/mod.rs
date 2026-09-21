@@ -88,6 +88,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contracts::SystemDataContract;
 
     #[test]
     fn test_perform_events_when_version_method_is_none() {
@@ -170,5 +171,118 @@ mod tests {
             }
             _ => panic!("expected UnknownVersionMismatch error"),
         }
+    }
+
+    #[test]
+    fn should_rollback_and_retry_app_connect_registration_through_the_upgrade_dispatcher() {
+        let previous_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("epoch"),
+        };
+        let id = SystemDataContract::AppConnect.id();
+        let original_root = platform
+            .drive
+            .grove
+            .root_hash(None, &previous_version.drive.grove_version)
+            .unwrap()
+            .expect("original root");
+        let mut first_candidate_root = None;
+
+        for commit in [false, true] {
+            // The block proposal path clears this cache before retrying a candidate.
+            platform.drive.cache.data_contracts.clear_block_cache();
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform_state,
+                    &block_info,
+                    &transaction,
+                    13,
+                    platform_version,
+                )
+                .expect("protocol upgrade through the dispatcher");
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_contract_version(id.to_buffer(), Some(&transaction), platform_version)
+                    .expect("registered version"),
+                Some(1)
+            );
+            let candidate_root = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("candidate root");
+            assert_ne!(candidate_root, original_root);
+            // Compiling the new schema must not expose it to old-version cache readers.
+            assert!(platform
+                .drive
+                .cache
+                .system_data_contracts
+                .find_by_id(id, platform_version)
+                .expect("new cache lookup")
+                .is_some());
+            assert!(platform
+                .drive
+                .cache
+                .system_data_contracts
+                .find_by_id(id, previous_version)
+                .expect("old cache lookup")
+                .is_none());
+            if commit {
+                assert_eq!(
+                    Some(candidate_root),
+                    first_candidate_root,
+                    "retry after rollback must produce the same state"
+                );
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("commit retry");
+                platform
+                    .drive
+                    .cache
+                    .data_contracts
+                    .merge_and_clear_block_cache();
+            } else {
+                first_candidate_root = Some(candidate_root);
+                drop(transaction);
+                platform.drive.cache.data_contracts.clear_block_cache();
+                assert_eq!(
+                    platform
+                        .drive
+                        .grove
+                        .root_hash(None, &previous_version.drive.grove_version)
+                        .unwrap()
+                        .expect("committed root after rollback"),
+                    original_root
+                );
+                assert!(platform
+                    .drive
+                    .fetch_contract(id.to_buffer(), None, None, None, previous_version)
+                    .value
+                    .expect("old committed state")
+                    .is_none());
+            }
+        }
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(id.to_buffer(), None, platform_version)
+                .expect("committed contract version"),
+            Some(1)
+        );
     }
 }

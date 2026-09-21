@@ -1437,6 +1437,7 @@ mod index_only_executed_proof_tests {
     use dpp::prelude::DataContract;
     use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::StateTransition;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use drive::drive::Drive;
     use simple_signer::signer::SimpleSigner;
     use std::sync::Arc;
@@ -2656,6 +2657,15 @@ mod index_only_executed_proof_tests {
     /// recomputed commitment, and the executed delete proves it absent.
     #[tokio::test]
     async fn test_executed_flat_composite_create_and_delete_proofs() {
+        assert_flat_composite_create_and_delete_proofs(false).await;
+    }
+
+    #[tokio::test]
+    async fn should_create_and_delete_app_connect_response_with_proofs() {
+        assert_flat_composite_create_and_delete_proofs(true).await;
+    }
+
+    async fn assert_flat_composite_create_and_delete_proofs(system_contract: bool) {
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -2666,21 +2676,28 @@ mod index_only_executed_proof_tests {
 
         let (alice, alice_signer, alice_key) =
             setup_identity(&mut platform, 958, dash_to_credits!(1.0));
-        let mut contract =
-            json_document_to_contract(SCALAR_TERMINAL_CONTRACT, true, platform_version)
-                .expect("expected to parse the scalar-terminal contract");
-        contract.set_owner_id(alice.id());
-        platform
-            .drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("expected to apply the scalar-terminal contract");
+        let contract = if system_contract {
+            // Genesis registers the real system schema; ordinary identities write to it.
+            load_system_data_contract(SystemDataContract::AppConnect, platform_version)
+                .expect("expected the app-connect system contract")
+        } else {
+            let mut contract =
+                json_document_to_contract(SCALAR_TERMINAL_CONTRACT, true, platform_version)
+                    .expect("expected to parse the scalar-terminal contract");
+            contract.set_owner_id(alice.id());
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply the scalar-terminal contract");
+            contract
+        };
         let response_type = contract
             .document_type_for_name("loginKeyResponse")
             .expect("loginKeyResponse doctype exists");
