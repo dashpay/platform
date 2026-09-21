@@ -26,7 +26,8 @@ pub struct ContractModerationEntry {
     /// The end of the suspension for a suspension list entry, `None` for the other lists.
     pub until: Option<TimestampMillis>,
     /// Why the identity is on the list: the ban's reason, the suspension's, or for a warning
-    /// list entry the reason of the latest warning.
+    /// list entry the reason of the latest warning (which is kept once, with the warnings, on
+    /// the wire).
     pub reason: ContractModerationReason,
     /// For a warning list entry, every warning the identity carries, oldest first; empty for
     /// the other lists.
@@ -282,7 +283,12 @@ pub fn decode_suspension(value: &[u8]) -> Result<ContractSuspension, String> {
 /// big-endian bytes, the length of its encoded reason as two big-endian bytes, then the reason
 /// as in [`encode_ban`]. The length prefix is what lets one value hold several reasons, each
 /// of which would otherwise run to the end of the value.
-pub fn encode_warnings(warnings: &[ContractWarning]) -> Vec<u8> {
+///
+/// A reason is at most a tag, a code and `max_contract_moderation_reason_length` bytes of
+/// text, well within a u16, and a longer one never gets past basic structure validation. One
+/// that does not fit the prefix is refused rather than written short: an entry whose prefix
+/// undercounts its reason could never be read back.
+pub fn encode_warnings(warnings: &[ContractWarning]) -> Result<Vec<u8>, String> {
     let mut value = Vec::with_capacity(
         warnings
             .iter()
@@ -291,13 +297,17 @@ pub fn encode_warnings(warnings: &[ContractWarning]) -> Vec<u8> {
     );
     for warning in warnings {
         value.extend_from_slice(&warning.warned_at.to_be_bytes());
-        // A reason is at most a tag, a code and `max_contract_moderation_reason_length` bytes
-        // of text, well within a u16; a longer one never gets past basic structure validation.
-        let reason_size = reason_encoded_size(&warning.reason).min(u16::MAX as usize) as u16;
+        let reason_size = u16::try_from(reason_encoded_size(&warning.reason)).map_err(|_| {
+            format!(
+                "a warning's reason of {} bytes exceeds the {} the entry can hold",
+                reason_encoded_size(&warning.reason),
+                u16::MAX
+            )
+        })?;
         value.extend_from_slice(&reason_size.to_be_bytes());
         encode_reason_into(&warning.reason, &mut value);
     }
-    value
+    Ok(value)
 }
 
 /// Decodes a warning list entry. An entry holds at least one warning: one that holds none was
@@ -431,7 +441,7 @@ mod tests {
                 text: String::new(),
             },
         };
-        let value = encode_warnings(&[first.clone(), second.clone()]);
+        let value = encode_warnings(&[first.clone(), second.clone()]).expect("encode");
         // block time, length, tag + text; block time, length, tag + code + no text
         assert_eq!(&value[..8], &1_000u64.to_be_bytes());
         assert_eq!(&value[8..10], &13u16.to_be_bytes());
@@ -473,9 +483,16 @@ mod tests {
         let mut trailing = encode_warnings(&[ContractWarning {
             warned_at: 1,
             reason: ContractModerationReason::default(),
-        }]);
+        }])
+        .expect("encode");
         trailing.push(0);
         decode_warnings(&trailing).expect_err("trailing byte");
+        // A reason the length prefix can not measure is refused, not written short.
+        encode_warnings(&[ContractWarning {
+            warned_at: 1,
+            reason: ContractModerationReason::from_text("x".repeat(usize::from(u16::MAX))),
+        }])
+        .expect_err("reason past a u16");
     }
 
     #[test]

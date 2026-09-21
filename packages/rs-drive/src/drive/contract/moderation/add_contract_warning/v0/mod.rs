@@ -1,6 +1,7 @@
 use crate::drive::contract::moderation::types::encode_warnings;
 use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
@@ -112,7 +113,13 @@ impl Drive {
             contract_moderation_list_path(contract_id.as_slice(), ContractModerationList::Warnings),
             identity_id.as_slice(),
             Element::new_item_with_flags(
-                encode_warnings(warnings),
+                // Every reason was bounded by basic structure validation, so an encoding
+                // refusal is a code path that lost that guarantee, not a moderator's mistake.
+                encode_warnings(warnings).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a warning's reason is longer than a warning list entry can hold",
+                    ))
+                })?,
                 storage_flags.to_some_element_flags(),
             ),
         ));

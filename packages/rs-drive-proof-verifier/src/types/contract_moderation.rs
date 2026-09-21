@@ -247,13 +247,27 @@ pub fn warnings_from_response(
         .collect()
 }
 
-/// The entries of an unproved response.
+/// The entries of an unproved response. A warning list entry carries its warnings and no
+/// `reason` of its own: its reason is the latest warning's, read from there, and a response
+/// that sends one beside the warnings is refused rather than left with two sources for it.
 pub fn entries_from_response(
     entries: Vec<ContractModerationEntryProto>,
 ) -> Result<ContractModerationEntries, Error> {
     entries
         .into_iter()
         .map(|entry| {
+            let warnings = warnings_from_response(entry.warnings)?;
+            let reason = match warnings.last() {
+                None => reason_from_response(entry.reason)?,
+                Some(latest) if entry.reason.is_none() => latest.reason.clone(),
+                Some(_) => {
+                    return Err(Error::ResponseDecodeError {
+                        error: "contract moderation entry carries warnings and a reason of \
+                                its own"
+                            .to_string(),
+                    })
+                }
+            };
             Ok(ContractModerationEntry {
                 identity_id: Identifier::from_bytes(&entry.identity_id).map_err(|_| {
                     Error::ProtocolError {
@@ -264,8 +278,8 @@ pub fn entries_from_response(
                     }
                 })?,
                 until: entry.until,
-                reason: reason_from_response(entry.reason)?,
-                warnings: warnings_from_response(entry.warnings)?,
+                reason,
+                warnings,
             })
         })
         .collect::<Result<Vec<_>, Error>>()
@@ -580,10 +594,7 @@ mod tests {
             ContractModerationEntryProto {
                 identity_id: id(3).to_vec(),
                 until: None,
-                reason: Some(ContractModerationReasonProto {
-                    code: None,
-                    text: "second strike".to_string(),
-                }),
+                reason: None,
                 warnings: vec![
                     ContractWarningProto {
                         warned_at: 5,
@@ -637,6 +648,22 @@ mod tests {
                     ],
                 },
             ]
+        );
+
+        // A warning entry's reason is its latest warning's: one beside the warnings is refused.
+        let err = entries_from_response(vec![ContractModerationEntryProto {
+            identity_id: id(1).to_vec(),
+            until: None,
+            reason: Some(ContractModerationReasonProto::default()),
+            warnings: vec![ContractWarningProto {
+                warned_at: 5,
+                reason: Some(ContractModerationReasonProto::default()),
+            }],
+        }])
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
         );
 
         // Every warning carries a reason

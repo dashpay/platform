@@ -21,8 +21,8 @@ The declaration and the status live in `packages/rs-dpp/src/data_contract/config
 pub struct ContractModerationConfig {
     pub banlist: bool,
     pub suspensions: bool,
-    pub warnings: bool,
     pub moderators: ContractModerators,
+    pub warnings: bool,   // last: a declaration stored before the warning list existed does not decode
 }
 
 pub enum ContractModerators {

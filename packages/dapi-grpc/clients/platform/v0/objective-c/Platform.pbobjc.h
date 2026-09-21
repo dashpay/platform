@@ -3299,7 +3299,10 @@ GPB_FINAL @interface GetContractModerationEntriesResponse_ContractModerationEntr
 /** Test to see if @c reason has been set. */
 @property(nonatomic, readwrite) BOOL hasReason;
 
-/** suspension's, or the latest warning's */
+/**
+ * suspension's. Unset for a warning list entry, whose reasons
+ * are its warnings'
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractWarning*> *warningsArray;
 /** The number of items in @c warningsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger warningsArray_Count;

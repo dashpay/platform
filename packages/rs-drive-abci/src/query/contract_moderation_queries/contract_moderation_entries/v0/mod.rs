@@ -103,7 +103,12 @@ impl<C> Platform<C> {
                                 .map(|entry| ContractModerationEntryProto {
                                     identity_id: entry.identity_id.to_vec(),
                                     until: entry.until,
-                                    reason: Some(reason_to_response(entry.reason)),
+                                    // A warning entry's reason is its latest warning's, which
+                                    // travels with the warnings: sent once.
+                                    reason: entry
+                                        .warnings
+                                        .is_empty()
+                                        .then(|| reason_to_response(entry.reason)),
                                     warnings: warnings_to_response(entry.warnings),
                                 })
                                 .collect(),
@@ -273,9 +278,10 @@ mod tests {
         assert_eq!(page.entries.len(), 2);
         assert_eq!(page.entries[0].identity_id, once.to_vec());
         assert_eq!(page.entries[0].until, None);
-        // The entry's reason is the latest warning's, and every warning comes along.
-        assert_eq!(page.entries[0].reason, reason());
+        // The entry's reason is the latest warning's, which travels with the warnings alone.
+        assert_eq!(page.entries[0].reason, None);
         assert_eq!(page.entries[0].warnings.len(), 1);
+        assert_eq!(page.entries[0].warnings[0].reason, reason());
         assert_eq!(
             page.entries[1]
                 .warnings

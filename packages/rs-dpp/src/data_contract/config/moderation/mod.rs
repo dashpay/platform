@@ -246,12 +246,15 @@ pub struct ContractModerationConfig {
     /// The contract keeps a suspension list (Drive key `192` of the contract's other tree).
     #[serde(default)]
     pub suspensions: bool,
-    /// The contract keeps a warning list (Drive key `224` of the contract's other tree).
-    #[serde(default)]
-    pub warnings: bool,
     /// Who may edit the lists.
     #[serde(default)]
     pub moderators: ContractModerators,
+    /// The contract keeps a warning list (Drive key `224` of the contract's other tree).
+    /// Last in the bincode layout: it joined after the rest, and a declaration stored by a
+    /// 4.2 beta without it fails to decode at its end rather than misreading the moderators.
+    /// Such networks are reset.
+    #[serde(default)]
+    pub warnings: bool,
 }
 
 impl ContractModerationConfig {

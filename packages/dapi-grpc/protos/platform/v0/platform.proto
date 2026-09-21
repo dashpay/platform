@@ -793,11 +793,12 @@ message GetContractModerationEntriesResponse {
         2; // For a suspension list entry: the block time, in milliseconds, at
            // which it lapses
     ContractModerationReason reason =
-        3; // Why the identity is on the list: the ban's reason, the
-           // suspension's, or the latest warning's
+        3; // Why the identity is on the list: the ban's reason or the
+           // suspension's. Unset for a warning list entry, whose reasons
+           // are its warnings'
     repeated ContractWarning warnings =
         4; // For a warning list entry: every warning the identity carries,
-           // oldest first
+           // oldest first; the latest is why it is on the list
   }
 
   message ContractModerationEntries {

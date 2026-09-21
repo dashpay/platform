@@ -916,20 +916,25 @@ async fn should_refuse_a_warning_past_the_limit_until_the_warnings_are_cleared()
             .await;
         assert_success(&setup.process(&warn, &transaction));
     }
+    setup.commit(transaction);
     assert_eq!(
         setup
-            .status_on(
-                user_id,
-                &[ContractModerationList::Warnings],
-                Some(&transaction)
-            )
+            .status_on(user_id, &[ContractModerationList::Warnings], None)
             .warnings
             .len(),
         usize::from(max_warnings)
     );
+    // The mempool refuses the one too many before a block does.
     let one_too_many = setup
         .moderate(&setup.owner, warn_action(user_id, "one too many"))
         .await;
+    let mempool_errors = setup.check_tx(&one_too_many);
+    assert_eq!(mempool_errors.len(), 1, "{mempool_errors:?}");
+    assert_eq!(
+        mempool_errors[0].code(),
+        CONTRACT_USER_WARNING_LIMIT_REACHED
+    );
+    let transaction = setup.platform.drive.grove.start_transaction();
     assert_paid_with_code(
         &setup.process(&one_too_many, &transaction),
         CONTRACT_USER_WARNING_LIMIT_REACHED,
