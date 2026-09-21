@@ -12,6 +12,7 @@ use super::*;
 
 mod action_fee_tests {
     use super::*;
+    use crate::execution::check_tx::CheckTxLevel::Recheck;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
         PaidConsensusError, SuccessfulExecution, UnpaidConsensusError,
     };
@@ -685,6 +686,158 @@ mod action_fee_tests {
             &setup,
             &transition,
             DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED,
+        );
+    }
+
+    #[tokio::test]
+    async fn should_drop_a_transition_from_the_mempool_once_the_fee_multiplier_outran_its_tolerance(
+    ) {
+        // Admitted knowing a multiplier of 1000 and accepting 20% more; the epoch's multiplier
+        // then moves while the transition waits. A block refuses the transition as a paid
+        // nonce bump (`should_refuse_a_fee_multiplier_that_rose_beyond_the_tolerance`), so the
+        // recheck judges the agreement again, off the multiplier read now, and drops it first.
+        let setup = game(
+            GasFeesPaidBy::DocumentOwner,
+            "feeMultiplier",
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            None,
+        );
+        let transition = setup
+            .card_creation_agreeing(
+                GasFeesPaidBy::DocumentOwner,
+                setup.card_action_fee_agreement(
+                    DocumentTransitionActionType::Create,
+                    AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 20,
+                    },
+                ),
+            )
+            .await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            Vec::<u32>::new(),
+            "nothing moved"
+        );
+
+        set_fee_multiplier(&setup, 1_200);
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            Vec::<u32>::new(),
+            "a rise within the tolerance keeps the transition"
+        );
+
+        set_fee_multiplier(&setup, 1_201);
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            vec![DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED],
+            "a rise beyond the tolerance drops it"
+        );
+        // What the block would have done with it, had the recheck let it through.
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_eq!(
+            paid_codes(&setup.process(&transition, &tx)),
+            vec![DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED]
+        );
+        drop(tx);
+
+        set_fee_multiplier(&setup, 900);
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            Vec::<u32>::new(),
+            "a multiplier that fell back is always accepted"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_drop_a_transition_from_the_mempool_once_the_declared_amounts_changed() {
+        // A contract update may not change the amounts of a document type yet
+        // (`validate_action_fees_unchanged`), so the contract is rewritten in Drive as one
+        // will be once a moderation charter sets the moderators part. The recheck reads the
+        // contract again through the transformer and judges the agreement against what it
+        // declares now.
+        let setup = game(
+            GasFeesPaidBy::DocumentOwner,
+            "fixed",
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            None,
+        );
+        let transition = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+        assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
+
+        let mut raised = setup.contract.clone();
+        declare_action_fees(
+            &mut raised,
+            platform_value!({
+                "pricing": "fixed",
+                "create": {"owner": OWNER_PART, "moderators": MODERATORS_PART + 1},
+            }),
+            true,
+        );
+        raised.increment_version();
+        setup
+            .platform
+            .drive
+            .update_contract(
+                &raised,
+                BlockInfo::default(),
+                true,
+                None,
+                setup.platform_version,
+                None,
+            )
+            .expect("expected to rewrite the contract with the raised moderators part");
+
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            vec![DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH]
+        );
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_eq!(
+            paid_codes(&setup.process(&transition, &tx)),
+            vec![DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH]
+        );
+    }
+
+    #[tokio::test]
+    async fn should_drop_a_sponsored_transition_from_the_mempool_once_the_fee_multiplier_outran_its_tolerance(
+    ) {
+        // A signer under the fee minimum who relies on the contract owner's sponsorship is
+        // rechecked against the state in full, on another route through check tx; the
+        // agreement is judged again on that route too.
+        let setup = game(
+            GasFeesPaidBy::ContractOwner,
+            "feeMultiplier",
+            dash_to_credits!(0.1),
+            0,
+            None,
+        );
+        let transition = setup
+            .card_creation_agreeing(
+                GasFeesPaidBy::ContractOwner,
+                setup.card_action_fee_agreement(
+                    DocumentTransitionActionType::Create,
+                    AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 20,
+                    },
+                ),
+            )
+            .await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+        assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
+
+        set_fee_multiplier(&setup, 1_200);
+        assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
+
+        set_fee_multiplier(&setup, 1_201);
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            vec![DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED]
         );
     }
 

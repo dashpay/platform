@@ -462,6 +462,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (40132), with one to other amounts or another pricing (40133), or
 ///     whose epoch's multiplier rose beyond the tolerance (40134), so a
 ///     contract whose fees change cannot make a signed transition pay them.
+///     Check tx judges the agreements again on every recheck, off the action
+///     the transformer rebuilt with the contract and the multiplier as they
+///     are then, so a batch a block would refuse leaves the mempool instead
+///     of failing there (mempool policy, not consensus).
 ///
 /// 21. **Document restore by moderators**: the removal record a moderator's
 ///     deletion leaves (19) also holds a double SHA-256 of the document as
