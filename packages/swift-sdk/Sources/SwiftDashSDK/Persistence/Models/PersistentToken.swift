@@ -191,11 +191,10 @@ extension PersistentToken {
     /// contract's `serializedContract` already holds the whole contract JSON,
     /// distribution rules included, so the value is persisted with every
     /// contract the parser writes, and a new stored property here would move
-    /// this model's entity hash. That costs a schema version and a fixture
-    /// store (see `DashModelContainer.modelTypes` and
-    /// `DashModelMigrationTests`), which a display-only amount does not
-    /// justify. `perpetualDistribution` and `preProgrammedDistribution`
-    /// predate that discipline and kept their columns.
+    /// this model's entity hash. Keeping this value derived avoids a redundant
+    /// column and preserves compatibility with released snapshots.
+    /// `perpetualDistribution` and `preProgrammedDistribution` keep their
+    /// existing columns.
     ///
     /// Nil both when the token declares no such distribution and when the
     /// contract JSON cannot be read: a token row whose `dataContract`
@@ -210,7 +209,9 @@ extension PersistentToken {
     public var oncePerIdentityDistribution: TokenOncePerIdentityDistribution? {
         guard let contract = dataContract else { return nil }
         return TokenOncePerIdentityDistributionCache.shared.distribution(
-            for: contract,
+            contractId: contract.id,
+            serializedContract: contract.serializedContract,
+            lastUpdated: contract.lastUpdated,
             position: position
         )
     }

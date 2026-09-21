@@ -26,11 +26,10 @@ protocol OncePerIdentityClaimRecording: OncePerIdentityClaimReading {
 /// `UserDefaults`-backed record of once-per-identity claims this app saw
 /// succeed, plus the ones Drive told us had already happened.
 ///
-/// Deliberately not SwiftData: `DashSchemaV5` is frozen, and a new stored
-/// property or model would cost a schema version for what is a local hint,
-/// not protocol state. The hint is one-way, set and never cleared, which is
-/// safe because the fact it caches cannot become false again: a spent claim
-/// stays spent, and identity ids are not reused.
+/// Kept in UserDefaults to avoid changing the shared SwiftData model graph
+/// for a local hint rather than protocol state. The hint is one-way, set and
+/// never cleared. This is safe because the fact it caches cannot become false
+/// again: a spent claim stays spent, and identity ids are not reused.
 ///
 /// It is a hint, not an authority. An identity that claimed on another
 /// device is absent from it, and that claim is still caught the expensive

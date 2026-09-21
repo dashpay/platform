@@ -62,7 +62,8 @@ public final class PersistentPublicKey {
     /// those fall back to the legacy inference, which never yields 3
     /// because no writer could produce a group bound back then. See
     /// `effectiveContractBoundsKind`. Additive optional column, so
-    /// SwiftData's lightweight migration backfills `NULL` (schema V5).
+    /// SwiftData's lightweight migration backfills `NULL` when migrating
+    /// the accepted V1 baseline to V2.
     public var contractBoundsKind: Int?
 
     // MARK: - Private Key Reference (optional)
