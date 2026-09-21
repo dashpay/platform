@@ -2762,6 +2762,22 @@ pub(super) fn apply_index_only(
                         component, index_name, name,
                     )));
                 }
+                // A flat level is keyed by its component names, each behind
+                // a zero byte (`flat_level_key_for`); a name carrying one
+                // would alias another flat level or a property-name tree.
+                // The meta-schema's name pattern already excludes it for
+                // contracts entering the chain; this keeps the invariant
+                // explicit for every parse.
+                if component.contains('\0') {
+                    return Err(structure_error(format!(
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" contains a zero byte, which the flat level key \
+                         reserves as its separator",
+                        component.escape_default(),
+                        index_name,
+                        name,
+                    )));
+                }
                 let Some(property) = document_type.flattened_properties.get(component) else {
                     return Err(structure_error(format!(
                         "terminal component \"{}\" of index \"{}\" on indexOnly document \
@@ -2775,18 +2791,13 @@ pub(super) fn apply_index_only(
                     component,
                     &property.property_type,
                 )?;
-                let min_width = property
-                    .property_type
-                    .min_byte_size(platform_version)?
-                    .unwrap_or(0);
                 let max_width = property
                     .property_type
                     .max_byte_size(platform_version)?
                     .unwrap_or(u16::MAX);
-                let fixed_width =
-                    !matches!(property.property_type, DocumentPropertyType::String(_))
-                        && min_width == max_width
-                        && min_width > 0;
+                // Fixed width by the tree-key encoding itself: the same
+                // helper synthesis splits member keys with.
+                let fixed_width = property.property_type.fixed_tree_key_width().is_some();
                 if !is_last && !fixed_width {
                     return Err(structure_error(format!(
                         "terminal component \"{}\" of index \"{}\" on indexOnly document \

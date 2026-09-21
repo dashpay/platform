@@ -1219,6 +1219,34 @@ fn rejects_a_composite_terminal_over_the_key_cap() {
 }
 
 #[test]
+fn rejects_a_terminal_component_name_with_a_zero_byte() {
+    let mut schema = login_response_schema();
+    with_required_property(
+        &mut schema,
+        "bad\0name",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 4,
+            "maxItems": 4,
+            "position": 3
+        }),
+    );
+    schema
+        .set_value(
+            "indices",
+            platform_value!([
+                { "name": "byRequest", "terminal": ["bad\0name", "$ownerId"] }
+            ]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "zero byte",
+    );
+}
+
+#[test]
 fn rejects_a_terminal_with_no_components() {
     let schema = likes_schema_with_index_key(2, "terminal", platform_value!([]));
     match parse_with(schema, PlatformVersion::latest(), false) {

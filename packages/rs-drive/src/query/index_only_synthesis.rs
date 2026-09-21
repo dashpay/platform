@@ -1250,31 +1250,33 @@ pub fn synthesize_index_only_document(
     let mut cursor = 0usize;
     for (position, component) in components.iter().enumerate() {
         let is_last = position + 1 == components.len();
-        let bytes: &[u8] = if is_last {
-            member_key.get(cursor..).ok_or(corrupted(
-                "indexOnly synthesis: member key is shorter than its leading components",
-            ))?
-        } else {
-            let width = if component == OWNER_ID {
-                32usize
+        let bytes: &[u8] =
+            if is_last {
+                member_key.get(cursor..).ok_or(corrupted(
+                    "indexOnly synthesis: member key is shorter than its leading components",
+                ))?
             } else {
-                let property =
+                let width =
+                    if component == OWNER_ID {
+                        32usize
+                    } else {
+                        let property =
                     document_type
                         .flattened_properties()
                         .get(component)
                         .ok_or(corrupted(
                         "indexOnly synthesis: terminal names a property the document type lacks",
                     ))?;
-                usize::from(property.property_type.max_size().ok_or(corrupted(
+                        usize::from(property.property_type.fixed_tree_key_width().ok_or(corrupted(
                     "indexOnly synthesis: a leading terminal component must be fixed width",
                 ))?)
+                    };
+                let slice = member_key.get(cursor..cursor + width).ok_or(corrupted(
+                    "indexOnly synthesis: member key is shorter than its leading components",
+                ))?;
+                cursor += width;
+                slice
             };
-            let slice = member_key.get(cursor..cursor + width).ok_or(corrupted(
-                "indexOnly synthesis: member key is shorter than its leading components",
-            ))?;
-            cursor += width;
-            slice
-        };
         assign(component, bytes)?;
         terminal_parts.push((component.as_str(), bytes));
     }

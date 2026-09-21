@@ -1355,19 +1355,27 @@ fn should_reject_unrepresentable_composite_terminal_ordering() {
             order_by,
             Some(10),
         );
+        // A run of components out of declared order is refused by the
+        // matcher itself (no index can serve it: "valid indexes are");
+        // the other shapes reach the terminal route and fail its orderBy
+        // rule. Either way the executor, the prover and the verifier
+        // refuse identically.
+        let unrepresentable = |error: &Error| {
+            error.to_string().contains("orderBy") || error.to_string().contains("valid indexes are")
+        };
         let error = drive
             .query_documents(query.clone(), None, false, None, None)
             .expect_err("one member-key walk cannot implement this ordering");
-        assert!(error.to_string().contains("orderBy"), "{error}");
+        assert!(unrepresentable(&error), "{error}");
         let error = query
             .clone()
             .execute_with_proof(&drive, None, None, platform_version())
             .expect_err("the prover must reject the same ordering");
-        assert!(error.to_string().contains("orderBy"), "{error}");
+        assert!(unrepresentable(&error), "{error}");
         let error = query
             .verify_proof(&valid_proof, platform_version())
             .expect_err("a proof of member-key order cannot prove a different sort order");
-        assert!(error.to_string().contains("orderBy"), "{error}");
+        assert!(unrepresentable(&error), "{error}");
     }
 }
 
@@ -1655,6 +1663,121 @@ fn variable_width_last_component_ranges_and_empty_values() {
         vec![b"cherry".to_vec()],
         "another owner's later body sits under a different leading component"
     );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// An `in` clause on a composite tail: on the LAST component it addresses
+/// each key directly, on a leading component it covers every key under
+/// each value; both synthesize the components off the member key with
+/// proof parity.
+#[test]
+fn composite_tail_in_clauses_on_last_and_leading_components() {
+    let (drive, contract) = setup();
+    for (seed, body) in [b"apple".as_slice(), b"banana", b"cherry"]
+        .iter()
+        .enumerate()
+    {
+        insert(
+            &drive,
+            &contract,
+            "note",
+            &build_note(&contract, body, OWNER_1, seed as u64 + 1),
+            true,
+        )
+        .expect("insert note");
+    }
+    for (kind, owner, seed) in [(3u64, OWNER_1, 11u64), (5, OWNER_2, 12), (7, OWNER_3, 13)] {
+        insert(
+            &drive,
+            &contract,
+            "reaction",
+            &build_reaction(&contract, kind, owner, seed),
+            true,
+        )
+        .expect("insert reaction");
+    }
+
+    let notes = query_ordered(
+        &contract,
+        "note",
+        vec![
+            equal("postId", Value::Identifier(POST)),
+            equal("$ownerId", Value::Identifier(OWNER_1)),
+            WhereClause {
+                field: "body".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Bytes(b"cherry".to_vec()),
+                    Value::Bytes(b"apple".to_vec()),
+                ]),
+            },
+        ],
+        vec![("body", true)],
+        Some(10),
+    );
+    let outcome = drive
+        .query_documents(notes.clone(), None, false, None, None)
+        .expect("in on the last component executes");
+    let bodies: Vec<Vec<u8>> = outcome
+        .documents()
+        .iter()
+        .map(|document| payload_bytes(document, "body"))
+        .collect();
+    assert_eq!(bodies, vec![b"apple".to_vec(), b"cherry".to_vec()]);
+    let (proof, _) = notes
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("proof generation");
+    let (_root, verified) = notes
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("proof verification");
+    let verified_bodies: Vec<Vec<u8>> = verified
+        .iter()
+        .map(|document| payload_bytes(document, "body"))
+        .collect();
+    assert_eq!(verified_bodies, bodies);
+
+    let reactions = query_ordered(
+        &contract,
+        "reaction",
+        vec![
+            equal("postId", Value::Identifier(POST)),
+            WhereClause {
+                field: "kind".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::U64(7), Value::U64(3)]),
+            },
+        ],
+        vec![("kind", true)],
+        Some(10),
+    );
+    let outcome = drive
+        .query_documents(reactions.clone(), None, false, None, None)
+        .expect("in on a leading component executes");
+    let kinds_and_owners: Vec<(u64, [u8; 32])> = outcome
+        .documents()
+        .iter()
+        .map(|document| {
+            (
+                document
+                    .properties()
+                    .get("kind")
+                    .and_then(|value| value.to_integer::<u64>().ok())
+                    .expect("kind decoded"),
+                document.owner_id().to_buffer(),
+            )
+        })
+        .collect();
+    assert_eq!(kinds_and_owners, vec![(3, OWNER_1), (7, OWNER_3)]);
+    let (proof, _) = reactions
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("proof generation");
+    let (_root, verified) = reactions
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("proof verification");
+    assert_eq!(verified.len(), 2);
 
     assert_grovedb_is_consistent(&drive);
 }

@@ -173,6 +173,14 @@ pub fn decode_index_only_entry_payload(
                 String::from_utf8(encoded.to_vec())
                     .map_err(|_| corrupted("indexOnly entry payload contains invalid UTF-8"))?,
             ),
+            // Every other payload type encodes to a fixed width, so an
+            // empty frame is a corrupted entry; the tree-key decoder would
+            // read it as the null sentinel instead.
+            _ if encoded.is_empty() => {
+                return Err(corrupted(
+                    "indexOnly entry payload carries an empty frame for a fixed-width property",
+                ));
+            }
             property_type => property_type
                 .decode_value_for_tree_keys(encoded)
                 .map_err(|e| Error::Protocol(Box::new(e)))?,
@@ -185,4 +193,134 @@ pub fn decode_index_only_entry_payload(
         ));
     }
     Ok(properties)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::platform_value::platform_value;
+    use dpp::platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    /// An indexOnly type whose value slot holds a fixed-width integer and
+    /// a bounded string, in that (name) order.
+    fn payload_type() -> DocumentType {
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version).expect("config");
+        let schema = platform_value!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "indices": [{ "name": "byOwner", "terminal": "$ownerId" }],
+            "entryPayload": ["count", "text"],
+            "properties": {
+                "count": { "type": "integer", "position": 0 },
+                "text": { "type": "string", "maxLength": 8, "position": 1 }
+            },
+            "required": ["count", "text"],
+            "additionalProperties": false
+        });
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            1,
+            config.version(),
+            "entry",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("the payload type parses")
+    }
+
+    fn frame(bytes: &[u8]) -> Vec<u8> {
+        let mut framed = (bytes.len() as u16).to_be_bytes().to_vec();
+        framed.extend_from_slice(bytes);
+        framed
+    }
+
+    fn count_frame(value: i64) -> Vec<u8> {
+        frame(
+            &DocumentPropertyType::I64
+                .encode_value_for_tree_keys(&Value::I64(value))
+                .expect("i64 key"),
+        )
+    }
+
+    fn decode_error(payload: &[u8]) -> String {
+        decode_index_only_entry_payload(payload_type().as_ref(), payload)
+            .expect_err("a malformed payload must be refused")
+            .to_string()
+    }
+
+    #[test]
+    fn should_round_trip_a_documents_payload() {
+        let document_type = payload_type();
+        let platform_version = PlatformVersion::latest();
+        let document = document_type
+            .random_document(Some(7), platform_version)
+            .expect("random document");
+        let encoded = encode_index_only_entry_payload(&document, document_type.as_ref())
+            .expect("payload encodes");
+        let decoded = decode_index_only_entry_payload(document_type.as_ref(), &encoded)
+            .expect("payload decodes");
+        for name in ["count", "text"] {
+            assert_eq!(decoded.get(name), document.properties().get(name), "{name}");
+        }
+        assert_eq!(decoded.len(), 2);
+    }
+
+    #[test]
+    fn should_decode_a_well_framed_payload() {
+        let mut payload = count_frame(-5);
+        payload.extend(frame(b"abc"));
+        let decoded =
+            decode_index_only_entry_payload(payload_type().as_ref(), &payload).expect("decodes");
+        assert_eq!(decoded.get("count"), Some(&Value::I64(-5)));
+        assert_eq!(decoded.get("text"), Some(&Value::Text("abc".to_string())));
+    }
+
+    #[test]
+    fn should_refuse_a_truncated_length_frame() {
+        let mut payload = count_frame(1);
+        payload.push(0);
+        assert!(decode_error(&payload).contains("truncated before a property's length frame"));
+    }
+
+    #[test]
+    fn should_refuse_a_frame_longer_than_the_payload() {
+        let mut payload = count_frame(1);
+        payload.extend(frame(b"abc"));
+        payload.pop();
+        assert!(decode_error(&payload).contains("truncated inside a property"));
+    }
+
+    #[test]
+    fn should_refuse_bytes_past_the_last_property() {
+        let mut payload = count_frame(1);
+        payload.extend(frame(b"abc"));
+        payload.push(0);
+        assert!(decode_error(&payload).contains("past its last property"));
+    }
+
+    #[test]
+    fn should_refuse_invalid_utf8_in_a_string_payload() {
+        let mut payload = count_frame(1);
+        payload.extend(frame(&[0xFF, 0xFE]));
+        assert!(decode_error(&payload).contains("invalid UTF-8"));
+    }
+
+    #[test]
+    fn should_refuse_an_empty_frame_for_a_fixed_width_property() {
+        let mut payload = frame(&[]);
+        payload.extend(frame(b"abc"));
+        assert!(decode_error(&payload).contains("empty frame for a fixed-width property"));
+    }
 }

@@ -455,6 +455,22 @@ where
     })
 }
 
+/// Whether `fields`, all terminal components, appear in the terminal's
+/// declared order: one member key sorts by its components in that order,
+/// so a walk over member keys can implement no other ordering. The terminal
+/// route additionally requires the run to be contiguous after the
+/// equality-bound components; the matcher only refuses what no index walk
+/// could serve, so another index may still take the query.
+fn follows_component_order(components: &[String], fields: &[&str]) -> bool {
+    let position_of = |field: &str| components.iter().position(|component| component == field);
+    fields
+        .windows(2)
+        .all(|pair| match (position_of(pair[0]), position_of(pair[1])) {
+            (Some(earlier), Some(later)) => earlier < later,
+            _ => false,
+        })
+}
+
 /// The storage key of a flat indexOnly index's level (an index with no
 /// prefix `properties`): a zero byte followed by each terminal component
 /// name, every name preceded by a zero byte. Property names never contain a
@@ -1021,7 +1037,10 @@ impl Index {
             // Ordering by the terminal (any of its components) is ordering
             // the deepest level — admissible only as the ordering's
             // trailing entries.
-            Some(position) if order_by[position..].iter().all(|field| is_component(field)) => {
+            Some(position)
+                if order_by[position..].iter().all(|field| is_component(field))
+                    && follows_component_order(components, &order_by[position..]) =>
+            {
                 &order_by[..position]
             }
             Some(_) => return None,
@@ -1186,7 +1205,10 @@ impl Index {
             // Ordering by the terminal (any of its components) is ordering
             // the deepest level — admissible only as the ordering's
             // trailing entries.
-            Some(position) if order_by[position..].iter().all(|field| is_component(field)) => {
+            Some(position)
+                if order_by[position..].iter().all(|field| is_component(field))
+                    && follows_component_order(components, &order_by[position..]) =>
+            {
                 &order_by[..position]
             }
             Some(_) => return None,
@@ -3884,6 +3906,50 @@ mod tests {
         assert_eq!(
             index.matches_contiguous(&["name"], None, None, &["age", "city"]),
             Some(0)
+        );
+    }
+
+    /// A composite terminal's components share one member key, so an
+    /// ordering over them is admissible only in declared order.
+    #[test]
+    fn test_matches_including_terminal_contiguous_composite_order() {
+        let mut index = make_index("idx", vec![("hashtag", true)], false);
+        index.terminal = Some(vec!["post".to_string(), "owner".to_string()]);
+
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["post", "owner"]
+            ),
+            Some((0, true)),
+            "declared order is admissible"
+        );
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag", "post"],
+                None,
+                None,
+                &["owner"]
+            ),
+            Some((0, true)),
+            "a later component alone is admissible"
+        );
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["owner", "post"]
+            ),
+            None,
+            "a reversed run cannot be served by any member-key walk"
+        );
+        assert_eq!(
+            index.matches_including_terminal(&["hashtag"], None, &["owner", "post"]),
+            None,
+            "the non-contiguous matcher refuses the same run"
         );
     }
 
