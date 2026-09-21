@@ -2976,7 +2976,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
         banlist: true,
         suspensions: true,
         warnings: false,
-        moderators: ContractModerators::Elected(ElectedModerators {
+        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             challenge_cool_down: 1_209_600,
@@ -2987,7 +2987,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
             moderators_action_fee_maximums: BTreeMap::new(),
             interim,
             owner_protected: false,
-        }),
+        })),
     }
 }
 

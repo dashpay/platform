@@ -222,7 +222,7 @@ mod tests {
                 banlist: true,
                 suspensions: true,
                 warnings: false,
-                moderators: ContractModerators::Elected(declaration),
+                moderators: ContractModerators::Elected(Box::new(declaration)),
             }),
             ..DataContractConfigV2::default()
         })

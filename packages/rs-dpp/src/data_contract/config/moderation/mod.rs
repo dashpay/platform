@@ -70,8 +70,9 @@ pub enum ContractModerators {
     AppointedModerators(BTreeSet<Identifier>),
     /// A team elected by masternodes moderates, once one is seated; until then the interim
     /// moderators of the declaration do. Declarable only when the contract is created, and
-    /// never left or changed by an update.
-    Elected(ElectedModerators),
+    /// never left or changed by an update. Boxed: the declaration is the largest kind by
+    /// far, and a contract's config is embedded by value wherever a contract is.
+    Elected(Box<ElectedModerators>),
 }
 
 impl ContractModerators {
@@ -95,7 +96,7 @@ impl ContractModerators {
     /// The elected declaration, `None` for the merged kinds.
     pub fn elected(&self) -> Option<&ElectedModerators> {
         match self {
-            ContractModerators::Elected(elected) => Some(elected),
+            ContractModerators::Elected(elected) => Some(elected.as_ref()),
             ContractModerators::ContractOwner | ContractModerators::AppointedModerators(_) => None,
         }
     }
@@ -349,7 +350,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             ));
                         }
                         let required = |key: &'static str| move || de::Error::missing_field(key);
-                        Ok(ContractModerators::Elected(ElectedModerators {
+                        Ok(ContractModerators::Elected(Box::new(ElectedModerators {
                             join_window: elected
                                 .join_window
                                 .unwrap_or(DEFAULT_ELECTION_WINDOW_SECONDS),
@@ -372,7 +373,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
                                 .interim
                                 .ok_or_else(required(elected_names::INTERIM))?,
                             owner_protected: elected.owner_protected.unwrap_or(false),
-                        }))
+                        })))
                     }
                     other => Err(de::Error::unknown_variant(
                         other,

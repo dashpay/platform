@@ -434,7 +434,7 @@ mod tests {
                 banlist: true,
                 suspensions: false,
                 warnings: false,
-                moderators: ContractModerators::Elected(ElectedModerators {
+                moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                     join_window: 604_800,
                     vote_window: 604_800,
                     challenge_cool_down: 1_209_600,
@@ -443,7 +443,7 @@ mod tests {
                     moderators_action_fee_maximums: BTreeMap::new(),
                     interim: InterimModerators::NotYetUsable,
                     owner_protected: false,
-                }),
+                })),
             },
         )));
         platform

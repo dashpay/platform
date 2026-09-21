@@ -589,7 +589,7 @@ mod tests {
             banlist: true,
             suspensions: true,
             warnings: false,
-            moderators: ContractModerators::Elected(elected),
+            moderators: ContractModerators::Elected(Box::new(elected)),
         }
     }
 
@@ -802,7 +802,7 @@ mod tests {
             let mut declaration = elected();
             declaration.interim = interim;
             declaration.owner_protected = owner_protected;
-            ContractModerators::Elected(declaration)
+            ContractModerators::Elected(Box::new(declaration))
         };
 
         let owner_alone = with(InterimModerators::ContractOwner, false);
@@ -849,7 +849,7 @@ mod tests {
             },
         );
         declaration.owner_protected = true;
-        let moderators = ContractModerators::Elected(declaration);
+        let moderators = ContractModerators::Elected(Box::new(declaration));
 
         let json = serde_json::to_value(&moderators).expect("serialize");
         assert_eq!(json["$type"], "elected");
@@ -977,7 +977,7 @@ mod tests {
     fn should_describe_itself() {
         let mut declaration = elected();
         assert_eq!(
-            ContractModerators::Elected(declaration.clone()).to_string(),
+            ContractModerators::Elected(Box::new(declaration.clone())).to_string(),
             "an elected moderation team, in its interim moderated by the contract owner"
         );
         declaration.interim = InterimModerators::NotYetUsable;
