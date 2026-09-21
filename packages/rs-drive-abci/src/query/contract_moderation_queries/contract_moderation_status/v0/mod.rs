@@ -4,6 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::contract_moderation_queries::{
     identifier_from_request, list_from_request, list_to_request, reason_to_response,
+    warnings_to_response,
 };
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -109,6 +110,9 @@ impl<C> Platform<C> {
                         suspension_reason: status
                             .suspension
                             .map(|suspension| reason_to_response(suspension.reason)),
+                        // Empty when the warning list was not read as much as when the identity
+                        // carries none: `lists` tells the two apart.
+                        warnings: warnings_to_response(status.warnings),
                         lists: requested
                             .iter()
                             .map(|list| list_to_request(*list))
@@ -127,15 +131,15 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::contract_moderation_queries::tests::{
-        ban, store_contract, suspend, BANLIST, BAN_REASON, SUSPENSIONS, SUSPENSION_REASON,
-        SUSPENSION_REASON_CODE,
+        ban, store_contract, store_contract_keeping, suspend, warn, BANLIST, BAN_REASON,
+        SUSPENSIONS, SUSPENSION_REASON, SUSPENSION_REASON_CODE, WARNINGS, WARNING_REASON,
     };
     use crate::query::tests::setup_platform;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::config::moderation::{
         ContractBan, ContractModerationListStatuses, ContractModerationReason,
-        ContractModerationStatus, ContractSuspension,
+        ContractModerationStatus, ContractSuspension, ContractWarning,
     };
     use dpp::identifier::Identifier;
     use drive::drive::Drive;
@@ -274,6 +278,7 @@ mod tests {
                         reason: ContractModerationReason::from_text(BAN_REASON),
                     }),
                     suspension: None,
+                    warnings: vec![],
                 },
             ),
             (
@@ -287,6 +292,7 @@ mod tests {
                             text: SUSPENSION_REASON.to_string(),
                         },
                     }),
+                    warnings: vec![],
                 },
             ),
             (clean, ContractModerationStatus::default()),
@@ -367,6 +373,93 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn should_return_and_prove_the_warnings() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = store_contract_keeping(&platform, true, false, true, version);
+        let warned = Identifier::from([0x41; 32]);
+        warn(&platform, &contract, warned, 1_000, version);
+        warn(&platform, &contract, warned, 2_000, version);
+
+        let result = platform
+            .query_contract_moderation_status_v0(
+                request(
+                    contract.id().to_vec(),
+                    warned.to_vec(),
+                    vec![BANLIST, WARNINGS],
+                    false,
+                ),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let Some(get_contract_moderation_status_response_v0::Result::Status(status)) =
+            result.data.expect("expected data").result
+        else {
+            panic!("expected a status");
+        };
+        assert_eq!(status.banned, Some(false));
+        assert_eq!(status.lists, vec![BANLIST, WARNINGS]);
+        assert_eq!(
+            status
+                .warnings
+                .iter()
+                .map(|warning| warning.warned_at)
+                .collect::<Vec<_>>(),
+            vec![1_000, 2_000]
+        );
+        assert_eq!(
+            status.warnings[1].reason,
+            Some(reason_to_response(ContractModerationReason::from_text(
+                WARNING_REASON
+            )))
+        );
+
+        let result = platform
+            .query_contract_moderation_status_v0(
+                request(
+                    contract.id().to_vec(),
+                    warned.to_vec(),
+                    vec![WARNINGS],
+                    true,
+                ),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        let Some(get_contract_moderation_status_response_v0::Result::Proof(proof)) =
+            result.data.expect("expected data").result
+        else {
+            panic!("expected a proof");
+        };
+        let lists = [ContractModerationList::Warnings];
+        let (_, proved) = Drive::verify_contract_moderation_status(
+            &proof.grovedb_proof,
+            contract.id(),
+            warned,
+            &lists,
+            version,
+        )
+        .expect("expected the proof to verify");
+        let expected = ContractModerationStatus {
+            ban: None,
+            suspension: None,
+            warnings: [1_000, 2_000]
+                .into_iter()
+                .map(|warned_at| ContractWarning {
+                    warned_at,
+                    reason: ContractModerationReason::from_text(WARNING_REASON),
+                })
+                .collect(),
+        };
+        assert_eq!(
+            proved,
+            ContractModerationListStatuses::from_status(&lists, &expected)
+        );
+        assert_eq!(proved.banned(), None);
+    }
+
     #[test]
     fn should_leave_a_list_that_was_not_read_unset_on_the_wire() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);

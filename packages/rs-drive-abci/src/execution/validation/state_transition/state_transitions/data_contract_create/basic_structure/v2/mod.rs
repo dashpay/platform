@@ -456,6 +456,7 @@ mod tests {
                     banlist: true,
                     suspensions: false,
                     moderators: ContractModerators::ContractOwner,
+                    warnings: false,
                 },
             )));
         }

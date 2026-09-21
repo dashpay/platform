@@ -338,7 +338,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     ban and a suspension carry a reason, stored with the entry: a text of
 ///     at most `SystemLimits::max_contract_moderation_reason_length` bytes and
 ///     an optional code nothing checks, reserved for ban codes a contract may
-///     declare in a later version;
+///     declare in a later version. A contract may also keep a warning list
+///     (`[64, contract, 2] / 224`): a warn appends a warning, the block time and
+///     a reason, to the identity's entry, at most
+///     `SystemLimits::max_contract_warnings_per_identity` at a time, and a
+///     clearWarnings deletes the entry; warnings bar nothing and are what a
+///     status query and the identity's clients read;
 ///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates on, moves the
 ///     contract update's basic structure to 2 and the contract create and
 ///     update state validation (already 1 here) checks the named moderators.
@@ -351,7 +356,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     party of a transfer or a purchase, so a barred identity neither
 ///     receives nor sells a document. Token transitions are not gated.
 ///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2,
-///     which creates the list trees (`[64, contract, 2] / 128` and `/ 192`, inside the contract's other tree), and
+///     which creates the list trees (`[64, contract, 2] / 128`, `/ 192` and `/ 224`, inside the contract's other tree), and
 ///     adds the `moderation` method table; the verify and
 ///     query tables gain the status and entries methods.
 ///
@@ -542,7 +547,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until and max_contract_moderation_reason_length
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length and max_contract_warnings_per_identity
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

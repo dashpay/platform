@@ -1167,8 +1167,9 @@ impl Drive {
             }
             StateTransition::ContractUserModeration(transition) => {
                 // The proof holds the entries of the lists the moderation touched, present or
-                // absent, and nothing more. A ban touched both lists the contract keeps (it
-                // removes a suspension too), so the contract's config says which to expect.
+                // absent, and nothing more. A ban touched every barring list the contract
+                // keeps (it removes a suspension too), so the contract's config says which to
+                // expect; the warning list is never among them.
                 let contract_id = transition.data_contract_id();
                 let identity_id = transition.target_identity_id().ok_or(Error::Proof(
                     ProofError::CorruptedProof(
@@ -1186,7 +1187,7 @@ impl Drive {
                         contract
                             .config()
                             .moderation()
-                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                            .map(|moderation| moderation.barring_lists().collect::<Vec<_>>())
                             .unwrap_or_else(|| vec![ContractModerationList::Banlist])
                     }
                     ContractUserModerationAction::Unban { .. } => {
@@ -1195,6 +1196,10 @@ impl Drive {
                     ContractUserModerationAction::Suspend { .. }
                     | ContractUserModerationAction::Unsuspend { .. } => {
                         vec![ContractModerationList::Suspensions]
+                    }
+                    ContractUserModerationAction::Warn { .. }
+                    | ContractUserModerationAction::ClearWarnings { .. } => {
+                        vec![ContractModerationList::Warnings]
                     }
                     ContractUserModerationAction::DeleteDocument { .. } => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
@@ -1229,6 +1234,15 @@ impl Drive {
                     }
                     ContractUserModerationAction::Unsuspend { .. } => {
                         statuses.suspended_until() == Some(None)
+                    }
+                    // The latest warning is the transition's: its reason, on the warning
+                    // list. Its block time is the block's, which the verifier does not know.
+                    ContractUserModerationAction::Warn { reason, .. } => statuses
+                        .warnings()
+                        .and_then(<[_]>::last)
+                        .is_some_and(|warning| warning.reason == *reason),
+                    ContractUserModerationAction::ClearWarnings { .. } => {
+                        statuses.warnings().is_some_and(<[_]>::is_empty)
                     }
                     ContractUserModerationAction::DeleteDocument { .. } => false,
                 };

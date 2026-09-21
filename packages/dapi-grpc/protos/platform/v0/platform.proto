@@ -706,20 +706,27 @@ message GetContractGroupMembersResponse {
   oneof version { GetContractGroupMembersResponseV0 v0 = 1; }
 }
 
-// One of the two moderation lists a moderated data contract may keep (protocol version 14).
+// One of the moderation lists a moderated data contract may keep (protocol version 14).
 enum ContractModerationList {
   CONTRACT_MODERATION_LIST_UNSPECIFIED = 0; // Not a list: a request that leaves the field out is refused
   CONTRACT_MODERATION_LIST_BANLIST = 1;     // Identities barred until an unban
   CONTRACT_MODERATION_LIST_SUSPENSIONS = 2; // Identities barred until a block time
+  CONTRACT_MODERATION_LIST_WARNINGS = 3;    // Identities warned, barred from nothing
 }
 
-// Why a moderator banned or suspended an identity. Nothing checks what a
-// moderator writes.
+// Why a moderator banned, suspended or warned an identity. Nothing checks
+// what a moderator writes.
 message ContractModerationReason {
   optional uint32 code =
       1; // Reserved for the ban codes a contract may declare in a later
          // protocol version; a u16, expected unset today, never checked
   string text = 2; // Free text, at most 1024 bytes of UTF-8, may be empty
+}
+
+// One warning an identity carries on a contract's warning list.
+message ContractWarning {
+  uint64 warned_at = 1; // The time of the block that issued it, in milliseconds
+  ContractModerationReason reason = 2; // Why
 }
 
 message GetContractModerationStatusRequest {
@@ -750,6 +757,9 @@ message GetContractModerationStatusResponse {
         4; // Set when the identity is banned: why
     optional ContractModerationReason suspension_reason =
         5; // Set when the identity is suspended: why
+    repeated ContractWarning warnings =
+        6; // When the warning list was read: the identity's warnings, oldest
+           // first; empty when it carries none
   }
 
   message GetContractModerationStatusResponseV0 {
@@ -778,11 +788,16 @@ message GetContractModerationEntriesRequest {
 
 message GetContractModerationEntriesResponse {
   message ContractModerationEntry {
-    bytes identity_id = 1; // The barred identity
+    bytes identity_id = 1; // The identity on the list
     optional uint64 until =
         2; // For a suspension list entry: the block time, in milliseconds, at
            // which it lapses
-    ContractModerationReason reason = 3; // Why the identity is on the list
+    ContractModerationReason reason =
+        3; // Why the identity is on the list: the ban's reason, the
+           // suspension's, or the latest warning's
+    repeated ContractWarning warnings =
+        4; // For a warning list entry: every warning the identity carries,
+           // oldest first
   }
 
   message ContractModerationEntries {

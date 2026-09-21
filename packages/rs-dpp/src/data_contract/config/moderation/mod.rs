@@ -1,10 +1,13 @@
 //! Contract moderation: the declaration, inside a data contract's config, that the contract
-//! keeps a banlist and/or a suspension list of identities, and who may edit them.
+//! keeps a banlist, a suspension list and/or a warning list of identities, and who may edit
+//! them.
 //!
 //! An identity on the banlist, or on the suspension list with a suspension that has not lapsed,
 //! cannot act on the contract at the document level: every document transition it signs against
-//! the contract is refused. Token transitions are not affected. The lists live under the
-//! contract's own subtree in Drive (keys `128` and `192` of its other tree, `[64, id, 2]`) and are edited by the
+//! the contract is refused. Token transitions are not affected. A warning bars nothing: it is
+//! a record, with a reason and a time, that the identity and everyone else can read, and that
+//! accumulates until a moderator clears it. The lists live under the contract's own subtree in
+//! Drive (keys `128`, `192` and `224` of its other tree, `[64, id, 2]`) and are edited by the
 //! `ContractUserModeration` state transition.
 //!
 //! The same moderators may delete the documents of the document types that say so
@@ -183,7 +186,7 @@ impl fmt::Display for ContractModerators {
     }
 }
 
-/// Which of the two moderation lists an action or a query refers to.
+/// Which of the moderation lists an action or a query refers to.
 #[derive(
     Debug,
     Clone,
@@ -205,6 +208,19 @@ pub enum ContractModerationList {
     Banlist,
     /// The suspension list: identities barred until a block time.
     Suspensions,
+    /// The warning list: identities warned, and why, barred from nothing.
+    Warnings,
+}
+
+impl ContractModerationList {
+    /// Whether an entry on the list bars the identity from the contract's documents. A
+    /// warning does not.
+    pub fn bars(&self) -> bool {
+        match self {
+            ContractModerationList::Banlist | ContractModerationList::Suspensions => true,
+            ContractModerationList::Warnings => false,
+        }
+    }
 }
 
 impl fmt::Display for ContractModerationList {
@@ -212,6 +228,7 @@ impl fmt::Display for ContractModerationList {
         match self {
             ContractModerationList::Banlist => write!(f, "banlist"),
             ContractModerationList::Suspensions => write!(f, "suspensions"),
+            ContractModerationList::Warnings => write!(f, "warning list"),
         }
     }
 }
@@ -229,6 +246,9 @@ pub struct ContractModerationConfig {
     /// The contract keeps a suspension list (Drive key `192` of the contract's other tree).
     #[serde(default)]
     pub suspensions: bool,
+    /// The contract keeps a warning list (Drive key `224` of the contract's other tree).
+    #[serde(default)]
+    pub warnings: bool,
     /// Who may edit the lists.
     #[serde(default)]
     pub moderators: ContractModerators,
@@ -240,17 +260,27 @@ impl ContractModerationConfig {
         match list {
             ContractModerationList::Banlist => self.banlist,
             ContractModerationList::Suspensions => self.suspensions,
+            ContractModerationList::Warnings => self.warnings,
         }
     }
 
-    /// The lists the contract keeps, in tree key order.
+    /// The lists the contract keeps, in tree key order: the banlist, the suspension list, the
+    /// warning list.
     pub fn lists(&self) -> impl Iterator<Item = ContractModerationList> + '_ {
         [
             ContractModerationList::Banlist,
             ContractModerationList::Suspensions,
+            ContractModerationList::Warnings,
         ]
         .into_iter()
         .filter(|list| self.keeps(*list))
+    }
+
+    /// The lists the contract keeps whose entries bar an identity from its documents: the
+    /// banlist and the suspension list, never the warning list. What the document gate reads,
+    /// and what a ban's proof covers.
+    pub fn barring_lists(&self) -> impl Iterator<Item = ContractModerationList> + '_ {
+        self.lists().filter(ContractModerationList::bars)
     }
 
     /// Whether `identity_id` may moderate a contract owned by `owner_id`. Whoever may moderate
@@ -299,11 +329,15 @@ impl ContractModerationConfig {
         has_document_type_deletable_by_moderators: bool,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
-        if !self.banlist && !self.suspensions && !has_document_type_deletable_by_moderators {
+        if !self.banlist
+            && !self.suspensions
+            && !self.warnings
+            && !has_document_type_deletable_by_moderators
+        {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidContractModerationConfigError::new(
-                    "moderation declares neither a banlist nor a suspension list, and no \
-                     document type can be deleted by moderators"
+                    "moderation declares neither a banlist, a suspension list nor a warning \
+                     list, and no document type can be deleted by moderators"
                         .to_string(),
                 )
                 .into(),
@@ -363,6 +397,18 @@ pub struct ContractSuspension {
     pub reason: ContractModerationReason,
 }
 
+/// One warning of a warning list entry.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractWarning {
+    /// The time of the block that issued the warning, in milliseconds.
+    pub warned_at: TimestampMillis,
+    /// Why the moderator warned the identity.
+    pub reason: ContractModerationReason,
+}
+
 /// What a contract's moderation lists say about one identity.
 #[derive(
     Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
@@ -374,12 +420,21 @@ pub struct ContractModerationStatus {
     /// The identity's suspension list entry, `None` when it is not suspended. A lapsed
     /// suspension (at or before the block time) still appears here until it is swept.
     pub suspension: Option<ContractSuspension>,
+    /// The identity's warnings, oldest first; empty when it carries none. They stay until a
+    /// moderator clears them, and bar nothing.
+    #[serde(default)]
+    pub warnings: Vec<ContractWarning>,
 }
 
 impl ContractModerationStatus {
     /// Whether the identity is on the banlist.
     pub fn banned(&self) -> bool {
         self.ban.is_some()
+    }
+
+    /// Whether the identity carries at least one warning.
+    pub fn warned(&self) -> bool {
+        !self.warnings.is_empty()
     }
 
     /// The block time, in milliseconds, until which the identity is suspended, lapsed or not.
@@ -423,6 +478,12 @@ pub enum ContractModerationListStatus {
         /// suspension still appears here until it is swept.
         suspension: Option<ContractSuspension>,
     },
+    /// The warning list entry
+    #[serde(rename_all = "camelCase")]
+    Warnings {
+        /// The identity's warnings, oldest first; empty when it carries none.
+        warnings: Vec<ContractWarning>,
+    },
 }
 
 impl ContractModerationListStatus {
@@ -435,6 +496,9 @@ impl ContractModerationListStatus {
             ContractModerationList::Suspensions => Self::Suspensions {
                 suspension: status.suspension.clone(),
             },
+            ContractModerationList::Warnings => Self::Warnings {
+                warnings: status.warnings.clone(),
+            },
         }
     }
 
@@ -443,6 +507,7 @@ impl ContractModerationListStatus {
         match self {
             Self::Banlist { .. } => ContractModerationList::Banlist,
             Self::Suspensions { .. } => ContractModerationList::Suspensions,
+            Self::Warnings { .. } => ContractModerationList::Warnings,
         }
     }
 }
@@ -474,7 +539,8 @@ impl ContractModerationListStatuses {
     pub fn ban(&self) -> Option<Option<&ContractBan>> {
         self.0.iter().find_map(|status| match status {
             ContractModerationListStatus::Banlist { ban } => Some(ban.as_ref()),
-            ContractModerationListStatus::Suspensions { .. } => None,
+            ContractModerationListStatus::Suspensions { .. }
+            | ContractModerationListStatus::Warnings { .. } => None,
         })
     }
 
@@ -482,8 +548,19 @@ impl ContractModerationListStatuses {
     /// suspension list was not queried.
     pub fn suspension(&self) -> Option<Option<&ContractSuspension>> {
         self.0.iter().find_map(|status| match status {
-            ContractModerationListStatus::Banlist { .. } => None,
             ContractModerationListStatus::Suspensions { suspension } => Some(suspension.as_ref()),
+            ContractModerationListStatus::Banlist { .. }
+            | ContractModerationListStatus::Warnings { .. } => None,
+        })
+    }
+
+    /// The identity's warnings, oldest first (`Some(&[])`: none), `None` when the warning list
+    /// was not queried.
+    pub fn warnings(&self) -> Option<&[ContractWarning]> {
+        self.0.iter().find_map(|status| match status {
+            ContractModerationListStatus::Warnings { warnings } => Some(warnings.as_slice()),
+            ContractModerationListStatus::Banlist { .. }
+            | ContractModerationListStatus::Suspensions { .. } => None,
         })
     }
 
@@ -564,6 +641,7 @@ mod tests {
         let config = ContractModerationConfig {
             banlist: false,
             suspensions: false,
+            warnings: false,
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
@@ -577,6 +655,7 @@ mod tests {
         let config = ContractModerationConfig {
             banlist: false,
             suspensions: false,
+            warnings: false,
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
@@ -592,6 +671,7 @@ mod tests {
         let config = ContractModerationConfig {
             banlist: true,
             suspensions: false,
+            warnings: false,
             moderators: ContractModerators::AppointedModerators(set(&[9, 1])),
         };
         let result = config
@@ -610,6 +690,7 @@ mod tests {
         let config = |count: u8| ContractModerationConfig {
             banlist: true,
             suspensions: false,
+            warnings: false,
             moderators: ContractModerators::AppointedModerators(set(
                 &(1..=count).collect::<Vec<u8>>()
             )),
@@ -630,6 +711,7 @@ mod tests {
         let empty = ContractModerationConfig {
             banlist: true,
             suspensions: true,
+            warnings: false,
             moderators: ContractModerators::AppointedModerators(BTreeSet::new()),
         };
         assert!(!empty
@@ -641,6 +723,7 @@ mod tests {
         let oversized = ContractModerationConfig {
             banlist: true,
             suspensions: true,
+            warnings: false,
             moderators: ContractModerators::AppointedModerators(set(&too_many)),
         };
         assert!(!oversized
@@ -655,6 +738,7 @@ mod tests {
         let config = ContractModerationConfig {
             banlist: true,
             suspensions: true,
+            warnings: false,
             moderators: ContractModerators::AppointedModerators(set(&[1, 2, 3])),
         };
         assert!(config
@@ -685,10 +769,108 @@ mod tests {
     }
 
     #[test]
+    fn should_keep_a_warning_list_alone_and_bar_nobody_with_it() {
+        let config = ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            warnings: true,
+            moderators: ContractModerators::ContractOwner,
+        };
+        let result = config
+            .validate(false, PlatformVersion::latest())
+            .expect("validate");
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_eq!(
+            config.lists().collect::<Vec<_>>(),
+            vec![ContractModerationList::Warnings]
+        );
+        // Warnings bar nothing: the document gate reads no list of this contract.
+        assert_eq!(config.barring_lists().count(), 0);
+
+        let all = ContractModerationConfig {
+            banlist: true,
+            suspensions: true,
+            warnings: true,
+            moderators: ContractModerators::ContractOwner,
+        };
+        assert_eq!(
+            all.lists().collect::<Vec<_>>(),
+            vec![
+                ContractModerationList::Banlist,
+                ContractModerationList::Suspensions,
+                ContractModerationList::Warnings,
+            ]
+        );
+        assert_eq!(
+            all.barring_lists().collect::<Vec<_>>(),
+            vec![
+                ContractModerationList::Banlist,
+                ContractModerationList::Suspensions,
+            ]
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_config_with_warnings_through_json_and_default_them_off() {
+        let config = ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            warnings: true,
+            moderators: ContractModerators::ContractOwner,
+        };
+        let json = serde_json::to_value(&config).expect("to json");
+        assert_eq!(json["warnings"], true);
+        let back: ContractModerationConfig = serde_json::from_value(json).expect("from json");
+        assert_eq!(back, config);
+
+        // A declaration written before warning lists existed keeps no warning list.
+        let older: ContractModerationConfig = serde_json::from_value(serde_json::json!({
+            "banlist": true,
+            "moderators": { "$type": "contractOwner" },
+        }))
+        .expect("from json");
+        assert!(!older.warnings);
+    }
+
+    #[test]
+    fn should_report_the_warnings_of_the_list_queried_only() {
+        let warned = ContractModerationStatus {
+            ban: None,
+            suspension: None,
+            warnings: vec![ContractWarning {
+                warned_at: 5,
+                reason: ContractModerationReason::from_text("first strike"),
+            }],
+        };
+        assert!(warned.warned());
+        assert!(!warned.is_barred_at(0));
+
+        let warnings_only = ContractModerationListStatuses::from_status(
+            &[ContractModerationList::Warnings],
+            &warned,
+        );
+        assert_eq!(warnings_only.warnings().map(<[_]>::len), Some(1));
+        assert_eq!(warnings_only.banned(), None);
+        assert_eq!(warnings_only.suspended_until(), None);
+        assert!(!warnings_only.is_barred_on_queried_lists_at(0));
+
+        let banlist_only = ContractModerationListStatuses::from_status(
+            &[ContractModerationList::Banlist],
+            &warned,
+        );
+        assert_eq!(banlist_only.warnings(), None);
+        assert_eq!(
+            ContractModerationListStatus::Warnings { warnings: vec![] }.list(),
+            ContractModerationList::Warnings
+        );
+    }
+
+    #[test]
     fn should_tell_barred_from_lapsed() {
         let banned = ContractModerationStatus {
             ban: Some(ContractBan::default()),
             suspension: None,
+            warnings: vec![],
         };
         assert!(banned.banned());
         assert!(banned.is_barred_at(0));
@@ -698,6 +880,7 @@ mod tests {
                 until: 100,
                 reason: ContractModerationReason::from_text("flooding"),
             }),
+            warnings: vec![],
         };
         assert!(!suspended.banned());
         assert_eq!(suspended.suspended_until(), Some(100));
@@ -714,6 +897,7 @@ mod tests {
                 reason: ContractModerationReason::from_text("spam"),
             }),
             suspension: None,
+            warnings: vec![],
         };
 
         let banlist_only = ContractModerationListStatuses::from_status(

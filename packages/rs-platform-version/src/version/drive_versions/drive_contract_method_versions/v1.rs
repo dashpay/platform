@@ -49,6 +49,8 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V1: DriveContractMethodVersions =
             remove_contract_ban: 0,
             add_contract_suspension: 0,
             remove_contract_suspension: 0,
+            add_contract_warning: 0,
+            remove_contract_warnings: 0,
             fetch_contract_moderation_status: 0,
             fetch_contract_moderation_entries: 0,
             prove_contract_moderation_status: 0,

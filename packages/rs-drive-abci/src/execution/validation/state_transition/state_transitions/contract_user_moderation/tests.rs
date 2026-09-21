@@ -1,5 +1,6 @@
 //! Contract moderation through the whole processing pipeline: the transition that edits a
-//! contract's banlist and suspension list, and the document gate that enforces them.
+//! contract's banlist, suspension list and warning list, and the document gate that enforces
+//! the first two.
 
 use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
 use crate::execution::validation::state_transition::tests::setup_identity;
@@ -20,7 +21,7 @@ use dpp::data_contract::associated_token::token_configuration::TokenConfiguratio
 use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractModerationConfig, ContractModerationList,
     ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
-    ContractModerationStatus, ContractModerators, ContractSuspension,
+    ContractModerationStatus, ContractModerators, ContractSuspension, ContractWarning,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -86,6 +87,8 @@ const CONTRACT_MODERATOR_IDENTITY_NOT_FOUND: u32 = 41110;
 const CONTRACT_MODERATION_COUNTERPARTY_BARRED: u32 = 41114;
 const DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS: u32 = 41115;
 const DOCUMENT_MODERATION_WINDOW_ELAPSED: u32 = 41116;
+const CONTRACT_USER_NOT_WARNED: u32 = 41117;
+const CONTRACT_USER_WARNING_LIMIT_REACHED: u32 = 41118;
 const INVALID_DOCUMENT_TYPE: u32 = 10406;
 const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
 const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
@@ -161,9 +164,19 @@ const THE_MODERATOR: Identifier = Identifier::new([7; 32]);
 const THE_OWNER: Identifier = Identifier::new([8; 32]);
 
 fn moderation(banlist: bool, suspensions: bool, moderator: Identifier) -> ContractModerationConfig {
+    moderation_with_warnings(banlist, suspensions, false, moderator)
+}
+
+fn moderation_with_warnings(
+    banlist: bool,
+    suspensions: bool,
+    warnings: bool,
+    moderator: Identifier,
+) -> ContractModerationConfig {
     ContractModerationConfig {
         banlist,
         suspensions,
+        warnings,
         moderators: ContractModerators::AppointedModerators([moderator].into_iter().collect()),
     }
 }
@@ -531,12 +544,21 @@ impl Setup {
         identity_id: Identifier,
         transaction: Option<&Transaction>,
     ) -> ContractModerationStatus {
+        self.status_on(identity_id, &BOTH, transaction)
+    }
+
+    fn status_on(
+        &self,
+        identity_id: Identifier,
+        lists: &[ContractModerationList],
+        transaction: Option<&Transaction>,
+    ) -> ContractModerationStatus {
         self.platform
             .drive
             .fetch_contract_moderation_status(
                 self.contract.id(),
                 identity_id,
-                &BOTH,
+                lists,
                 transaction,
                 PlatformVersion::latest(),
             )
@@ -673,6 +695,34 @@ fn unsuspend_action(identity_id: Identifier) -> ContractUserModerationAction {
     ContractUserModerationAction::Unsuspend { identity_id }
 }
 
+fn warn_action(identity_id: Identifier, text: &str) -> ContractUserModerationAction {
+    ContractUserModerationAction::Warn {
+        identity_id,
+        reason: ContractModerationReason::from_text(text),
+    }
+}
+
+fn clear_warnings_action(identity_id: Identifier) -> ContractUserModerationAction {
+    ContractUserModerationAction::ClearWarnings { identity_id }
+}
+
+/// The warning a `warn_action` for `text` leaves in a block at `time_ms`.
+fn warning(time_ms: TimestampMillis, text: &str) -> ContractWarning {
+    ContractWarning {
+        warned_at: time_ms,
+        reason: ContractModerationReason::from_text(text),
+    }
+}
+
+/// The status of an identity that carries `warnings` and nothing else.
+fn warned_with(warnings: Vec<ContractWarning>) -> ContractModerationStatus {
+    ContractModerationStatus {
+        ban: None,
+        suspension: None,
+        warnings,
+    }
+}
+
 #[tokio::test]
 async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after_an_unban() {
     let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
@@ -762,6 +812,282 @@ async fn should_suspend_until_a_block_time_and_sweep_the_suspension_once_it_laps
     assert_paid_with_code(
         &setup.process(&unsuspend, &transaction),
         CONTRACT_USER_NOT_SUSPENDED,
+    );
+}
+
+#[tokio::test]
+async fn should_warn_a_user_without_barring_it_accumulate_the_warnings_and_clear_them() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        true,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let warnings = [ContractModerationList::Warnings];
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let first = setup
+        .moderate(&setup.owner, warn_action(user_id, "first strike"))
+        .await;
+    assert_success(&setup.process(&first, &transaction));
+    // A warned user carries on: its documents pass, in the mempool and in a block.
+    let document = setup.create_document(&setup.user).await;
+    assert!(setup.check_tx(&document).is_empty());
+    assert_success(&setup.process(&document, &transaction));
+
+    // A second warning, by the named moderator, in a later block: the entry grows.
+    let second = setup
+        .moderate(&setup.moderator, warn_action(user_id, "second strike"))
+        .await;
+    assert_success(&setup.process_at(&second, BLOCK_TIME_MS + 5_000, &transaction));
+    setup.commit(transaction);
+    assert_eq!(
+        setup.status_on(user_id, &warnings, None),
+        warned_with(vec![
+            warning(BLOCK_TIME_MS, "first strike"),
+            warning(BLOCK_TIME_MS + 5_000, "second strike"),
+        ])
+    );
+    // The banlist says nothing: warnings bar nothing.
+    assert_eq!(
+        setup.status(user_id, None),
+        ContractModerationStatus::default()
+    );
+    // The execution proof shows the warning list alone, with the latest warning last.
+    assert_eq!(
+        setup.assert_execution_proved(&second),
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Warnings {
+            warnings: vec![
+                warning(BLOCK_TIME_MS, "first strike"),
+                warning(BLOCK_TIME_MS + 5_000, "second strike"),
+            ],
+        }])
+    );
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let clear = setup
+        .moderate(&setup.owner, clear_warnings_action(user_id))
+        .await;
+    assert_success(&setup.process(&clear, &transaction));
+    assert_eq!(
+        setup.status_on(user_id, &warnings, Some(&transaction)),
+        ContractModerationStatus::default()
+    );
+    // Nothing is left to clear.
+    let clear_again = setup
+        .moderate(&setup.owner, clear_warnings_action(user_id))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&clear_again, &transaction),
+        CONTRACT_USER_NOT_WARNED,
+    );
+    setup.commit(transaction);
+    assert_eq!(
+        setup.assert_execution_proved(&clear),
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Warnings {
+            warnings: vec![],
+        }])
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_warning_past_the_limit_until_the_warnings_are_cleared() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        false,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let max_warnings = PlatformVersion::latest()
+        .system_limits
+        .max_contract_warnings_per_identity;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    for index in 0..max_warnings {
+        let warn = setup
+            .moderate(
+                &setup.owner,
+                warn_action(user_id, &format!("strike {index}")),
+            )
+            .await;
+        assert_success(&setup.process(&warn, &transaction));
+    }
+    assert_eq!(
+        setup
+            .status_on(
+                user_id,
+                &[ContractModerationList::Warnings],
+                Some(&transaction)
+            )
+            .warnings
+            .len(),
+        usize::from(max_warnings)
+    );
+    let one_too_many = setup
+        .moderate(&setup.owner, warn_action(user_id, "one too many"))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&one_too_many, &transaction),
+        CONTRACT_USER_WARNING_LIMIT_REACHED,
+    );
+
+    let clear = setup
+        .moderate(&setup.owner, clear_warnings_action(user_id))
+        .await;
+    assert_success(&setup.process(&clear, &transaction));
+    let again = setup
+        .moderate(&setup.owner, warn_action(user_id, "a fresh start"))
+        .await;
+    assert_success(&setup.process(&again, &transaction));
+}
+
+#[tokio::test]
+async fn should_keep_the_warning_list_out_of_bans_and_the_gate() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        true,
+        true,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let every_list = [
+        ContractModerationList::Banlist,
+        ContractModerationList::Suspensions,
+        ContractModerationList::Warnings,
+    ];
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let warn = setup
+        .moderate(&setup.owner, warn_action(user_id, "first strike"))
+        .await;
+    assert_success(&setup.process(&warn, &transaction));
+    // A ban of a warned user leaves the warnings, which say how it came to that.
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    assert_eq!(
+        setup.status_on(user_id, &every_list, Some(&transaction)),
+        ContractModerationStatus {
+            ban: banned(),
+            suspension: None,
+            warnings: vec![warning(BLOCK_TIME_MS, "first strike")],
+        }
+    );
+    // A banned user may still be warned: the warning outlives the ban.
+    let warn_banned = setup
+        .moderate(&setup.owner, warn_action(user_id, "and again"))
+        .await;
+    assert_success(&setup.process(&warn_banned, &transaction));
+    setup.commit(transaction);
+
+    // The ban's proof covers the barring lists and leaves the warning list unknown.
+    let proved = setup.assert_execution_proved(&ban);
+    assert_eq!(proved.banned(), Some(true));
+    assert_eq!(proved.suspended_until(), Some(None));
+    assert_eq!(proved.warnings(), None);
+
+    // Unbanned, the user carries on with its two warnings on record.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let unban = setup.moderate(&setup.owner, unban_action(user_id)).await;
+    assert_success(&setup.process(&unban, &transaction));
+    let document = setup.create_document(&setup.user).await;
+    assert_success(&setup.process(&document, &transaction));
+    assert_eq!(
+        setup
+            .status_on(
+                user_id,
+                &[ContractModerationList::Warnings],
+                Some(&transaction)
+            )
+            .warnings
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_warning_that_breaks_a_rule() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        true,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let max_length = PlatformVersion::latest()
+        .system_limits
+        .max_contract_moderation_reason_length as usize;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    // Only a moderator warns, and neither the owner nor a moderator can be warned.
+    let by_stranger = setup
+        .moderate(&setup.stranger, warn_action(user_id, "spam"))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&by_stranger, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+    let owner_warns_moderator = setup
+        .moderate(&setup.owner, warn_action(setup.moderator.id(), "spam"))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&owner_warns_moderator, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+    let self_target = setup
+        .moderate(&setup.owner, warn_action(setup.owner.id(), "spam"))
+        .await;
+    assert_unpaid_with_code(
+        &setup.process(&self_target, &transaction),
+        CONTRACT_MODERATION_SELF_TARGET,
+    );
+    let unknown = setup
+        .moderate(
+            &setup.owner,
+            warn_action(Identifier::from([0xEE; 32]), "spam"),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&unknown, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_FOUND,
+    );
+    // The reason of a warning is bounded like a ban's, and refused unpaid.
+    let too_long = setup
+        .moderate(
+            &setup.owner,
+            warn_action(user_id, &"x".repeat(max_length + 1)),
+        )
+        .await;
+    assert_unpaid_with_code(
+        &setup.process(&too_long, &transaction),
+        CONTRACT_MODERATION_REASON_TOO_LONG,
+    );
+    assert_eq!(
+        setup.check_tx(&too_long)[0].code(),
+        CONTRACT_MODERATION_REASON_TOO_LONG
+    );
+
+    // A contract without a warning list refuses a warning and a clearing alike.
+    let without = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = without.platform.drive.grove.start_transaction();
+    let warn = without
+        .moderate(&without.owner, warn_action(without.user.id(), "spam"))
+        .await;
+    assert_paid_with_code(
+        &without.process(&warn, &transaction),
+        CONTRACT_MODERATION_NOT_ENABLED,
+    );
+    let clear = without
+        .moderate(&without.owner, clear_warnings_action(without.user.id()))
+        .await;
+    assert_paid_with_code(
+        &without.process(&clear, &transaction),
+        CONTRACT_MODERATION_NOT_ENABLED,
     );
 }
 
@@ -880,6 +1206,7 @@ async fn should_refuse_actions_that_do_not_fit_the_targets_status() {
         ContractModerationStatus {
             ban: banned(),
             suspension: None,
+            warnings: vec![],
         }
     );
     let ban_again = setup.moderate(&setup.owner, ban_action(user_id)).await;
@@ -958,6 +1285,17 @@ async fn should_fix_the_lists_a_contract_keeps_when_it_is_created() {
         let update = setup.contract_update(changed).await;
         config_update_refused(setup.process(&update, &transaction), what);
     }
+    // The warning list is fixed at creation like the others.
+    let mut with_warnings = setup.contract.clone();
+    with_warnings.set_version(2);
+    with_warnings.set_config(with_warnings.config().clone().with_moderation(Some(
+        moderation_with_warnings(true, false, true, setup.moderator.id()),
+    )));
+    let update = setup.contract_update(with_warnings).await;
+    config_update_refused(
+        setup.process(&update, &transaction),
+        "a warning list turned on",
+    );
 }
 
 #[tokio::test]
@@ -1150,6 +1488,7 @@ async fn should_refuse_an_update_adding_a_moderator_that_does_not_exist() {
                 moderators: ContractModerators::AppointedModerators(
                     [setup.moderator.id(), unknown].into_iter().collect(),
                 ),
+                warnings: false,
             })),
     );
     let update = setup.contract_update(widened).await;
@@ -1179,6 +1518,7 @@ async fn should_accept_an_update_that_keeps_the_existing_moderators() {
                         .into_iter()
                         .collect(),
                 ),
+                warnings: false,
             })),
     );
     let update = setup.contract_update(widened).await;
@@ -1199,6 +1539,7 @@ async fn should_accept_an_update_that_keeps_the_existing_moderators() {
                         .into_iter()
                         .collect(),
                 ),
+                warnings: false,
             })),
     );
     let update = setup.contract_update(unchanged).await;
@@ -1213,6 +1554,7 @@ async fn should_accept_the_owner_named_among_the_moderators() {
         moderators: ContractModerators::AppointedModerators(
             [THE_OWNER, THE_MODERATOR].into_iter().collect(),
         ),
+        warnings: false,
     }))
     .await;
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -1281,6 +1623,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
                 until,
                 reason: suspension_reason,
             }),
+            warnings: vec![],
         }
     );
 
@@ -1300,6 +1643,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
         ContractModerationStatus {
             ban: Some(ContractBan::default()),
             suspension: None,
+            warnings: vec![],
         }
     );
 }
@@ -1967,6 +2311,7 @@ async fn should_tie_the_document_type_keyword_to_the_moderation_declaration() {
                 banlist: false,
                 suspensions: false,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             })),
     );
     let create = DataContractCreateTransition::new_from_data_contract(

@@ -1,7 +1,7 @@
 //! Contract moderation query results and the wire conversions the proved and unproved paths
 //! share: one identity's status on the lists queried ([`ContractModerationListStatuses`]) and one
-//! page of a contract's banlist or suspension list ([`ContractModerationEntries`], read with a
-//! [`ContractModerationEntriesQuery`]). The records of the documents its moderators deleted
+//! page of a contract's banlist, suspension list or warning list ([`ContractModerationEntries`],
+//! read with a [`ContractModerationEntriesQuery`]). The records of the documents its moderators deleted
 //! ([`ContractDocumentRemovals`], read with a [`ContractDocumentRemovalsQuery`]) and the fee
 //! pots of a contract ([`ContractFeePots`]) are read here too: the pots are what its document
 //! action fees pay its owner and its moderators.
@@ -18,10 +18,11 @@ use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
 use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
+use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
 pub use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractModerationList, ContractModerationListStatus,
     ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
-    ContractSuspension,
+    ContractSuspension, ContractWarning,
 };
 pub use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
@@ -39,8 +40,8 @@ pub fn default_contract_moderation_entries_limit(platform_version: &PlatformVers
     platform_version.drive_abci.query.max_returned_elements
 }
 
-/// One page of a moderated contract's banlist or suspension list, in identity id order. A page
-/// shorter than the limit is the last one.
+/// One page of a moderated contract's banlist, suspension list or warning list, in identity id
+/// order. A page shorter than the limit is the last one.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ContractModerationEntries(pub Vec<ContractModerationEntry>);
 
@@ -140,6 +141,7 @@ pub fn list_from_request(list: i32, what: &str) -> Result<ContractModerationList
     match ContractModerationListProto::try_from(list) {
         Ok(ContractModerationListProto::Banlist) => Ok(ContractModerationList::Banlist),
         Ok(ContractModerationListProto::Suspensions) => Ok(ContractModerationList::Suspensions),
+        Ok(ContractModerationListProto::Warnings) => Ok(ContractModerationList::Warnings),
         // Zero is what a proto3 client sends when it leaves the field out: not a list.
         Ok(ContractModerationListProto::Unspecified) | Err(_) => Err(Error::RequestError {
             error: format!("{what} {list} is not a moderation list"),
@@ -152,6 +154,7 @@ pub fn list_to_request(list: ContractModerationList) -> i32 {
     match list {
         ContractModerationList::Banlist => ContractModerationListProto::Banlist as i32,
         ContractModerationList::Suspensions => ContractModerationListProto::Suspensions as i32,
+        ContractModerationList::Warnings => ContractModerationListProto::Warnings as i32,
     }
 }
 
@@ -228,6 +231,22 @@ pub fn reason_from_response(
     Ok(ContractModerationReason { code, text })
 }
 
+/// The warnings of an unproved response, oldest first as the node answers. Every warning
+/// carries a reason, as [`reason_from_response`] requires.
+pub fn warnings_from_response(
+    warnings: Vec<ContractWarningProto>,
+) -> Result<Vec<ContractWarning>, Error> {
+    warnings
+        .into_iter()
+        .map(|warning| {
+            Ok(ContractWarning {
+                warned_at: warning.warned_at,
+                reason: reason_from_response(warning.reason)?,
+            })
+        })
+        .collect()
+}
+
 /// The entries of an unproved response.
 pub fn entries_from_response(
     entries: Vec<ContractModerationEntryProto>,
@@ -246,6 +265,7 @@ pub fn entries_from_response(
                 })?,
                 until: entry.until,
                 reason: reason_from_response(entry.reason)?,
+                warnings: warnings_from_response(entry.warnings)?,
             })
         })
         .collect::<Result<Vec<_>, Error>>()
@@ -421,6 +441,7 @@ mod tests {
                 reason: ContractModerationReason::from_text("spam"),
             }),
             suspension: None,
+            warnings: vec![],
         };
         let suspensions_only = ContractModerationListStatuses::from_status(
             &[ContractModerationList::Suspensions],
@@ -448,6 +469,7 @@ mod tests {
                     until: 10,
                     reason: ContractModerationReason::from_text("flooding"),
                 }),
+                warnings: vec![],
             },
         );
         assert!(suspended.is_barred_on_queried_lists_at(9));
@@ -459,6 +481,7 @@ mod tests {
         for list in [
             ContractModerationList::Banlist,
             ContractModerationList::Suspensions,
+            ContractModerationList::Warnings,
         ] {
             assert_eq!(
                 list_from_request(list_to_request(list), "list").expect("expected a list"),
@@ -475,10 +498,11 @@ mod tests {
     #[test]
     fn should_parse_the_lists_of_a_status_request() {
         assert_eq!(
-            lists_from_request(&[2, 1]).expect("expected lists"),
+            lists_from_request(&[2, 1, 3]).expect("expected lists"),
             vec![
                 ContractModerationList::Suspensions,
-                ContractModerationList::Banlist
+                ContractModerationList::Banlist,
+                ContractModerationList::Warnings,
             ]
         );
         for (lists, needle) in [
@@ -542,6 +566,7 @@ mod tests {
                     code: None,
                     text: "spam".to_string(),
                 }),
+                warnings: vec![],
             },
             ContractModerationEntryProto {
                 identity_id: id(2).to_vec(),
@@ -550,6 +575,31 @@ mod tests {
                     code: Some(3),
                     text: String::new(),
                 }),
+                warnings: vec![],
+            },
+            ContractModerationEntryProto {
+                identity_id: id(3).to_vec(),
+                until: None,
+                reason: Some(ContractModerationReasonProto {
+                    code: None,
+                    text: "second strike".to_string(),
+                }),
+                warnings: vec![
+                    ContractWarningProto {
+                        warned_at: 5,
+                        reason: Some(ContractModerationReasonProto {
+                            code: None,
+                            text: "first strike".to_string(),
+                        }),
+                    },
+                    ContractWarningProto {
+                        warned_at: 6,
+                        reason: Some(ContractModerationReasonProto {
+                            code: None,
+                            text: "second strike".to_string(),
+                        }),
+                    },
+                ],
             },
         ])
         .expect("expected entries");
@@ -560,6 +610,7 @@ mod tests {
                     identity_id: id(1),
                     until: None,
                     reason: ContractModerationReason::from_text("spam"),
+                    warnings: vec![],
                 },
                 ContractModerationEntry {
                     identity_id: id(2),
@@ -568,14 +619,47 @@ mod tests {
                         code: Some(3),
                         text: String::new(),
                     },
-                }
+                    warnings: vec![],
+                },
+                ContractModerationEntry {
+                    identity_id: id(3),
+                    until: None,
+                    reason: ContractModerationReason::from_text("second strike"),
+                    warnings: vec![
+                        ContractWarning {
+                            warned_at: 5,
+                            reason: ContractModerationReason::from_text("first strike"),
+                        },
+                        ContractWarning {
+                            warned_at: 6,
+                            reason: ContractModerationReason::from_text("second strike"),
+                        },
+                    ],
+                },
             ]
+        );
+
+        // Every warning carries a reason
+        let err = entries_from_response(vec![ContractModerationEntryProto {
+            identity_id: id(1).to_vec(),
+            until: None,
+            reason: Some(ContractModerationReasonProto::default()),
+            warnings: vec![ContractWarningProto {
+                warned_at: 5,
+                reason: None,
+            }],
+        }])
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
         );
 
         let err = entries_from_response(vec![ContractModerationEntryProto {
             identity_id: vec![1; 5],
             until: None,
             reason: Some(ContractModerationReasonProto::default()),
+            warnings: vec![],
         }])
         .unwrap_err();
         assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
@@ -585,6 +669,7 @@ mod tests {
             identity_id: id(1).to_vec(),
             until: None,
             reason: None,
+            warnings: vec![],
         }])
         .unwrap_err();
         assert!(
@@ -601,6 +686,7 @@ mod tests {
                 code: None,
                 text: "x".repeat(4096),
             }),
+            warnings: vec![],
         }])
         .expect("expected a long reason to decode");
         assert_eq!(long.entries()[0].reason.text.len(), 4096);
@@ -618,11 +704,13 @@ mod tests {
                 identity_id: id(1),
                 until: Some(5),
                 reason: ContractModerationReason::default(),
+                warnings: vec![],
             },
             ContractModerationEntry {
                 identity_id: id(2),
                 until: Some(6),
                 reason: ContractModerationReason::default(),
+                warnings: vec![],
             },
         ]);
         assert_eq!(
@@ -642,6 +730,7 @@ mod tests {
             identity_id: id(1),
             until: Some(5),
             reason: ContractModerationReason::default(),
+            warnings: vec![],
         }]);
         assert_eq!(short.next_query(&query), None);
     }

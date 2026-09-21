@@ -30,7 +30,7 @@ use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
     ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
     ContractModerationEntry, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationReason,
+    ContractModerationListStatuses, ContractModerationReason, ContractWarning,
 };
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
@@ -437,12 +437,28 @@ impl MockResponse for ContractFeePots {
     }
 }
 
+/// One moderation list entry as a fixture holds it: the identity, the suspension end, the
+/// reason and the warnings. `ContractModerationEntry` has no bincode encoding of its own.
+type EncodedContractModerationEntry = (
+    Identifier,
+    Option<u64>,
+    ContractModerationReason,
+    Vec<ContractWarning>,
+);
+
 impl MockResponse for ContractModerationEntries {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        let entries: Vec<(Identifier, Option<u64>, ContractModerationReason)> = self
+        let entries: Vec<EncodedContractModerationEntry> = self
             .entries()
             .iter()
-            .map(|entry| (entry.identity_id, entry.until, entry.reason.clone()))
+            .map(|entry| {
+                (
+                    entry.identity_id,
+                    entry.until,
+                    entry.reason.clone(),
+                    entry.warnings.clone(),
+                )
+            })
             .collect();
         bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode ContractModerationEntries")
     }
@@ -451,17 +467,20 @@ impl MockResponse for ContractModerationEntries {
     where
         Self: Sized,
     {
-        let (entries, _): (Vec<(Identifier, Option<u64>, ContractModerationReason)>, _) =
+        let (entries, _): (Vec<EncodedContractModerationEntry>, _) =
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractModerationEntries");
         ContractModerationEntries(
             entries
                 .into_iter()
-                .map(|(identity_id, until, reason)| ContractModerationEntry {
-                    identity_id,
-                    until,
-                    reason,
-                })
+                .map(
+                    |(identity_id, until, reason, warnings)| ContractModerationEntry {
+                        identity_id,
+                        until,
+                        reason,
+                        warnings,
+                    },
+                )
                 .collect(),
         )
     }

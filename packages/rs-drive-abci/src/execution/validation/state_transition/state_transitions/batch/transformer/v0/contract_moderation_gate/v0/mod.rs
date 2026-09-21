@@ -76,7 +76,7 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
         };
         let data_contract_id = contract.id();
 
-        let lists: Vec<ContractModerationList> = moderation.lists().collect();
+        let lists: Vec<ContractModerationList> = moderation.barring_lists().collect();
         let (fee, status) = drive.fetch_contract_moderation_status_with_fee(
             data_contract_id,
             owner_id,
@@ -167,7 +167,7 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
         };
         let data_contract_id = contract.id();
 
-        let lists: Vec<ContractModerationList> = moderation.lists().collect();
+        let lists: Vec<ContractModerationList> = moderation.barring_lists().collect();
         let (fee, status) = drive.fetch_contract_moderation_status_with_fee(
             data_contract_id,
             counterparty_id,

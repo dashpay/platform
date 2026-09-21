@@ -103,9 +103,9 @@ use dpp::consensus::state::contract_moderation::{
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, ContractUserSuspendedError,
-    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
-    IdentityNotContractModeratorError,
+    ContractUserNotSuspendedError, ContractUserNotWarnedError, ContractUserSuspendedError,
+    ContractUserWarningLimitReachedError, DocumentModerationWindowElapsedError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::contract_group::{
     ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -655,6 +655,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentModerationWindowElapsedError(e) => {
             generic_consensus_error!(DocumentModerationWindowElapsedError, e).into()
+        }
+        StateError::ContractUserNotWarnedError(e) => {
+            generic_consensus_error!(ContractUserNotWarnedError, e).into()
+        }
+        StateError::ContractUserWarningLimitReachedError(e) => {
+            generic_consensus_error!(ContractUserWarningLimitReachedError, e).into()
         }
     }
 }

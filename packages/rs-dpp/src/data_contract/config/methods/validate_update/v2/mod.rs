@@ -27,20 +27,30 @@ impl DataContractConfig {
         let lists = |config: &DataContractConfig| {
             config
                 .moderation()
-                .map(|moderation| (moderation.banlist, moderation.suspensions))
-                .unwrap_or((false, false))
+                .map(|moderation| {
+                    (
+                        moderation.banlist,
+                        moderation.suspensions,
+                        moderation.warnings,
+                    )
+                })
+                .unwrap_or((false, false, false))
         };
-        let (old_banlist, old_suspensions) = lists(self);
-        let (new_banlist, new_suspensions) = lists(new_config);
+        let (old_banlist, old_suspensions, old_warnings) = lists(self);
+        let (new_banlist, new_suspensions, new_warnings) = lists(new_config);
 
         let refusal = if old_banlist && !new_banlist {
             Some("contract can not turn off its banlist once it keeps one")
         } else if old_suspensions && !new_suspensions {
             Some("contract can not turn off its suspension list once it keeps one")
+        } else if old_warnings && !new_warnings {
+            Some("contract can not turn off its warning list once it keeps one")
         } else if !old_banlist && new_banlist {
             Some("contract can not start keeping a banlist after it is created")
         } else if !old_suspensions && new_suspensions {
             Some("contract can not start keeping a suspension list after it is created")
+        } else if !old_warnings && new_warnings {
+            Some("contract can not start keeping a warning list after it is created")
         } else {
             None
         };
@@ -67,6 +77,7 @@ mod tests {
                 banlist,
                 suspensions,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             }),
             ..DataContractConfigV2::default()
         })
@@ -115,6 +126,36 @@ mod tests {
     }
 
     #[test]
+    fn should_fix_the_warning_list_at_creation_like_the_others() {
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::new([1u8; 32]);
+        let with_warnings = |banlist: bool| {
+            DataContractConfig::V2(DataContractConfigV2 {
+                moderation: Some(ContractModerationConfig {
+                    banlist,
+                    suspensions: false,
+                    warnings: true,
+                    moderators: ContractModerators::ContractOwner,
+                }),
+                ..DataContractConfigV2::default()
+            })
+        };
+        // On: refused. Off: refused. Kept: fine.
+        assert!(!moderated(true, false)
+            .validate_update_v2(&with_warnings(true), contract_id, platform_version)
+            .is_valid());
+        assert!(!with_warnings(true)
+            .validate_update_v2(&moderated(true, false), contract_id, platform_version)
+            .is_valid());
+        let kept = with_warnings(false).validate_update_v2(
+            &with_warnings(false),
+            contract_id,
+            platform_version,
+        );
+        assert!(kept.is_valid(), "{:?}", kept.errors);
+    }
+
+    #[test]
     fn should_reject_turning_a_list_off() {
         let platform_version = PlatformVersion::latest();
         let contract_id = Identifier::new([1u8; 32]);
@@ -143,6 +184,7 @@ mod tests {
                 moderators: ContractModerators::AppointedModerators(
                     [Identifier::new([5u8; 32])].into_iter().collect(),
                 ),
+                warnings: false,
             }),
             ..DataContractConfigV2::default()
         });

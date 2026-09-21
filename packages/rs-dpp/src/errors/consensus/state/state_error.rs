@@ -18,7 +18,8 @@ use crate::consensus::state::contract_moderation::{
     ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
-    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
+    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
+    ContractUserSuspendedError, ContractUserWarningLimitReachedError,
     DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
     IdentityNotContractModeratorError,
 };
@@ -550,6 +551,13 @@ pub enum StateError {
     // The moderators' deletion window (protocol version 14).
     #[error(transparent)]
     DocumentModerationWindowElapsedError(DocumentModerationWindowElapsedError),
+
+    // The warning list (protocol version 14).
+    #[error(transparent)]
+    ContractUserNotWarnedError(ContractUserNotWarnedError),
+
+    #[error(transparent)]
+    ContractUserWarningLimitReachedError(ContractUserWarningLimitReachedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -973,12 +981,25 @@ mod tests {
             )),
             133
         );
-        // The moderators' deletion window (protocol version 14): the tail of the enum.
+        // The moderators' deletion window (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::DocumentModerationWindowElapsedError(
                 DocumentModerationWindowElapsedError::new(group_id, identity_id, 1, 2, 3)
             )),
             134
+        );
+        // The warning list (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotWarnedError(
+                ContractUserNotWarnedError::new(group_id, identity_id)
+            )),
+            135
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserWarningLimitReachedError(
+                ContractUserWarningLimitReachedError::new(group_id, identity_id, 16)
+            )),
+            136
         );
     }
 }

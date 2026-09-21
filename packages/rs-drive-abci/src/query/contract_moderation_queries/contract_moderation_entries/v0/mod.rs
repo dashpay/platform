@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::contract_moderation_queries::{
-    identifier_from_request, list_from_request, reason_to_response,
+    identifier_from_request, list_from_request, reason_to_response, warnings_to_response,
 };
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -20,8 +20,8 @@ use drive::drive::contract::moderation::types::ContractModerationEntriesQuery;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
-    /// Returns one page of a moderated contract's banlist or suspension list, in identity id
-    /// order. The list must be one the contract keeps.
+    /// Returns one page of a moderated contract's banlist, suspension list or warning list, in
+    /// identity id order. The list must be one the contract keeps.
     pub(super) fn query_contract_moderation_entries_v0(
         &self,
         GetContractModerationEntriesRequestV0 {
@@ -104,6 +104,7 @@ impl<C> Platform<C> {
                                     identity_id: entry.identity_id.to_vec(),
                                     until: entry.until,
                                     reason: Some(reason_to_response(entry.reason)),
+                                    warnings: warnings_to_response(entry.warnings),
                                 })
                                 .collect(),
                         },
@@ -121,8 +122,8 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::contract_moderation_queries::tests::{
-        ban, store_contract, suspend, BANLIST, BAN_REASON, SUSPENSIONS, SUSPENSION_REASON,
-        SUSPENSION_REASON_CODE,
+        ban, store_contract, store_contract_keeping, suspend, warn, BANLIST, BAN_REASON,
+        SUSPENSIONS, SUSPENSION_REASON, SUSPENSION_REASON_CODE, WARNINGS, WARNING_REASON,
     };
     use crate::query::tests::setup_platform;
     use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
@@ -241,6 +242,84 @@ mod tests {
     }
 
     #[test]
+    fn should_return_and_prove_the_warning_list_with_every_warning() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = store_contract_keeping(&platform, false, false, true, version);
+        let once = Identifier::from([0x21; 32]);
+        let twice = Identifier::from([0x22; 32]);
+        warn(&platform, &contract, once, 1_000, version);
+        warn(&platform, &contract, twice, 1_000, version);
+        warn(&platform, &contract, twice, 2_000, version);
+
+        let result = platform
+            .query_contract_moderation_entries_v0(
+                request(contract.id().to_vec(), WARNINGS, None, None, false),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let Some(get_contract_moderation_entries_response_v0::Result::Entries(page)) =
+            result.data.expect("expected data").result
+        else {
+            panic!("expected entries");
+        };
+        let reason = || {
+            Some(ContractModerationReasonProto {
+                code: None,
+                text: WARNING_REASON.to_string(),
+            })
+        };
+        assert_eq!(page.entries.len(), 2);
+        assert_eq!(page.entries[0].identity_id, once.to_vec());
+        assert_eq!(page.entries[0].until, None);
+        // The entry's reason is the latest warning's, and every warning comes along.
+        assert_eq!(page.entries[0].reason, reason());
+        assert_eq!(page.entries[0].warnings.len(), 1);
+        assert_eq!(
+            page.entries[1]
+                .warnings
+                .iter()
+                .map(|warning| warning.warned_at)
+                .collect::<Vec<_>>(),
+            vec![1_000, 2_000]
+        );
+        assert_eq!(page.entries[1].warnings[1].reason, reason());
+
+        let result = platform
+            .query_contract_moderation_entries_v0(
+                request(contract.id().to_vec(), WARNINGS, None, None, true),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        let Some(get_contract_moderation_entries_response_v0::Result::Proof(proof)) =
+            result.data.expect("expected data").result
+        else {
+            panic!("expected a proof");
+        };
+        let query = ContractModerationEntriesQuery {
+            list: ContractModerationList::Warnings,
+            start_after: None,
+            limit: version.drive_abci.query.max_returned_elements,
+        };
+        let (_, proved) = Drive::verify_contract_moderation_entries(
+            &proof.grovedb_proof,
+            contract.id(),
+            &query,
+            version,
+        )
+        .expect("expected the proof to verify");
+        assert_eq!(
+            proved
+                .iter()
+                .map(|entry: &ContractModerationEntry| (entry.identity_id, entry.warnings.len()))
+                .collect::<Vec<_>>(),
+            vec![(once, 1), (twice, 2)]
+        );
+    }
+
+    #[test]
     fn should_page_and_prove_the_entries() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let contract = store_contract(&platform, true, true, version);
@@ -355,11 +434,13 @@ mod tests {
                     identity_id: second,
                     until: None,
                     reason: ContractModerationReason::from_text(BAN_REASON),
+                    warnings: vec![],
                 },
                 ContractModerationEntry {
                     identity_id: third,
                     until: None,
                     reason: ContractModerationReason::from_text(BAN_REASON),
+                    warnings: vec![],
                 }
             ]
         );

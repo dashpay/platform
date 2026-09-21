@@ -114,16 +114,16 @@ export interface DataContractConfig {
     requiresIdentityEncryptionBoundedKey?: number;
     requiresIdentityDecryptionBoundedKey?: number;
     /**
-     * Contract moderation (protocol version 14): the banlist and/or suspension list the
-     * contract keeps and who may edit them. Absent for an unmoderated contract.
+     * Contract moderation (protocol version 14): the banlist, suspension list and/or warning
+     * list the contract keeps and who may edit them. Absent for an unmoderated contract.
      */
     moderation?: ContractModerationConfig;
 }
 
 /**
- * Who may ban and suspend identities on a moderated contract: the owner alone, or the owner
- * and a fixed set of identities (at most 16, each of which must exist). The owner always may
- * and need not be named; naming it counts toward the 16.
+ * Who may ban, suspend and warn identities on a moderated contract: the owner alone, or the
+ * owner and a fixed set of identities (at most 16, each of which must exist). The owner always
+ * may and need not be named; naming it counts toward the 16.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
@@ -137,6 +137,8 @@ export type ContractModerators =
 export interface ContractModerationConfig {
     banlist: boolean;
     suspensions: boolean;
+    /** The contract keeps a warning list: warnings bar nothing and accumulate until cleared. */
+    warnings: boolean;
     moderators: ContractModerators;
 }
 "#;

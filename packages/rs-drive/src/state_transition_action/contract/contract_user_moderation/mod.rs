@@ -5,6 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentDeletionContext, ContractUserModerationTransitionActionV0,
+    ContractWarningContext,
 };
 use derive_more::From;
 use dpp::platform_value::Identifier;
@@ -12,8 +13,8 @@ use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 
 /// The action of a contract user moderation transition: one edit of a moderated contract's
-/// banlist or suspension list, with the target's status as it was read when the transition was
-/// validated, or the deletion of one document, with what was read about it.
+/// banlist, suspension list or warning list, with the target's status as it was read when the
+/// transition was validated, or the deletion of one document, with what was read about it.
 #[derive(Debug, Clone, From)]
 pub enum ContractUserModerationTransitionAction {
     /// v0
@@ -53,6 +54,13 @@ impl ContractUserModerationTransitionAction {
     pub fn target_is_suspended(&self) -> bool {
         match self {
             ContractUserModerationTransitionAction::V0(action) => action.target_is_suspended,
+        }
+    }
+
+    /// What a warn read when the transition was validated, `None` for every other action
+    pub fn warning(&self) -> Option<&ContractWarningContext> {
+        match self {
+            ContractUserModerationTransitionAction::V0(action) => action.warning.as_ref(),
         }
     }
 

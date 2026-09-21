@@ -547,6 +547,7 @@ mod tests {
                 banlist: true,
                 suspensions: false,
                 moderators: Default::default(),
+                warnings: false,
             }));
         contract.set_config(config);
         contract

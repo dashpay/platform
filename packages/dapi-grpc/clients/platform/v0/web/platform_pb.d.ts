@@ -2794,6 +2794,32 @@ export namespace ContractModerationReason {
   }
 }
 
+export class ContractWarning extends jspb.Message {
+  getWarnedAt(): number;
+  setWarnedAt(value: number): void;
+
+  hasReason(): boolean;
+  clearReason(): void;
+  getReason(): ContractModerationReason | undefined;
+  setReason(value?: ContractModerationReason): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ContractWarning.AsObject;
+  static toObject(includeInstance: boolean, msg: ContractWarning): ContractWarning.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ContractWarning, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ContractWarning;
+  static deserializeBinaryFromReader(message: ContractWarning, reader: jspb.BinaryReader): ContractWarning;
+}
+
+export namespace ContractWarning {
+  export type AsObject = {
+    warnedAt: number,
+    reason?: ContractModerationReason.AsObject,
+  }
+}
+
 export class GetContractModerationStatusRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -2908,6 +2934,11 @@ export namespace GetContractModerationStatusResponse {
     getSuspensionReason(): ContractModerationReason | undefined;
     setSuspensionReason(value?: ContractModerationReason): void;
 
+    clearWarningsList(): void;
+    getWarningsList(): Array<ContractWarning>;
+    setWarningsList(value: Array<ContractWarning>): void;
+    addWarnings(value?: ContractWarning, index?: number): ContractWarning;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractModerationStatus.AsObject;
     static toObject(includeInstance: boolean, msg: ContractModerationStatus): ContractModerationStatus.AsObject;
@@ -2925,6 +2956,7 @@ export namespace GetContractModerationStatusResponse {
       listsList: Array<ContractModerationListMap[keyof ContractModerationListMap]>,
       banReason?: ContractModerationReason.AsObject,
       suspensionReason?: ContractModerationReason.AsObject,
+      warningsList: Array<ContractWarning.AsObject>,
     }
   }
 
@@ -3085,6 +3117,11 @@ export namespace GetContractModerationEntriesResponse {
     getReason(): ContractModerationReason | undefined;
     setReason(value?: ContractModerationReason): void;
 
+    clearWarningsList(): void;
+    getWarningsList(): Array<ContractWarning>;
+    setWarningsList(value: Array<ContractWarning>): void;
+    addWarnings(value?: ContractWarning, index?: number): ContractWarning;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractModerationEntry.AsObject;
     static toObject(includeInstance: boolean, msg: ContractModerationEntry): ContractModerationEntry.AsObject;
@@ -3100,6 +3137,7 @@ export namespace GetContractModerationEntriesResponse {
       identityId: Uint8Array | string,
       until: number,
       reason?: ContractModerationReason.AsObject,
+      warningsList: Array<ContractWarning.AsObject>,
     }
   }
 
@@ -14879,6 +14917,7 @@ export interface ContractModerationListMap {
   CONTRACT_MODERATION_LIST_UNSPECIFIED: 0;
   CONTRACT_MODERATION_LIST_BANLIST: 1;
   CONTRACT_MODERATION_LIST_SUSPENSIONS: 2;
+  CONTRACT_MODERATION_LIST_WARNINGS: 3;
 }
 
 export const ContractModerationList: ContractModerationListMap;

@@ -467,6 +467,8 @@ impl ErrorWithCode for StateError {
             Self::ContractModerationCounterpartyBarredError(_) => 41114,
             Self::DocumentTypeNotDeletableByModeratorsError(_) => 41115,
             Self::DocumentModerationWindowElapsedError(_) => 41116,
+            Self::ContractUserNotWarnedError(_) => 41117,
+            Self::ContractUserWarningLimitReachedError(_) => 41118,
         }
     }
 }

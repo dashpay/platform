@@ -54,6 +54,20 @@ pub enum ContractUserModerationAction {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
         identity_id: Identifier,
     },
+    /// Adds a warning, with the block time and `reason`, to the identity's entry on the
+    /// warning list, which bars it from nothing. Refused once the entry holds
+    /// `SystemLimits::max_contract_warnings_per_identity` warnings.
+    Warn {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
+        identity_id: Identifier,
+        /// Why, stored with the warning.
+        reason: ContractModerationReason,
+    },
+    /// Takes the identity off the warning list: every warning it carries goes.
+    ClearWarnings {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
+        identity_id: Identifier,
+    },
     /// Deletes a document of a document type that sets `canBeDeletedByModerators`, whoever
     /// owns it, except the contract owner and the moderators. The document's owner gets no
     /// storage refund, and a `ContractDocumentRemoval` stays under the contract.
@@ -84,7 +98,9 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
             | ContractUserModerationAction::Suspend { identity_id, .. }
-            | ContractUserModerationAction::Unsuspend { identity_id } => Some(*identity_id),
+            | ContractUserModerationAction::Unsuspend { identity_id }
+            | ContractUserModerationAction::Warn { identity_id, .. }
+            | ContractUserModerationAction::ClearWarnings { identity_id } => Some(*identity_id),
             ContractUserModerationAction::DeleteDocument { .. } => None,
         }
     }
@@ -110,15 +126,17 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The reason a ban, a suspend or a document deletion carries, `None` for an action that
-    /// takes an identity off a list.
+    /// The reason a ban, a suspend, a warn or a document deletion carries, `None` for an
+    /// action that takes an identity off a list.
     pub fn reason(&self) -> Option<&ContractModerationReason> {
         match self {
             ContractUserModerationAction::Ban { reason, .. }
             | ContractUserModerationAction::Suspend { reason, .. }
+            | ContractUserModerationAction::Warn { reason, .. }
             | ContractUserModerationAction::DeleteDocument { reason, .. } => Some(reason),
             ContractUserModerationAction::Unban { .. }
-            | ContractUserModerationAction::Unsuspend { .. } => None,
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::ClearWarnings { .. } => None,
         }
     }
 
@@ -129,6 +147,8 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::Unban { .. } => "unban",
             ContractUserModerationAction::Suspend { .. } => "suspend",
             ContractUserModerationAction::Unsuspend { .. } => "unsuspend",
+            ContractUserModerationAction::Warn { .. } => "warn",
+            ContractUserModerationAction::ClearWarnings { .. } => "clearWarnings",
             ContractUserModerationAction::DeleteDocument { .. } => "deleteDocument",
         }
     }
@@ -151,7 +171,9 @@ impl fmt::Display for ContractUserModerationAction {
             }
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
-            | ContractUserModerationAction::Unsuspend { identity_id } => {
+            | ContractUserModerationAction::Unsuspend { identity_id }
+            | ContractUserModerationAction::Warn { identity_id, .. }
+            | ContractUserModerationAction::ClearWarnings { identity_id } => {
                 write!(f, "{} {}", self.name(), identity_id)
             }
         }
@@ -164,8 +186,8 @@ impl fmt::Display for ContractUserModerationAction {
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractUserModerationAction {}
 
-/// Edits the banlist or the suspension list of a moderated data contract, or deletes a
-/// document of one of its document types that moderators may delete. Signed by the
+/// Edits the banlist, the suspension list or the warning list of a moderated data contract,
+/// or deletes a document of one of its document types that moderators may delete. Signed by the
 /// contract owner or a moderator named in the contract's config, with a CRITICAL
 /// authentication key, under the signer's contract-scoped nonce.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
@@ -283,6 +305,47 @@ mod test {
         };
         assert_eq!(unban.until(), None);
         assert_eq!(unban.reason(), None);
+    }
+
+    #[test]
+    fn should_name_the_target_of_a_warning_and_of_its_clearing() {
+        let target = Identifier::random();
+        let reason = ContractModerationReason::from_text("first strike");
+        let warn = ContractUserModerationAction::Warn {
+            identity_id: target,
+            reason: reason.clone(),
+        };
+        assert_eq!(warn.identity_id(), Some(target));
+        assert_eq!(warn.document(), None);
+        assert_eq!(warn.until(), None);
+        assert_eq!(warn.reason(), Some(&reason));
+        assert_eq!(warn.name(), "warn");
+        assert_eq!(warn.to_string(), format!("warn {}", target));
+        let clear = ContractUserModerationAction::ClearWarnings {
+            identity_id: target,
+        };
+        assert_eq!(clear.identity_id(), Some(target));
+        assert_eq!(clear.reason(), None);
+        assert_eq!(clear.name(), "clearWarnings");
+    }
+
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn should_tag_a_warning_on_the_wire() {
+        let action = ContractUserModerationAction::Warn {
+            identity_id: Identifier::from([7; 32]),
+            reason: ContractModerationReason::from_text("spam"),
+        };
+        let json = serde_json::to_value(&action).expect("to json");
+        assert_eq!(json["$type"], "warn");
+        let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
+        assert_eq!(back, action);
+        let clear = ContractUserModerationAction::ClearWarnings {
+            identity_id: Identifier::from([7; 32]),
+        };
+        let json = serde_json::to_value(&clear).expect("to json");
+        assert_eq!(json["$type"], "clearWarnings");
+        assert!(json.get("reason").is_none());
     }
 
     #[test]

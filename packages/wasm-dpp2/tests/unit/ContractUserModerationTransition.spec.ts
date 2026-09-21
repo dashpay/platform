@@ -12,7 +12,7 @@ const DOCUMENT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const DOCUMENT_TYPE_NAME = 'post';
 
 interface ModerationOptions {
-  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'deleteDocument';
+  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument';
   /** `null` leaves the identity out; left undefined, every action but a deleteDocument gets `TARGET_ID` */
   identityId?: string | null;
   /** `null` leaves it out; left undefined, a deleteDocument gets `DOCUMENT_TYPE_NAME` */
@@ -20,7 +20,7 @@ interface ModerationOptions {
   /** `null` leaves it out; left undefined, a deleteDocument gets `DOCUMENT_ID` */
   documentId?: string | null;
   until?: bigint;
-  /** `null` leaves the reason out; left undefined, a ban and a suspend get `REASON` */
+  /** `null` leaves the reason out; left undefined, a ban, a suspend and a warn get `REASON` */
   reason?: { code?: number; text: string } | null;
   identityContractNonce?: bigint;
   userFeeIncrease?: number;
@@ -30,7 +30,7 @@ const REASON = { text: 'spam' };
 
 function createTransition(options: ModerationOptions = {}) {
   const action = options.action ?? 'ban';
-  const addsAnEntry = action === 'ban' || action === 'suspend';
+  const addsAnEntry = action === 'ban' || action === 'suspend' || action === 'warn';
   let { reason } = options;
   if (reason === undefined && addsAnEntry) {
     reason = REASON;
@@ -114,8 +114,29 @@ describe('ContractUserModeration', () => {
       expect(() => createTransition({ action: 'deleteDocument', until: BigInt(5) })).to.throw();
     });
 
+    it('should create a warning and its clearing, which name an identity', () => {
+      const warn = createTransition({ action: 'warn', reason: { code: 1, text: 'first strike' } });
+
+      expect(warn.action).to.equal('warn');
+      expect(warn.identityId?.toString()).to.equal(TARGET_ID);
+      expect(warn.until).to.equal(undefined);
+      expect(warn.reason).to.deep.equal({ code: 1, text: 'first strike' });
+
+      const clear = createTransition({ action: 'clearWarnings' });
+
+      expect(clear.action).to.equal('clearWarnings');
+      expect(clear.identityId?.toString()).to.equal(TARGET_ID);
+      expect(clear.reason).to.equal(undefined);
+      expect(clear.toJSON().action).to.deep.equal({ $type: 'clearWarnings', identityId: TARGET_ID });
+    });
+
+    it('should refuse a warning without a reason, and a reason on a clearing', () => {
+      expect(() => createTransition({ action: 'warn', reason: null })).to.throw();
+      expect(() => createTransition({ action: 'clearWarnings', reason: REASON })).to.throw();
+    });
+
     it('should refuse a document on an action that targets an identity', () => {
-      (['ban', 'unban', 'unsuspend'] as const).forEach((action) => {
+      (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings'] as const).forEach((action) => {
         expect(() => createTransition({ action, documentTypeName: DOCUMENT_TYPE_NAME })).to.throw();
         expect(() => createTransition({ action, documentId: DOCUMENT_ID })).to.throw();
       });
@@ -128,7 +149,7 @@ describe('ContractUserModeration', () => {
     });
 
     it('should refuse an action on an identity without the identity', () => {
-      (['ban', 'unban', 'unsuspend'] as const).forEach((action) => {
+      (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings'] as const).forEach((action) => {
         expect(() => createTransition({ action, identityId: null })).to.throw();
       });
       expect(() => createTransition({ action: 'suspend', until: BigInt(5), identityId: null })).to.throw();
@@ -169,7 +190,7 @@ describe('ContractUserModeration', () => {
 
     it('should refuse an end on anything but a suspension', () => {
       // Dropped, a caller asking for a timed ban would sign a permanent one.
-      (['ban', 'unban', 'unsuspend'] as const).forEach((action) => {
+      (['ban', 'unban', 'unsuspend', 'warn', 'clearWarnings'] as const).forEach((action) => {
         expect(() => createTransition({ action, until: BigInt(1800000000000) })).to.throw();
       });
     });
@@ -192,6 +213,8 @@ describe('ContractUserModeration', () => {
         createTransition({ action: 'unban' }),
         createTransition({ action: 'suspend', until: BigInt(5) }),
         createTransition({ action: 'unsuspend', userFeeIncrease: 3 }),
+        createTransition({ action: 'warn', reason: { code: 9, text: 'first strike' } }),
+        createTransition({ action: 'clearWarnings' }),
         createTransition({ action: 'deleteDocument', reason: { code: 9, text: 'spam' } }),
         createTransition({ action: 'deleteDocument' }),
       ]) {

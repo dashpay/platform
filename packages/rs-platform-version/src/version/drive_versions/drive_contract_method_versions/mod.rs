@@ -25,6 +25,8 @@ pub struct DriveContractModerationMethodVersions {
     pub remove_contract_ban: FeatureVersion,
     pub add_contract_suspension: FeatureVersion,
     pub remove_contract_suspension: FeatureVersion,
+    pub add_contract_warning: FeatureVersion,
+    pub remove_contract_warnings: FeatureVersion,
     pub fetch_contract_moderation_status: FeatureVersion,
     pub fetch_contract_moderation_entries: FeatureVersion,
     pub prove_contract_moderation_status: FeatureVersion,

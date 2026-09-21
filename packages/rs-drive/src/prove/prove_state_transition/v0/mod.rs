@@ -291,11 +291,14 @@ impl Drive {
                                     contract_id
                                 ))));
                             };
+                            // A ban removes a suspension too, so its proof covers the lists
+                            // that bar; the warning list, which a ban leaves alone, is not
+                            // among them.
                             contract_fetch_info
                                 .contract
                                 .config()
                                 .moderation()
-                                .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                                .map(|moderation| moderation.barring_lists().collect::<Vec<_>>())
                                 .unwrap_or_else(|| vec![ContractModerationList::Banlist])
                         }
                         ContractUserModerationAction::Unban { .. } => {
@@ -304,6 +307,10 @@ impl Drive {
                         ContractUserModerationAction::Suspend { .. }
                         | ContractUserModerationAction::Unsuspend { .. } => {
                             vec![ContractModerationList::Suspensions]
+                        }
+                        ContractUserModerationAction::Warn { .. }
+                        | ContractUserModerationAction::ClearWarnings { .. } => {
+                            vec![ContractModerationList::Warnings]
                         }
                         ContractUserModerationAction::DeleteDocument { .. } => {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(

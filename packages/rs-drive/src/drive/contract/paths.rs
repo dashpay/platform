@@ -175,9 +175,11 @@ pub fn contract_keeping_history_storage_time_reference_path(
 ///
 /// Inside, the keys are spread like the root tree's, so that the tree is balanced as it fills
 /// and the most read entry sits on top: `128` the banlist, `64` the version item, `192` the
-/// suspension list. A Merk built from one sorted batch roots at the middle key, so `128` is on
-/// top whenever it is there; a key added later should be below `128` to keep it there when
-/// four keys are created at once.
+/// suspension list, `224` the warning list. A Merk built from one sorted batch roots at the
+/// middle key (the upper middle of an even count), so `128` is on top whenever it is the
+/// median of the keys created together; a key added later goes where it keeps `128` the
+/// median in the most likely combinations, and what a document transition never reads may
+/// sit a level down in the others.
 pub const CONTRACT_OTHER_KEY: u8 = 2;
 
 /// The key under a contract's other tree (`[64, id, 2]`) that holds the contract's version
@@ -196,6 +198,17 @@ pub const CONTRACT_BANLIST_KEY: u8 = 128;
 /// milliseconds, then the reason)`. Present only when the contract's config declares a
 /// suspension list.
 pub const CONTRACT_SUSPENSIONS_KEY: u8 = 192;
+
+/// The key under a contract's other tree (`[64, id, 2]`) of the warning list a moderated
+/// contract keeps (protocol version 14): `identity id -> Item(one or more of: warned at as a
+/// u64 big-endian milliseconds, the reason's length as a u16 big-endian, the reason)`, oldest
+/// warning first. Present only when the contract's config declares a warning list. A warning
+/// bars nothing, so no document transition reads it, and its depth does not matter: above
+/// `192`, it leaves the banlist on top of the other tree for a contract that keeps the
+/// banlist and a warning list, with or without removal records and with both when it keeps
+/// a suspension list too; only a contract keeping all three lists and no removal records has
+/// the suspension list on top and the banlist one level down.
+pub const CONTRACT_WARNINGS_KEY: u8 = 224;
 
 /// The key under a contract's other tree (`[64, id, 2]`) of the records of the documents the
 /// contract's moderators deleted (protocol version 14): `document type name -> document id ->
@@ -229,10 +242,12 @@ pub fn contract_moderation_list_key(list: ContractModerationList) -> &'static [u
     match list {
         ContractModerationList::Banlist => &[CONTRACT_BANLIST_KEY],
         ContractModerationList::Suspensions => &[CONTRACT_SUSPENSIONS_KEY],
+        ContractModerationList::Warnings => &[CONTRACT_WARNINGS_KEY],
     }
 }
 
-/// `[64, contract id, 2, 128]` or `[64, contract id, 2, 192]`: the tree of one moderation list.
+/// `[64, contract id, 2, 128]`, `[64, contract id, 2, 192]` or `[64, contract id, 2, 224]`:
+/// the tree of one moderation list.
 pub fn contract_moderation_list_path(
     contract_id: &[u8],
     list: ContractModerationList,
@@ -245,7 +260,8 @@ pub fn contract_moderation_list_path(
     ]
 }
 
-/// `[64, contract id, 2, 128]` or `[64, contract id, 2, 192]`: the tree of one moderation list.
+/// `[64, contract id, 2, 128]`, `[64, contract id, 2, 192]` or `[64, contract id, 2, 224]`:
+/// the tree of one moderation list.
 pub fn contract_moderation_list_path_vec(
     contract_id: &[u8],
     list: ContractModerationList,
