@@ -342,6 +342,33 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
+    func testHistoricalBridgeAddsEmptyWatermarkStorageAndPreservesNewStampOnReopen() throws {
+        try withStore { url in
+            try autoreleasepool {
+                let container = try DashModelContainer.create(url: url)
+                try verifyRows(container.mainContext)
+                XCTAssertEqual(try container.mainContext.fetchCount(
+                    FetchDescriptor<PersistentIdentityBalanceMetadata>()), 0)
+                container.mainContext.insert(PersistentIdentityBalanceMetadata(
+                    networkRaw: Network.testnet.rawValue, walletId: Data(repeating: 0x61, count: 32),
+                    identityId: Data(repeating: 0x73, count: 32), platformHeight: 42,
+                    coreHeight: 7, timestampMillis: 123))
+                try container.mainContext.save()
+            }
+            let reopened = try open(url, hooks: .init(visit: { _, _ in
+                XCTFail("Persisting a watermark must not trigger another legacy migration")
+            }))
+            try verifyRows(reopened.mainContext)
+            let metadata = try XCTUnwrap(reopened.mainContext.fetch(
+                FetchDescriptor<PersistentIdentityBalanceMetadata>()).first)
+            XCTAssertEqual(metadata.walletId, Data(repeating: 0x61, count: 32))
+            XCTAssertEqual(metadata.identityId, Data(repeating: 0x73, count: 32))
+            XCTAssertEqual(metadata.platformHeight, 42)
+            XCTAssertEqual(metadata.coreHeight, 7)
+            XCTAssertEqual(metadata.timestampMillis, 123)
+        }
+    }
+
     func testWalletDeletionRemovesMigrationSnapshotsWithoutReopeningCachedContainer() throws {
         try withStore { url in
             let survivorId = Data(repeating: 0x63, count: 32)

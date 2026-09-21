@@ -341,11 +341,37 @@ final class DashModelMigrationTests: XCTestCase {
         }
     }
 
-    func testV2AddsTrackedMasternodesToTheBaselineEntitySet() {
+    func testV2AddsTrackedMasternodesAndBalanceMetadataToTheBaselineEntitySet() {
         XCTAssertEqual(
             Set(Schema(versionedSchema: DashSchemaV2.self).entities.map(\.name))
                 .subtracting(Schema(versionedSchema: DashSchemaV1.self).entities.map(\.name)),
-            ["PersistentTrackedMasternode"])
+            ["PersistentTrackedMasternode", "PersistentIdentityBalanceMetadata"])
+    }
+
+    @MainActor
+    func testV1BalanceGetsNoWatermarkUntilOneIsPersistedInLiveV2() throws {
+        let (directory, url) = try copyFixture(Self.fixtures[0])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let context = container.mainContext
+            XCTAssertEqual(try context.fetch(FetchDescriptor<PersistentIdentity>()).first?.balance, 5)
+            XCTAssertEqual(try context.fetchCount(FetchDescriptor<PersistentIdentityBalanceMetadata>()), 0)
+            context.insert(PersistentIdentityBalanceMetadata(
+                networkRaw: Network.testnet.rawValue, walletId: Self.fixtureWalletId,
+                identityId: Self.fixtureIdentityId, platformHeight: 42, coreHeight: 7,
+                timestampMillis: 123))
+            try context.save()
+        }
+        let reopened = try DashModelContainer.create(url: url)
+        let metadata = try XCTUnwrap(reopened.mainContext.fetch(
+            FetchDescriptor<PersistentIdentityBalanceMetadata>()).first)
+        XCTAssertEqual(metadata.identityId, Self.fixtureIdentityId)
+        XCTAssertEqual(metadata.walletId, Self.fixtureWalletId)
+        XCTAssertEqual(metadata.platformHeight, 42)
+        XCTAssertEqual(metadata.coreHeight, 7)
+        XCTAssertEqual(metadata.timestampMillis, 123)
+        XCTAssertEqual(try reopened.mainContext.fetch(FetchDescriptor<PersistentIdentity>()).first?.balance, 5)
     }
 
     /// The accepted V1 graph predates key limits. Its keys must arrive in

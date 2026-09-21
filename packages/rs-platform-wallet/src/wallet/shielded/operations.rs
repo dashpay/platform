@@ -37,6 +37,7 @@ use crate::wallet::platform_wallet::WalletId;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
@@ -938,7 +939,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     memo: [u8; 36],
     signer: &Sig,
     prover: &P,
-) -> Result<Credits, PlatformWalletError> {
+) -> Result<(Credits, ResponseMetadata), PlatformWalletError> {
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -1060,18 +1061,19 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     // `wait_for_affected_state` only converts the proof generically, so the variant
     // and the identity are enforced here: only this identity's balance proof is
     // accepted as the post-debit balance.
-    let proof_outcome: Result<Credits, String> = match state_transition
-        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+    let proof_outcome: Result<(Credits, ResponseMetadata), String> = match state_transition
+        .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(sdk, None)
         .await
     {
-        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial))
+        Ok((StateTransitionProofResult::VerifiedPartialIdentity(partial), metadata))
             if partial.id == identity_id =>
         {
             partial
                 .balance
                 .ok_or_else(|| "the identity proof did not include the updated balance".to_string())
+                .map(|balance| (balance, metadata))
         }
-        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => Err(format!(
+        Ok((StateTransitionProofResult::VerifiedPartialIdentity(partial), _)) => Err(format!(
             "the proof returned identity {} but {} initiated the shield",
             partial.id, identity_id
         )),
@@ -1362,6 +1364,36 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<Option<Credits>, PlatformWalletError> {
+    identity_top_up_from_pool_with_metadata(
+        sdk,
+        store,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        identity_id,
+        amount,
+        prover,
+    )
+    .await
+    .map(|(result, _)| result)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
+    S: ShieldedStore,
+    P: OrchardProver,
+>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    identity_id: Identifier,
+    amount: u64,
+    prover: &P,
+) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -1431,7 +1463,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
         // still proves the reserved notes are consumed and authenticates the
         // credited identity's balance; the shield, shield-from-identity and
         // identity-create paths accept the same class of outcome.
-        broadcast_shielded_spend_with_redrive(
+        broadcast_shielded_spend_with_redrive_with_metadata(
             sdk,
             store,
             id,
@@ -1447,7 +1479,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     .await;
 
     match result {
-        Ok(proof) => {
+        Ok((proof, metadata)) => {
             record_activity_status(
                 store,
                 persister,
@@ -1500,7 +1532,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
                     None
                 }
             };
-            Ok(proven_balance)
+            Ok((proven_balance, metadata))
         }
         Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
@@ -2903,6 +2935,33 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     operation: &'static str,
     wait: SpendResultWait,
 ) -> Result<StateTransitionProofResult, PlatformWalletError> {
+    broadcast_shielded_spend_with_redrive_with_metadata(
+        sdk,
+        store,
+        id,
+        pending_entry,
+        anchor,
+        notes,
+        state_transition,
+        operation,
+        wait,
+    )
+    .await
+    .map(|(result, _)| result)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    anchor: [u8; 32],
+    notes: &[ShieldedNote],
+    state_transition: &StateTransition,
+    operation: &'static str,
+    wait: SpendResultWait,
+) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
     let result = broadcast_shielded_spend(sdk, state_transition, operation, wait).await;
     if matches!(
         &result,
@@ -3314,7 +3373,7 @@ async fn broadcast_shielded_spend(
     state_transition: &StateTransition,
     operation: &'static str,
     wait: SpendResultWait,
-) -> Result<StateTransitionProofResult, PlatformWalletError> {
+) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
@@ -3338,12 +3397,12 @@ async fn broadcast_shielded_spend(
     let waited = match wait {
         SpendResultWait::ExecutionProved => {
             state_transition
-                .wait_for_response::<StateTransitionProofResult>(sdk, None)
+                .wait_for_response_with_metadata::<StateTransitionProofResult>(sdk, None)
                 .await
         }
         SpendResultWait::AffectedState => {
             state_transition
-                .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+                .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(sdk, None)
                 .await
         }
     };

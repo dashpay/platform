@@ -35,7 +35,8 @@
     "PersistentAssetLock": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentAssetLock.swift",
     "PersistentInvitation": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentInvitation.swift",
     "PersistentMasternode": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentMasternode.swift",
-    "PersistentTrackedMasternode": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTrackedMasternode.swift"
+    "PersistentTrackedMasternode": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTrackedMasternode.swift",
+    "PersistentIdentityBalanceMetadata": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIdentityBalanceMetadata.swift"
   },
   "value_types": [
     {
