@@ -7,10 +7,9 @@ use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentType;
-use dash_sdk::dpp::document::{Document, DocumentV0Getters};
+use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
@@ -28,8 +27,8 @@ use wasm_dpp2::state_transitions::batch::token_payment_info::{
     TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
 };
 use wasm_dpp2::utils::{
-    get_class_type, try_from_options_optional, try_from_options_with, try_to_string, try_to_u64,
-    IntoWasm,
+    get_class_type, try_from_options_mut, try_from_options_optional, try_from_options_with,
+    try_to_string, try_to_u64, IntoWasm,
 };
 use wasm_dpp2::IdentitySignerWasm;
 
@@ -229,13 +228,13 @@ impl WasmSdk {
         // that document too, so code that keeps using it (to replace,
         // transfer or delete what it just created) addresses the document
         // Platform stored. Best effort: the returned document is the
-        // authoritative one.
-        if let Ok(caller_document) = Reflect::get(&options, &JsValue::from_str("document")) {
-            let _ = Reflect::set(
-                &caller_document,
-                &JsValue::from_str("id"),
-                &JsValue::from_str(&confirmed_document.id().to_string(Encoding::Base58)),
-            );
+        // authoritative one, and a caller that freed its document meanwhile
+        // is skipped. (A document still borrowed elsewhere would throw here
+        // rather than no-op; nothing re-enters wasm during the await.)
+        if let Ok(mut caller_document) =
+            try_from_options_mut::<DocumentWasm>(&options, "document", "Document")
+        {
+            caller_document.inner_mut().set_id(confirmed_document.id());
         }
 
         Ok(DocumentWasm::new(

@@ -402,7 +402,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Ids of documents created before the upgrade can not be produced by
 ///     the new derivation either. A client that still derives the entropy
 ///     only id has every create rejected with
-///     `InvalidDocumentTransitionIdError`.
+///     `InvalidDocumentTransitionIdError`. Every create path of the clients
+///     in this repository derives through `Document::generate_document_id`:
+///     `DocumentCreateTransitionV0::from_document` for dpp, rs-sdk and the
+///     bindings built on them, and in wasm-dpp2 the `DocumentCreateTransition`
+///     constructor (which also writes the id back onto the JavaScript
+///     `Document`), `Document.generateId` with its `identityContractNonce`
+///     argument, `setIdForCreation` and the `identityContractNonce`
+///     constructor option.
 /// 19. **Document deletion by moderators**: a document type of a contract
 ///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps

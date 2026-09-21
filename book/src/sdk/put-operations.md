@@ -151,6 +151,16 @@ so the SDK switches derivation when the network does. Because the ID depends on 
 nonce, the ID on the document you pass in is a placeholder: use the ID of the confirmed
 document that `put_to_platform_and_wait_for_response` returns.
 
+The JavaScript SDK follows the same pipeline. `sdk.documents.create` goes through
+`put_to_platform_and_wait_for_response` and hands the confirmed document back. An app
+that builds the transition itself (to sign it separately or cache the signed bytes)
+gets the derivation from `wasm-dpp2`: `new DocumentCreateTransition({ document,
+identityContractNonce })` derives the ID from the document's entropy and the nonce for
+the network's protocol version (`platformVersion` option, latest by default), writes it
+onto the transition and back onto `document`, and the transition is then batched, signed
+and broadcast as before. The IDs such a transition carries are final; nothing has to be
+hashed on the app side.
+
 ### Step 3: Validate Structure
 
 Before broadcasting, the SDK validates the transition's basic structure:
