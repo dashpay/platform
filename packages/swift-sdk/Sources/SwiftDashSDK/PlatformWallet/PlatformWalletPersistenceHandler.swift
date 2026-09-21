@@ -4919,11 +4919,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Identity balance freshness (additive persistence extension)
 
-    private func balanceMetadataDescriptor(walletId: Data, identityId: Data) throws
+    private func balanceMetadataDescriptor(walletId: Data, identityId: Data)
         -> FetchDescriptor<PersistentIdentityBalanceMetadata> {
-        guard let network = self.network ?? walletNetwork(walletId: walletId) else {
-            throw PlatformWalletError.walletOperation("Cannot resolve identity balance metadata network")
-        }
+        // Match legacy identity persistence when the wallet's network is unresolved.
+        let network = self.network ?? walletNetwork(walletId: walletId) ?? .testnet
         let networkRaw = network.rawValue
         return FetchDescriptor(predicate: #Predicate {
             $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
@@ -4935,7 +4934,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard inChangeset else {
                 throw PlatformWalletError.walletOperation("Balance metadata requires an identity changeset")
             }
-            let descriptor = try balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            let descriptor = balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
             let existing = try backgroundContext.fetch(descriptor).first
             guard let blockTime else {
                 if let existing { backgroundContext.delete(existing) }
@@ -4946,9 +4945,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 existing.coreHeight = blockTime.core_height
                 existing.timestampMillis = Int64(bitPattern: blockTime.timestamp)
             } else {
-                guard let network = self.network ?? walletNetwork(walletId: walletId) else {
-                    throw PlatformWalletError.walletOperation("Cannot resolve identity balance metadata network")
-                }
+                let network = self.network ?? walletNetwork(walletId: walletId) ?? .testnet
                 backgroundContext.insert(PersistentIdentityBalanceMetadata(
                     networkRaw: network.rawValue, walletId: walletId, identityId: identityId,
                     platformHeight: blockTime.height, coreHeight: blockTime.core_height,
@@ -4960,7 +4957,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     func loadIdentityBalanceBlockTime(walletId: Data, identityId: Data) throws -> BlockTime? {
         try onQueue {
-            let descriptor = try balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            let descriptor = balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
             guard let row = try backgroundContext.fetch(descriptor).first else { return nil }
             return BlockTime(height: UInt64(bitPattern: row.platformHeight), core_height: row.coreHeight,
                              timestamp: UInt64(bitPattern: row.timestampMillis))
@@ -6347,13 +6344,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 let walletRow = try backgroundContext.fetch(walletDescriptor).first
                 let walletNetwork = walletRow?.network
-                if let metadataNetwork = self.network ?? walletNetwork {
-                    let raw = metadataNetwork.rawValue
-                    let metadata = FetchDescriptor<PersistentIdentityBalanceMetadata>(
-                        predicate: #Predicate { $0.walletId == walletId && $0.networkRaw == raw })
-                    for row in try backgroundContext.fetch(metadata) {
-                        backgroundContext.delete(row)
-                    }
+                // walletId is network-scoped, and sidecars have no wallet relationship.
+                // Purge them even if a previous deletion already removed the wallet row.
+                let metadata = FetchDescriptor<PersistentIdentityBalanceMetadata>(
+                    predicate: #Predicate { $0.walletId == walletId })
+                for row in try backgroundContext.fetch(metadata) {
+                    backgroundContext.delete(row)
                 }
 
                 if let walletRow = walletRow {

@@ -73,6 +73,75 @@ final class IdentityBalanceMetadataPersistenceTests: XCTestCase {
         XCTAssertNil(try handler.loadIdentityBalanceBlockTime(walletId: walletId, identityId: identityId))
     }
 
+    func testLegacyHandlerDefaultsUnresolvedWalletNetworkToTestnet() throws {
+        for hasWalletRow in [false, true] {
+            let container = try DashModelContainer.createInMemory()
+            if hasWalletRow {
+                let context = ModelContext(container)
+                context.insert(PersistentWallet(walletId: walletId))
+                try context.save()
+            }
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container)
+            XCTAssertNil(try handler.loadIdentityBalanceBlockTime(walletId: walletId, identityId: identityId))
+            try persist(handler, balance: 100, stamp: BlockTime(height: 20, core_height: 10, timestamp: 999))
+
+            let context = ModelContext(container)
+            let identity = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>()).first)
+            let metadata = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentityBalanceMetadata>()).first)
+            XCTAssertEqual(identity.balance, 100)
+            XCTAssertEqual(identity.networkRaw, Network.testnet.rawValue)
+            XCTAssertEqual(metadata.networkRaw, identity.networkRaw)
+            let reader = PlatformWalletPersistenceHandler(modelContainer: container)
+            let stamp = try XCTUnwrap(reader.loadIdentityBalanceBlockTime(walletId: walletId, identityId: identityId))
+            XCTAssertEqual(stamp.height, 20)
+            XCTAssertEqual(stamp.core_height, 10)
+            XCTAssertEqual(stamp.timestamp, 999)
+
+            try persist(handler, balance: 50, stamp: nil)
+            XCTAssertNil(try handler.loadIdentityBalanceBlockTime(walletId: walletId, identityId: identityId))
+        }
+    }
+
+    func testLegacyHandlerUsesResolvedWalletNetworkBeforeTestnetFallback() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .mainnet))
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container)
+        try persist(handler, balance: 100, stamp: BlockTime(height: 20, core_height: 10, timestamp: 999))
+        let rows = try ModelContext(container).fetch(FetchDescriptor<PersistentIdentityBalanceMetadata>())
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.networkRaw, Network.mainnet.rawValue)
+        XCTAssertEqual(try handler.loadIdentityBalanceBlockTime(walletId: walletId, identityId: identityId)?.height, 20)
+    }
+
+    func testWalletDeletionPurgesOrphanedMetadataWithoutNetworkAndPreservesOtherWallets() throws {
+        for hasWalletRow in [false, true] {
+            let container = try DashModelContainer.createInMemory()
+            let context = ModelContext(container)
+            if hasWalletRow {
+                context.insert(PersistentWallet(walletId: walletId))
+            }
+            let otherWalletId = Data(repeating: 43, count: 32)
+            for id in [walletId, otherWalletId] {
+                for network in [Network.testnet, .mainnet] {
+                    context.insert(PersistentIdentityBalanceMetadata(
+                        networkRaw: network.rawValue, walletId: id, identityId: identityId,
+                        platformHeight: 20, coreHeight: 10, timestampMillis: 999))
+                }
+            }
+            try context.save()
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container)
+            try handler.deleteWalletData(walletId: walletId)
+            // Retrying after the wallet row is gone remains safe and idempotent.
+            try handler.deleteWalletData(walletId: walletId)
+            let remaining = try ModelContext(container).fetch(FetchDescriptor<PersistentIdentityBalanceMetadata>())
+            XCTAssertEqual(remaining.count, 2)
+            XCTAssertTrue(remaining.allSatisfy { $0.walletId == otherWalletId })
+            XCTAssertEqual(Set(remaining.map(\.networkRaw)), Set([Network.testnet.rawValue, Network.mainnet.rawValue]))
+        }
+    }
+
     func testWalletDeletionRemovesMetadata() throws {
         let container = try DashModelContainer.createInMemory()
         try seedWallet(container)
