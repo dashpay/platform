@@ -407,7 +407,7 @@ mod tests {
         use dpp::consensus::codes::ErrorWithCode;
         use dpp::dash_to_credits;
         use dpp::data_contract::config::moderation::{
-            ElectedModerators, InterimModerators, ModeratedDocumentType, ModerationAbility,
+            ElectedModerators, InterimModerators, ModerationAbility,
         };
         use dpp::data_contract::document_type::random_document::{
             CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
@@ -440,10 +440,7 @@ mod tests {
                     challenge_cool_down: 1_209_600,
                     moderated_document_types: BTreeMap::from([(
                         "niceDocument".to_string(),
-                        ModeratedDocumentType {
-                            abilities: BTreeSet::from([ModerationAbility::Ban]),
-                            moderators_action_fee_maximums: None,
-                        },
+                        BTreeSet::from([ModerationAbility::Ban]),
                     )]),
                     interim: InterimModerators::NotYetUsable,
                     owner_protected: false,

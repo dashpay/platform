@@ -38,8 +38,7 @@ pub mod elected;
 mod reason;
 pub use document_removal::{ContractDocumentRemoval, ContractDocumentRestoration};
 pub use elected::{
-    ElectedModerators, InterimModerators, ModeratedDocumentType, ModerationAbility,
-    ModeratorsActionFeeMaximums, DEFAULT_ELECTION_WINDOW_SECONDS,
+    ElectedModerators, InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 pub use reason::{ContractModerationDocument, ContractModerationReason};
 
@@ -214,7 +213,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
             join_window: Option<u32>,
             vote_window: Option<u32>,
             challenge_cool_down: Option<u32>,
-            moderated_document_types: Option<BTreeMap<DocumentName, ModeratedDocumentType>>,
+            moderated_document_types: Option<BTreeMap<DocumentName, BTreeSet<ModerationAbility>>>,
             interim: Option<InterimModerators>,
             owner_protected: Option<bool>,
         }
@@ -503,7 +502,7 @@ impl ContractModerationConfig {
     /// owner counts). Something to do is a list to edit or, failing that, a document type whose
     /// documents they may delete, read from the raw `document_schemas` of the contract the
     /// declaration belongs to, which an elected declaration is also checked against: its
-    /// moderated types and fee maximums must name document types of the contract
+    /// moderated types must name document types of the contract
     /// ([`ElectedModerators::validation_error`] has its rules).
     /// Whether the named identities exist is state validation, done by the contract create
     /// and update transitions: a moderator that does not exist can never sign, so naming one

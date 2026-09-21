@@ -94,10 +94,9 @@ impl DataContractConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::config::moderation::ModeratedDocumentType;
     use crate::data_contract::config::moderation::{
         ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
-        ModerationAbility, ModeratorsActionFeeMaximums, DEFAULT_ELECTION_WINDOW_SECONDS,
+        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
     };
     use crate::data_contract::config::v1::DataContractConfigV1;
     use crate::data_contract::config::v2::DataContractConfigV2;
@@ -213,10 +212,7 @@ mod tests {
             challenge_cool_down: 1_209_600,
             moderated_document_types: BTreeMap::from([(
                 "post".to_string(),
-                ModeratedDocumentType {
-                    abilities: BTreeSet::from([ModerationAbility::Ban]),
-                    moderators_action_fee_maximums: None,
-                },
+                BTreeSet::from([ModerationAbility::Ban]),
             )]),
             interim: InterimModerators::ContractOwner,
             owner_protected: false,
@@ -242,34 +238,19 @@ mod tests {
         assert!(kept.is_valid(), "{:?}", kept.errors);
 
         type Change = (&'static str, fn(&mut ElectedModerators));
-        let changes: [Change; 8] = [
+        let changes: [Change; 7] = [
             ("join window", |d| d.join_window += 1),
             ("vote window", |d| d.vote_window += 1),
             ("challenge cool-down", |d| d.challenge_cool_down += 1),
             ("moderated set", |d| {
-                d.moderated_document_types.insert(
-                    "like".to_string(),
-                    ModeratedDocumentType {
-                        abilities: BTreeSet::from([ModerationAbility::Ban]),
-                        moderators_action_fee_maximums: None,
-                    },
-                );
+                d.moderated_document_types
+                    .insert("like".to_string(), BTreeSet::from([ModerationAbility::Ban]));
             }),
             ("abilities", |d| {
                 d.moderated_document_types
                     .get_mut("post")
                     .expect("post is moderated")
-                    .abilities
                     .insert(ModerationAbility::Suspend);
-            }),
-            ("fee maximums", |d| {
-                d.moderated_document_types
-                    .get_mut("post")
-                    .expect("post is moderated")
-                    .moderators_action_fee_maximums = Some(ModeratorsActionFeeMaximums {
-                    create: Some(1),
-                    ..Default::default()
-                });
             }),
             ("interim", |d| {
                 d.interim =
