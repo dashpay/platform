@@ -677,7 +677,7 @@ fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
         let operations = if stage == "deleted" {
             platform
                 .drive
-                .delete_document_for_contract_operations_with_lifecycle(
+                .delete_document_for_contract_operations(
                     document.id(),
                     &contract,
                     document_type,
@@ -685,7 +685,6 @@ fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
                     Some(owner),
                     None,
                     &mut None,
-                    5_000,
                     None,
                     version,
                 )

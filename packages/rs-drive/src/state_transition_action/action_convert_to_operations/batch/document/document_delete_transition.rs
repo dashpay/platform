@@ -49,6 +49,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
                     }),
                     DocumentOperation(DocumentOperationType::DeleteDocument {
                         document_id: base.id(),
+                        deleter_id: None,
                         contract_info: DataContractInfo::DataContractFetchInfo(
                             base.data_contract_fetch_info(),
                         ),
@@ -96,7 +97,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
                         contract_id: data_contract_id.into_buffer(),
                         nonce: identity_contract_nonce,
                     }),
-                    DocumentOperation(DocumentOperationType::DeleteDocumentWithLifecycle {
+                    DocumentOperation(DocumentOperationType::DeleteDocument {
                         document_id: base.id(),
                         deleter_id: Some(owner_id),
                         contract_info: DataContractInfo::DataContractFetchInfo(

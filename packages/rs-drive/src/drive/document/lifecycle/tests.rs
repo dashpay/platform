@@ -177,7 +177,7 @@ fn delete(
     let mut operations = vec![];
     let block_info = BlockInfo::default_with_time(time_ms);
     let batch = drive
-        .delete_document_for_contract_operations_with_lifecycle(
+        .delete_document_for_contract_operations(
             id,
             contract,
             document_type_of(contract),
@@ -185,7 +185,6 @@ fn delete(
             Some(deleter),
             None,
             &mut None,
-            time_ms,
             None,
             latest(),
         )
@@ -926,7 +925,7 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
     );
 
     let batch = drive
-        .delete_document_for_contract_operations_with_lifecycle(
+        .delete_document_for_contract_operations(
             document.id(),
             &contract,
             document_type,
@@ -934,7 +933,6 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
             Some(Identifier::new([7; 32])),
             None,
             &mut None,
-            5_000,
             None,
             version,
         )
@@ -1249,7 +1247,7 @@ fn should_refund_each_writer_under_the_epoch_they_wrote_in() {
         ..BlockInfo::default_with_time(5_000)
     };
     let batch = drive
-        .delete_document_for_contract_operations_with_lifecycle(
+        .delete_document_for_contract_operations(
             id,
             &contract,
             document_type,
@@ -1257,7 +1255,6 @@ fn should_refund_each_writer_under_the_epoch_they_wrote_in() {
             Some(Identifier::new(early_writer)),
             None,
             &mut None,
-            block_info.time_ms,
             None,
             version,
         )
@@ -1528,7 +1525,7 @@ fn should_refuse_rather_than_half_apply_two_deletes_sharing_a_new_container() {
         .expect("expected a second document");
 
     let delete_operation = |id: Identifier| {
-        DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocumentWithLifecycle {
+        DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
             document_id: id,
             deleter_id: Some(Identifier::new(owner)),
             contract_info: DataContractInfo::BorrowedDataContract(&contract),
@@ -1817,7 +1814,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
     };
     apply(
         drive
-            .delete_document_for_contract_operations_with_lifecycle(
+            .delete_document_for_contract_operations(
                 id,
                 &contract,
                 document_type,
@@ -1825,7 +1822,6 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
                 Some(Identifier::new(owner)),
                 None,
                 &mut None,
-                5_000,
                 None,
                 new,
             )
@@ -1911,7 +1907,7 @@ fn should_keep_the_contract_fetch_cost_of_a_lifecycle_delete_by_contract_id() {
     let block_info = BlockInfo::default_with_time(5_000);
 
     let delete_with = |contract_info: DataContractInfo| {
-        DocumentOperationType::DeleteDocumentWithLifecycle {
+        DocumentOperationType::DeleteDocument {
             document_id: id,
             deleter_id: Some(Identifier::new(owner)),
             contract_info,

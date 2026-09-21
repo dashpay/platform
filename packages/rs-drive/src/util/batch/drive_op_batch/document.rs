@@ -98,17 +98,8 @@ pub enum DocumentOperationType<'a> {
     DeleteDocument {
         /// The document id
         document_id: Identifier,
-        /// Data Contract info to potentially be resolved if needed
-        contract_info: DataContractInfo<'a>,
-        /// Document type
-        document_type_info: DocumentTypeInfo<'a>,
-    },
-    /// Deletes a document while retaining the lifecycle metadata needed by a
-    /// keep-history document.
-    DeleteDocumentWithLifecycle {
-        /// The document id
-        document_id: Identifier,
-        /// The identity credited with the lifecycle record's bytes.
+        /// The identity credited with the lifecycle record a keep-history
+        /// delete writes; `None` credits nobody.
         deleter_id: Option<Identifier>,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
@@ -230,11 +221,6 @@ impl DocumentOperationType<'_> {
                 ..
             }
             | Self::DeleteDocument {
-                contract_info,
-                document_type_info,
-                ..
-            }
-            | Self::DeleteDocumentWithLifecycle {
                 contract_info,
                 document_type_info,
                 ..
@@ -454,33 +440,6 @@ impl DocumentOperationType<'_> {
             }
             DocumentOperationType::DeleteDocument {
                 document_id,
-                contract_info,
-                document_type_info,
-            } => {
-                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-                let contract_resolved_info = contract_info.resolve(
-                    drive,
-                    block_info,
-                    transaction,
-                    &mut drive_operations,
-                    platform_version,
-                )?;
-                let contract = contract_resolved_info.as_ref();
-                let document_type = document_type_info.resolve(contract)?;
-
-                drive.delete_document_for_contract_operations_without_ttl_drain(
-                    document_id,
-                    contract,
-                    document_type,
-                    None,
-                    estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
-                    transaction,
-                    platform_version,
-                )
-            }
-            DocumentOperationType::DeleteDocumentWithLifecycle {
-                document_id,
                 deleter_id,
                 contract_info,
                 document_type_info,
@@ -500,7 +459,7 @@ impl DocumentOperationType<'_> {
                 // its operations ahead of the delete's so the caller pays for
                 // both.
                 let mut operations = drive
-                    .delete_document_for_contract_operations_with_lifecycle_without_ttl_drain(
+                    .delete_document_for_contract_operations_without_ttl_drain(
                         document_id,
                         contract,
                         document_type,
@@ -508,7 +467,6 @@ impl DocumentOperationType<'_> {
                         deleter_id,
                         None,
                         estimated_costs_only_with_layer_info,
-                        block_info.time_ms,
                         transaction,
                         platform_version,
                     )?;

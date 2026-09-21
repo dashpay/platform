@@ -1,5 +1,4 @@
 mod v0;
-mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -15,17 +14,19 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Deletes a document.
+    /// Deletes a document and adds the operations to the given list.
     ///
     /// # Parameters
     /// * `document_id`: The ID of the document to delete.
     /// * `contract`: The contract that contains the document.
     /// * `document_type_name`: The name of the document type.
-    /// * `owner_id`: The owner ID of the document.
+    /// * `block_info`: The block this delete belongs to.
+    /// * `deleter_id`: The identity credited with the lifecycle record a
+    ///   keep-history delete writes; `None` credits nobody.
     /// * `estimated_costs_only_with_layer_info`: An optional hashmap with layer information for estimated costs.
     /// * `transaction`: The transaction argument.
     /// * `drive_operations`: A mutable vector of low level drive operations.
-    /// * `drive_version`: The drive version to select the correct function version to run.
+    /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns
     /// * `Ok(())` if the operation was successful.
@@ -36,64 +37,11 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        block_time_ms: u64,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        match platform_version
-            .drive
-            .methods
-            .document
-            .delete
-            .delete_document_for_contract_apply_and_add_to_operations
-        {
-            0 => self.delete_document_for_contract_apply_and_add_to_operations_v0(
-                document_id,
-                contract,
-                document_type_name,
-                estimated_costs_only_with_layer_info,
-                block_time_ms,
-                transaction,
-                drive_operations,
-                platform_version,
-            ),
-            1 => self.delete_document_for_contract_apply_and_add_to_operations_v1(
-                document_id,
-                contract,
-                document_type_name,
-                estimated_costs_only_with_layer_info,
-                block_time_ms,
-                transaction,
-                drive_operations,
-                platform_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "delete_document_for_contract_apply_and_add_to_operations".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            })),
-        }
-    }
-
-    /// Deletes a document and adds the operations to the given list, recording
-    /// the lifecycle entry of a keep-history document with the block and deleter
-    /// that authored the delete.
-    #[allow(clippy::too_many_arguments)]
-    pub fn delete_document_for_contract_apply_and_add_to_operations_with_lifecycle(
-        &self,
-        document_id: Identifier,
-        contract: &DataContract,
-        document_type_name: &str,
         block_info: &BlockInfo,
         deleter_id: Option<Identifier>,
         estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        block_time_ms: u64,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -106,30 +54,19 @@ impl Drive {
             .delete_document_for_contract_apply_and_add_to_operations
         {
             0 => self.delete_document_for_contract_apply_and_add_to_operations_v0(
-                document_id,
-                contract,
-                document_type_name,
-                estimated_costs_only_with_layer_info,
-                block_time_ms,
-                transaction,
-                drive_operations,
-                platform_version,
-            ),
-            1 => self.delete_document_for_contract_apply_and_add_to_operations_with_lifecycle_v1(
                 document_id,
                 contract,
                 document_type_name,
                 block_info,
                 deleter_id,
                 estimated_costs_only_with_layer_info,
-                block_time_ms,
                 transaction,
                 drive_operations,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_apply_and_add_to_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

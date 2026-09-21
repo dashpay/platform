@@ -27,11 +27,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         delete: DriveDocumentDeleteMethodVersions {
             remove_reference_for_index_level_for_contract_operations: 2,
             add_estimation_costs_for_remove_document_to_primary_storage: 1,
-            delete_document_for_contract: 1,
-            delete_document_for_contract_id: 1,
-            delete_document_for_contract_apply_and_add_to_operations: 1,
             remove_document_from_primary_storage: 1,
-            delete_document_for_contract_with_named_type_operations: 1,
             delete_document_for_contract_operations: 1,
             erase_document_for_contract_operations: Some(0),
             add_estimation_costs_for_erase_document: Some(0),

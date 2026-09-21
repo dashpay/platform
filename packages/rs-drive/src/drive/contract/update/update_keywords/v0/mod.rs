@@ -146,9 +146,10 @@ impl Drive {
                     *doc_id,
                     &contract,
                     document_type,
+                    block_info,
+                    None,
                     None,
                     estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )?);
