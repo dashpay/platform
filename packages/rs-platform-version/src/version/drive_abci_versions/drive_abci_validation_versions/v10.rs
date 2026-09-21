@@ -106,7 +106,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
-            masternode_vote_state_transition_balance_pre_check: 0,
+            masternode_vote_state_transition_balance_pre_check: 1, // changed: the poll's fund must cover the single vote cost the vote deducts, not only the vote's minimum fee
             contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(2), // changed: rejects `requiredSince` other than 1 on a newly created contract — the annotation must name the version the change arrives with, and a fresh contract is version 1
                 advanced_structure: Some(1),
@@ -377,7 +377,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
         validate_address_witnesses: 0,
         validate_shielded_proof: 1,
         validate_minimum_shielded_fee: 0,
-        process_state_transition: 0,
+        process_state_transition: 1, // changed: a masternode vote on a poll whose fund is missing or below the single vote cost is refused unpaid
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {
             identity_id_not_correct: 50000000,

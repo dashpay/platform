@@ -200,7 +200,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   reference on every replace (a dead one must be repointed or cleared),
 ///   and lets an `immutable` one be cleared once its target is deleted.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
-///   replay of pre-upgrade blocks is unchanged.
+///   replay of pre-upgrade blocks is unchanged. The same table bumps
+///   `process_state_transition` 0 → 1: the processor now acts on the
+///   masternode vote's prefunded balance pre-check, after state validation,
+///   refusing a vote whose poll has no fund, or one below the single vote
+///   cost, as an unpaid `PrefundedSpecializedBalanceNotFoundError` /
+///   `PrefundedSpecializedBalanceInsufficientError`; v0 ran the pre-check
+///   but ignored its result, and such a vote failed inside execution as an
+///   internal error. It also bumps
+///   `masternode_vote_state_transition_balance_pre_check` 0 → 1, which
+///   requires the fund to cover the single vote cost the vote deducts, where
+///   v0 required only the vote's minimum fee, a smaller amount. Under either
+///   generation such a vote never enters a block (proposers strip it,
+///   validators reject a block carrying it), so blocks replay identically.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
@@ -579,7 +591,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; process_state_transition 1 refuses a vote on an unfunded poll unpaid
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
