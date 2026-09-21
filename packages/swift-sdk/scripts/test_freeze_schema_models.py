@@ -93,6 +93,107 @@ class BlockEndTests(unittest.TestCase):
             gen.block_end(lines, 0)
 
 
+class StorageGraphTests(unittest.TestCase):
+    def setUp(self):
+        self.model_path = gen.MODELS_DIR + "/PersistentThing.swift"
+        self.values_path = "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Types/Values.swift"
+        self.inventory = {"format_version": 1, "models": {"PersistentThing": self.model_path}, "value_types": []}
+        self.sources = {self.model_path: "@Model\npublic final class PersistentThing {\n var payload: Payload?\n}\n"}
+
+    def include_values(self, names, source):
+        self.inventory["value_types"] = [{"path": self.values_path, "names": names}]
+        self.sources[self.values_path] = source
+
+    def check(self):
+        gen.validate_storage_graph(gen.validate_inventory(self.inventory), self.sources)
+
+    def test_should_refuse_a_real_omitted_stored_codable_type(self):
+        self.sources[self.values_path] = "public struct Payload: Codable {\n var value: String\n}\n"
+        with self.assertRaisesRegex(SystemExit, "PersistentThing.payload: stored type Payload is absent"):
+            self.check()
+        self.include_values(["Payload"], self.sources[self.values_path])
+        self.check()
+
+    def test_should_follow_transitive_struct_fields_and_enum_payloads_through_containers(self):
+        source = ("public struct Payload: Codable {\n var values: [String: Array<Optional<Event>>]\n}\n"
+                  "public enum Event: Codable {\n case changed(detail: [String: Leaf?]), deleted\n}\n"
+                  "public struct Leaf: Codable {\n var values: Swift.Set<Foundation.UUID>\n}\n")
+        self.include_values(["Payload", "Event"], source)
+        with self.assertRaisesRegex(SystemExit, "Event enum payload: stored type Leaf is absent"):
+            self.check()
+        self.inventory["value_types"][0]["names"].append("Leaf")
+        self.check()
+        self.sources[self.values_path] = source.replace("Swift.Set<Foundation.UUID>", "Dictionary<String, Missing>")
+        with self.assertRaisesRegex(SystemExit, "Leaf.values: stored type Missing is absent"):
+            self.check()
+
+    def test_should_ignore_computed_static_and_transient_helpers_but_not_observed_storage(self):
+        self.sources[self.model_path] = """@Model
+public final class PersistentThing {
+    @Transient var helper: LiveHelper?
+    static var cache = LiveHelper()
+    var computed: LiveHelper { LiveHelper() }
+    var nextLine: LiveHelper
+    { LiveHelper() }
+    var stored: String = "var phantom: Missing { // }"
+    // var omitted: Missing
+    func helper(defaultValue: () -> LiveHelper = { LiveHelper() }) { }
+}
+"""
+        self.check()
+        self.sources[self.model_path] = self.sources[self.model_path].replace(
+            'var stored: String = "var phantom: Missing { // }"',
+            "var stored: Missing { didSet { print(stored) } }")
+        with self.assertRaisesRegex(SystemExit, "PersistentThing.stored: stored type Missing is absent"):
+            self.check()
+
+    def test_should_fail_closed_for_unsupported_storage_forms(self):
+        forms = {
+            "var payload = Payload()": "inferred stored types",
+            "var payload: External.Payload?": "not isolated",
+            "typealias Alias = Payload\nvar payload: Alias": "aliases",
+            "var payload: Alias": "stored type Alias is absent",
+            "var payload: (String, Int)": "unsupported stored type",
+            "var payload: Wrapper<String>": "stored type Wrapper is absent",
+            "var a: String, b: Missing": "unsupported stored type",
+            "#if DEBUG\nvar payload: String\n#endif": "conditional declarations",
+            "@Attribute(.transformable(by: LiveTransformer.self)) var payload: Data": "transformable",
+            "@MyStorage var payload: String": "unsupported property macro",
+            "enum Swift { }\nvar payload: Swift.String": "shadows a stored type",
+        }
+        for declaration, error in forms.items():
+            self.sources[self.model_path] = "@Model\npublic final class PersistentThing {\n" + declaration + "\n}\n"
+            with self.subTest(declaration=declaration), self.assertRaisesRegex(SystemExit, error):
+                self.check()
+
+    def test_should_refuse_to_guess_unsupported_lexical_syntax(self):
+        for declaration, error in (("var `payload`: String", "escaped identifiers"),
+                                   ('var payload: String = #"raw"#', "raw/multiline"),
+                                   ("/* hidden } */ var payload: Missing", "block comments")):
+            self.sources[self.model_path] = "@Model\npublic final class PersistentThing {\n" + declaration + "\n}\n"
+            with self.subTest(declaration=declaration), self.assertRaisesRegex(SystemExit, error):
+                self.check()
+
+    def test_should_check_the_current_inventory_and_detect_a_real_transitive_omission(self):
+        inventory = gen.validate_inventory(json.loads(Path(ROOT, gen.INVENTORY_FILE).read_text()))
+        sources = gen.inventory_sources(ROOT, inventory)
+        gen.validate_storage_graph(inventory, sources)
+        inventory["value_types"][0]["names"].remove("DistributionEvent")
+        with self.assertRaisesRegex(SystemExit, "TokenPreProgrammedDistribution.distributionSchedule: stored type DistributionEvent is absent"):
+            gen.validate_storage_graph(inventory, sources)
+
+    def test_should_reject_omitted_values_before_rendering_a_snapshot(self):
+        schema = {"schema_version": "2.0.0", "model_checksum": "checksum", "entity_hashes": {"PersistentThing": "ab"}, "indexes": []}
+        entry = {"platform_sha": "a" * 40, "namespace": "DashSchemaSnapshotV2", "schema": schema}
+        def read(root, operation, object_path):
+            self.assertEqual(operation, "show")
+            path = object_path.split(":", 1)[1]
+            return json.dumps(self.inventory) if path == gen.INVENTORY_FILE else self.sources[path]
+        with mock.patch.object(gen, "git", side_effect=read):
+            with self.assertRaisesRegex(SystemExit, "stored type Payload is absent"):
+                gen.render_snapshot(ROOT, "2.0.0", entry)
+
+
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()
@@ -120,9 +221,9 @@ class ReleaseTests(unittest.TestCase):
 
         def git(root, *args):
             self.git_calls.append(args)
-            if args == ("show", "a" * 40 + ":" + gen.INVENTORY_FILE):
+            if args[0] == "show" and args[1].split(":", 1)[1] == gen.INVENTORY_FILE:
                 return json.dumps(self.inventory)
-            if args == ("show", "a" * 40 + ":" + gen.MODELS_DIR + "/PersistentThing.swift"):
+            if args[0] == "show" and args[1].split(":", 1)[1] == gen.MODELS_DIR + "/PersistentThing.swift":
                 return "@Model\npublic final class PersistentThing {\n    var old: String = \"released\"\n}\n"
             raise AssertionError(f"unexpected historical read: {args}")
 
@@ -160,6 +261,25 @@ class ReleaseTests(unittest.TestCase):
         next_manifest = {**self.manifest, "platform_sha": "b" * 40,
                          "fixture_sha256": digest, "fixture_path": f"stores/{digest}.store"}
         self.assertEqual(gen.add_release(self.root, next_manifest, self.fixture), first)
+
+    def test_should_reject_missing_value_types_before_admitting_new_or_same_shape_evidence(self):
+        original_read = gen.git
+
+        def omitted_value(root, *args):
+            if args[0] == "show" and args[1].endswith("/PersistentThing.swift"):
+                return "@Model\npublic final class PersistentThing {\n var payload: MissingCodable?\n}\n"
+            return original_read(root, *args)
+
+        for already_registered in (False, True):
+            if already_registered:
+                gen.add_release(self.root, self.manifest, self.fixture)
+            before = Path(self.root, gen.REGISTRY_FILE).read_bytes()
+            with self.subTest(already_registered=already_registered), mock.patch.object(gen, "git", side_effect=omitted_value):
+                with self.assertRaisesRegex(SystemExit, "stored type MissingCodable is absent"):
+                    gen.add_release(self.root, self.manifest, self.fixture)
+            self.assertEqual(Path(self.root, gen.REGISTRY_FILE).read_bytes(), before)
+            if not already_registered:
+                self.assertFalse(Path(self.root, gen.FIXTURE_DIR).exists())
 
     def test_should_reject_changed_shape_under_published_version_including_indexes(self):
         gen.add_release(self.root, self.manifest, self.fixture)

@@ -12,7 +12,10 @@ migration stage: DashSchemaVN stays on live model types until a later shape
 change moves it onto the snapshot and introduces a new live version/migration.
 
 --check verifies deterministic generated sources, registry bindings and immutable
-fixture digests. It cannot prove hash-relevant graph completeness: the runtime
+fixture digests. --check-inventory rejects missing transitive stored value types
+within the supported explicit storage grammar. Standard Swift/Foundation type
+names must not be shadowed elsewhere in the SDK. Custom Codable methods and
+other helper behavior remain outside this declaration check. The runtime
 DashReleasedSchemaTests compares SwiftData's hashes and SQLite indexes against
 the captured fixture, after constructing the live schema first. This also
 catches inline value types or relationship references accidentally left live.
@@ -371,13 +374,275 @@ def validate_inventory(inventory):
         raise SystemExit("unsupported historical schema model inventory")
     models = inventory["models"]
     groups = inventory["value_types"]
-    for name in list(models) + [name for group in groups for name in group["names"]]:
+    names = list(models) + [name for group in groups for name in group["names"]]
+    if len(names) != len(set(names)):
+        raise SystemExit("duplicate type in model inventory")
+    for name in names:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name):
             raise SystemExit("invalid Swift name in model inventory")
     for path in list(models.values()) + [group["path"] for group in groups]:
         if not path.startswith("packages/swift-sdk/Sources/SwiftDashSDK/") or ".." in pathlib.PurePosixPath(path).parts:
             raise SystemExit("model inventory path is outside the Swift SDK")
     return inventory
+
+
+# This is deliberately a restricted declaration grammar, not a Swift compiler.
+# It checks explicit stored type expressions against the copied graph and
+# standard types; standard names must not be shadowed elsewhere in the SDK.
+# Unsupported storage syntax fails closed; SwiftData's native hash/index tests
+# still verify the generated models' semantics and registration order.
+SWIFT_SCALARS = set("Bool String Character Int Int8 Int16 Int32 Int64 UInt UInt8 UInt16 UInt32 UInt64 Float Double".split())
+FOUNDATION_SCALARS = set("Data Date UUID Decimal URL TimeInterval".split())
+STORAGE_CONTAINERS = {"Array": 1, "Set": 1, "Optional": 1, "Dictionary": 2}
+STORAGE_PROTOCOLS = set("Codable Decodable Encodable Equatable Hashable Sendable CaseIterable Identifiable".split())
+
+
+def storage_tokens(lines, owner):
+    tokens = []
+    for line in lines:
+        # The existing source copier supports ordinary single-line strings.
+        # Do not guess where a raw/multiline string or backtick identifier ends.
+        if re.search(r'#+"|"""|`', line.split("//", 1)[0]):
+            raise SystemExit(f"{owner}: raw/multiline strings and escaped identifiers need explicit parser support")
+        code = code_only(line)
+        tokens.extend(re.findall(r'[A-Za-z_][A-Za-z_0-9]*|""|[^\s]', code))
+        tokens.append("\n")
+    return tokens
+
+
+def matching_token(tokens, start, owner):
+    opening = tokens[start]
+    closing = {"(": ")", "[": "]", "{": "}"}[opening]
+    index = start + 1
+    while index < len(tokens):
+        if tokens[index] == closing:
+            return index
+        if tokens[index] in ("(", "[", "{"):
+            index = matching_token(tokens, index, owner)
+        elif tokens[index] in (")", "]", "}"):
+            break
+        index += 1
+    raise SystemExit(f"{owner}: unsupported or unbalanced storage declaration")
+
+
+def validate_stored_type(tokens, names, owner):
+    tokens = [token for token in tokens if token != "\n"]
+    index = 0
+
+    def consume():
+        nonlocal index
+        if index == len(tokens):
+            raise SystemExit(f"{owner}: missing stored type")
+        token = tokens[index]
+        index += 1
+        if token == "[":
+            consume()
+            if index < len(tokens) and tokens[index] == ":":
+                index += 1
+                consume()
+            if index == len(tokens) or tokens[index] != "]":
+                raise SystemExit(f"{owner}: unsupported collection type")
+            index += 1
+        elif re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", token):
+            name = token
+            if index < len(tokens) and tokens[index] == ".":
+                index += 1
+                if index == len(tokens):
+                    raise SystemExit(f"{owner}: incomplete qualified type")
+                name = tokens[index]
+                index += 1
+                permitted = SWIFT_SCALARS | set(STORAGE_CONTAINERS) if token == "Swift" else FOUNDATION_SCALARS if token == "Foundation" else set()
+                if name not in permitted:
+                    raise SystemExit(f"{owner}: module-qualified or nested stored type {token}.{name} is not isolated")
+            if name in STORAGE_CONTAINERS:
+                if index == len(tokens) or tokens[index] != "<":
+                    raise SystemExit(f"{owner}: collection requires explicit type arguments")
+                index += 1
+                for argument in range(STORAGE_CONTAINERS[name]):
+                    if argument:
+                        if index == len(tokens) or tokens[index] != ",":
+                            raise SystemExit(f"{owner}: invalid generic collection arguments")
+                        index += 1
+                    consume()
+                if index == len(tokens) or tokens[index] != ">":
+                    raise SystemExit(f"{owner}: invalid generic collection arguments")
+                index += 1
+            elif name not in names | SWIFT_SCALARS | FOUNDATION_SCALARS:
+                raise SystemExit(f"{owner}: stored type {name} is absent from schema-models.json; include its transitive value graph")
+        else:
+            raise SystemExit(f"{owner}: unsupported stored type expression {' '.join(tokens)}")
+        while index < len(tokens) and tokens[index] == "?":
+            index += 1
+
+    consume()
+    if index != len(tokens):
+        raise SystemExit(f"{owner}: unsupported stored type expression {' '.join(tokens)}")
+
+
+def validate_storage_declaration(lines, name, names):
+    tokens = storage_tokens(lines, name)
+    start = tokens.index("{")
+    header = [token for token in tokens[:start] if token != "\n"]
+    if any(header[index + 1] != "Model" for index, token in enumerate(header) if token == "@"):
+        raise SystemExit(f"{name}: unsupported type declaration macro")
+    kind = next(token for token in header if token in ("class", "struct", "enum"))
+    inherited = header[header.index(name) + 1:]
+    if inherited:
+        if inherited[0] != ":" or any(token not in STORAGE_PROTOCOLS | SWIFT_SCALARS | {":", ","} for token in inherited):
+            raise SystemExit(f"{name}: generic types, custom conformances and inherited storage need explicit parser support")
+    end = matching_token(tokens, start, name)
+    index = start + 1
+    prefix = []
+    attributes = []
+    while index < end:
+        token = tokens[index]
+        if token in ("\n", ";"):
+            index += 1
+            continue
+        if token == "@":
+            attribute = tokens[index + 1]
+            index += 2
+            if index < end and tokens[index] == "(":
+                close = matching_token(tokens, index, name)
+                arguments = tokens[index + 1:close]
+                if attribute == "Attribute" and "transformable" in arguments:
+                    raise SystemExit(f"{name}: transformable storage requires explicit isolation support")
+                index = close + 1
+            if attribute not in ("Attribute", "Relationship", "Transient"):
+                raise SystemExit(f"{name}: unsupported property macro @{attribute}")
+            attributes.append(attribute)
+            continue
+        if token in ("#", "typealias", "associatedtype"):
+            if token == "#" and tokens[index + 1] in ("Index", "Unique"):
+                opening = index + 2
+                if tokens[opening:opening + 3] == ["<", name, ">"]:
+                    opening += 3
+                if tokens[opening] != "(":
+                    raise SystemExit(f"{name}: unsupported index/unique declaration")
+                index = matching_token(tokens, opening, name) + 1
+                prefix, attributes = [], []
+                continue
+            raise SystemExit(f"{name}: conditional declarations, aliases and declaration macros need explicit isolation support")
+        if token == "class" and tokens[index + 1] in ("var", "func"):
+            prefix.append(token)
+            index += 1
+            continue
+        if token in ("struct", "class", "enum", "actor", "protocol"):
+            nested_name = tokens[index + 1]
+            if nested_name in names | SWIFT_SCALARS | FOUNDATION_SCALARS | set(STORAGE_CONTAINERS) | {"Swift", "Foundation"}:
+                raise SystemExit(f"{name}: nested type {nested_name} shadows a stored type")
+            # Unused nested helpers are copied with their enclosing type. Any
+            # stored reference to them is rejected by validate_stored_type.
+            opening = tokens.index("{", index)
+            index = matching_token(tokens, opening, name) + 1
+            prefix, attributes = [], []
+            continue
+        if token in ("var", "let"):
+            field = tokens[index + 1]
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", field):
+                raise SystemExit(f"{name}: destructured stored declarations are unsupported")
+            cursor = index + 2
+            expression = []
+            while cursor < end and tokens[cursor] not in ("=", "{", ";", "\n"):
+                if tokens[cursor] in ("[", "("):
+                    close = matching_token(tokens, cursor, name)
+                    expression.extend(tokens[cursor:close + 1])
+                    cursor = close + 1
+                else:
+                    expression.append(tokens[cursor])
+                    cursor += 1
+            # An accessor body is computed, except willSet/didSet observers.
+            # A closure initializer follows '=' and is still stored.
+            next_code = cursor
+            while tokens[next_code] == "\n":
+                next_code += 1
+            computed = tokens[next_code] == "{"
+            if computed:
+                close = matching_token(tokens, next_code, name)
+                body = tokens[next_code + 1:close]
+                computed = "willSet" not in body and "didSet" not in body
+            if not (computed or "static" in prefix or "class" in prefix or "Transient" in attributes):
+                if not expression or expression[0] != ":":
+                    raise SystemExit(f"{name}.{field}: inferred stored types need an explicit type annotation")
+                validate_stored_type(expression[1:], names, f"{name}.{field}")
+            # Skip the initializer/accessors, not just the type. A comma at
+            # declaration level could start another binding and is refused.
+            index = cursor
+            while index < end and tokens[index] not in ("\n", ";"):
+                if tokens[index] in ("{", "(", "["):
+                    index = matching_token(tokens, index, name) + 1
+                elif tokens[index] == ",":
+                    raise SystemExit(f"{name}.{field}: multiple property bindings need separate declarations")
+                else:
+                    index += 1
+            if next_code < end and tokens[next_code] == "{" and cursor != next_code:
+                index = matching_token(tokens, next_code, name) + 1
+            prefix, attributes = [], []
+            continue
+        if token == "case" and kind == "enum":
+            index += 1
+            while index < end and tokens[index] not in ("\n", ";"):
+                if tokens[index] == "(":
+                    close = matching_token(tokens, index, name)
+                    payload = tokens[index + 1:close]
+                    # Split only outer commas; generic dictionary arguments
+                    # and nested bracket syntax belong to the same payload.
+                    groups, group, depth = [], [], 0
+                    for part in payload + [","]:
+                        if part == "," and depth == 0:
+                            groups.append(group)
+                            group = []
+                        else:
+                            group.append(part)
+                            depth += int(part in ("[", "<", "(")) - int(part in ("]", ">", ")"))
+                    for group in groups:
+                        if ":" in group and group.index(":") < 2:
+                            group = group[group.index(":") + 1:]
+                        validate_stored_type(group, names, f"{name} enum payload")
+                    index = close + 1
+                else:
+                    index += 1
+            prefix, attributes = [], []
+            continue
+        if token in ("func", "init", "deinit", "subscript"):
+            opening = index + 1
+            while opening < end and tokens[opening] != "{":
+                if tokens[opening] in ("(", "["):
+                    opening = matching_token(tokens, opening, name)
+                opening += 1
+            if opening == end:
+                raise SystemExit(f"{name}: declaration without a body needs explicit parser support")
+            index = matching_token(tokens, opening, name) + 1
+            prefix, attributes = [], []
+            continue
+        if token == "(":
+            if tokens[index:index + 3] != ["(", "set", ")"]:
+                raise SystemExit(f"{name}: unsupported declaration continuation")
+            index = matching_token(tokens, index, name) + 1
+            continue
+        if token not in {"public", "private", "fileprivate", "internal", "package", "open", "static",
+                         "final", "override", "required", "convenience", "mutating", "nonmutating",
+                         "lazy", "weak", "unowned", "dynamic", "nonisolated"}:
+            raise SystemExit(f"{name}: unsupported declaration token {token!r}")
+        prefix.append(token)
+        index += 1
+
+
+def validate_storage_graph(inventory, sources):
+    names = set(inventory["models"]) | {name for group in inventory["value_types"] for name in group["names"]}
+    if names & (SWIFT_SCALARS | FOUNDATION_SCALARS | set(STORAGE_CONTAINERS) | {"Swift", "Foundation"}):
+        raise SystemExit("inventory shadows a standard stored type")
+    for name, path in inventory["models"].items():
+        validate_storage_declaration(extract_class(sources[path], name), name, names)
+    for group in inventory["value_types"]:
+        for name in group["names"]:
+            validate_storage_declaration(extract_value_type(sources[group["path"]], name), name, names)
+
+
+def inventory_sources(root, inventory, commit=None):
+    paths = set(inventory["models"].values()) | {group["path"] for group in inventory["value_types"]}
+    return {path: git(root, "show", f"{commit}:{path}") if commit else pathlib.Path(root, path).read_text(encoding="utf-8")
+            for path in sorted(paths)}
 
 
 def render_snapshot(root, version, entry, *, inventory=None):
@@ -394,19 +659,21 @@ def render_snapshot(root, version, entry, *, inventory=None):
     models = inventory["models"]
     if set(models) != set(entry["schema"]["entity_hashes"]):
         raise SystemExit("historical inventory differs from captured model membership")
+    sources = inventory_sources(root, inventory, commit)
+    validate_storage_graph(inventory, sources)
     names = set(models) | {name for group in inventory["value_types"] for name in group["names"]}
     sibling = re.compile(r"(?<![\w.])(" + "|".join(re.escape(name) for name in sorted(names)) + r")\b")
     freeze = Freeze(namespace, commit, tuple(models))
     files = {}
     for name, path in models.items():
         files[f"{OUT_DIR}/{namespace}+{name}.swift"] = render_model(
-            freeze, commit[:10], git(root, "show", f"{commit}:{path}"), name, sibling)
+            freeze, commit[:10], sources[path], name, sibling)
     for group in inventory["value_types"]:
         value_freeze = Freeze(namespace, commit, (), group["path"], tuple(group["names"]))
         path = f"{OUT_DIR}/{namespace}+{os.path.basename(group['path'])}"
         if path in files:
             raise SystemExit("duplicate snapshot output")
-        files[path] = render_value_types(value_freeze, commit[:10], git(root, "show", f"{commit}:{group['path']}"))
+        files[path] = render_value_types(value_freeze, commit[:10], sources[group["path"]])
     files[f"{OUT_DIR}/{namespace}+Schema.swift"] = (
         HEADER + "// Generated release snapshot; never add alongside its live version in the migration plan.\n"
         + f"enum {namespace}: VersionedSchema {{\n"
@@ -492,6 +759,15 @@ def add_release(root, manifest, fixture):
     if manifest.get("fixture_sha256") != digest or manifest.get("fixture_path") != f"stores/{digest}.store":
         raise SystemExit("fixture does not match build manifest")
     validate_fixture_description(fixture, schema)
+    # Check every incoming source graph, including another release with the
+    # same checksum. A matching live shape alone cannot prove its copy closes
+    # over all stored value types.
+    entry = {
+        "platform_sha": commit, "schema": schema, "fixture_sha256": digest,
+        "fixture_path": f"{FIXTURE_DIR}/{digest}.store",
+        "namespace": "DashSchemaSnapshotV" + version.split(".")[0],
+    }
+    render_snapshot(root, version, entry)
     registry = read_registry(root)
     existing = registry["schemas"].get(version)
     if existing:
@@ -501,13 +777,6 @@ def add_release(root, manifest, fixture):
         return registry
     if any(entry["schema"]["model_checksum"] == schema["model_checksum"] for entry in registry["schemas"].values()):
         raise SystemExit("a new schema version cannot reuse a published model checksum")
-    entry = {
-        "platform_sha": commit, "schema": schema, "fixture_sha256": digest,
-        "fixture_path": f"{FIXTURE_DIR}/{digest}.store",
-        "namespace": "DashSchemaSnapshotV" + version.split(".")[0],
-    }
-    # Resolve and render everything before changing the registry or copying evidence.
-    render_snapshot(root, version, entry)
     destination = pathlib.Path(root, entry["fixture_path"])
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and destination.read_bytes() != fixture_bytes:
@@ -546,6 +815,8 @@ def check_problems(root, files):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--repo", help="repository containing the schema data; defaults to the current directory")
+    parser.add_argument("--check-inventory", action="store_true",
+                        help="verify the working source inventory's stored type graph without generating files")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -554,9 +825,16 @@ def main():
     parser.add_argument("--release-manifest", help="verified build manifest from the released archive")
     parser.add_argument("--fixture", help="captured SQLite store matching the manifest")
     args = parser.parse_args()
+    if args.check_inventory and (args.check or args.release_manifest or args.fixture):
+        parser.error("--check-inventory cannot be combined with --check, --release-manifest or --fixture")
     if bool(args.release_manifest) != bool(args.fixture) or (args.check and args.release_manifest):
         parser.error("--release-manifest and --fixture are required together and cannot use --check")
     root = repo_root(args.repo)
+    if args.check_inventory:
+        inventory = validate_inventory(json.loads(pathlib.Path(root, INVENTORY_FILE).read_text(encoding="utf-8")))
+        validate_storage_graph(inventory, inventory_sources(root, inventory))
+        print("Supported stored declarations reference only inventoried or standard types; native schema checks remain required")
+        return
     if args.release_manifest:
         with open(args.release_manifest, encoding="utf-8") as source:
             add_release(root, json.load(source), args.fixture)
