@@ -463,6 +463,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     whose epoch's multiplier rose beyond the tolerance (40134), so a
 ///     contract whose fees change cannot make a signed transition pay them.
 ///
+/// 21. **Elected moderation teams, the declaration and the interim**: a data
+///     contract may declare, when it is created, that its moderators are a team
+///     elected by masternodes (`ContractModerators::Elected`, a third kind
+///     beside the owner and an appointed set, in the same config V2). The
+///     declaration is frozen: the join and vote windows (one day to four weeks,
+///     one week by default) and the challenge cool-down (two weeks to three
+///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; the document
+///     types the team moderates; the abilities a charter may claim and the most
+///     it may charge the moderators part of each document action, by type; who
+///     moderates until the first team is seated (the owner, an appointed set,
+///     or nobody with the moderated types not yet usable); and whether the
+///     owner is protected from the team. `validate_moderation_config` v0 checks
+///     it against the contract's document types (10900), and
+///     `validate_config_update` 2 refuses every change to it, and entering or
+///     leaving elected moderation, with `DataContractConfigUpdateError`. The
+///     interim moderators moderate and claim the pot as the merged kinds do;
+///     with nobody named, `contract_moderation_gate` v0 refuses, paid, every
+///     document transition of a moderated type
+///     (`ContractModeratedDocumentTypeNotYetUsableError`, 41200) and nobody may
+///     claim the moderators pot, which accumulates for the team to come. No
+///     election exists yet.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

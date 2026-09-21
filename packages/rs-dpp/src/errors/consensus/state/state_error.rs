@@ -12,6 +12,7 @@ use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
+    ContractModeratedDocumentTypeNotYetUsableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
@@ -558,6 +559,10 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractUserWarningLimitReachedError(ContractUserWarningLimitReachedError),
+
+    // Elected moderation teams (protocol version 14).
+    #[error(transparent)]
+    ContractModeratedDocumentTypeNotYetUsableError(ContractModeratedDocumentTypeNotYetUsableError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1000,6 +1005,13 @@ mod tests {
                 ContractUserWarningLimitReachedError::new(group_id, identity_id, 16)
             )),
             136
+        );
+        // Elected moderation teams (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractModeratedDocumentTypeNotYetUsableError(
+                ContractModeratedDocumentTypeNotYetUsableError::new(group_id, "post".to_string())
+            )),
+            137
         );
     }
 }

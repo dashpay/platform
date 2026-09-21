@@ -34,6 +34,10 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_contract_moderation_reason_length: 1024,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
+    min_contract_moderation_election_window_seconds: 86_400, // one day
+    max_contract_moderation_election_window_seconds: 2_419_200, // four weeks
+    min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
+    max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

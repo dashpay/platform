@@ -470,6 +470,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentModerationWindowElapsedError(_) => 41116,
             Self::ContractUserNotWarnedError(_) => 41117,
             Self::ContractUserWarningLimitReachedError(_) => 41118,
+
+            // Contract moderation team errors: 41200-41299
+            Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
         }
     }
 }

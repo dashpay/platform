@@ -18,22 +18,26 @@ use drive::state_transition_action::batch::batched_transition::BatchedTransition
 use std::collections::{BTreeMap, BTreeSet};
 use v0::BatchTransitionContractModerationGateV0;
 
-/// What the gate hands back for a signer the contract bars.
+/// What the gate hands back when it refuses part or all of a signer's transitions.
 pub(super) struct ContractModerationRefusal<'a> {
-    /// The refusal of every transition the bar covers, each with its nonce bump.
+    /// The refusal of every transition the gate covers, each with its nonce bump.
     pub refused: ConsensusValidationResult<Vec<BatchedTransitionAction>>,
-    /// The signer's deletions, by document type, which the bar does not cover: a barred
-    /// identity may still take its own documents down. They carry on through the transformer.
-    pub deletions: BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
+    /// The signer's transitions, by document type, the gate lets through: under a bar its
+    /// deletions, since a barred identity may still take its own documents down, and next to
+    /// an interim block everything on the types the block does not cover. They carry on
+    /// through the transformer.
+    pub passed: BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
 }
 
 /// The contract moderation gate of the batch transformer (protocol version 14).
 pub(super) trait BatchTransitionContractModerationGate {
-    /// Gates the document transitions of `owner_id` against one contract on the contract's
-    /// moderation lists. Returns the refusal when the signer is banned or under a live
-    /// suspension and asks for anything but deletions, `None` to carry on with every
-    /// transition. A suspension found lapsed is recorded in `lapsed_suspensions` for the batch
-    /// to sweep.
+    /// Gates the document transitions of `owner_id` against one contract: on the interim
+    /// block of an elected declaration that names no interim moderators, which refuses every
+    /// transition of a moderated document type until a team is seated, and on the contract's
+    /// moderation lists. Returns the refusal when the block covers a transition, or when the
+    /// signer is banned or under a live suspension and asks for anything but deletions;
+    /// `None` to carry on with every transition. A suspension found lapsed is recorded in
+    /// `lapsed_suspensions` for the batch to sweep.
     ///
     /// Before protocol version 14 the gate does not exist (`None` in the version table) and
     /// nothing is read.
@@ -383,7 +387,7 @@ mod tests {
             .collect();
         assert_eq!(bumped_nonces, BTreeSet::from([1, 3]));
         let kept: Vec<u64> = refusal
-            .deletions
+            .passed
             .values()
             .flatten()
             .map(|transition| transition.base().identity_contract_nonce())
@@ -391,5 +395,173 @@ mod tests {
         assert_eq!(kept, vec![2]);
         // The status read was billed once for the whole batch.
         assert_eq!(execution_context.operations_slice().len(), 1);
+    }
+
+    /// An elected contract whose interim names nobody: a create on the moderated type is
+    /// refused with its nonce bump, a create on another type passes, and the lists are read
+    /// once for the batch, for the transition that passes. A batch on the moderated type
+    /// alone reads nothing.
+    #[tokio::test]
+    async fn should_block_the_moderated_types_of_an_elected_contract_in_its_interim() {
+        use crate::execution::validation::state_transition::tests::setup_identity;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::dash_to_credits;
+        use dpp::data_contract::config::moderation::{
+            ElectedModerators, InterimModerators, ModerationAbility,
+        };
+        use dpp::data_contract::document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::platform_value::Bytes32;
+        use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+        use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, key) = setup_identity(&mut platform, 32, dash_to_credits!(1));
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.set_config(contract.config().clone().with_moderation(Some(
+            ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                warnings: false,
+                moderators: ContractModerators::Elected(ElectedModerators {
+                    join_window: 604_800,
+                    vote_window: 604_800,
+                    challenge_cool_down: 1_209_600,
+                    moderated_document_types: BTreeSet::from(["niceDocument".to_string()]),
+                    abilities: BTreeSet::from([ModerationAbility::Ban]),
+                    moderators_action_fee_maximums: BTreeMap::new(),
+                    interim: InterimModerators::NotYetUsable,
+                    owner_protected: false,
+                }),
+            },
+        )));
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+
+        let mut rng = StdRng::seed_from_u64(4);
+        let mut batches = vec![];
+        for (nonce, document_type_name) in [(1u64, "niceDocument"), (2, "prettyDocument")] {
+            let document_type = contract
+                .document_type_for_name(document_type_name)
+                .expect("expected the document type");
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let mut document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::MinDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+            document
+                .set_id_for_creation(document_type, &entropy.0, nonce, platform_version)
+                .expect("expected to set the document id");
+            let batch = BatchTransition::new_document_creation_transition_from_document(
+                document,
+                document_type,
+                entropy.0,
+                &key,
+                nonce,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected a batch");
+            batches.push(batch);
+        }
+        let transitions: Vec<&DocumentTransition> = batches
+            .iter()
+            .flat_map(|batch| match batch {
+                StateTransition::Batch(batch) => batch.transitions_iter().collect::<Vec<_>>(),
+                _ => vec![],
+            })
+            .filter_map(|transition| match transition {
+                BatchedTransitionRef::Document(document_transition) => Some(document_transition),
+                BatchedTransitionRef::Token(_) => None,
+            })
+            .collect();
+        let by_type = |transitions: &[&'_ DocumentTransition]| {
+            transitions
+                .iter()
+                .map(|transition| (transition.base().document_type_name(), vec![*transition]))
+                .collect::<BTreeMap<_, _>>()
+        };
+
+        // Both types: the moderated one refused, the other passed, one read.
+        let document_transitions = by_type(&transitions);
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let refusal = BatchTransition::contract_moderation_gate(
+            &platform.drive,
+            &BlockInfo::default(),
+            &contract,
+            identity.id(),
+            &document_transitions,
+            &mut BTreeSet::new(),
+            &mut execution_context,
+            None,
+            platform_version,
+        )
+        .expect("expected the gate to run")
+        .expect("expected the moderated type to be refused");
+        assert_eq!(refusal.refused.data.as_deref().map(|a| a.len()), Some(1));
+        assert_eq!(refusal.refused.errors.len(), 1);
+        assert_eq!(refusal.refused.errors[0].code(), 41200);
+        let passed: Vec<u64> = refusal
+            .passed
+            .values()
+            .flatten()
+            .map(|transition| transition.base().identity_contract_nonce())
+            .collect();
+        assert_eq!(passed, vec![2]);
+        assert_eq!(execution_context.operations_slice().len(), 1);
+
+        // The moderated type alone: refused without a read.
+        let document_transitions = by_type(&transitions[..1]);
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let refusal = BatchTransition::contract_moderation_gate(
+            &platform.drive,
+            &BlockInfo::default(),
+            &contract,
+            identity.id(),
+            &document_transitions,
+            &mut BTreeSet::new(),
+            &mut execution_context,
+            None,
+            platform_version,
+        )
+        .expect("expected the gate to run")
+        .expect("expected the moderated type to be refused");
+        assert!(refusal.passed.is_empty());
+        assert_eq!(refusal.refused.errors.len(), 1);
+        assert!(execution_context.operations_slice().is_empty());
     }
 }
