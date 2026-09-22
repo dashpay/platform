@@ -54,11 +54,15 @@
 # Data Model
 
 - [Data Contracts](data-model/data-contracts.md)
+- [Contract Groups](data-model/contract-groups.md)
+- [Contract Moderation](data-model/contract-moderation.md)
 - [Documents](data-model/documents.md)
 - [Identities](data-model/identities.md)
+- [Key Budgets and Expiry](data-model/key-limits.md)
 
 # Drive
 
+- [The GroveDB Structure](drive/grovedb-structure.md)
 - [Grove Operations](drive/grove-operations.md)
 - [Batch Operations](drive/batch-operations.md)
 - [Cost Tracking](drive/cost-tracking.md)
@@ -72,6 +76,7 @@
 - [Average Index Examples](drive/average-index-examples.md)
 - [Document Ranked Trees](drive/document-ranked-trees.md)
 - [Ranked Index Examples](drive/ranked-index-examples.md)
+- [Time-Range Index TTL](drive/time-range-ttl.md)
 - [Index-Only Document Types](drive/index-only-document-types.md)
 
 # Testing

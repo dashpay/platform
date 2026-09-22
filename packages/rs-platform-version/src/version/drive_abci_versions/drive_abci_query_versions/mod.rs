@@ -20,6 +20,11 @@ pub struct DriveAbciQueryVersions {
     /// future protocol version may need to make without re-cutting
     /// the wire shape.
     pub document_query_helpers: DriveAbciDocumentQueryHelperVersions,
+    /// Per-helper version slots for the data contract queries. Separate from
+    /// `data_contract_based_queries` (which versions the wire surface) because
+    /// the helper output is consensus-relevant on the query path: it selects
+    /// which state elements a query reads and proves.
+    pub data_contract_query_helpers: DriveAbciDataContractQueryHelperVersions,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
     pub token_queries: DriveAbciQueryTokenVersions,
@@ -28,6 +33,8 @@ pub struct DriveAbciQueryVersions {
     pub voting_based_queries: DriveAbciQueryVotingVersions,
     pub system: DriveAbciQuerySystemVersions,
     pub group_queries: DriveAbciQueryGroupVersions,
+    pub contract_group_queries: DriveAbciQueryContractGroupVersions,
+    pub contract_moderation_queries: DriveAbciQueryContractModerationVersions,
     pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
     pub shielded_queries: DriveAbciQueryShieldedVersions,
 }
@@ -39,6 +46,21 @@ pub struct DriveAbciDocumentQueryHelperVersions {
     /// per-mode `accepts_limit()` contract. See
     /// `query::document_query::v1::compute_aggregate_mode_and_check_limit`.
     pub compute_aggregate_mode_and_check_limit: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciDataContractQueryHelperVersions {
+    /// Version of the helper that answers `getDataContractsLatestVersions`
+    /// when the contracts themselves are not requested.
+    ///
+    /// * `0`: state holds no contract version items (before protocol
+    ///   version 14); the answer is read from the serialized contracts and
+    ///   the proof is the multi-contract proof, so it carries the contracts.
+    /// * `1`: every contract has a version item beside it (`[64, id, 2] / 64`,
+    ///   written from protocol version 14 and backfilled on its first block);
+    ///   the answer is read from the item and the proof carries the items,
+    ///   four bytes per contract, instead of the contracts.
+    pub latest_versions_read: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -68,6 +90,26 @@ pub struct DriveAbciQueryGroupVersions {
     pub group_action_signers: FeatureVersionBounds,
 }
 
+/// The contract moderation queries: one identity's status on a moderated contract, one page of a
+/// contract's banlist or suspension list, and the contract's fee pots.
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryContractModerationVersions {
+    pub contract_moderation_status: FeatureVersionBounds,
+    pub contract_moderation_entries: FeatureVersionBounds,
+    pub contract_document_removals: FeatureVersionBounds,
+    /// The two fee pots a contract's document action fees collect in
+    pub contract_fee_pots: FeatureVersionBounds,
+}
+
+/// The contract group queries: a group's stored information, one page of its members of one
+/// kind, and the groups a contract belongs to.
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryContractGroupVersions {
+    pub contract_group_info: FeatureVersionBounds,
+    pub contract_group_members: FeatureVersionBounds,
+    pub contract_groups_for_contract: FeatureVersionBounds,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryAddressFundsVersions {
     pub addresses_infos: FeatureVersionBounds,
@@ -85,6 +127,7 @@ pub struct DriveAbciQueryIdentityVersions {
     pub keys: FeatureVersionBounds,
     pub identity_nonce: FeatureVersionBounds,
     pub identity_contract_nonce: FeatureVersionBounds,
+    pub keys_remaining_budgets: FeatureVersionBounds,
     pub balance: FeatureVersionBounds,
     pub identities_balances: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
@@ -112,6 +155,8 @@ pub struct DriveAbciQueryDataContractVersions {
     pub data_contract: FeatureVersionBounds,
     pub data_contract_history: FeatureVersionBounds,
     pub data_contracts: FeatureVersionBounds,
+    pub data_contracts_by_range: FeatureVersionBounds,
+    pub data_contracts_latest_versions: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -2629,8 +2629,7 @@ fn distinct_count_proof_honors_request_limit() {
 
     // 1 car per lot a..z = 26 docs; small fixture is fine since
     // we're only testing the limit, not per-lot counts.
-    let mut seed = 1u64;
-    for letter in 'a'..='z' {
+    for (seed, letter) in (1u64..).zip('a'..='z') {
         let mut doc = document_type
             .random_document(Some(seed), pv)
             .expect("random doc");
@@ -2655,7 +2654,6 @@ fn distinct_count_proof_honors_request_limit() {
                 None,
             )
             .expect("insert");
-        seed += 1;
     }
 
     let where_clauses = vec![WhereClause {
@@ -2788,8 +2786,7 @@ fn distinct_count_proof_descending_returns_last_limit_keys() {
     let document_type = contract.document_type_for_name("car").expect("car");
 
     // One car per letter a..=z.
-    let mut seed = 1u64;
-    for letter in 'a'..='z' {
+    for (seed, letter) in (1u64..).zip('a'..='z') {
         let mut doc = document_type
             .random_document(Some(seed), pv)
             .expect("random doc");
@@ -2814,7 +2811,6 @@ fn distinct_count_proof_descending_returns_last_limit_keys() {
                 None,
             )
             .expect("insert");
-        seed += 1;
     }
 
     let where_clauses = vec![WhereClause {

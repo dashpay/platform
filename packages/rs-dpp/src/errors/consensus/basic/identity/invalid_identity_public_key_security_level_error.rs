@@ -1,15 +1,27 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 use crate::identity::{KeyID, Purpose, SecurityLevel};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]
 #[platform_serialize(unversioned)]

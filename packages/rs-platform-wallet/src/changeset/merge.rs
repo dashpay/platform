@@ -159,7 +159,7 @@ mod tests {
         let mut b: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
         b.insert("x", vec![2]);
         b.insert("y", vec![3]);
-        a.merge(b);
+        Merge::merge(&mut a, b);
         assert_eq!(a.get("x"), Some(&vec![1, 2]));
         assert_eq!(a.get("y"), Some(&vec![3]));
     }

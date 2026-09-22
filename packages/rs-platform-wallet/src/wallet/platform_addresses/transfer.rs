@@ -612,7 +612,7 @@ where
         .into_iter()
         .filter(|(addr, balance)| *balance >= min_input_amount && !outputs.contains_key(addr))
         .collect();
-    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
     candidates
 }
 
@@ -728,7 +728,7 @@ fn select_inputs_deduct_from_input(
     // we pick the smallest covering prefix. Production callers pre-sort via
     // `build_auto_select_candidates`; this keeps direct test / future callers
     // from silently picking a worse prefix.
-    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
     if !matches!(
         fee_strategy,
         [AddressFundsFeeStrategyStep::DeductFromInput(0)]
@@ -946,7 +946,7 @@ fn select_inputs_reduce_output(
     // balance-descending order so the smallest balance lands last. Production
     // callers already pre-sort via `build_auto_select_candidates`, but direct
     // test / future callers would otherwise silently misbehave.
-    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
     if !matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]) {
         return Err(PlatformWalletError::AddressOperation(
             "select_inputs_reduce_output only supports fee_strategy = \
@@ -1032,7 +1032,7 @@ fn select_inputs_reduce_output(
             .iter()
             .filter(|(addr, _)| *addr != last_addr)
             .collect();
-        donor_candidates.sort_by(|a, b| b.1.cmp(&a.1));
+        donor_candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
         let donor_addr = donor_candidates
             .into_iter()
             .find(|(_, balance)| *balance >= donor_threshold)

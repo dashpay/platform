@@ -153,7 +153,7 @@ mod tests {
             .expect("expected fetch to succeed even when token missing");
 
         // Every returned entry must be None when the token tree is missing.
-        for (_, balance) in balances.iter() {
+        for balance in balances.values() {
             assert!(
                 balance.is_none(),
                 "expected all balances to be None when token tree missing"

@@ -1,9 +1,11 @@
 use crate::asset_lock::reduced_asset_lock_value::v0::AssetLockValueV0;
 use crate::fee::Credits;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
@@ -17,11 +19,13 @@ pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     From,
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
+    DecodeUntrusted,
 )]
 // Stored asset-lock values are decoded from GroveDB proof elements on the
 // client before the quorum signature is checked, so the byte budget must be
@@ -234,7 +238,7 @@ mod json_convertible_tests {
 #[cfg(test)]
 mod deserialize_limit_tests {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
     /// Bincode-encode the V0 shape by hand so the `tx_out_script` length prefix
     /// can claim more bytes than exist in the payload.
@@ -258,7 +262,7 @@ mod deserialize_limit_tests {
     #[test]
     fn rejects_script_length_prefix_beyond_budget_without_allocating() {
         let payload = payload_with_script_length(8_000_000_000);
-        let err = AssetLockValue::deserialize_from_bytes(&payload)
+        let err = AssetLockValue::deserialize_from_bytes_untrusted(&payload)
             .expect_err("oversized length prefix must be rejected");
         assert!(
             matches!(err, ProtocolError::MaxEncodedBytesReachedError { .. }),
@@ -286,7 +290,8 @@ mod deserialize_limit_tests {
         )
         .expect("value");
         let bytes = original.serialize_to_bytes().expect("serialize");
-        let recovered = AssetLockValue::deserialize_from_bytes(&bytes).expect("deserialize");
+        let recovered =
+            AssetLockValue::deserialize_from_bytes_untrusted(&bytes).expect("deserialize");
         assert_eq!(original, recovered);
     }
 }

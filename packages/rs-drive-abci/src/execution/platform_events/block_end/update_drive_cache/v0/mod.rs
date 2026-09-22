@@ -10,16 +10,15 @@ where
     C: CoreRPCLike,
 {
     /// Updates the drive cache at the end of finalize block. This does a few things like merging
-    /// the data contract cache and the platform versions cache.
+    /// the platform versions cache and releasing outgoing system contract materializations.
     ///
+    /// The data contract block cache is deliberately **not** promoted here: this runs before
+    /// the block transaction is committed, and promoting an uncommitted block's contract
+    /// definitions would both serve them to committed-state readers and reject, as stale,
+    /// committed-state copies read after the promotion but before the commit. The
+    /// `finalize_block` handler promotes it right after the commit succeeds.
     #[inline(always)]
     pub(super) fn update_drive_cache_v0(&self, block_execution_context: &BlockExecutionContext) {
-        // Update global cache with updated contracts
-        self.drive
-            .cache
-            .data_contracts
-            .merge_and_clear_block_cache();
-
         // This block is committed, so its protocol version is now the committed one and system
         // contracts materialized for anything below it can no longer be reached: `check_tx`
         // validates against the committed state, and the next block executes at the committed
@@ -212,12 +211,24 @@ mod tests {
         }
     }
 
+    /// The data contract block cache must survive this hook untouched: it is promoted by the
+    /// `finalize_block` handler only after the block transaction is committed, never before.
     #[test]
-    fn test_update_drive_cache_contracts_cache_merge() {
+    fn test_update_drive_cache_leaves_the_data_contract_block_cache_to_the_commit() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use drive::drive::contract::DataContractFetchInfo;
+        use std::sync::Arc;
+
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
+        let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+            platform_version.protocol_version,
+        ));
+        let contract_id = fetch_info.contract.id().to_buffer();
+        platform.drive.cache.data_contracts.insert_block(fetch_info);
 
         // Not an epoch change
         let epoch_info = EpochInfo::V0(EpochInfoV0 {
@@ -228,7 +239,25 @@ mod tests {
 
         let block_execution_context = make_block_execution_context(epoch_info);
 
-        // This should not panic and should successfully merge the data contracts cache
         platform.update_drive_cache_v0(&block_execution_context);
+
+        assert!(
+            platform
+                .drive
+                .cache
+                .data_contracts
+                .get(contract_id, false)
+                .is_none(),
+            "an uncommitted block's contracts must not be published to committed-state readers"
+        );
+        assert!(
+            platform
+                .drive
+                .cache
+                .data_contracts
+                .get(contract_id, true)
+                .is_some(),
+            "the block cache must still hold the block's contracts until the commit promotes them"
+        );
     }
 }

@@ -311,7 +311,7 @@ impl DocumentFactoryV0 {
     //     &self,
     //     buffer: impl AsRef<[u8]>,
     // ) -> Result<ExtendedDocument, ProtocolError> {
-    //     let document = <ExtendedDocument as PlatformDeserializable>::deserialize(buffer.as_ref())
+    //     let document = <ExtendedDocument as PlatformDeserializableUntrusted>::deserialize(buffer.as_ref())
     //         .map_err(|e| {
     //             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
     //                 SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),

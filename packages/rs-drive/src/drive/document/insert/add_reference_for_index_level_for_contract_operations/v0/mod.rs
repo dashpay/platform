@@ -1,5 +1,6 @@
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::document::{
     document_reference_size, make_document_reference, make_document_reference_with_sum_item,
     read_document_sum_contribution,
@@ -443,9 +444,6 @@ impl Drive {
         // `estimated_fees_upper_bound_actual_fees` e2e tests (like / tip /
         // beat) pin the invariant across the plain, summable and bucketed
         // shapes.
-        const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 =
-            crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 32;
-
         // Sum-bearing entries additionally carry the i64 sum item in the
         // element envelope; 10 bytes is the worst case the sum-aware space
         // helpers reserve.

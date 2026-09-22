@@ -1,8 +1,10 @@
 use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
@@ -15,7 +17,9 @@ use thiserror::Error;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Invalid State Transition signature")]
 #[platform_serialize(unversioned)]

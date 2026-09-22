@@ -1,5 +1,5 @@
 use crate::error::query::QueryError;
-use bincode::de::{Decode, Decoder};
+use bincode::de::{DecodeUntrusted, UntrustedDecoder};
 use bincode::error::DecodeError;
 use dpp::platform_value::Value;
 
@@ -41,13 +41,15 @@ const MAX_INDEX_VALUE_NESTING_DEPTH: usize = 64;
 
 struct DepthLimitedValue(Value);
 
-impl Decode<()> for DepthLimitedValue {
-    fn decode<D: Decoder<Context = ()>>(decoder: &mut D) -> Result<Self, DecodeError> {
+impl DecodeUntrusted<()> for DepthLimitedValue {
+    fn decode_untrusted<D: UntrustedDecoder<Context = ()>>(
+        decoder: &mut D,
+    ) -> Result<Self, DecodeError> {
         decode_value_at_depth(decoder, 0).map(Self)
     }
 }
 
-fn decode_value_at_depth<D: Decoder<Context = ()>>(
+fn decode_value_at_depth<D: UntrustedDecoder<Context = ()>>(
     decoder: &mut D,
     depth: usize,
 ) -> Result<Value, DecodeError> {
@@ -57,27 +59,27 @@ fn decode_value_at_depth<D: Decoder<Context = ()>>(
         ));
     }
 
-    Ok(match u32::decode(decoder)? {
-        0 => Value::U128(u128::decode(decoder)?),
-        1 => Value::I128(i128::decode(decoder)?),
-        2 => Value::U64(u64::decode(decoder)?),
-        3 => Value::I64(i64::decode(decoder)?),
-        4 => Value::U32(u32::decode(decoder)?),
-        5 => Value::I32(i32::decode(decoder)?),
-        6 => Value::U16(u16::decode(decoder)?),
-        7 => Value::I16(i16::decode(decoder)?),
-        8 => Value::U8(u8::decode(decoder)?),
-        9 => Value::I8(i8::decode(decoder)?),
-        10 => Value::Bytes(Vec::<u8>::decode(decoder)?),
-        11 => Value::Bytes20(<[u8; 20]>::decode(decoder)?),
-        12 => Value::Bytes32(<[u8; 32]>::decode(decoder)?),
-        13 => Value::Bytes36(<[u8; 36]>::decode(decoder)?),
-        14 => Value::EnumU8(Vec::<u8>::decode(decoder)?),
-        15 => Value::EnumString(Vec::<String>::decode(decoder)?),
-        16 => Value::Identifier(<[u8; 32]>::decode(decoder)?),
-        17 => Value::Float(f64::decode(decoder)?),
-        18 => Value::Text(String::decode(decoder)?),
-        19 => Value::Bool(bool::decode(decoder)?),
+    Ok(match u32::decode_untrusted(decoder)? {
+        0 => Value::U128(u128::decode_untrusted(decoder)?),
+        1 => Value::I128(i128::decode_untrusted(decoder)?),
+        2 => Value::U64(u64::decode_untrusted(decoder)?),
+        3 => Value::I64(i64::decode_untrusted(decoder)?),
+        4 => Value::U32(u32::decode_untrusted(decoder)?),
+        5 => Value::I32(i32::decode_untrusted(decoder)?),
+        6 => Value::U16(u16::decode_untrusted(decoder)?),
+        7 => Value::I16(i16::decode_untrusted(decoder)?),
+        8 => Value::U8(u8::decode_untrusted(decoder)?),
+        9 => Value::I8(i8::decode_untrusted(decoder)?),
+        10 => Value::Bytes(Vec::<u8>::decode_untrusted(decoder)?),
+        11 => Value::Bytes20(<[u8; 20]>::decode_untrusted(decoder)?),
+        12 => Value::Bytes32(<[u8; 32]>::decode_untrusted(decoder)?),
+        13 => Value::Bytes36(<[u8; 36]>::decode_untrusted(decoder)?),
+        14 => Value::EnumU8(Vec::<u8>::decode_untrusted(decoder)?),
+        15 => Value::EnumString(Vec::<String>::decode_untrusted(decoder)?),
+        16 => Value::Identifier(<[u8; 32]>::decode_untrusted(decoder)?),
+        17 => Value::Float(f64::decode_untrusted(decoder)?),
+        18 => Value::Text(String::decode_untrusted(decoder)?),
+        19 => Value::Bool(bool::decode_untrusted(decoder)?),
         20 => Value::Null,
         21 => Value::Array(decode_array_at_depth(decoder, depth)?),
         22 => Value::Map(decode_map_at_depth(decoder, depth)?),
@@ -85,35 +87,43 @@ fn decode_value_at_depth<D: Decoder<Context = ()>>(
     })
 }
 
-fn decode_array_at_depth<D: Decoder<Context = ()>>(
+fn decode_array_at_depth<D: UntrustedDecoder<Context = ()>>(
     decoder: &mut D,
     depth: usize,
 ) -> Result<Vec<Value>, DecodeError> {
-    let len = usize::decode(decoder)?;
+    let len = usize::decode_untrusted(decoder)?;
     decoder.claim_container_read::<Value>(len)?;
 
-    let mut values = Vec::with_capacity(len);
+    let mut values = Vec::new();
     for _ in 0..len {
         decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
-        values.push(decode_value_at_depth(decoder, depth + 1)?);
+        let value = decode_value_at_depth(decoder, depth + 1)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| DecodeError::LimitExceeded)?;
+        values.push(value);
     }
     Ok(values)
 }
 
-fn decode_map_at_depth<D: Decoder<Context = ()>>(
+fn decode_map_at_depth<D: UntrustedDecoder<Context = ()>>(
     decoder: &mut D,
     depth: usize,
 ) -> Result<Vec<(Value, Value)>, DecodeError> {
-    let len = usize::decode(decoder)?;
+    let len = usize::decode_untrusted(decoder)?;
     decoder.claim_container_read::<(Value, Value)>(len)?;
 
-    let mut values = Vec::with_capacity(len);
+    let mut values = Vec::new();
     for _ in 0..len {
         decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
-        values.push((
+        let pair = (
             decode_value_at_depth(decoder, depth + 1)?,
             decode_value_at_depth(decoder, depth + 1)?,
-        ));
+        );
+        values
+            .try_reserve(1)
+            .map_err(|_| DecodeError::LimitExceeded)?;
+        values.push(pair);
     }
     Ok(values)
 }
@@ -176,7 +186,8 @@ where
             .with_limit::<MAX_DECODED_INDEX_VALUE_BYTES>();
 
         let (DepthLimitedValue(value), consumed) =
-            bincode::decode_from_slice::<DepthLimitedValue, _>(serialized_value, config).ok()?;
+            bincode::decode_from_slice_untrusted::<DepthLimitedValue, _>(serialized_value, config)
+                .ok()?;
 
         // Reject trailing bytes so each encoded cursor value is canonical.
         if consumed != serialized_value.len() {

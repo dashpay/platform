@@ -16,6 +16,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Facades](#facades)
 - [Ranked queries](#ranked-queries)
 - [Document references (`refersTo`)](#document-references-refersto)
+- [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
@@ -77,6 +78,8 @@ Static helpers are also exported:
 
 - `await EvoSDK.setLogLevel(filter)` — configure the underlying Wasm SDK's tracing globally.
 - `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
+- `sdk.version()` — the protocol version this SDK currently uses. Unpinned SDKs seed at a per-network floor (13 on mainnet, testnet and local; 14 on devnets) and ratchet upward from verified response metadata. On mainnet and testnet the Wasm SDK persists the learned version in `localStorage` under `dash-sdk.protocol-version.<network>` and seeds the next SDK with it, so the first proved request of a later page load already runs at the network's version. Passing `version` pins the SDK and disables both the ratchet and the persistence.
+- Data contracts fetched through the SDK are cached in the trusted context and, on mainnet and testnet, persisted in `localStorage` under `dash-sdk.contracts.<network>`. The next SDK seeds its cache from that store, so the first proved document query of a later page load needs no contract round trip. A document stamped with a newer `$contractVersion` than the cached contract drops the entry and refetches the contract; `removeCachedContract` clears both the cache and the stored copy.
 - `await EvoSDK.maxRankedLimit()` — the hard ceiling on a [ranked / having-range](#ranked-queries) `limit`.
 - `await EvoSDK.rankedAverageScale()` — the fixed-point divisor for the `avg` axis of a ranked / having-range result.
 - `await EvoSDK.maxPrefixInBranches()` — the hard ceiling on the element count of a branching `in` [prefix pin](#ranked-queries).
@@ -154,6 +157,30 @@ A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested 
 
 `sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
 
+## Contracts the app already holds
+
+An app knows its contracts at build time. Instead of fetching them on every load, bundle a snapshot (`contract.toBase64(platformVersion)`), seed the SDK with it, and confirm off the critical path that the snapshot is still current:
+
+```ts
+import { DataContract, PlatformVersion } from '@dashevo/evo-sdk';
+
+// Seed: no round trip before the first document query, and the seeded
+// contracts are persisted like fetched ones.
+for (const { bytes } of bundledContracts) {
+  await sdk.contracts.addKnown(DataContract.fromBase64(bytes, true, PlatformVersion.latest()));
+}
+
+// Revalidate after first paint, proved. Versions only: the contracts come
+// back only for the ids that changed.
+const latest = await sdk.contracts.getLatestVersions({ contractIds: bundledContracts.map((c) => c.id) });
+const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
+if (stale.length > 0) {
+  await sdk.contracts.getMany(stale); // replaces the seeded entries in the cache
+}
+```
+
+A seeded contract that the network has since updated is also caught without the check: the SDK drops a cached contract on the first document stamped with a newer `$contractVersion` (see the contract cache note above), and the next query fetches the current one.
+
 ## Document references (`refersTo`)
 
 Also from protocol version 14, an identifier property can declare what it points at. This is a write-time consensus constraint — nothing resolves a reference for a reader — but a fetched contract can be asked what it declares:
@@ -167,12 +194,19 @@ for (const ref of contract.documentTypeReferences('note')) {
   // equality binding between the two documents' properties:
   // { path: 'postId', type: 'permanentDocument', contractId, documentType: 'post',
   //   propertyAgreement: { hashtag: 'hashtag' } }
+  // The referenced side may also name the referenced document's `$ownerId`
+  // or `$creatorId`, e.g. `propertyAgreement: { authorId: '$ownerId' }`, and
+  // the referring side may be the writer's own `$ownerId`: a write gate such
+  // as `{ '$ownerId': '$ownerId' }` lets only the referenced document's
+  // current owner create or replace the referring document.
   console.log(ref.path, ref.type);
 }
 
 // Every document type that declares at least one reference.
 contract.documentReferences;
 ```
+
+A document reference comes in two strengths. `permanentDocument` requires the referenced document type to declare `canBeDeleted: false`, so a reference that was accepted keeps resolving. `deletableDocument` takes the same declaration (`contractId`, `documentType`, `propertyAgreement`) and is its disjoint counterpart: the referenced type must allow deletion (`ReferencedDocumentTypeNotDeletable`, 40131, otherwise). The referenced document must exist, and the agreement must hold, when the referring document is written, but it may be deleted afterwards. Nothing blocks that deletion and nothing cleans up after it, so a reader must expect such a reference to resolve to nothing. It can never start resolving to different content: a document id commits to the nonce of its create transition, so a deleted id can not be created again. A writer may not leave it that way: every replace of the referring document re-validates the reference, touched or not, so once the target is gone the replace has to repoint it at a document that exists or clear it (`ReferencedEntityNotFound` otherwise). A writer gate is then checked against the new target, never against a missing one. On an `immutable` property clearing is the only move, and the immutable check lets that one change through. The referring document can always be deleted. A property cannot switch between the two on a contract update, and `preallocated` indexes are only available through `permanentDocument`.
 
 Declarations are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports none even when its raw schema carries the keyword.
 
@@ -190,9 +224,41 @@ try {
 }
 ```
 
+## Immutable properties (`immutable`)
+
+From protocol version 14 a mutable document type can freeze some of its top-level properties at creation with the doctype-level `immutable` list, while the rest of the document stays replaceable. A second list, `immutableAllowSetting`, names the frozen properties a replace may still set while the stored document has no value for them; once present they are frozen too. Both are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
+
+```ts
+const contract = await sdk.contracts.fetch(contractId);
+
+contract.documentTypeImmutableProperties('post');
+// { immutable: ['author', 'mood'], immutableAllowSetting: ['mood'] }
+// Both arrays hold top-level property names, sorted. Listing an object
+// property freezes it whole, nested values included.
+
+// Every document type that freezes at least one property.
+contract.documentImmutableProperties;
+```
+
+The lists are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports empty lists even when its raw schema carries the keywords.
+
+A replace that changes, adds or removes a frozen property is rejected, and the consensus code reaches JS as `error.code`:
+
+```ts
+import { DocumentImmutabilityErrorCode } from '@dashevo/evo-sdk';
+
+try {
+  await sdk.documents.replace({ document, identityKey, signer });
+} catch (e) {
+  if (e.code === DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged) {
+    // the replace touched a property the document type freezes (code 40128)
+  }
+}
+```
+
 ## Chained queries (provable semi-join)
 
-A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents (a missing referenced document fails verification outright, since `permanentDocument` references cannot dangle).
+A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents. For a `permanentDocument` join property a missing referenced document fails verification outright, since such a reference cannot dangle. For a `deletableDocument` join property a referenced document that was deleted since is proven absent: it has no entry in `outerDocuments` (so match the two halves by id, not by position) and its id is listed in `missingOuterIds`, in first-appearance order. The node still cannot pass an existing document off as deleted.
 
 ```ts
 // The posts I liked, newest page first by postId.
@@ -222,13 +288,13 @@ const next = await sdk.documents.chained({
 });
 ```
 
-The inner query must target an indexOnly document type and resolve to an index carrying `joinProperty`, and `joinProperty` must declare a same-contract `refersTo: permanentDocument` targeting `outerDocumentType`. `innerLimit` is required — it bounds the derived outer fetch, so there is no server-default fallback. There are no outer-side clauses by design; filter `outerDocuments` locally. `sdk.documents.chainedWithProof(...)` returns the same result with the metadata and proof envelope attached.
+The inner query must target an indexOnly document type and resolve to an index carrying `joinProperty`, and `joinProperty` must declare a same-contract `refersTo: permanentDocument` or `refersTo: deletableDocument` targeting `outerDocumentType`. `innerLimit` is required — it bounds the derived outer fetch, so there is no server-default fallback. There are no outer-side clauses by design; filter `outerDocuments` locally. `sdk.documents.chainedWithProof(...)` returns the same result with the metadata and proof envelope attached.
 
 ## Composite queries (a page plus its sub-queries)
 
 A **composite query** answers a page and everything a UI needs to render it in ONE verified round trip: the page documents, plus one to ten sub-queries whose `IN` clause the node derives from the proven page (or from an earlier `documents` sub-query). The request never names the derived values. Four sub-query shapes exist:
 
-- a **by-id join** (`bind.field: '$id'`): the documents a page property refers to (the property must declare `refersTo: permanentDocument` targeting the sub-query's type, so a missing document fails verification);
+- a **by-id join** (`bind.field: '$id'`): the documents a page property refers to (the property must declare `refersTo: permanentDocument` or `refersTo: deletableDocument` targeting the sub-query's type; a missing document fails verification for the former; for the latter it is proven absent, left out of `documents` and listed in that sub-result's `missingIds`);
 - an **indexed lookup** (`bind.field` an indexed property or `$ownerId`): documents keyed by a page value, in this or any other contract, with a `limit` on the rows it returns in total unless the index already bounds them (a unique index, or an indexOnly terminal with every prefix fixed);
 - a **count** (`kind: 'counts'`): one count per page value from a `countable` index covering the fixed clauses plus the bound field;
 - a **sibling** (no `bind`): an independent documents query proven under the same root.

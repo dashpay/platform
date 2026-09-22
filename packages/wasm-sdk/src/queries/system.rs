@@ -29,6 +29,10 @@ export type GroveElementType =
   | "provableCountTree"
   | "itemWithSumItem"
   | "referenceWithSumItem"
+  | "bidirectionalReference"
+  | "itemWithBackwardsReferences"
+  | "sumItemWithBackwardsReferences"
+  | "itemWithSumItemWithBackwardsReferences"
   | "provableCountSumTree"
   | "provableCountProvableSumTree"
   | "provableSumTree"
@@ -857,8 +861,10 @@ fn set_js_property(object: &Object, property: &str, value: &JsValue) -> Result<(
 
 fn element_value_bytes(element: &Element) -> Option<Vec<u8>> {
     match element {
-        Element::Item(bytes, _) => Some(bytes.clone()),
-        Element::ItemWithSumItem(bytes, _, _) => Some(bytes.clone()),
+        Element::Item(bytes, _)
+        | Element::ItemWithBackwardsReferences(bytes, _, _)
+        | Element::ItemWithSumItem(bytes, _, _)
+        | Element::ItemWithSumItemWithBackwardsReferences(bytes, _, _, _) => Some(bytes.clone()),
         Element::NonCounted(inner)
         | Element::NotSummed(inner)
         | Element::NotCountedOrSummed(inner) => element_value_bytes(inner),
@@ -868,7 +874,9 @@ fn element_value_bytes(element: &Element) -> Option<Vec<u8>> {
 
 fn element_sum(element: &Element) -> Option<i128> {
     match element {
-        Element::SumItem(sum, _) => Some(*sum as i128),
+        Element::SumItem(sum, _)
+        | Element::SumItemWithBackwardsReferences(sum, _, _)
+        | Element::ItemWithSumItemWithBackwardsReferences(_, sum, _, _) => Some(*sum as i128),
         Element::SumTree(_, sum, _) => Some(*sum as i128),
         Element::BigSumTree(_, sum, _) => Some(*sum),
         Element::CountSumTree(_, _, sum, _) => Some(*sum as i128),
@@ -901,16 +909,21 @@ fn element_reference_target(
 ) -> (Option<Vec<Vec<u8>>>, Option<String>) {
     match element {
         Element::Reference(reference_path, _, _)
-        | Element::ReferenceWithSumItem(reference_path, _, _, _) => {
-            match path_from_reference_path_type(reference_path.clone(), parent_path, Some(key)) {
-                Ok(target) => (Some(target), None),
-                Err(error) => {
-                    let message = error.to_string();
-                    tracing::warn!("failed to resolve GroveDB reference target: {}", message);
-                    (None, Some(message))
-                }
+        | Element::ReferenceWithSumItem(reference_path, _, _, _)
+        | Element::BidirectionalReference(
+            dash_sdk::drive::grovedb::element::BidirectionalReference {
+                forward_reference_path: reference_path,
+                ..
+            },
+            _,
+        ) => match path_from_reference_path_type(reference_path.clone(), parent_path, Some(key)) {
+            Ok(target) => (Some(target), None),
+            Err(error) => {
+                let message = error.to_string();
+                tracing::warn!("failed to resolve GroveDB reference target: {}", message);
+                (None, Some(message))
             }
-        }
+        },
         Element::NonCounted(inner)
         | Element::NotSummed(inner)
         | Element::NotCountedOrSummed(inner) => element_reference_target(inner, parent_path, key),
@@ -920,6 +933,12 @@ fn element_reference_target(
 
 fn element_type_name(element: &Element) -> &'static str {
     match element {
+        Element::BidirectionalReference(_, _) => "bidirectionalReference",
+        Element::ItemWithBackwardsReferences(_, _, _) => "itemWithBackwardsReferences",
+        Element::SumItemWithBackwardsReferences(_, _, _) => "sumItemWithBackwardsReferences",
+        Element::ItemWithSumItemWithBackwardsReferences(_, _, _, _) => {
+            "itemWithSumItemWithBackwardsReferences"
+        }
         Element::Item(_, _) => "item",
         Element::Reference(_, _, _) => "reference",
         Element::Tree(_, _) => "tree",
@@ -953,6 +972,11 @@ fn element_type_name(element: &Element) -> &'static str {
 
 fn non_counted_element_type_name(element: &Element) -> &'static str {
     match element {
+        // GroveDB rejects aggregation wrappers around these variants.
+        Element::BidirectionalReference(_, _)
+        | Element::ItemWithBackwardsReferences(_, _, _)
+        | Element::SumItemWithBackwardsReferences(_, _, _)
+        | Element::ItemWithSumItemWithBackwardsReferences(_, _, _, _) => element_type_name(element),
         Element::Item(_, _) => "nonCountedItem",
         Element::Reference(_, _, _) => "nonCountedReference",
         Element::Tree(_, _) => "nonCountedTree",
@@ -1733,6 +1757,35 @@ impl WasmSdk {
 mod tests {
     use super::*;
     use dash_sdk::drive::grovedb::element::reference_path::ReferencePathType;
+
+    #[test]
+    fn should_render_bidirectional_elements_without_losing_payloads() {
+        let item = Element::new_item_allowing_bidirectional_references(vec![1, 2]);
+        let sum = Element::new_sum_item_allowing_bidirectional_references(-3);
+        let combined =
+            Element::new_item_with_sum_item_allowing_bidirectional_references(vec![4, 5], 6);
+        let reference = Element::new_bidirectional_reference(ReferencePathType::SiblingReference(
+            b"target".to_vec(),
+        ));
+        let union = typescript_element_type_union();
+        for (element, name) in [
+            (&item, "itemWithBackwardsReferences"),
+            (&sum, "sumItemWithBackwardsReferences"),
+            (&combined, "itemWithSumItemWithBackwardsReferences"),
+            (&reference, "bidirectionalReference"),
+        ] {
+            assert_eq!(element_type_name(element), name);
+            assert!(union.contains(&format!("\"{name}\"")));
+        }
+        assert_eq!(element_value_bytes(&item), Some(vec![1, 2]));
+        assert_eq!(element_sum(&sum), Some(-3));
+        assert_eq!(element_value_bytes(&combined), Some(vec![4, 5]));
+        assert_eq!(element_sum(&combined), Some(6));
+        assert_eq!(
+            element_reference_target(&reference, &[b"parent".to_vec()], b"source"),
+            (Some(vec![b"parent".to_vec(), b"target".to_vec()]), None),
+        );
+    }
 
     #[test]
     fn should_decode_raw_bytes_without_utf8_expansion() {

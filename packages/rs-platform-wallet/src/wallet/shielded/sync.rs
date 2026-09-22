@@ -96,9 +96,16 @@ pub struct ShieldedSyncSummary {
 }
 
 impl ShieldedSyncSummary {
-    /// Sum of unspent balances across accounts.
-    pub fn balance_total(&self) -> u64 {
-        self.balances.values().copied().sum()
+    /// Sum of unspent balances across accounts, rejecting an unrepresentable
+    /// wallet total even when every individual account balance fits in `u64`.
+    pub fn balance_total(&self) -> Result<u64, PlatformWalletError> {
+        self.balances.values().try_fold(0u64, |total, balance| {
+            total.checked_add(*balance).ok_or_else(|| {
+                PlatformWalletError::ShieldedStoreError(
+                    "wallet-wide shielded balance exceeds u64".to_string(),
+                )
+            })
+        })
     }
 
     /// Sum of newly-spent counts across accounts.
@@ -791,10 +798,10 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
     let store = store.read().await;
     let mut out: BTreeMap<SubwalletId, u64> = BTreeMap::new();
     for (id, _) in subwallets {
-        let notes = store
-            .get_unspent_notes(*id)
+        let balance = store
+            .spendable_balance(*id)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        out.insert(*id, notes.iter().map(|n| n.value).sum());
+        out.insert(*id, balance);
     }
     Ok(out)
 }
@@ -846,11 +853,47 @@ fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::apply_scanned_nullifier_spends;
+    use super::{apply_scanned_nullifier_spends, balances_across, ShieldedSyncSummary};
     use crate::changeset::ShieldedChangeSet;
+    use crate::error::PlatformWalletError;
+    use crate::wallet::shielded::keys::OrchardKeySet;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId,
     };
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[test]
+    fn should_check_wallet_wide_balance_overflow() {
+        let mut summary = ShieldedSyncSummary::default();
+        assert_eq!(summary.balance_total().unwrap(), 0);
+        summary.balances = BTreeMap::from([(0, u64::MAX - 1), (1, 1)]);
+        assert_eq!(summary.balance_total().unwrap(), u64::MAX);
+        summary.balances.insert(2, 1);
+        assert!(matches!(summary.balance_total(),
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("wallet-wide shielded balance exceeds u64")));
+    }
+
+    #[tokio::test]
+    async fn should_propagate_account_balance_overflow_from_sync_read() {
+        let mut store = InMemoryShieldedStore::new();
+        let mut note = received_note([1; 32], 0);
+        note.value = u64::MAX;
+        store.save_note(sub(0), &note).unwrap();
+        note.nullifier = [2; 32];
+        note.position = 1;
+        note.value = 1;
+        store.save_note(sub(0), &note).unwrap();
+        let store = Arc::new(RwLock::new(store));
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], dashcore::Network::Testnet, 0)
+            .unwrap()
+            .viewing_keys();
+        assert!(matches!(balances_across(&store, &[(sub(0), keys)]).await,
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("exceeds u64")));
+    }
 
     fn sub(account: u32) -> SubwalletId {
         SubwalletId::new([0xCC; 32], account)

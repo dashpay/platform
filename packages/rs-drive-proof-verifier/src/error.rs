@@ -1,5 +1,6 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
+use drive::error::proof::ProofError;
 use drive::grovedb::Error as GroveError;
 use drive::query::PathQuery;
 
@@ -43,6 +44,20 @@ pub enum Error {
     /// No proof in response
     #[error("no proof in result")]
     NoProofInResult,
+
+    /// GroveDB proof envelope older than the floor the protocol version sets in
+    /// `SystemLimits::minimum_grovedb_proof_envelope_version`; the payload is
+    /// refused before Drive verifies it.
+    #[error(
+        "unsupported GroveDB proof envelope version {version} in the {proof}: protocol version {protocol_version} requires at least version {minimum}"
+    )]
+    UnsupportedGroveDBProofVersion {
+        /// Which proof was being read: "proof", "predecessor proof", "forward proof"
+        proof: &'static str,
+        version: u32,
+        minimum: u32,
+        protocol_version: u32,
+    },
 
     /// Requested object not found
     #[error("requested object not found")]
@@ -99,8 +114,21 @@ pub enum Error {
 
 impl From<drive::error::Error> for Error {
     fn from(error: drive::error::Error) -> Self {
-        Self::DriveError {
-            error: error.to_string(),
+        match error {
+            drive::error::Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                proof,
+                version,
+                minimum,
+                protocol_version,
+            }) => Self::UnsupportedGroveDBProofVersion {
+                proof,
+                version,
+                minimum,
+                protocol_version,
+            },
+            error => Self::DriveError {
+                error: error.to_string(),
+            },
         }
     }
 }

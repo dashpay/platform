@@ -19,7 +19,7 @@ use platform_value::BinaryData;
 
 use crate::address_funds::{AddressWitness, PlatformAddress};
 use crate::identity::signer::Signer;
-use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
 use crate::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 use crate::state_transition::StateTransition;
@@ -662,8 +662,9 @@ async fn test_signed_transition_serialization_roundtrip() {
         .expect("should serialize");
 
     // Deserialize
-    let deserialized = AddressFundsTransferTransitionV0::deserialize_from_bytes(&serialized)
-        .expect("should deserialize");
+    let deserialized =
+        AddressFundsTransferTransitionV0::deserialize_from_bytes_untrusted(&serialized)
+            .expect("should deserialize");
 
     // Verify equality
     assert_eq!(transition, deserialized);
@@ -706,8 +707,9 @@ async fn test_multisig_transition_serialization_roundtrip() {
     let serialized = AddressFundsTransferTransitionV0::serialize_to_bytes(&transition)
         .expect("should serialize");
 
-    let deserialized = AddressFundsTransferTransitionV0::deserialize_from_bytes(&serialized)
-        .expect("should deserialize");
+    let deserialized =
+        AddressFundsTransferTransitionV0::deserialize_from_bytes_untrusted(&serialized)
+            .expect("should deserialize");
 
     assert_eq!(transition, deserialized);
     verify_transition_signatures(&deserialized).expect("signatures should still be valid");
@@ -749,8 +751,9 @@ async fn test_mixed_transition_serialization_roundtrip() {
     let serialized = AddressFundsTransferTransitionV0::serialize_to_bytes(&transition)
         .expect("should serialize");
 
-    let deserialized = AddressFundsTransferTransitionV0::deserialize_from_bytes(&serialized)
-        .expect("should deserialize");
+    let deserialized =
+        AddressFundsTransferTransitionV0::deserialize_from_bytes_untrusted(&serialized)
+            .expect("should deserialize");
 
     assert_eq!(transition, deserialized);
     verify_transition_signatures(&deserialized).expect("signatures should still be valid");

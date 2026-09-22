@@ -8,6 +8,7 @@ use crate::execution::validation::state_transition::identity_create::StateTransi
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
 use crate::execution::validation::state_transition::identity_create_from_shielded_pool::StateTransitionIdentityCreateFromShieldedPoolTransitionActionTransformer;
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
+use crate::execution::validation::state_transition::identity_top_up_from_shielded_pool::StateTransitionIdentityTopUpFromShieldedPoolTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
 use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
@@ -19,6 +20,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
@@ -69,6 +71,67 @@ pub trait StateTransitionActionTransformer {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
+/// Transforms a state transition into its action when the translation depends on who signed it.
+///
+/// The action is the state-based translation of the transition, and part of that state can hang
+/// on the signing key: a batch signed by an AUTHENTICATION key bound to a contract group needs
+/// the group memberships of the contracts it touches, and no other batch does. This trait hands
+/// the transformer the signer's already loaded identity, so that state is read only when it is
+/// needed. [`StateTransitionActionTransformer`] stays as it is, per its versioning note; every
+/// transition other than a batch is transformed through it.
+pub trait StateTransitionSignerAwareActionTransformer {
+    /// Like [`StateTransitionActionTransformer::transform_into_action`], with the identity the
+    /// signature was validated against, when the caller holds one.
+    #[allow(clippy::too_many_arguments)] // The unversioned trait's inputs plus the signer.
+    fn transform_into_action_for_signer<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl StateTransitionSignerAwareActionTransformer for StateTransition {
+    fn transform_into_action_for_signer<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        match self {
+            StateTransition::Batch(st) => st.transform_into_action_for_signer(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                signer_identity,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            _ => self.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+        }
+    }
+}
+
 impl StateTransitionActionTransformer for StateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
@@ -109,6 +172,30 @@ impl StateTransitionActionTransformer for StateTransition {
                 )
             }
             StateTransition::IdentityUpdate(st) => st.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::ContractUserModeration(st) => st.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::ContractFeeClaim(st) => st.transform_into_action(
                 platform,
                 block_info,
                 remaining_address_input_balances,
@@ -253,9 +340,21 @@ impl StateTransitionActionTransformer for StateTransition {
             StateTransition::ShieldedTransfer(st) => {
                 st.transform_into_action_for_shielded_transfer_transition(platform, tx)
             }
+            StateTransition::ShieldFromIdentity(st) => st.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             StateTransition::Unshield(st) => {
                 st.transform_into_action_for_unshield_transition(platform, tx)
             }
+            StateTransition::IdentityTopUpFromShieldedPool(st) => st
+                .transform_into_action_for_identity_top_up_from_shielded_pool_transition(
+                    platform, tx,
+                ),
             StateTransition::ShieldFromAssetLock(st) => {
                 let signable_bytes = self.signable_bytes()?;
                 st.transform_into_action_for_shield_from_asset_lock_transition(

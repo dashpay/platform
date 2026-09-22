@@ -1,12 +1,24 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Asset Lock Transaction Output with index {output_index} not found")]
 #[platform_serialize(unversioned)]

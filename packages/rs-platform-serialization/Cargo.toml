@@ -8,5 +8,5 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-bincode = { version = "=2.0.1", features = ["serde"] }
+bincode = { workspace = true, features = ["serde"] }
 platform-version = { path = "../rs-platform-version" }

@@ -48,7 +48,7 @@ anyhow = { version = "1.0.75" }
 # required, cargo-machete false positive
 wasm-bindgen-futures = "0.4.58"
 async-trait = "0.1.59"
-bincode = { version = "=2.0.1" }
+bincode = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]

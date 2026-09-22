@@ -1,10 +1,12 @@
 use crate::data_contract::TokenContractPosition;
 use crate::tokens::contract_info::v0::TokenContractInfoV0;
 use crate::ProtocolError;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization::de::Decode;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
@@ -17,11 +19,13 @@ pub mod v0;
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[cfg_attr(

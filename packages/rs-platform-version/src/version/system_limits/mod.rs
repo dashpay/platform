@@ -79,7 +79,46 @@ pub struct SystemLimits {
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`
     /// in each `SYSTEM_LIMITS_V*`.
     pub min_withdrawal_amount: u64,
-    pub max_contract_group_size: u16,
+    /// Core's dust relay fee rate in duffs per kilobyte, from which the per-output dust
+    /// threshold Core's mempool enforces is derived (Core's `GetDustThreshold`: the fee at
+    /// this rate of the serialized output plus the input that would spend it, 546 duffs for
+    /// a P2PKH output at the default 3000 duffs/kB). From protocol version 14 an expired
+    /// withdrawal whose whole amount is below the threshold of its output script is marked
+    /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
+    /// method version 2). `None` for the protocol versions that predate the rule.
+    pub core_dust_relay_fee_per_kb: Option<u64>,
+    /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
+    /// `None` preserves the behavior of protocol versions that predate this limit.
+    pub max_core_fee_per_byte: Option<u32>,
+    /// Maximum number of members a change-control `Group` declared inside a data contract may
+    /// have (the groups token change-control rules delegate to). Not to be confused with
+    /// contract groups, the identity-owned sets of contracts below.
+    pub max_group_member_count: u16,
+    /// Maximum number of contract group memberships one data contract create transition may
+    /// declare. Contract groups exist from protocol version 14; earlier versions never reach
+    /// the check.
+    pub max_contract_group_memberships_per_contract: u16,
+    /// Maximum number of admins a contract group may name besides its owner.
+    pub max_contract_group_admins: u16,
+    /// Maximum length, in characters, of a contract group name.
+    pub max_contract_group_name_length: u16,
+    /// Maximum length, in characters, of a contract group description.
+    pub max_contract_group_description_length: u16,
+    /// Maximum number of moderator identities a moderated data contract may name
+    /// (`DataContractConfigV2::moderation`); the owner counts when it is named, and moderates
+    /// without being named. Contract moderation exists from protocol
+    /// version 14; read by the contract's `validate_moderation_config` v0 and never reached
+    /// before.
+    pub max_contract_moderators: u16,
+    /// Latest block time, in milliseconds, a contract suspension may run until: 2^53 - 1, the
+    /// largest integer JSON and JavaScript numbers hold exactly, which is how `until` travels
+    /// to clients. Read by the `ContractUserModeration` basic structure validation v0
+    /// (protocol version 14) and never reached before.
+    pub max_contract_suspension_until: u64,
+    /// Maximum length, in bytes of UTF-8, of the text of the reason a ban or a suspension
+    /// carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
+    /// structure validation v0 (protocol version 14) and never reached before.
+    pub max_contract_moderation_reason_length: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
@@ -100,6 +139,40 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// Maximum time-to-live (in seconds) a `timeRange` index transform may
+    /// declare, enforced at contract registration.
+    ///
+    /// The cap is what makes the TTL fee model safe: entries under a TTL'd
+    /// index bill their bytes as processing (the ephemeral-bytes rate)
+    /// instead of storage, and a flat rate is only an honest price while
+    /// the lifetime it covers is bounded. One week in V4.
+    /// See `book/src/drive/time-range-ttl.md`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the
+    /// `ttl` key (nothing to bound: the key does not parse there).
+    pub max_time_range_ttl_seconds: Option<u64>,
+    /// Minimum per-write drainage budget for a TTL'd time-range grid.
+    /// Drive raises this floor to twice the maximum trees one document
+    /// can create in the grid's merged index structure, times its overlap
+    /// factor. This gives cleanup capacity above the tree creation rate,
+    /// including shared grids and deep suffixes. Each drop is O(1).
+    /// `None` disables cleanup on versions predating the `ttl` key.
+    pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
+    /// Lowest GroveDB proof envelope version a client accepts from a
+    /// current-state response.
+    ///
+    /// Read by `drive-proof-verifier`'s `supported_grovedb_proof_bytes` and
+    /// `verify_tenderdash_proof`, by `wasm-drive-verify`'s
+    /// `supported_grovedb_proof`, and by Drive's
+    /// `verify_compacted_address_balance_changes` v1 for its nested proofs.
+    ///
+    /// `0` keeps accepting the legacy V0 envelope. Protocol version 14 raises
+    /// the floor to `1`: V0's item binding lets a prover return different
+    /// item bytes under the same authenticated root, so a quorum signature on
+    /// the root does not make a V0 payload safe. GroveDB emits V1 from grove
+    /// version 3 (protocol version 13), so every live network already serves
+    /// V1 by the time the floor applies.
+    pub minimum_grovedb_proof_envelope_version: u32,
 }
 
 #[cfg(test)]
@@ -193,6 +266,67 @@ mod tests {
                 .system_limits
                 .max_document_value_depth,
             Some(256)
+        );
+    }
+
+    /// The withdrawal structure generations selected from protocol version 14 read the cap
+    /// through `dpp::withdrawal::validate_core_fee_per_byte_cap`, which treats `None` as "no
+    /// cap" per the field's contract. A table that selected one of those generations without a
+    /// cap would drop the limit silently, so that combination has to be a deliberate edit here.
+    #[test]
+    fn should_carry_a_core_fee_cap_wherever_the_capped_withdrawal_rules_are_selected() {
+        let selecting_capped_rules: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| {
+                let dpp_transitions = &platform_version.dpp.state_transitions;
+                let identity_structure = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_credit_withdrawal_state_transition
+                    .basic_structure;
+                dpp_transitions
+                    .address_funds
+                    .validate_credit_withdrawal_structure
+                    >= 1
+                    || dpp_transitions.shielded.validate_withdrawal_structure >= 1
+                    || identity_structure.is_some_and(|version| version >= 2)
+            })
+            .collect();
+        assert!(
+            !selecting_capped_rules.is_empty(),
+            "no protocol version selects the fee-capped withdrawal rules; this test would \
+             assert nothing"
+        );
+        for platform_version in selecting_capped_rules {
+            assert!(
+                platform_version
+                    .system_limits
+                    .max_core_fee_per_byte
+                    .is_some(),
+                "protocol version {} selects the fee-capped withdrawal structure rules without \
+                 a Core fee-rate cap; see SystemLimits::max_core_fee_per_byte",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    #[test]
+    fn core_fee_per_byte_limit_starts_at_protocol_version_14() {
+        // v13 is already active on live networks, so the limit must not apply there.
+        assert_eq!(
+            PlatformVersion::get(13)
+                .expect("protocol version 13 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            None
+        );
+        assert_eq!(
+            PlatformVersion::get(14)
+                .expect("protocol version 14 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            Some(6_765)
         );
     }
 }

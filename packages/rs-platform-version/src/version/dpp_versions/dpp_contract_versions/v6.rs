@@ -44,10 +44,13 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
     },
     contract_structure_version: 1,
     created_data_contract_structure: 0,
+    // Config V2 (protocol version 14) carries the optional contract moderation declaration.
+    // The default is 2 too: from this protocol version every new contract carries a V2
+    // config, moderated or not. The config version follows the platform version.
     config: FeatureVersionBounds {
         min_version: 1,
-        max_version: 1,
-        default_current_version: 1,
+        max_version: 2,
+        default_current_version: 2,
     },
     methods: DataContractMethodVersions {
         validate_document: 0,
@@ -59,8 +62,9 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         validate_update: 1,
         schema: 0,
         validate_groups: 0,
+        validate_moderation_config: 0,
         equal_ignoring_time_fields: 0,
-        registration_cost: 1,
+        registration_cost: 2, // changed: charges the once-per-identity token distribution surcharge
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {
@@ -109,6 +113,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         },
     },
     token_versions: TokenVersions {
-        validate_structure_interval: 0,
+        // 1: an epoch-based perpetual distribution needs an interval of at least one epoch.
+        validate_structure_interval: 1,
+        validate_pre_programmed_distribution_amounts: 0,
     },
 };

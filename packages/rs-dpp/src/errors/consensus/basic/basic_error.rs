@@ -1,8 +1,20 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
+use crate::consensus::basic::contract_group::{
+    ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
+    DuplicateContractGroupMembershipError, InvalidContractGroupAdminsError,
+    InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
+    RedundantContractGroupMembershipError,
+};
+use crate::consensus::basic::contract_moderation::{
+    ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
+    DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
+};
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
@@ -24,11 +36,12 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
-    NonContiguousContractTokenPositionsError, RedundantDocumentPaidForByTokenWithContractId,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
+    RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -48,6 +61,9 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionTypeError, MissingDocumentTypeError,
     MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
+use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
+use crate::consensus::basic::identity::IdentityKeyLimitsUpdateEmptyError;
+use crate::consensus::basic::identity::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
@@ -57,19 +73,20 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError,
     IdentityAssetLockTransactionTooManyInputsError, IdentityCreditTransferToSelfError,
-    InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
-    InvalidAssetLockTransactionOutputReturnSizeError,
+    IdentityPublicKeyLimitsNotAllowedError, InvalidAssetLockProofCoreChainHeightError,
+    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidCreditWithdrawalTransitionCoreFeeError,
     InvalidCreditWithdrawalTransitionOutputScriptError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
-    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError,
-    InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError,
-    InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError,
-    InvalidInstantAssetLockProofSignatureError, InvalidKeyPurposeForContractBoundsError,
-    MissingMasterPublicKeyError, NotImplementedCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyBudgetError,
+    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
+    InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
+    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
+    InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
+    NotImplementedCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
+    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -101,9 +118,11 @@ use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
     DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
     InvalidTokenConfigUpdateNoChangeError, InvalidTokenDistributionBlockIntervalTooShortError,
+    InvalidTokenDistributionEpochIntervalTooShortError,
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
-    InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
+    InvalidTokenNoteTooBigError, InvalidTokenOncePerIdentityDistributionAmountError,
+    InvalidTokenPositionError, MissingDefaultLocalizationError,
     TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError,
     TokenTransferToOurselfError,
 };
@@ -117,7 +136,16 @@ use crate::data_contract::errors::DataContractError;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(
-    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+    Error,
+    Debug,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    Encode,
+    Decode,
+    PartialEq,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum BasicError {
     /*
@@ -594,6 +622,11 @@ pub enum BasicError {
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(
         InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionEpochIntervalTooShortError(
+        InvalidTokenDistributionEpochIntervalTooShortError,
+    ),
     #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
 
@@ -699,10 +732,150 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractInvalidRequiredFieldsUpdateError(DataContractInvalidRequiredFieldsUpdateError),
+
+    // Contract groups (protocol version 14).
+    #[error(transparent)]
+    ContractGroupMembershipsOverLimitError(ContractGroupMembershipsOverLimitError),
+
+    #[error(transparent)]
+    DuplicateContractGroupMembershipError(DuplicateContractGroupMembershipError),
+
+    #[error(transparent)]
+    RedundantContractGroupMembershipError(RedundantContractGroupMembershipError),
+
+    #[error(transparent)]
+    ContractGroupMemberNotInContractError(ContractGroupMemberNotInContractError),
+
+    #[error(transparent)]
+    InvalidContractGroupAdminsError(InvalidContractGroupAdminsError),
+
+    #[error(transparent)]
+    InvalidContractGroupNameLengthError(InvalidContractGroupNameLengthError),
+
+    #[error(transparent)]
+    InvalidContractGroupDescriptionLengthError(InvalidContractGroupDescriptionLengthError),
+
+    // Contract group bounds on identity keys (protocol version 14).
+    #[error(transparent)]
+    ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(
+        ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError,
+    ),
+
+    // Authentication key limits (protocol version 14).
+    #[error(transparent)]
+    IdentityPublicKeyLimitsNotAllowedError(IdentityPublicKeyLimitsNotAllowedError),
+
+    #[error(transparent)]
+    InvalidIdentityPublicKeyBudgetError(InvalidIdentityPublicKeyBudgetError),
+
+    #[error(transparent)]
+    IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(
+        IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
+    ),
+
+    // Identity key limits update (protocol version 14).
+    #[error(transparent)]
+    IdentityKeyLimitsUpdateEmptyError(IdentityKeyLimitsUpdateEmptyError),
+
+    // Once-per-identity token distribution (protocol version 14).
+    #[error(transparent)]
+    InvalidTokenOncePerIdentityDistributionAmountError(
+        InvalidTokenOncePerIdentityDistributionAmountError,
+    ),
+
+    // Pre-programmed distribution amounts (protocol version 14).
+    #[error(transparent)]
+    PreProgrammedDistributionAmountOverLimitError(PreProgrammedDistributionAmountOverLimitError),
+
+    // Contract moderation (protocol version 14).
+    #[error(transparent)]
+    InvalidContractModerationConfigError(InvalidContractModerationConfigError),
+
+    #[error(transparent)]
+    ContractModerationSelfTargetError(ContractModerationSelfTargetError),
+
+    #[error(transparent)]
+    ContractModerationReasonTooLongError(ContractModerationReasonTooLongError),
+
+    // Document action fees (protocol version 14).
+    #[error(transparent)]
+    DocumentActionFeesWithoutModerationError(DocumentActionFeesWithoutModerationError),
 }
 
 impl From<BasicError> for ConsensusError {
     fn from(error: BasicError) -> Self {
         Self::BasicError(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_value::Identifier;
+
+    /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
+    /// shifts the wire discriminant of every variant after it. These are the frozen
+    /// discriminants of the last variants: a new variant goes after them, and gets its own
+    /// line here.
+    fn discriminant_of(error: BasicError) -> u32 {
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("expected to encode the basic error");
+        let (discriminant, _): (u32, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("expected to decode the discriminant");
+        discriminant
+    }
+
+    #[test]
+    fn basic_error_tail_discriminants_are_frozen() {
+        // Identity key limits update (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::IdentityKeyLimitsUpdateEmptyError(
+                IdentityKeyLimitsUpdateEmptyError::new(1)
+            )),
+            186
+        );
+        // Once-per-identity token distribution (protocol version 14).
+        assert_eq!(
+            discriminant_of(
+                BasicError::InvalidTokenOncePerIdentityDistributionAmountError(
+                    InvalidTokenOncePerIdentityDistributionAmountError::new(0, 1)
+                )
+            ),
+            187
+        );
+        // Pre-programmed distribution amounts (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::PreProgrammedDistributionAmountOverLimitError(
+                PreProgrammedDistributionAmountOverLimitError::new(0, 100)
+            )),
+            188
+        );
+        // Contract moderation (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidContractModerationConfigError(
+                InvalidContractModerationConfigError::new("reason".to_string())
+            )),
+            189
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ContractModerationSelfTargetError(
+                ContractModerationSelfTargetError::new(Identifier::from([1; 32]))
+            )),
+            190
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ContractModerationReasonTooLongError(
+                ContractModerationReasonTooLongError::new(1025, 1024)
+            )),
+            191
+        );
+        // Document action fees (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::DocumentActionFeesWithoutModerationError(
+                DocumentActionFeesWithoutModerationError::new("post".to_string())
+            )),
+            192
+        );
     }
 }

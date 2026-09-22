@@ -309,6 +309,7 @@ mod tests {
             range_seconds: 3_600,
             step_seconds: 3_600,
             phase_seconds: 0,
+            ttl_seconds: None,
         }
     }
 

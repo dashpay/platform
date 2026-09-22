@@ -8,6 +8,9 @@ use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -25,7 +28,29 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             .transitions_iter()
             .map(|transition| transition.data_contract_id())
             .collect(),
+        // A ban's proof covers every list the contract keeps, which the verifier reads from
+        // the contract. The other moderations prove the one entry they edit, or for a document
+        // deletion the removal record it wrote, and need none.
+        StateTransition::ContractUserModeration(moderation)
+            if matches!(
+                moderation.action(),
+                ContractUserModerationAction::Ban { .. }
+            ) =>
+        {
+            BTreeSet::from([moderation.data_contract_id()])
+        }
         _ => BTreeSet::new(),
+    }
+}
+
+/// The contract whose copy must be fetched again before the proof of `state_transition` is
+/// verified. The proof of a fee claim covers the balance of every identity the pot pays, and
+/// the verifier reads who they are from the contract. The moderation team can change by a
+/// contract update, so a copy the provider holds may name another team than the node proved.
+fn contract_id_to_refresh(state_transition: &StateTransition) -> Option<Identifier> {
+    match state_transition {
+        StateTransition::ContractFeeClaim(claim) => Some(claim.data_contract_id()),
+        _ => None,
     }
 }
 
@@ -56,6 +81,21 @@ impl WasmSdk {
                 tracing::warn!(
                     error = %error,
                     "Failed to refresh trusted quorum cache before proof verification; using cached keys"
+                );
+            }
+        }
+
+        if let Some(contract_id) = contract_id_to_refresh(state_transition) {
+            // This runs after the transition is broadcast, so a fetch that fails must not
+            // discard a result the network may already have accepted: a copy the provider
+            // holds is what is left to verify against, and it is right unless the team changed.
+            if let Err(error) = self.refresh_contract(contract_id).await {
+                if !self.can_resolve_contract(contract_id) {
+                    return Err(error);
+                }
+                tracing::warn!(
+                    contract_id = %contract_id,
+                    "Failed to fetch the contract of a fee claim again; verifying against the cached copy"
                 );
             }
         }
@@ -176,8 +216,8 @@ impl WasmSdk {
     /// `waitForResponse` is strict: it fails for the transition families
     /// whose proofs cannot be bound to the execution of one specific
     /// transition (balance top-ups, credit transfers and withdrawals,
-    /// address funds movements, shields, no-history token operations). This
-    /// method accepts those outcomes instead. The result is a verified,
+    /// address funds movements, shields, no-history token operations, key
+    /// limits updates). This method accepts those outcomes instead. The result is a verified,
     /// height-pinned snapshot of the affected state — NOT evidence that this
     /// specific transition executed.
     ///
@@ -368,6 +408,81 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![first_contract_id, second_contract_id],
         );
+    }
+
+    #[test]
+    fn should_prepare_the_moderated_contract_of_a_ban_only() {
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+
+        let contract_id = Identifier::new([0x44; 32]);
+        let state_transition = StateTransition::ContractUserModeration(
+            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            }),
+        );
+
+        assert_eq!(
+            referenced_contract_ids(&state_transition)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![contract_id],
+        );
+
+        // Only a ban's proof is read against the contract.
+        let unban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+            ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                action: ContractUserModerationAction::Unban {
+                    identity_id: Identifier::new([0x55; 32]),
+                },
+                ..Default::default()
+            },
+        ));
+        assert!(referenced_contract_ids(&unban).is_empty());
+
+        // A document deletion is proved by the removal record it wrote, contract unread.
+        let deletion = StateTransition::ContractUserModeration(
+            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                action: ContractUserModerationAction::DeleteDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: Identifier::new([0x66; 32]),
+                    reason: Default::default(),
+                },
+                ..Default::default()
+            }),
+        );
+        assert!(referenced_contract_ids(&deletion).is_empty());
+    }
+
+    #[test]
+    fn should_refresh_the_contract_of_a_fee_claim_only() {
+        use dash_sdk::dpp::state_transition::contract_fee_claim_transition::v0::ContractFeeClaimTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+
+        let contract_id = Identifier::new([0x44; 32]);
+        let claim = StateTransition::ContractFeeClaim(ContractFeeClaimTransition::V0(
+            ContractFeeClaimTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            },
+        ));
+        assert_eq!(contract_id_to_refresh(&claim), Some(contract_id));
+        // The refresh resolves the contract, so it is not fetched a second time.
+        assert!(referenced_contract_ids(&claim).is_empty());
+
+        // The lists a ban's proof covers never change, so a cached copy of its contract will do.
+        let ban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+            ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            },
+        ));
+        assert_eq!(contract_id_to_refresh(&ban), None);
     }
 
     #[test]

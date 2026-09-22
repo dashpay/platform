@@ -2,12 +2,23 @@ use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::voting::vote_polls::VotePoll;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("VotePoll {vote_poll} not found")]
 #[platform_serialize(unversioned)]

@@ -436,7 +436,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let mut best_generic_difference = u16::MAX;
         let mut best_terminal: Option<(&Index, u16)> = None;
         let mut best_terminal_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }
@@ -474,7 +474,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }
@@ -524,7 +524,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }
@@ -560,7 +560,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let mut best_generic_difference = u16::MAX;
         let mut best_terminal: Option<(&Index, u16)> = None;
         let mut best_terminal_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }

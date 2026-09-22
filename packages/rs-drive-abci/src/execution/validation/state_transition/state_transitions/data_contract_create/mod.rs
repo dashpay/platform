@@ -1,5 +1,7 @@
 mod advanced_structure;
 mod basic_structure;
+#[cfg(test)]
+mod contract_group_tests;
 mod identity_nonce;
 mod state;
 
@@ -223,6 +225,7 @@ mod tests {
     use dpp::platform_value::Value;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::StateTransition;
@@ -388,12 +391,14 @@ mod tests {
         ]);
 
         match &mut state_transition {
-            StateTransition::DataContractCreate(DataContractCreateTransition::V0(v0)) => {
-                let schemas = v0.data_contract.document_schemas_mut();
+            StateTransition::DataContractCreate(create) => {
+                let mut data_contract = create.data_contract().clone();
+                let schemas = data_contract.document_schemas_mut();
                 schemas.clear();
                 schemas.insert("note".to_string(), malicious_schema);
+                create.set_data_contract(data_contract);
             }
-            _ => panic!("expected a V0 DataContractCreate"),
+            _ => panic!("expected a DataContractCreate"),
         }
 
         state_transition
@@ -1021,6 +1026,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::BurnToken,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -1127,6 +1133,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -1357,6 +1364,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -1553,6 +1561,10 @@ mod tests {
 
         mod pre_programmed_distribution {
             use super::*;
+            use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
+            use crate::rpc::core::MockCoreRPCLike;
+            use crate::test::helpers::setup::TempPlatform;
+            use dpp::data_contract::accessors::v1::DataContractV1Setters;
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
             use drive::drive::Drive;
@@ -1727,6 +1739,190 @@ mod tests {
                 .1;
 
                 assert_eq!(verified_pre_programmed_distributions, distributions);
+            }
+
+            const RELEASE_TIME: TimestampMillis = 1700000000000;
+
+            /// Processes the creation of the basic token contract given one token per entry
+            /// of `releases`. Each token releases its amounts at `RELEASE_TIME`, the first to
+            /// the contract owner and the others to further identities. Returns the
+            /// processing result, committed, and the token ids.
+            async fn process_create_with_tokens_releasing(
+                releases: &[&[TokenAmount]],
+                platform: &mut TempPlatform<MockCoreRPCLike>,
+                platform_version: &PlatformVersion,
+            ) -> (StateTransitionsProcessingResult, Vec<[u8; 32]>) {
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) = setup_identity(platform, 958, dash_to_credits!(1.0));
+
+                let recipient_count = releases.iter().map(|amounts| amounts.len()).max();
+                let mut recipients = vec![identity.id()];
+                for seed in 1..recipient_count.unwrap_or_default() {
+                    let (recipient, _, _) =
+                        setup_identity(platform, 958 + seed as u64, dash_to_credits!(0.1));
+                    recipients.push(recipient.id());
+                }
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                let base_token_configuration = data_contract
+                    .tokens()
+                    .get(&0)
+                    .expect("expected first token")
+                    .clone();
+
+                for (position, amounts) in releases.iter().enumerate() {
+                    let mut token_configuration = base_token_configuration.clone();
+                    token_configuration.set_base_supply(0);
+                    token_configuration
+                        .distribution_rules_mut()
+                        .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                            TokenPreProgrammedDistributionV0 {
+                                distributions: BTreeMap::from([(
+                                    RELEASE_TIME,
+                                    recipients
+                                        .iter()
+                                        .copied()
+                                        .zip(amounts.iter().copied())
+                                        .collect(),
+                                )]),
+                            },
+                        )));
+                    data_contract.add_token(position as u16, token_configuration);
+                }
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity.id(), 1);
+                let token_ids = (0..releases.len())
+                    .map(|position| {
+                        calculate_token_id(data_contract_id.as_bytes(), position as u16)
+                    })
+                    .collect();
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expect to create data contract create transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                (processing_result, token_ids)
+            }
+
+            /// Every token releasing at one time keeps its references under one shared
+            /// release-time tree, which the create has to queue once however many of the
+            /// contract's tokens release at that time.
+            #[tokio::test]
+            async fn should_create_contract_whose_tokens_share_a_pre_programmed_release_time() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let (processing_result, token_ids) = process_create_with_tokens_releasing(
+                    &[&[10], &[20]],
+                    &mut platform,
+                    platform_version,
+                )
+                .await;
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+
+                for (token_id, release_amount) in token_ids.into_iter().zip([10, 20]) {
+                    let fetched_distributions = platform
+                        .drive
+                        .fetch_token_pre_programmed_distributions(
+                            token_id,
+                            None,
+                            None,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch pre-programmed distributions");
+
+                    assert_eq!(
+                        fetched_distributions
+                            .get(&RELEASE_TIME)
+                            .map(|release| release.values().copied().collect::<Vec<_>>()),
+                        Some(vec![release_amount])
+                    );
+                }
+            }
+
+            /// A release is stored as a sum tree, so neither an amount above `i64::MAX` nor
+            /// amounts totalling more can be written. Nothing validated them, so the create
+            /// failed inside Drive as an internal error instead of being rejected.
+            #[tokio::test]
+            async fn should_reject_contract_with_pre_programmed_release_over_the_limit() {
+                let platform_version = PlatformVersion::latest();
+                let over_limit_releases: [&[TokenAmount]; 2] = [
+                    &[i64::MAX as TokenAmount + 1],
+                    &[i64::MAX as TokenAmount, 1],
+                ];
+
+                for over_limit_release in over_limit_releases {
+                    let mut platform = TestPlatformBuilder::new()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let (processing_result, _) = process_create_with_tokens_releasing(
+                        &[&[10], over_limit_release],
+                        &mut platform,
+                        platform_version,
+                    )
+                    .await;
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::PreProgrammedDistributionAmountOverLimitError(error)
+                            )
+                        )] if error.token_position() == 1 && error.timestamp() == RELEASE_TIME
+                    );
+                }
             }
         }
 
@@ -2679,6 +2875,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::BurnToken,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -2793,6 +2990,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -2922,6 +3120,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -3122,6 +3321,120 @@ mod tests {
                     )
                     .expect("expected to fetch token balance");
                 assert_eq!(token_balance, None);
+            }
+
+            /// A zero epoch interval registered fine up to protocol version 13 and then made
+            /// every claim fail as an internal error; version 14 refuses it at registration.
+            async fn register_token_with_zero_epoch_interval(
+                protocol_version: dpp::version::ProtocolVersion,
+            ) -> StateTransitionExecutionResult {
+                let platform_version = PlatformVersion::get(protocol_version)
+                    .expect("expected platform version for the requested protocol version");
+                let mut platform = TestPlatformBuilder::new()
+                    .with_initial_protocol_version(protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config
+                        .distribution_rules_mut()
+                        .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                            TokenPerpetualDistributionV0 {
+                                distribution_type: RewardDistributionType::EpochBasedDistribution {
+                                    interval: 0,
+                                    function: DistributionFunction::FixedAmount { amount: 50 },
+                                },
+                                distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                            },
+                        )));
+                }
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expect to create documents batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                processing_result
+                    .execution_results()
+                    .first()
+                    .expect("expected one execution result")
+                    .clone()
+            }
+
+            #[tokio::test]
+            async fn should_reject_a_zero_epoch_interval_from_protocol_version_14() {
+                assert_matches!(
+                    register_token_with_zero_epoch_interval(
+                        PlatformVersion::latest().protocol_version
+                    )
+                    .await,
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(
+                            BasicError::InvalidTokenDistributionEpochIntervalTooShortError(_)
+                        ),
+                    )
+                );
+            }
+
+            #[tokio::test]
+            async fn should_keep_registering_a_zero_epoch_interval_at_protocol_version_13() {
+                assert_matches!(
+                    register_token_with_zero_epoch_interval(13).await,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
+                );
             }
 
             #[tokio::test]
@@ -5380,6 +5693,61 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_register_contract_with_deletable_document_references() {
+            // A deletableDocument reference targets a document type that
+            // allows deletion (`draft`), which a permanentDocument one
+            // refuses; its propertyAgreement and writer gate declarations
+            // are validated like a permanentDocument reference's
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_deletable_document_reference_to_a_permanent_type() {
+            // The two document references are disjoint: `note` forbids
+            // deletion, so it is a permanentDocument target and nothing else
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-not-deletable.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotDeletableError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_deletable_document_reference_to_unknown_type() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
         async fn should_register_contract_with_valid_property_agreement() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-valid.json",
@@ -5414,6 +5782,96 @@ mod tests {
         async fn should_reject_agreement_between_different_value_kinds() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        /// `$ownerId` and `$creatorId` may sit on the referenced side of an
+        /// agreement when the referring side is an identifier and, for
+        /// `$creatorId`, the referenced type records creator ids
+        /// (transferable, on a format-1 contract).
+        #[tokio::test]
+        async fn should_register_contract_with_agreements_on_referenced_system_identifiers() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-system-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// The same declaration against a non-transferable note: the note
+        /// never carries a creator id, so no message could ever agree.
+        #[tokio::test]
+        async fn should_reject_creator_id_agreement_when_the_referenced_type_records_no_creator() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-creator-id-not-recorded.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        /// A string `authorId` can never equal the note's `$ownerId`.
+        #[tokio::test]
+        async fn should_reject_system_identifier_agreement_against_a_non_identifier_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-system-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        /// `{ "$ownerId": "$ownerId" }` makes the writer the referring side:
+        /// only the note's current owner may write a message on it.
+        #[tokio::test]
+        async fn should_register_contract_with_writer_owner_agreement() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-writer-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// The writer is an identifier, so the referenced side must be one too.
+        #[tokio::test]
+        async fn should_reject_writer_owner_agreement_against_a_non_identifier_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-writer-kind-mismatch.json",
             )
             .await;
 

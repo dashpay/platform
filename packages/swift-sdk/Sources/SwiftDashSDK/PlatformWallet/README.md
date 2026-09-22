@@ -593,6 +593,105 @@ do {
 
 ---
 
+## Local shielded balance snapshots
+
+After configuring and binding shielded state, call
+`await manager.localShieldedBalanceSnapshot(walletId:)` to read the local,
+reservation-aware account balances without starting a network scan. Each
+invocation performs one native read. `unbound` and `restoreIncomplete` do not
+provide a numeric balance; `ready` includes each bound account and its scan
+provenance. A `noHistory` zero does not establish that the wallet has no funds.
+
+If a successful bind overlaps Swift delivery, the call throws
+`ShieldedLocalBalanceReadError.bindingChanged`. The host owns whether and when
+to request another snapshot, including its launch retry budget. This error is
+specific to a read and does not report a failed transaction. Clear, stop,
+failed bind, and task cancellation discard obsolete delivery with
+`CancellationError`; native failures retain their existing error mapping.
+Retain the last usable amount when a read fails. Starting shutdown rejects
+new reads, including caller-requested retries, and drains admitted reads before
+releasing the native handle.
+
+## Identity-funded shield recovery
+
+An unresolved identity-funded shield blocks another debit from the same identity
+with `PlatformWalletError.shieldedIdentityDebitPending`. Inspect its durable
+records with `await manager.shieldedIdentityDebitRecoveryRecords(walletId:)`.
+Each record is scoped by that wallet id plus `accountIndex` and `activityId`.
+`retrying` means automatic recovery remains active; `parked` means it needs
+attention; `unknown` means automatic retry was explicitly abandoned. Identity,
+nonce and amount are optional when a record cannot be read.
+
+After explaining the risk and obtaining the user's acknowledgement, call
+`await manager.abandonShieldedIdentityDebit(walletId:accountIndex:activityId:acknowledgePossibleExecution:)`
+for the selected record. The acknowledgement argument has no default and must
+be true. This stops future automatic retry and permits another debit after
+archival succeeds. It **does not cancel** an already relayed or in-flight
+payment, even if the original nonce is still usable. A new payment could be an
+additional debit. The complete signed record remains archived for later scan
+confirmation and audit; its activity outcome is Unknown (raw status 3), never
+Failed merely because retry was abandoned.
+
+`shieldedRecoveryCorrupted` identifies malformed or invalid durable data.
+`shieldedRecoveryKeysRequired` identifies an account/key compatibility problem;
+damaged ciphertext can produce the same symptom. Keep the record for diagnosis
+instead of blindly submitting a replacement payment.
+
+## Identity key usage limits
+
+Protocol version 14 lets an authentication key carry usage limits: a
+`totalBudget`, the credits the key may take from its identity over its whole
+lifetime, and an `expiresAt`, the block time in milliseconds from which it can
+no longer sign. A key with either is registered as an `IdentityPublicKey::V1`;
+a key with neither stays a version 0 key with the same bytes as ever.
+
+Register a limited key by setting the two optional fields on the
+`ManagedPlatformWallet.IdentityPubkey` rows passed to identity registration,
+invitation claim or `updateIdentity(identityId:addPublicKeys:...)`:
+
+```swift
+let key = ManagedPlatformWallet.IdentityPubkey(
+    keyId: 3,
+    keyType: .ecdsaSecp256k1,
+    purpose: .authentication,
+    securityLevel: .high,
+    pubkeyBytes: pubkey,
+    totalBudget: 100_000_000,      // credits, for the key's whole lifetime
+    expiresAt: 1_800_000_000_000   // block time in milliseconds
+)
+```
+
+Read a key's limits back from `ManagedIdentity.getPublicKeys()`
+(`totalBudget` / `expiresAt` on each `IdentityPublicKeyInfo`), or from the
+persisted `PersistentPublicKey` row (`totalBudgetCredits` / `expiresAtMillis`).
+
+**Raise a key's limits:**
+```swift
+func updateIdentityKeyLimits(
+    identityId: Identifier,
+    keyId: UInt32,
+    addBudget: UInt64? = nil,      // credits ADDED to the total budget
+    expiresAt: UInt64? = nil,      // new expiry, block time in milliseconds
+    signer: KeychainSigner
+) async throws
+```
+
+Limits only ever go up, and at least one of the two must be given. The
+transition is signed by the identity's MASTER key or by a CRITICAL
+authentication key that carries no limits and no contract bounds. No identity
+revision is claimed.
+
+**Read what is left of a key's budget:**
+```swift
+func fetchKeysRemainingBudgets(
+    identityId: String,
+    keyIds: [UInt32]
+) async throws -> [UInt32: UInt64?]
+```
+
+Defined on `SDK`. Each value is the credits left to that key, or `nil` for a
+key that carries no budget or that the identity does not have.
+
 ## See Also
 
 - [SwiftExampleApp Integration](../../../SwiftExampleApp/SwiftExampleApp/Services/DashPayService.swift) - Real-world usage example

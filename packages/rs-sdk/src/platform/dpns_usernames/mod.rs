@@ -14,15 +14,16 @@ use dash_context_provider::ContextProvider;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
-use dpp::platform_value::{Bytes32, Value};
+use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use tracing::debug;
+use tracing::warn;
 
 fn extract_dpns_label(name: &str) -> &str {
     if let Some(dot_pos) = name.rfind('.') {
@@ -159,25 +160,18 @@ impl Sdk {
             .document_type_for_name("domain")
             .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
 
-        // Generate entropy and salt
+        // Generate the preorder salt
         let mut rng = StdRng::from_entropy();
-        let entropy = Bytes32::random_with_rng(&mut rng);
         let salt: [u8; 32] = rng.gen();
 
-        // Generate document IDs
+        // The id of a new document commits to the identity contract nonce of
+        // its create transition, so it only exists once `put_to_platform` has
+        // fetched that nonce. The documents are built with a placeholder id;
+        // the confirmed documents carry the real one. Nothing here needs the
+        // ids up front: the domain is tied to its preorder by the salt.
         let identity_id = input.identity.id().to_owned();
-        let preorder_id = Document::generate_document_id_v0(
-            &dpns_contract.id(),
-            &identity_id,
-            preorder_document_type.name(),
-            entropy.as_slice(),
-        );
-        let domain_id = Document::generate_document_id_v0(
-            &dpns_contract.id(),
-            &identity_id,
-            domain_document_type.name(),
-            entropy.as_slice(),
-        );
+        let preorder_id = Identifier::default();
+        let domain_id = Identifier::default();
 
         // Create salted domain hash for preorder
         let normalized_label = convert_to_homograph_safe_chars(&input.label);
@@ -257,17 +251,22 @@ impl Sdk {
         });
 
         // Submit preorder document first
+        debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
         let platform_preorder_document = preorder_document
             .put_to_platform_and_wait_for_response(
                 self,
                 preorder_document_type.to_owned_document_type(),
-                Some(entropy.0),
+                None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key.clone(),
                 None, // token payment info
                 &input.signer,
                 None, // settings
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                warn!(%identity_id, stage = "preorder", %error, "DPNS registration: document failed");
+            })?;
+        debug!(%identity_id, document_id = %platform_preorder_document.id(), stage = "preorder", "DPNS registration: document confirmed");
 
         // Call the preorder callback if provided
         if let Some(callback) = input.preorder_callback {
@@ -275,17 +274,22 @@ impl Sdk {
         }
 
         // Submit domain document after preorder
+        debug!(%identity_id, stage = "domain", "DPNS registration: submitting document");
         let platform_domain_document = domain_document
             .put_to_platform_and_wait_for_response(
                 self,
                 domain_document_type.to_owned_document_type(),
-                Some(entropy.0),
+                None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key,
                 None, // token payment info
                 &input.signer,
                 None, // settings
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                warn!(%identity_id, stage = "domain", %error, "DPNS registration: document failed");
+            })?;
+        debug!(%identity_id, document_id = %platform_domain_document.id(), stage = "domain", "DPNS registration: document confirmed");
 
         Ok(RegisterDpnsNameResult {
             preorder_document: platform_preorder_document,
@@ -414,23 +418,37 @@ impl Sdk {
 
         let documents = Document::fetch_many(self, query).await?;
 
-        if let Some((_, Some(doc))) = documents.into_iter().next() {
-            // Extract the identity from records.identity
-            if let Some(Value::Map(records)) = doc.properties().get("records") {
-                for (key, value) in records {
-                    if let (Value::Text(k), Value::Identifier(id_bytes)) = (key, value) {
-                        if k == "identity" {
-                            return Ok(Some(Identifier::from_bytes(id_bytes).map_err(|e| {
-                                Error::Generic(format!("Invalid identifier: {}", e))
-                            })?));
-                        }
-                    }
-                }
-            }
+        match documents.into_iter().next() {
+            Some((_, Some(doc))) => identity_from_domain_records(doc.properties()),
+            _ => Ok(None),
         }
-
-        Ok(None)
     }
+}
+
+/// Read the identity a `domain` document points at from its `records` map.
+///
+/// A document decoded from a proof carries the identifier as
+/// `Value::Identifier`, but the same document after a serde round trip
+/// (CBOR, JSON, mock fixtures) comes back as `Value::Bytes` or
+/// `Value::Bytes32`, because serde has no identifier type. Accept every
+/// representation `to_identifier` understands, and report a malformed value
+/// as an error rather than as an unresolved name.
+fn identity_from_domain_records(
+    properties: &BTreeMap<String, Value>,
+) -> Result<Option<Identifier>, Error> {
+    let Some(Value::Map(records)) = properties.get("records") else {
+        return Ok(None);
+    };
+
+    records
+        .iter()
+        .find(|(key, _)| key.as_text() == Some("identity"))
+        .map(|(_, value)| {
+            value
+                .to_identifier()
+                .map_err(|e| Error::Generic(format!("Invalid identifier: {e}")))
+        })
+        .transpose()
 }
 
 #[cfg(test)]
@@ -458,6 +476,56 @@ mod tests {
         assert_eq!(normalize_dpns_label(""), "");
         assert_eq!(normalize_dpns_label(".dash"), "");
         assert_eq!(normalize_dpns_label(".DASH"), "");
+    }
+
+    fn domain_properties(identity: Value) -> BTreeMap<String, Value> {
+        BTreeMap::from([(
+            "records".to_string(),
+            Value::Map(vec![(Value::Text("identity".to_string()), identity)]),
+        )])
+    }
+
+    #[test]
+    fn identity_from_domain_records_accepts_every_identifier_representation() {
+        // A proof-decoded document carries `Value::Identifier`; the same
+        // document after a serde round trip carries `Bytes` / `Bytes32`
+        // (serde has no identifier type), and JSON carries base58 text.
+        // Every one of them names the same identity.
+        let id = Identifier::new([7u8; 32]);
+        for value in [
+            Value::Identifier(id.to_buffer()),
+            Value::Bytes32(id.to_buffer()),
+            Value::Bytes(id.to_vec()),
+            Value::Text(id.to_string(dpp::platform_value::string_encoding::Encoding::Base58)),
+        ] {
+            let resolved = identity_from_domain_records(&domain_properties(value.clone()))
+                .unwrap_or_else(|e| panic!("{value:?} should resolve: {e}"));
+            assert_eq!(resolved, Some(id), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn identity_from_domain_records_distinguishes_missing_from_malformed() {
+        // No records map, or a records map without an identity entry, is an
+        // unresolved name.
+        assert_eq!(
+            identity_from_domain_records(&BTreeMap::new()).unwrap(),
+            None
+        );
+        let no_identity = BTreeMap::from([("records".to_string(), Value::Map(vec![]))]);
+        assert_eq!(identity_from_domain_records(&no_identity).unwrap(), None);
+
+        // A present but malformed identity is an error, never "not found".
+        for malformed in [
+            Value::Bytes(vec![1u8; 31]),
+            Value::Text("not base58!".to_string()),
+            Value::U64(7),
+        ] {
+            assert!(
+                identity_from_domain_records(&domain_properties(malformed.clone())).is_err(),
+                "{malformed:?} should be rejected"
+            );
+        }
     }
 
     #[test]

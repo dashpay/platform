@@ -8,7 +8,7 @@ use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] = [StateTransitionType::Batch];
 
-pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 8] = [
+pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 11] = [
     StateTransitionType::IdentityCreate,
     StateTransitionType::IdentityTopUp,
     StateTransitionType::IdentityUpdate,
@@ -17,13 +17,18 @@ pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 8] = [
     StateTransitionType::IdentityTopUpFromAddresses,
     StateTransitionType::IdentityCreateFromAddresses,
     StateTransitionType::IdentityCreditTransferToAddresses,
+    StateTransitionType::IdentityCreateFromShieldedPool,
+    StateTransitionType::IdentityTopUpFromShieldedPool,
+    StateTransitionType::IdentityKeyLimitsUpdate,
 ];
 
 pub const VOTING_TRANSITION_TYPE: [StateTransitionType; 1] = [StateTransitionType::MasternodeVote];
 
-pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
+pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 4] = [
     StateTransitionType::DataContractCreate,
     StateTransitionType::DataContractUpdate,
+    StateTransitionType::ContractUserModeration,
+    StateTransitionType::ContractFeeClaim,
 ];
 
 /// The StateTransitionLike represents set of methods that are shared for all types of State Transition.

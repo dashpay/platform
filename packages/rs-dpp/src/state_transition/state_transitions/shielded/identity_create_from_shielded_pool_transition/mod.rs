@@ -21,9 +21,11 @@ use crate::serialization::ValueConvertible;
 use crate::shielded::SerializedAction;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_value::Identifier;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -34,12 +36,14 @@ use serde::{Deserialize, Serialize};
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -263,7 +267,7 @@ pub(crate) mod json_convertible_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::shielded::SerializedAction;
 
     fn mk_action(nullifier_byte: u8) -> SerializedAction {
@@ -327,8 +331,9 @@ mod tests {
             .into();
 
         let bytes = transition.serialize_to_bytes().expect("serialize");
-        let restored = IdentityCreateFromShieldedPoolTransition::deserialize_from_bytes(&bytes)
-            .expect("deserialize");
+        let restored =
+            IdentityCreateFromShieldedPoolTransition::deserialize_from_bytes_untrusted(&bytes)
+                .expect("deserialize");
         assert_eq!(transition, restored);
     }
 }

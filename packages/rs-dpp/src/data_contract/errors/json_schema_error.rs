@@ -1,11 +1,23 @@
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 // @append_only
 #[derive(
-    Error, Debug, PartialEq, Eq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    Eq,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    Encode,
+    Decode,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum JsonSchemaError {
     #[error("can't create json schema: {0}")]

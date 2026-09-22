@@ -28,6 +28,41 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.prepare_document_time_range_ttl(
+                document_and_contract_info.contract,
+                document_and_contract_info.document_type,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+        self.add_document_for_contract_operations_without_ttl_drain(
+            document_and_contract_info,
+            override_document,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Build against post-drain state. The caller must prepare the whole
+    /// batch before invoking this method; no cleanup occurs during conversion.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_document_for_contract_operations_without_ttl_drain(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        override_document: bool,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version
             .drive
             .methods

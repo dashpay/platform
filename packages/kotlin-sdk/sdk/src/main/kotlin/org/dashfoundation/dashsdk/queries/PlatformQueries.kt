@@ -48,6 +48,26 @@ class Identities internal constructor(private val sdk: Sdk) {
         }
 
     /**
+     * What is left of the budgets of [keyIds] (protocol version 14), as a JSON
+     * object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key maps to
+     * the credits left as a decimal string; a key without a budget, or that the
+     * identity does not have, maps to null. Raising a budget with
+     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount.
+     */
+    suspend fun fetchKeysRemainingBudgets(identityId: String, keyIds: List<Int>): String? =
+        sdk.queryGate.op {
+            require(keyIds.isNotEmpty()) { "keyIds must hold at least one key id" }
+            require(keyIds.all { it >= 0 }) { "every key id must be non-negative, got $keyIds" }
+            mapNativeErrors {
+                QueriesNative.identityFetchKeysRemainingBudgets(
+                    sdk.handle,
+                    identityId,
+                    keyIds.toIntArray(),
+                )
+            }
+        }
+
+    /**
      * Fetch the identity that owns a unique public-key [hashHex] (hex), as
      * JSON, or null if none.
      */
@@ -571,6 +591,25 @@ class Contracts internal constructor(private val sdk: Sdk) {
     /** Fetch a data contract as JSON. */
     suspend fun fetchJson(contractId: String): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.dataContractFetchJson(sdk.handle, contractId) }
+    }
+
+    /**
+     * One page of every data contract on Platform, in ascending contract id order,
+     * as a JSON array of `{"id", "dataContract"}` objects. Pass the last `id` as
+     * [startAfter] for the next page; [limit] 0 means 100. With [idsOnly] the
+     * `dataContract` fields are null. Returns null on failure.
+     */
+    suspend fun fetchByRange(
+        limit: Int = 0,
+        startAfter: String? = null,
+        startAt: String? = null,
+        idsOnly: Boolean = false,
+    ): String? = sdk.queryGate.op {
+        mapNativeErrors {
+            QueriesNative.dataContractsFetchByRange(
+                sdk.handle, limit, startAfter, startAt, idsOnly,
+            )
+        }
     }
 
     /**

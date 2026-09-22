@@ -7,7 +7,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
@@ -115,7 +115,7 @@ impl Drive {
                 &mut drive_operations,
                 &platform_version.drive,
             )?
-            .map(|bytes| IdentityTokenInfo::deserialize_from_bytes(&bytes))
+            .map(|bytes| IdentityTokenInfo::deserialize_from_bytes_trusted(&bytes))
             .transpose()?
         {
             None => {

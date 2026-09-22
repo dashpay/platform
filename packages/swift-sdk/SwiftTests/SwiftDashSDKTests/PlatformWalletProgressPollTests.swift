@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import DashSDKFFI
 @testable import SwiftDashSDK
 
@@ -318,6 +319,91 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertEqual(
             recorder.count, afterShutdown,
             "no native read may start once shutdown bumped the poll epoch")
+    }
+
+    func testClearedAddressMirrorReplaysNilAndRejectsOldGeneration() async {
+        let manager = PlatformWalletManager.makeForTesting(handle: 95, calls: Self.makeTeardownCalls())
+        let oldGeneration = manager.platformAddressSyncGeneration.current()
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 100, walletResults: []), generation: oldGeneration)
+        // These are the production Clear epilogue's two steps after native
+        // reset succeeds; a host subscribes again only after they return.
+        manager.platformAddressSyncGeneration.bump()
+        manager.resetPlatformAddressPublishedMirror()
+        let delivered = expectation(description: "Nil replay followed by a fresh completion")
+        delivered.expectedFulfillmentCount = 2
+        var timestamps: [UInt64?] = []
+        let subscription = manager.$lastPlatformAddressSyncEvent
+            .receive(on: RunLoop.main)
+            .prefix(2)
+            .sink { event in
+                timestamps.append(event?.syncUnixSeconds)
+                delivered.fulfill()
+            }
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 100, walletResults: []), generation: oldGeneration)
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 200, walletResults: []),
+            generation: manager.platformAddressSyncGeneration.current())
+        await fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(timestamps, [nil, 200])
+        subscription.cancel()
+        await manager.shutdown()
+    }
+
+    func testShouldStopRemainingPollReadsWhileShieldedStopIsBlocked() async throws {
+        let pollGate = DispatchSemaphore(value: 0)
+        let stopGate = DispatchSemaphore(value: 0)
+        let pollEntered = expectation(description: "Poll entered first native read")
+        let stopEntered = expectation(description: "Shutdown entered shielded stop")
+        let pollFinished = expectation(description: "Queued poll finished")
+        let base = Self.makeTeardownCalls()
+        let calls = PlatformWalletNativeTeardownCalls(
+            spvStop: base.spvStop,
+            platformAddressSyncStop: base.platformAddressSyncStop,
+            shieldedSyncStop: { handle in
+                stopEntered.fulfill()
+                XCTAssertEqual(stopGate.wait(timeout: .now() + 5), .success)
+                return base.shieldedSyncStop(handle)
+            },
+            dashPaySyncStop: base.dashPaySyncStop,
+            dpnsSyncStop: base.dpnsSyncStop,
+            destroy: base.destroy)
+        let manager = PlatformWalletManager.makeForTesting(handle: 97, calls: calls)
+        let recorder = PollRecorder()
+        let pollCalls = recorder.makeCalls()
+        manager.nativePollCalls = PlatformWalletNativePollCalls(
+            syncProgress: { _ in
+                pollEntered.fulfill()
+                XCTAssertEqual(pollGate.wait(timeout: .now() + 5), .success)
+                throw PlatformWalletError.invalidHandle("Parked poll completed")
+            },
+            isSpvRunning: pollCalls.isSpvRunning,
+            connectedSpvPeers: pollCalls.connectedSpvPeers,
+            spvTipBlockTime: pollCalls.spvTipBlockTime,
+            isPlatformAddressSyncing: pollCalls.isPlatformAddressSyncing,
+            isShieldedSyncing: pollCalls.isShieldedSyncing,
+            isDashPaySyncing: pollCalls.isDashPaySyncing,
+            pendingAccountBuildCount: pollCalls.pendingAccountBuildCount)
+        let shieldedGeneration = manager.shieldedSyncGeneration.current()
+        let balanceGeneration = manager.shieldedLocalBalanceGeneration.current()
+        manager.startProgressPolling()
+        defer {
+            pollGate.signal()
+            stopGate.signal()
+        }
+        await fulfillment(of: [pollEntered], timeout: 1)
+        let shutdown = Task { await manager.shutdown() }
+        await fulfillment(of: [stopEntered], timeout: 1)
+        XCTAssertEqual(manager.handle, NULL_HANDLE, "Early stop must revoke public access")
+        XCTAssertEqual(manager.shieldedSyncGeneration.current(), shieldedGeneration)
+        XCTAssertEqual(manager.shieldedLocalBalanceGeneration.current(), balanceGeneration)
+        manager.pollQueue.async { pollFinished.fulfill() }
+        pollGate.signal()
+        await fulfillment(of: [pollFinished], timeout: 1)
+        XCTAssertEqual(recorder.count, 0, "No remaining native poll reads may start during early stop")
+        stopGate.signal()
+        _ = await shutdown.value
     }
 
     /// A status left behind by a removed wallet is pruned even when no

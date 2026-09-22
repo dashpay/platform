@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
 use tracing::{debug, error, info, warn};
 
-use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
 use std::ffi::CStr;
@@ -743,7 +743,7 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
 
         // Deserialize the contract using DPP
         let platform_version = wrapper.sdk.version();
-        match dash_sdk::dpp::data_contract::DataContract::versioned_deserialize(
+        match dash_sdk::dpp::data_contract::DataContract::versioned_deserialize_untrusted(
             contract_data,
             false, // don't validate (we trust the data)
             platform_version,

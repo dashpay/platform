@@ -99,6 +99,14 @@ public final class ManagedIdentity: @unchecked Sendable {
         /// (compressed secp256k1 pubkey for ECDSA, hash160 for
         /// HASH160 variants, etc.).
         public let data: Data
+        /// Usage limit (protocol version 14): the credits this key may
+        /// take from the identity over its whole lifetime, or `nil` for
+        /// a key registered without a budget.
+        public let totalBudget: UInt64?
+        /// Usage limit (protocol version 14): the block time in
+        /// milliseconds from which this key can no longer sign, or `nil`
+        /// for a key registered without an expiry.
+        public let expiresAt: Int64?
     }
 
     /// Return every `IdentityPublicKey` registered on this identity.
@@ -153,7 +161,11 @@ public final class ManagedIdentity: @unchecked Sendable {
                     disabledAt: ffi.disabled_at_is_some
                         ? Int64(bitPattern: ffi.disabled_at)
                         : nil,
-                    data: data
+                    data: data,
+                    totalBudget: ffi.total_budget_is_some ? ffi.total_budget : nil,
+                    expiresAt: ffi.expires_at_is_some
+                        ? Int64(bitPattern: ffi.expires_at)
+                        : nil
                 )
             )
         }

@@ -1,4 +1,4 @@
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,18 @@ use crate::{errors::ProtocolError, prelude::TimestampMillis, util::deserializer:
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Serialize, Deserialize, Encode, Decode, Debug, Default, Clone, Copy, PartialEq, PartialOrd, Eq,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    PartialOrd,
+    Eq,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {

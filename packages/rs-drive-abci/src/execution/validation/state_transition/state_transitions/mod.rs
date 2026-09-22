@@ -16,6 +16,9 @@ pub mod identity_top_up;
 /// Module for updating an existing identity entity.
 pub mod identity_update;
 
+/// Module for raising the limits of an identity key.
+pub mod identity_key_limits_update;
+
 /// Validation shared by the data contract create and update transitions.
 pub mod data_contract_common;
 
@@ -24,6 +27,12 @@ pub mod data_contract_create;
 
 /// Module for updating an existing data contract entity.
 pub mod data_contract_update;
+
+/// Module for banning and suspending identities on a moderated data contract.
+pub mod contract_user_moderation;
+
+/// Module for paying out the fee pots a data contract's document action fees collect in.
+pub mod contract_fee_claim;
 
 /// Module for voting from a masternode.
 pub mod masternode_vote;
@@ -46,10 +55,14 @@ mod identity_top_up_from_addresses;
 
 /// Module for identity-create-from-shielded-pool transition validation
 pub mod identity_create_from_shielded_pool;
+/// Identity top up from shielded pool (pool to an existing identity)
+pub mod identity_top_up_from_shielded_pool;
 /// Module for shield transition validation
 pub mod shield;
 /// Module for shield from asset lock transition validation
 pub mod shield_from_asset_lock;
+/// Shield from identity (identity balance to shielded pool)
+pub mod shield_from_identity;
 /// Common validation logic shared by shielded transitions (proof verification)
 pub mod shielded_common;
 /// Module for shielded transfer transition validation
@@ -58,6 +71,21 @@ pub mod shielded_transfer;
 pub mod shielded_withdrawal;
 /// Module for unshield transition validation
 pub mod unshield;
+
+use dpp::document::Document;
+use dpp::version::PlatformVersion;
+
+pub(crate) fn stamp_withdrawal_document(
+    document: &mut Document,
+    platform_version: &PlatformVersion,
+) {
+    match document {
+        Document::V0(document) => {
+            document.contract_version =
+                Some(platform_version.system_data_contracts.withdrawals as u32);
+        }
+    }
+}
 
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -143,6 +171,7 @@ pub(in crate::execution) mod tests {
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
+    use dpp::block::epoch::EpochIndex;
     use dpp::tokens::calculate_token_id;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
@@ -177,7 +206,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -833,7 +862,7 @@ pub(in crate::execution) mod tests {
     ) -> DataContract {
         // Deserialize the data contract from bytes
         let mut data_contract =
-            DataContract::versioned_deserialize(&contract_bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&contract_bytes, false, platform_version)
                 .expect("expected to deserialize data contract");
 
         // Get identity info based on the enum variant
@@ -1171,6 +1200,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(
+                preorder,
+                &entropy.0,
+                2 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -1182,6 +1219,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(
+                preorder,
+                &entropy.0,
+                2 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1193,6 +1238,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(
+                domain,
+                &entropy.0,
+                3 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -1204,6 +1257,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(
+                domain,
+                &entropy.0,
+                3 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -1483,6 +1544,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -1494,6 +1558,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1505,6 +1572,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -1516,6 +1586,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -1753,6 +1826,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1764,6 +1840,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -2517,6 +2596,30 @@ pub(in crate::execution) mod tests {
         contract_start_block: Option<BlockHeight>,
         platform_version: &PlatformVersion,
     ) -> (DataContract, Identifier) {
+        create_token_contract_with_owner_identity_with_start_epoch(
+            platform,
+            identity_id,
+            token_configuration_modification,
+            contract_start_time,
+            add_groups,
+            contract_start_block,
+            None,
+            platform_version,
+        )
+    }
+
+    /// Like [`create_token_contract_with_owner_identity`], with the contract's creation epoch
+    /// settable as well; a perpetual distribution counted in epochs starts from it.
+    pub(in crate::execution) fn create_token_contract_with_owner_identity_with_start_epoch(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity_id: Identifier,
+        token_configuration_modification: Option<impl FnOnce(&mut TokenConfiguration)>,
+        contract_start_time: Option<TimestampMillis>,
+        add_groups: Option<BTreeMap<GroupContractPosition, Group>>,
+        contract_start_block: Option<BlockHeight>,
+        contract_start_epoch: Option<EpochIndex>,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Identifier) {
         let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
 
         let basic_token_contract = setup_contract(
@@ -2525,7 +2628,7 @@ pub(in crate::execution) mod tests {
             Some(data_contract_id.to_buffer()),
             Some(identity_id.to_buffer()),
             Some(|data_contract: &mut DataContract| {
-                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at_epoch(Some(contract_start_epoch.unwrap_or_default()));
                 data_contract.set_created_at(Some(contract_start_time.unwrap_or_default()));
                 data_contract
                     .set_created_at_block_height(Some(contract_start_block.unwrap_or_default()));
@@ -2629,6 +2732,7 @@ pub(in crate::execution) mod tests {
                     token_amount: token_cost_amount,
                     effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                     gas_fees_paid_by,
+                    optional: false,
                 }));
                 let gas_fees_paid_by_int: u8 = gas_fees_paid_by.into();
                 let schema = document_type.schema_mut();
@@ -3189,6 +3293,9 @@ pub(in crate::execution) mod tests {
                     platform_version,
                 )
                 .expect("expected a random preorder document");
+            preorder_document
+                .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
 
             let mut domain_document = domain
                 .random_document_with_identifier_and_entropy(
@@ -3200,6 +3307,9 @@ pub(in crate::execution) mod tests {
                     platform_version,
                 )
                 .expect("expected a random domain document");
+            domain_document
+                .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+                .expect("expected to set the document id");
 
             domain_document.set("parentDomainName", "dash".into());
             domain_document.set("normalizedParentDomainName", "dash".into());
@@ -3659,6 +3769,9 @@ pub(in crate::execution) mod tests {
             document.set("subdomainRules.allowSubdomains", false.into());
             document.set("preorderSalt", rng.gen::<[u8; 32]>().into());
 
+            document
+                .set_id_for_creation(domain, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
             let owner_id = document.owner_id();
             let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
                 base: DocumentBaseTransition::from_document(

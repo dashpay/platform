@@ -22,7 +22,7 @@ mod tests {
     use dpp::identity::signer::Signer;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::AddressNonce;
-    use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+    use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
     use dpp::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
     use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
@@ -4324,8 +4324,8 @@ mod tests {
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
             // Deserialize
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             // Re-serialize
             let reserialized = deserialized
@@ -4371,8 +4371,8 @@ mod tests {
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
             // Should deserialize without error
-            let _deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let _deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
         }
 
         #[tokio::test]
@@ -4405,7 +4405,7 @@ mod tests {
             }
 
             // Should fail to deserialize or produce invalid transition
-            let result = StateTransition::deserialize_from_bytes(&serialized);
+            let result = StateTransition::deserialize_from_bytes_untrusted(&serialized);
             // Either deserialization fails or produces invalid data
             // We accept both outcomes as valid error handling
             if result.is_ok() {

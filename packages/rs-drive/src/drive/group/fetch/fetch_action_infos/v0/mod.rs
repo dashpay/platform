@@ -7,7 +7,7 @@ use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::Element::Item;
@@ -76,7 +76,10 @@ impl Drive {
             let action_id = Identifier::from_bytes(last_path_component)?;
 
             match element {
-                Item(value, ..) => Ok((action_id, GroupAction::deserialize_from_bytes(&value)?)),
+                Item(value, ..) => Ok((
+                    action_id,
+                    GroupAction::deserialize_from_bytes_trusted(&value)?,
+                )),
                 _ => Err(Error::Drive(DriveError::CorruptedDriveState(
                     "element should be an item representing the group action".to_string(),
                 ))),

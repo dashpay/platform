@@ -121,6 +121,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(_) => 10274,
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
             Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
+            Self::PreProgrammedDistributionAmountOverLimitError(_) => 10277,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -133,6 +134,17 @@ impl ErrorWithCode for BasicError {
             Self::MainGroupIsNotDefinedError(_) => 10357,
             Self::GroupRequiredPowerIsInvalidError(_) => 10358,
             Self::GroupHasTooFewMembersError(_) => 10359,
+
+            // Contract groups
+            Self::ContractGroupMembershipsOverLimitError(_) => 10360,
+            Self::DuplicateContractGroupMembershipError(_) => 10361,
+            Self::RedundantContractGroupMembershipError(_) => 10362,
+            Self::ContractGroupMemberNotInContractError(_) => 10363,
+            Self::InvalidContractGroupAdminsError(_) => 10364,
+            // 10365 is unassigned: the registrant-not-owner rule became inexpressible when the
+            // owner left the wire, before protocol version 14 shipped.
+            Self::InvalidContractGroupNameLengthError(_) => 10366,
+            Self::InvalidContractGroupDescriptionLengthError(_) => 10367,
 
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
@@ -205,6 +217,11 @@ impl ErrorWithCode for BasicError {
             Self::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_) => 10532,
             Self::InvalidKeyPurposeForContractBoundsError(_) => 10533,
             Self::IdentityAssetLockTransactionTooManyInputsError(_) => 10534,
+            Self::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(_) => 10535,
+            Self::IdentityPublicKeyLimitsNotAllowedError(_) => 10536,
+            Self::InvalidIdentityPublicKeyBudgetError(_) => 10537,
+            Self::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_) => 10538,
+            Self::IdentityKeyLimitsUpdateEmptyError(_) => 10539,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -244,6 +261,14 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedTooManyActionsError(_) => 10825,
             Self::ShieldedImplicitFeeCapExceededError(_) => 10826,
             Self::ShieldedInvalidDenominationError(_) => 10827,
+            Self::InvalidTokenDistributionEpochIntervalTooShortError(_) => 10828,
+            Self::InvalidTokenOncePerIdentityDistributionAmountError(_) => 10829,
+
+            // Contract Moderation Errors: 10900-10949
+            Self::InvalidContractModerationConfigError(_) => 10900,
+            Self::ContractModerationSelfTargetError(_) => 10901,
+            Self::DocumentActionFeesWithoutModerationError(_) => 10902,
+            Self::ContractModerationReasonTooLongError(_) => 10903,
         }
     }
 }
@@ -264,6 +289,11 @@ impl ErrorWithCode for SignatureError {
             Self::BasicBLSError(_) => 20010,
             Self::InvalidSignaturePublicKeyPurposeError(_) => 20011,
             Self::UncompressedPublicKeyNotAllowedError(_) => 20012,
+            Self::ContractBoundedKeyOutOfBoundsError(_) => 20014,
+            Self::ContractBoundedKeyNonBatchError(_) => 20013,
+            Self::PublicKeyBudgetExhaustedError(_) => 20015,
+            Self::PublicKeyExpiredError(_) => 20016,
+            Self::PublicKeyWithLimitsCannotUpdateKeyLimitsError(_) => 20017,
         }
     }
 }
@@ -320,6 +350,13 @@ impl ErrorWithCode for StateError {
             Self::ReferencedKeyIdPropertyInvalidError(_) => 40125,
             Self::ReferencedDocumentPropertyAgreementInvalidError(_) => 40126,
             Self::ReferencedDocumentPropertyMismatchError(_) => 40127,
+            Self::DocumentImmutablePropertyChangedError(_) => 40128,
+            Self::GasFeesPaidByNotAllowedError(_) => 40129,
+            Self::InconsistentGasFeesPaidByInBatchError(_) => 40130,
+            Self::ReferencedDocumentTypeNotDeletableError(_) => 40131,
+            Self::DocumentActionFeeAgreementNotSetError(_) => 40132,
+            Self::DocumentActionFeeAgreementMismatchError(_) => 40133,
+            Self::DocumentActionFeeMultiplierNotToleratedError(_) => 40134,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -339,6 +376,11 @@ impl ErrorWithCode for StateError {
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,
             Self::IdentityToFreezeDoesNotExistError(_) => 40217,
+            Self::IdentityPublicKeyBudgetExceededError(_) => 40218,
+            Self::IdentityPublicKeyAlreadyExpiredError(_) => 40219,
+            Self::IdentityPublicKeyLimitNotSetError(_) => 40220,
+            Self::IdentityPublicKeyLimitNotRaisedError(_) => 40221,
+            Self::GasSponsorInsufficientBalanceError(_) => 40222,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
@@ -385,6 +427,7 @@ impl ErrorWithCode for StateError {
             Self::TokenDirectPurchaseUserPriceTooLow(_) => 40719,
             Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
             Self::TokenNotForDirectSale(_) => 40721,
+            Self::TokenOncePerIdentityDistributionAlreadyClaimedError(_) => 40722,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,
@@ -399,6 +442,31 @@ impl ErrorWithCode for StateError {
             Self::InvalidShieldedProofError(_) => 40902,
             Self::InsufficientPoolNotesError(_) => 40903,
             Self::InsufficientShieldedFeeError(_) => 40904,
+
+            // Contract group errors: 41000-41099
+            Self::ContractGroupAlreadyExistsError(_) => 41000,
+            Self::ContractGroupNotFoundError(_) => 41001,
+            Self::IdentityNotContractGroupOwnerOrAdminError(_) => 41002,
+            Self::ContractGroupAdminNotFoundError(_) => 41003,
+
+            // Contract moderation errors: 41100-41199
+            Self::ContractModerationNotEnabledError(_) => 41100,
+            Self::IdentityNotContractModeratorError(_) => 41101,
+            Self::ContractModerationTargetNotAllowedError(_) => 41102,
+            Self::ContractUserAlreadyBannedError(_) => 41103,
+            Self::ContractUserNotBannedError(_) => 41104,
+            Self::ContractUserNotSuspendedError(_) => 41105,
+            Self::ContractSuspensionNotInFutureError(_) => 41106,
+            Self::ContractUserBannedError(_) => 41107,
+            Self::ContractUserSuspendedError(_) => 41108,
+            Self::ContractModerationTargetNotFoundError(_) => 41109,
+            Self::ContractModeratorIdentityNotFoundError(_) => 41110,
+            Self::ContractFeesAlreadyClaimedThisEpochError(_) => 41111,
+            Self::ContractFeesNothingToClaimError(_) => 41112,
+            Self::ContractFeeClaimNotAllowedError(_) => 41113,
+            Self::ContractModerationCounterpartyBarredError(_) => 41114,
+            Self::DocumentTypeNotDeletableByModeratorsError(_) => 41115,
+            Self::DocumentModerationWindowElapsedError(_) => 41116,
         }
     }
 }

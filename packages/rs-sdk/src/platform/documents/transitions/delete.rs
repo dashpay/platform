@@ -3,6 +3,7 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
@@ -153,6 +154,31 @@ impl DocumentDeleteTransitionBuilder {
         self
     }
 
+    /// Adds what the document delete transition agrees to pay in action fees. Required when
+    /// the document type charges a fee for the action: build it from the contract the user was
+    /// shown with `DocumentActionFeeAgreement::for_document_type_action`, so that a fee changed
+    /// since is refused instead of paid.
+    ///
+    /// Call it after `with_state_transition_creation_options`, which replaces the options this
+    /// is kept in.
+    ///
+    /// # Arguments
+    ///
+    /// * `action_fee_agreement` - The action fee agreement to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_action_fee_agreement(
+        mut self,
+        action_fee_agreement: DocumentActionFeeAgreement,
+    ) -> Self {
+        self.state_transition_creation_options
+            .get_or_insert_with(Default::default)
+            .action_fee_agreement = Some(action_fee_agreement);
+        self
+    }
+
     /// Resolve the document type and the document this delete will be
     /// built from, validating the builder's target. Runs BEFORE any nonce
     /// is reserved (an invalid builder must not advance the SDK's cached
@@ -250,6 +276,12 @@ impl DocumentDeleteTransitionBuilder {
         // an error path, so a rejection after it would leak an increment
         // per failed call.
         let (document_type, document) = self.resolve_document_for_deletion()?;
+
+        // A local failure after the nonce is reserved would leave the cached nonce ahead of
+        // Platform's, so what can be refused without it is refused first.
+        if let Some(creation_options) = &self.state_transition_creation_options {
+            creation_options.validate_base_carries_action_fee_agreement(platform_version)?;
+        }
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(

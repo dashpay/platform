@@ -30,6 +30,65 @@ describe('DocumentsTransitions', () => {
     });
   }
 
+  describe('DocumentBaseTransition', () => {
+    function createAgreement() {
+      return new wasm.DocumentActionFeeAgreement({
+        owner: 10000000n,
+        moderators: 100000000n,
+        feeMultiplier: {
+          knownPermille: 1000n,
+          increaseTolerancePercent: 20,
+        },
+      });
+    }
+
+    function createBase(actionFeeAgreement?: InstanceType<typeof wasm.DocumentActionFeeAgreement>) {
+      const documentInstance = createDocument();
+
+      return new wasm.DocumentBaseTransition({
+        documentId: documentInstance.id,
+        identityContractNonce: BigInt(1),
+        documentTypeName,
+        dataContractId,
+        actionFeeAgreement,
+      });
+    }
+
+    it('should carry the action fee agreement it was created with', () => {
+      const base = createBase(createAgreement());
+
+      const agreement = base.actionFeeAgreement;
+
+      expect(agreement.owner).to.equal(10000000n);
+      expect(agreement.moderators).to.equal(100000000n);
+      expect(agreement.knownFeeMultiplierPermille).to.equal(1000n);
+      expect(agreement.feeMultiplierIncreaseTolerancePercent).to.equal(20);
+      expect(agreement.pricing).to.equal('feeMultiplier');
+    });
+
+    it('should have no action fee agreement when none is given', () => {
+      const base = createBase();
+
+      expect(base.actionFeeAgreement).to.be.undefined();
+    });
+
+    it('should set the action fee agreement', () => {
+      const base = createBase();
+
+      base.actionFeeAgreement = createAgreement();
+
+      expect(base.actionFeeAgreement.owner).to.equal(10000000n);
+    });
+
+    it('should clear the action fee agreement with undefined', () => {
+      const base = createBase(createAgreement());
+
+      base.actionFeeAgreement = undefined;
+
+      expect(base.actionFeeAgreement).to.be.undefined();
+    });
+  });
+
   describe('DocumentCreateTransition', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
@@ -113,6 +172,36 @@ describe('DocumentsTransitions', () => {
 
         expect(createTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
         expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
+      });
+    });
+
+    describe('actionFeeAgreement', () => {
+      it('should pass the action fee agreement to the base', () => {
+        const documentInstance = createDocument();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          actionFeeAgreement: new wasm.DocumentActionFeeAgreement({
+            owner: 5000n,
+            moderators: 7000n,
+          }),
+        });
+
+        const agreement = createTransition.base.actionFeeAgreement;
+
+        expect(agreement.owner).to.equal(5000n);
+        expect(agreement.moderators).to.equal(7000n);
+        expect(agreement.pricing).to.equal('fixed');
+      });
+
+      it('should leave the base without an agreement when none is given', () => {
+        const documentInstance = createDocument();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        expect(createTransition.base.actionFeeAgreement).to.be.undefined();
       });
     });
 

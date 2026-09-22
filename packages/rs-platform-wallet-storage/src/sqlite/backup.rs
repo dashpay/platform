@@ -619,7 +619,7 @@ pub(crate) fn prune(
         files.push((ts, path));
     }
     // Newest first.
-    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.sort_by_key(|file| std::cmp::Reverse(file.0));
     let now = SystemTime::now();
     let mut removed = Vec::new();
     let mut failed_removals: Vec<(PathBuf, std::io::Error)> = Vec::new();

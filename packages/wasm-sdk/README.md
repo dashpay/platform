@@ -170,6 +170,21 @@ const r = sdk.derive_key_from_seed_with_path(m, undefined, "m/44'/5'/0'/0/0", 'm
 let b = sdk.WasmSdkBuilder.testnetTrusted();
 const client = await b.withSettings(5000, 10000, 3, true).withLogs('info').build();
 const status = await client.getStatus();
+// Enumerate contracts one page at a time, ascending by id (pass the last key as startAfter)
+const contracts = await client.getDataContractsByRange({ limit: 100 });
+// Check that contracts held locally are still current (versions only; the contracts themselves only with includeContracts)
+const versions = await client.getDataContractsLatestVersions({ contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'] });
+// Contract groups: a group's owner/admins/name, its members one kind at a time (page with nextStartAfter), and the groups a contract is in
+const contractGroupId = '8Y4NJ3bDgNvWm6tMMXAdEWQEvkqbCiCSwK9KpQTPMFZ2'; // a contract group id, not a contract id
+const groupInfo = await client.getContractGroupInfo(contractGroupId);
+const members = await client.getContractGroupMembers({ contractGroupId, kind: 'contracts', limit: 50 });
+const memberships = await client.getContractGroupsForContract('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
+// What is left of the budgets of an identity's keys: a bigint per budgeted key (0n = spent), null for a key without a budget
+const budgets = await client.getIdentityKeysRemainingBudgets('5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS', [3, 4]);
+// Raise the limits of a key: add credits to its budget, or move its expiry later (signed by a MASTER key or an unlimited CRITICAL key)
+const key = await client.identityUpdateKeyLimits({ identity, keyId: 5, addBudget: 100000000n, signer });
+// Seed a contract the app already holds (a bundled snapshot); pair with the versions check above
+client.addKnownContract(contract);
 client.free();
 ```
 

@@ -2,7 +2,7 @@ use crate::identity::Purpose::{
     AUTHENTICATION, DECRYPTION, ENCRYPTION, OWNER, SYSTEM, TRANSFER, VOTING,
 };
 use anyhow::bail;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -24,6 +24,7 @@ use std::convert::TryFrom;
     Decode,
     Default,
     strum::EnumIter,
+    DecodeUntrusted,
 )]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels

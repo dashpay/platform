@@ -1,8 +1,23 @@
 use crate::version::system_limits::SystemLimits;
 
-/// System limits for protocol version 14 and above.
+/// System limits for protocol version 14 and above. Relative to the last
+/// released table (V3) this changes the withdrawal limit, adds the
+/// time-range overlap-factor cap, adds the time-range TTL pair, and raises
+/// the GroveDB proof envelope floor (the TTL and floor fields joined this
+/// table in place while protocol version 14 was unreleased, rather than
+/// spawning a new version). The table stays editable in place until 4.2
+/// (protocol version 14) is live on mainnet, and is frozen after:
 ///
-/// Identical to [`super::v3::SYSTEM_LIMITS_V3`] except for two changes:
+/// * `max_time_range_ttl_seconds` is set to one week: the ceiling on the
+///   `ttl` a `timeRange` index transform may declare. The cap is what makes
+///   the ephemeral-bytes fee model safe — a flat processing rate is only an
+///   honest price for transitional storage while the lifetime it covers is
+///   bounded. See `book/src/drive/time-range-ttl.md`.
+/// * `min_time_range_ttl_drop_operations_per_write` is set to 32. Drive
+///   raises this floor according to the merged grid's tree structure and
+///   overlap, so cleanup can retire trees faster than writes create them.
+///
+/// The withdrawal and overlap-factor changes:
 ///
 /// * The daily withdrawal limit becomes relative: `daily_withdrawal_limit_percent` is set to 15,
 ///   so Platform pools at most 15% of the total credits it held a day ago into asset unlock
@@ -14,6 +29,24 @@ use crate::version::system_limits::SystemLimits;
 ///   24 overlapping windows per timestamp (a day-long window sliding hourly). The rule cannot
 ///   exist before v14 because the `timeRange` keyword itself is only admitted by the v14
 ///   document meta-schema.
+/// * `core_dust_relay_fee_per_kb` is set to Core's default 3000 duffs/kB: an expired
+///   withdrawal whose whole amount is below the dust threshold of its output script (546
+///   duffs for P2PKH) is marked FAILED by `rebroadcast_expired_withdrawal_documents` v2
+///   instead of being re-signed every 48 Core blocks forever. Withdrawals admitted before
+///   v12's 1000-duff floor can carry such amounts on live networks.
+/// * `minimum_grovedb_proof_envelope_version` becomes 1: clients verifying with v14 reject
+///   the legacy GroveDB V0 proof envelope, whose item binding leaves returned item bytes
+///   unauthenticated. Every live network has emitted V1 envelopes since v13.
+/// * Core withdrawal fee rates are capped at 6,765 duffs per byte.
+/// * Contract groups (protocol version 14): a data contract create transition may declare at
+///   most 16 contract group memberships, a contract group may name at most 16 admins besides
+///   its owner, and a group's name and description are capped at 64 and 256 characters. The
+///   `max_contract_group_size` limit was renamed `max_group_member_count` at the same time; it
+///   bounds the members of a change-control `Group` inside a contract, not a contract group.
+/// * Contract moderation (protocol version 14): a moderated data contract may name at most 16
+///   moderator identities, its owner counted when named. A suspension runs until at most
+///   2^53 - 1 milliseconds of block time, the largest value JSON clients read exactly. The
+///   text of the reason a ban or a suspension carries is at most 1024 bytes.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -30,7 +63,16 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     daily_withdrawal_limit_percent: Some(15), // 15% of the total credits a day ago (replaces the flat 2000 Dash in v14)
     max_daily_withdrawal_amount: Some(400_000_000_000_000), // 4000 Dash: Core's unlock capacity per day (LimitAmountV24)
     min_withdrawal_amount: 1_000_000,                       //1000 duffs (raised from 190 in v12)
-    max_contract_group_size: 256,
+    core_dust_relay_fee_per_kb: Some(3000), // Core's default dust relay fee: 546-duff P2PKH threshold; expired withdrawals below it fail instead of re-signing
+    max_core_fee_per_byte: Some(6_765),
+    max_group_member_count: 256,
+    max_contract_group_memberships_per_contract: 16,
+    max_contract_group_admins: 16,
+    max_contract_group_name_length: 64,
+    max_contract_group_description_length: 256,
+    max_contract_moderators: 16,
+    max_contract_suspension_until: 9_007_199_254_740_991,
+    max_contract_moderation_reason_length: 1024,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is
@@ -41,4 +83,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: Some(24),
+    max_time_range_ttl_seconds: Some(604_800), // one week
+    min_time_range_ttl_drop_operations_per_write: Some(32),
+    minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
 };

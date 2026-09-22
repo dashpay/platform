@@ -29,21 +29,19 @@ pub(super) fn consensus_params_update_v1(
                 });
             }
         }
-        Network::Testnet => {
-            if epoch_info.is_first_block_of_epoch(1480) {
-                return Some(ConsensusParams {
-                    block: None,
-                    evidence: None,
-                    validator: None,
-                    version: Some(VersionParams {
-                        app_version: new_platform_version.protocol_version as u64,
-                        consensus_version: 1,
-                    }),
-                    synchrony: None,
-                    timeout: None,
-                    abci: None,
-                });
-            }
+        Network::Testnet if epoch_info.is_first_block_of_epoch(1480) => {
+            return Some(ConsensusParams {
+                block: None,
+                evidence: None,
+                validator: None,
+                version: Some(VersionParams {
+                    app_version: new_platform_version.protocol_version as u64,
+                    consensus_version: 1,
+                }),
+                synchrony: None,
+                timeout: None,
+                abci: None,
+            });
         }
         _ => {}
     }

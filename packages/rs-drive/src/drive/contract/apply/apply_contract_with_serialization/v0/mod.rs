@@ -14,7 +14,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -191,7 +191,7 @@ impl Drive {
 
         if already_exists {
             if !original_contract_stored_data.is_empty() {
-                let original_contract = DataContract::versioned_deserialize(
+                let original_contract = DataContract::versioned_deserialize_trusted(
                     &original_contract_stored_data,
                     false,
                     platform_version,

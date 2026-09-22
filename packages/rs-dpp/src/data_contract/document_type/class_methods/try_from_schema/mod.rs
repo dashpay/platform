@@ -3,6 +3,7 @@ use crate::data_contract::document_type::class_methods::apply_required_since::ap
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
+    is_referenced_system_agreement_property, is_referring_system_agreement_property,
     property_names, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
     DocumentType,
 };
@@ -373,7 +374,10 @@ fn apply_property_reference_v0(
         "identity" => DocumentPropertyReferenceTarget::Identity,
         "contract" => DocumentPropertyReferenceTarget::Contract,
         "token" => DocumentPropertyReferenceTarget::Token,
-        "permanentDocument" => {
+        // The two document targets share one declaration shape; they differ
+        // only in whether the referenced document type must forbid deletion,
+        // which is checked against state at contract registration
+        document_target @ ("permanentDocument" | "deletableDocument") => {
             // An absent contractId means the reference targets a document
             // type of the declaring contract itself
             let contract_id = refers_to_map
@@ -390,10 +394,9 @@ fn apply_property_reference_v0(
                 .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
 
             if document_type_name.is_empty() || document_type_name.len() > 64 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "permanentDocument refersTo documentType must be between 1 and 64 characters"
-                        .to_string(),
-                ));
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "{document_target} refersTo documentType must be between 1 and 64 characters"
+                )));
             }
 
             let property_agreement = match refers_to_map.get(property_names::PROPERTY_AGREEMENT) {
@@ -401,11 +404,10 @@ fn apply_property_reference_v0(
                 Some(agreement_value) => {
                     let agreement_map = agreement_value.to_btree_ref_string_map()?;
                     if agreement_map.is_empty() || agreement_map.len() > 10 {
-                        return Err(DataContractError::InvalidContractStructure(
-                            "permanentDocument refersTo propertyAgreement must declare \
+                        return Err(DataContractError::InvalidContractStructure(format!(
+                            "{document_target} refersTo propertyAgreement must declare \
                              between 1 and 10 property pairs"
-                                .to_string(),
-                        ));
+                        )));
                     }
                     agreement_map
                         .iter()
@@ -427,16 +429,49 @@ fn apply_property_reference_v0(
                                     ));
                                 }
                             }
+                            // Either side may name a system property, but only one
+                            // the agreement can read back as an identifier: the
+                            // writer's `$ownerId` on the referring side (a write
+                            // gate), `$ownerId` or `$creatorId` on the referenced
+                            // side.
+                            if referring_property.starts_with('$')
+                                && !is_referring_system_agreement_property(referring_property)
+                            {
+                                return Err(DataContractError::InvalidContractStructure(
+                                    "propertyAgreement keys must name a schema property of \
+                                     the declaring document type or its $ownerId"
+                                        .to_string(),
+                                ));
+                            }
+                            if referenced_property.starts_with('$')
+                                && !is_referenced_system_agreement_property(referenced_property)
+                            {
+                                return Err(DataContractError::InvalidContractStructure(
+                                    "propertyAgreement values must name a schema property of \
+                                     the referenced document type or one of its $ownerId and \
+                                     $creatorId system properties"
+                                        .to_string(),
+                                ));
+                            }
                             Ok((referring_property.clone(), referenced_property.to_string()))
                         })
                         .collect::<Result<BTreeMap<String, String>, DataContractError>>()?
                 }
             };
 
-            DocumentPropertyReferenceTarget::PermanentDocument {
-                contract_id,
-                document_type_name: document_type_name.to_string(),
-                property_agreement,
+            let document_type_name = document_type_name.to_string();
+            if document_target == "permanentDocument" {
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id,
+                    document_type_name,
+                    property_agreement,
+                }
+            } else {
+                DocumentPropertyReferenceTarget::DeletableDocument {
+                    contract_id,
+                    document_type_name,
+                    property_agreement,
+                }
             }
         }
         "identityPublicKey" => {
@@ -465,13 +500,12 @@ fn apply_property_reference_v0(
     // `propertyAgreement` compares against a referenced DOCUMENT's values —
     // no other target kind has a document body to agree with.
     if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
-        && !matches!(
-            target,
-            DocumentPropertyReferenceTarget::PermanentDocument { .. }
-        )
+        && target.as_document_reference().is_none()
     {
         return Err(DataContractError::InvalidContractStructure(
-            "propertyAgreement is only allowed on permanentDocument references".to_string(),
+            "propertyAgreement is only allowed on permanentDocument and deletableDocument \
+             references"
+                .to_string(),
         ));
     }
 
@@ -742,6 +776,129 @@ mod tests {
         );
     }
 
+    fn system_agreement_schema(agreement: serde_json::Value) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "authorId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0
+                },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "propertyAgreement": agreement
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_parse_referenced_system_identifiers_in_property_agreement() {
+        for referenced in ["$ownerId", "$creatorId"] {
+            let document_type = try_document_type_from_schema(system_agreement_schema(json!({
+                "authorId": referenced
+            })))
+            .expect("a referenced-side system identifier should parse");
+
+            let property_type = document_type
+                .as_ref()
+                .flattened_properties()
+                .get("postId")
+                .map(|p| p.property_type.clone())
+                .expect("property should be present");
+
+            let DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    property_agreement, ..
+                },
+            ) = property_type
+            else {
+                panic!("expected a permanentDocument reference");
+            };
+            assert_eq!(
+                property_agreement,
+                BTreeMap::from([("authorId".to_string(), referenced.to_string())])
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_other_system_properties_on_the_referring_side_of_an_agreement() {
+        for referring in ["$creatorId", "$id", "$createdAt"] {
+            let err = try_document_type_from_schema(system_agreement_schema(json!({
+                referring: "$ownerId"
+            })))
+            .expect_err("only $ownerId may be the referring side");
+
+            let message = err.to_string();
+            assert!(
+                message.contains("declaring document type or its $ownerId"),
+                "unexpected error for {referring}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_parse_writer_owner_id_on_the_referring_side_of_an_agreement() {
+        for referenced in ["$ownerId", "$creatorId", "authorId"] {
+            let document_type = try_document_type_from_schema(system_agreement_schema(json!({
+                "$ownerId": referenced
+            })))
+            .expect("the writer's $ownerId should parse as the referring side");
+
+            let property_type = document_type
+                .as_ref()
+                .flattened_properties()
+                .get("postId")
+                .map(|p| p.property_type.clone())
+                .expect("property should be present");
+
+            let DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    property_agreement, ..
+                },
+            ) = property_type
+            else {
+                panic!("expected a permanentDocument reference");
+            };
+            assert_eq!(
+                property_agreement,
+                BTreeMap::from([("$ownerId".to_string(), referenced.to_string())])
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_other_system_properties_on_the_referenced_side_of_an_agreement() {
+        for referenced in ["$id", "$createdAt", "$revision", "$owner"] {
+            let err = try_document_type_from_schema(system_agreement_schema(json!({
+                "authorId": referenced
+            })))
+            .expect_err("only $ownerId and $creatorId may be referenced");
+
+            let message = err.to_string();
+            assert!(
+                message.contains("$ownerId and $creatorId system properties"),
+                "unexpected error for {referenced}: {message}"
+            );
+        }
+    }
+
     #[test]
     fn should_parse_permanent_document_refers_to() {
         let contract_id = Identifier::from([7u8; 32]);
@@ -910,6 +1067,135 @@ mod tests {
             "additionalProperties": false
         }))
         .expect_err("should fail");
+    }
+
+    #[test]
+    fn should_parse_deletable_document_refers_to() {
+        let contract_id = Identifier::from([7u8; 32]);
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "draftId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "deletableDocument",
+                        "contractId": contract_id.to_string(Encoding::Base58),
+                        "documentType": "draft",
+                        "propertyAgreement": { "topic": "topic", "$ownerId": "$ownerId" }
+                    }
+                },
+                "ownDraftId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1,
+                    "refersTo": {
+                        "type": "deletableDocument",
+                        "documentType": "draft"
+                    }
+                },
+                "topic": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 2
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = |name: &str| {
+            document_type
+                .as_ref()
+                .flattened_properties()
+                .get(name)
+                .map(|p| p.property_type.clone())
+                .expect("property should be present")
+        };
+
+        assert_eq!(
+            property_type("draftId"),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::DeletableDocument {
+                    contract_id: Some(contract_id),
+                    document_type_name: "draft".to_string(),
+                    property_agreement: [
+                        ("topic".to_string(), "topic".to_string()),
+                        ("$ownerId".to_string(), "$ownerId".to_string()),
+                    ]
+                    .into(),
+                }
+            )
+        );
+        assert_eq!(
+            property_type("ownDraftId"),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::DeletableDocument {
+                    contract_id: None,
+                    document_type_name: "draft".to_string(),
+                    property_agreement: Default::default(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_deletable_document_refers_to_without_document_type() {
+        let error = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "draftId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "deletableDocument"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+        assert!(!error.to_string().is_empty());
+
+        let error = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "draftId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "deletableDocument",
+                        "documentType": "d".repeat(65)
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("deletableDocument refersTo documentType must be between"),
+            "{error}"
+        );
     }
 
     #[test]

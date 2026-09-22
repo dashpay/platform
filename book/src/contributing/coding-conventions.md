@@ -502,6 +502,25 @@ now does.
 4. Test the rejection through `process_raw_state_transitions`, and test that
    the previous protocol version still accepts the input.
 
+**Adding GroveDB structure**
+
+1. Put the key constant and the `*_path()` / `*_path_vec()` pair in the area's
+   `paths.rs`. A new root key goes where writes below it are rare; see
+   [The GroveDB Structure](../drive/grovedb-structure.md#the-shape-of-a-layer).
+2. Build it in one function that both `create_initial_state_structure` and the
+   protocol upgrade (`transition_to_version_N`) call, in the same order, so a
+   fresh chain and an upgraded one hold the same state.
+3. Describe it in the `structure.rs` beside that `paths.rs`, from the same
+   constant, with `since` set to the protocol version that introduces it and
+   the element flags it is written with.
+4. Regenerate the exported file and commit it:
+   `UPDATE_GROVEDB_STRUCTURE=1 cargo test -p drive --lib structure::tests`.
+5. Make sure something writes to the new nodes under test: a fixture in
+   `structure/tests.rs`, or a strategy test (every chain they run is checked
+   against the description). `UNVERIFIED` is empty; keep it that way.
+6. The pull request gets a comment with a link to the structure viewer
+   showing the new nodes. Check that it shows what you meant to add.
+
 **Adding a query end-to-end**
 
 1. Proto message in `packages/dapi-grpc/protos/platform/v0/platform.proto`,

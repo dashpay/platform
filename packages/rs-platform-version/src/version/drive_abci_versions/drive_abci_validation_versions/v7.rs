@@ -16,6 +16,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                     verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                 },
                 validate_identity_public_key_contract_bounds: 0,
+                validate_identity_public_keys_limits: None,
                 validate_identity_public_key_ids_dont_exist_in_state: 0,
                 validate_identity_public_key_ids_exist_in_state: 0,
                 validate_state_transition_identity_signed: 0,
@@ -41,6 +42,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            identity_key_limits_update_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
             identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
                 advanced_structure: None,
@@ -101,6 +111,22 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            contract_fee_claim_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
             data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
@@ -109,6 +135,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                 revision: 0,
                 transform_into_action: 0,
                 failed_per_transition_action: 0,
+                contract_moderation_gate: None,
                 fetch_documents_for_transitions_knowing_contract_and_document_type: 0,
                 fetch_document_with_id: 0,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
@@ -125,6 +152,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                     },
                 },
                 is_allowed: 0,
+                identity_minimum_balance_pre_check: 0,
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
                 document_index_only_delete_transition_structure_validation: 0,
@@ -250,6 +278,23 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             identity_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            identity_top_up_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: None,
                     advanced_structure: None,

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use dashcore::Network;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
@@ -12,7 +13,8 @@ impl RewardDistributionType {
     /// - For `BlockBasedDistribution`, ensures the interval is at least 100 blocks.
     /// - For `TimeBasedDistribution`, ensures the interval is at least 1 hour (3,600,000 ms)
     ///   and divisible evenly by one minute (60,000 ms).
-    /// - For `EpochBasedDistribution`, no specific validation is enforced at this time.
+    /// - For `EpochBasedDistribution`, version 0 enforces nothing; version 1 (protocol
+    ///   version 14) requires at least 1 epoch.
     pub fn validate_structure_interval(
         &self,
         network_type: Network,
@@ -25,9 +27,10 @@ impl RewardDistributionType {
             .validate_structure_interval
         {
             0 => Ok(self.validate_structure_interval_v0(network_type)),
+            1 => Ok(self.validate_structure_interval_v1(network_type)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "RewardDistributionType::validate_structure_interval".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

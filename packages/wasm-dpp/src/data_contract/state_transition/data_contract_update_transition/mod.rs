@@ -4,7 +4,7 @@
 
 use dpp::consensus::ConsensusError;
 use dpp::serialization::ValueConvertible;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
@@ -164,7 +164,8 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         let state_transition: StateTransition =
-            PlatformDeserializable::deserialize_from_bytes(&buffer).with_js_error()?;
+            PlatformDeserializableUntrusted::deserialize_from_bytes_untrusted(&buffer)
+                .with_js_error()?;
         match state_transition {
             StateTransition::DataContractUpdate(dct) => Ok(dct.into()),
             _ => Err(JsValue::from_str("Invalid state transition type")),

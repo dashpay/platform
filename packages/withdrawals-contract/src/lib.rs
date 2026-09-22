@@ -8,6 +8,7 @@ use std::fmt;
 
 mod error;
 pub mod v1;
+pub mod v2;
 
 pub const ID_BYTES: [u8; 32] = [
     54, 98, 187, 97, 225, 127, 174, 62, 162, 148, 207, 96, 49, 151, 251, 10, 171, 109, 81, 24, 11,
@@ -43,6 +44,11 @@ pub enum WithdrawalStatus {
     COMPLETE = 3,
     /// We broadcasted the transaction but core never saw it or rejected it.
     EXPIRED = 4,
+    /// Terminal: the signed asset unlock transaction can never be mined by Core (its payout is
+    /// below Core's dust threshold), so Platform stops re-signing it. The withdrawn credits
+    /// are NOT returned: a quorum signature for the payout was released, so Platform can never
+    /// prove the transaction will not mine. They stay locked in Core's credit pool.
+    FAILED = 5,
 }
 
 impl fmt::Display for WithdrawalStatus {
@@ -53,6 +59,7 @@ impl fmt::Display for WithdrawalStatus {
             WithdrawalStatus::BROADCASTED => "Broadcasted",
             WithdrawalStatus::COMPLETE => "Complete",
             WithdrawalStatus::EXPIRED => "Expired",
+            WithdrawalStatus::FAILED => "Failed",
         };
         write!(f, "{}", status_str)
     }
@@ -60,10 +67,10 @@ impl fmt::Display for WithdrawalStatus {
 
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
     match platform_version.system_data_contracts.withdrawals {
-        1 => Ok(None),
+        1 | 2 => Ok(None),
         version => Err(Error::UnknownVersionMismatch {
             method: "withdrawals_contract::load_definitions".to_string(),
-            known_versions: vec![1],
+            known_versions: vec![1, 2],
             received: version,
         }),
     }
@@ -71,9 +78,10 @@ pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Val
 pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Value, Error> {
     match platform_version.system_data_contracts.withdrawals {
         1 => v1::load_documents_schemas(),
+        2 => v2::load_documents_schemas(),
         version => Err(Error::UnknownVersionMismatch {
             method: "withdrawals_contract::load_documents_schemas".to_string(),
-            known_versions: vec![1],
+            known_versions: vec![1, 2],
             received: version,
         }),
     }

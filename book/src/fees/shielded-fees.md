@@ -37,12 +37,14 @@ The fee is derived differently depending on the shielded transition type:
 
 | Transition | Fee Formula | Explanation |
 |---|---|---|
-| **Shield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid from transparent address inputs | Charged on the transparent side (not from `value_balance`), on top of the shielded amount. The storage and processing of the note/nullifier writes are **metered** by GroveDB; only the ZK compute fee (`proof + num_actions × per_action_processing`) is added on top. Skipped by the `value_balance`-based shielded fee validation; enforced through the address-input fee path. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
+| **Shield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid from transparent address inputs | Charged on the transparent side (not from `value_balance`), on top of the shielded amount. The storage and processing of the note/nullifier writes are **metered** by GroveDB; only the ZK compute fee (`proof + num_actions × per_action_processing`) is added on top. Skipped by the `value_balance`-based shielded fee validation; enforced through the address-input fee path. See [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity). |
 | **ShieldedTransfer** | `fee = value_balance` (pinned to the minimum) | The entire `value_balance` is the fee and must equal `compute_minimum_shielded_fee(num_actions)` exactly (overpayment is rejected). Nothing leaves the pool except the fee. |
 | **Unshield** | `fee = compute_minimum_shielded_fee(num_actions) + unshield_address_storage_fee` | `value_balance` (the transition's `unshielding_amount`) is the **gross** amount leaving the pool. The output address receives `unshielding_amount − fee`; validation requires `unshielding_amount ≥ fee`. Unshield also writes the net to the output platform address (`AddBalanceToAddress`), a real storage write priced on top of the base shielded minimum (`unshield_address_storage_fee = 222 × per_byte_rate`, ≈6.08M credits, flat regardless of action count — 222 bytes is the *storage* portion of the ≈6.24M metered address write) so the address write is covered and the proof fee isn't diverted to pay for it. See [Per-Action Storage Fee](#3-per-action-storage-fee). |
 | **ShieldedWithdrawal** | `fee = compute_minimum_shielded_fee(num_actions) + withdrawal_document_storage_fee` | `value_balance` (`unshielding_amount`) is the **gross** amount leaving the pool. The Core withdrawal document receives `unshielding_amount − fee` (which must also clear `MIN_WITHDRAWAL_AMOUNT`). Unlike the other pool-paid transitions, ShieldedWithdrawal also **writes a Core withdrawal document** — a real document insert into the withdrawals contract plus its index entries (`AddWithdrawalDocument`), with a real metered cost of ≈110M credits that is **flat regardless of action count**. That cost is priced on top of the base shielded minimum as a flat ~4,100-byte storage component (`withdrawal_document_storage_fee = 4100 × per_byte_rate`), so the document write is covered and the proof-verification fee isn't diverted from the proposer to pay for it. See [Per-Action Storage Fee](#3-per-action-storage-fee). |
-| **ShieldFromAssetLock** | `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost`, paid from the asset lock | The flat shielded minimum plus the asset-lock processing base cost is routed to the fee pools. Any remaining asset-lock value (the *surplus*) goes to an optional signed `surplus_output` platform address, or — if none is set — folds into the fee pools up to `shielded_implicit_fee_cap`. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
+| **ShieldFromAssetLock** | `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost`, paid from the asset lock | The flat shielded minimum plus the asset-lock processing base cost is routed to the fee pools. Any remaining asset-lock value (the *surplus*) goes to an optional signed `surplus_output` platform address, or — if none is set — folds into the fee pools up to `shielded_implicit_fee_cap`. See [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity). |
 | **IdentityCreateFromShieldedPool** | `total_fee = metered(insert_nullifiers + AddNewIdentity(identity + N keys)) + shielded_verification_fee`, **moved from the new identity's balance** | `value_balance` is a **fixed `denomination`** (a member of the versioned set `{0.1, 0.3, 0.5, 1.0}` DASH) and must equal it EXACTLY. The new identity is created holding the full `denomination`, funded by decrementing the shielded pool by exactly that amount — a move *between* two balance trees (like `Unshield`'s pool→address), so the global system-credit supply is unchanged (**no** `AddToSystemCredits`); the fee is then **moved** from that balance into the fee pools, so the identity ends with `denomination − total_fee`. Unlike the flat pool-paid transitions, the `AddNewIdentity` write grows with the key count, so the cost is **metered** (not a flat carve) — only the ZK compute fee (`compute_shielded_verification_fee`) is added on top, exactly like the transparent `Shield`. The client predicts it offline with `compute_shielded_identity_create_fee(num_actions, num_keys)`; consensus rejects `denomination < total_fee` with `IdentityInsufficientBalanceError`. |
+| **ShieldFromIdentity** | `fee = metered(storage + processing) + shielded_verification_fee`, paid from the funding identity's balance | Identity balance to pool (protocol version 14). Charged exactly like `Shield`, but on the identity side: the identity signature covers the whole outputs-only bundle, the metered note writes and identity writes go through the standard identity-paid path (`IdentityCreditTransferToAddresses` model), and only the ZK compute fee is added as `additional_fixed_fee_cost`. `user_fee_increase` applies. The identity must hold `amount + fee`; consensus rejects a short balance with `IdentityInsufficientBalanceError`. The pool and the identity are both balance trees, so no system-credit adjustment is emitted. See [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity). |
+| **IdentityTopUpFromShieldedPool** | `fee = compute_shielded_identity_top_up_fee(num_actions)` = `compute_minimum_shielded_fee(num_actions) + identity_balance_storage_fee`, carved from `value_balance` | Shielded pool to an EXISTING identity's balance (protocol version 14). `value_balance` (the transition's `topUpAmount`) is the gross amount leaving the pool; the identity receives `topUpAmount - fee` and validation requires `topUpAmount >= fee`. Same flat pool-paid model as `Unshield`, with the identity balance write as a flat component built like `Unshield`'s address write but calibrated to its measured cost: the top-up rewrites the existing identity's balance element and its Merk path (320 replaced bytes, 175,320 credits of processing, no storage), folded into one flat figure with headroom like the other shielded components, so `identity_balance_storage_fee = 8 x per_byte_rate` (`SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES`). The target identity and gross amount are bound into the Orchard sighash; the identity must already exist; no system-credit adjustment. |
 
 For `ShieldedTransfer`, the client constructs the bundle so that `total_spent −
 total_output = desired_fee`. The Orchard circuit proves that value is conserved
@@ -50,10 +52,11 @@ total_output = desired_fee`. The Orchard circuit proves that value is conserved
 commits to the `value_balance`. Mutating `value_balance` after signing will cause
 the binding signature to fail verification.
 
-## Entry-Transition Fees (Shield and ShieldFromAssetLock)
+## Entry-Transition Fees (Shield, ShieldFromAssetLock, and ShieldFromIdentity)
 
-The two *entry* transitions — `Shield` (transparent → shielded) and
-`ShieldFromAssetLock` (Core asset lock → shielded) — move value **into** the pool, so
+The *entry* transitions — `Shield` (transparent → shielded), `ShieldFromAssetLock`
+(Core asset lock → shielded), and, from protocol version 14, `ShieldFromIdentity`
+(identity balance → shielded) — move value **into** the pool, so
 there is no spent note from which `value_balance` could carry a fee. Their fees are
 therefore charged from the funding side, and both cover the same Halo 2 proof
 verification and per-action work the other shielded transitions pay for — but they
@@ -90,6 +93,45 @@ conserved by the standard machinery (no special-case override).
 floor requires only `shield_amount + shielded_verification_fee` (a conservative lower bound,
 since metered storage is unknowable without state); the authoritative `metered +
 compute` funding gate is `validate_fees_of_event`.
+
+### ShieldFromIdentity
+
+`ShieldFromIdentity` (protocol version 14) is `Shield` with the identity balance as
+the funding side. It is identity-signed (TRANSFER key, identity nonce) like
+`IdentityCreditTransferToAddresses`, and carries the same outputs-only Orchard bundle
+as `Shield`. The fee model is identical to `Shield`'s: GroveDB meters the note
+inserts and the identity balance and nonce writes, and the shielded compute fee is
+added as `additional_fixed_fee_cost`:
+
+```
+fee = metered_storage + metered_processing + shielded_verification_fee
+identity_balance_after = identity_balance_before - amount - fee
+```
+
+`user_fee_increase` applies to the metered processing portion. The stateless
+floor requires `identity_balance >= amount + compute_shielded_identity_balance_write_fee`,
+the conservative complete fee (`compute_minimum_shielded_fee` plus the flat
+`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` identity-write component at the
+storage rate: 20 effective bytes covering the nonce and balance rewrites, which add no
+storage but replace 883 bytes of Merk path for a measured 466,760 credits of
+processing, folded into one flat figure with headroom like the other shielded
+components), so an identity that could not pay the complete fee is refused before the
+Orchard proof is verified. The authoritative gate is the identity-paid fee
+validation of the execution event (`Paid`), which rejects with
+`IdentityInsufficientBalanceError`. The identity balance and the pool total are
+both terms of the block conservation equation, so the converter emits no
+`AddToSystemCredits` (the same rule `Unshield` and `IdentityCreateFromShieldedPool`
+follow).
+
+A failed Orchard proof is a **paid failure**, not a free rejection. Like
+`ShieldFromAssetLock`, the proof is verified inside the transition's own transform
+rather than in the shared stateless proof step: on failure the transition executes
+as a `BumpIdentityNonceAction`, consuming the identity nonce and charging the
+identity the versioned `shielded_proof_verification_failure` penalty on top of the
+processing metered so far. This closes the path where a funded identity could
+resubmit invalid proofs indefinitely with its nonce and balance left untouched.
+CheckTx never charges; it admits the verification under its node-local proof
+budget only after the cheap checks passed, and rejects on failure.
 
 ### ShieldFromAssetLock
 
@@ -216,8 +258,8 @@ Note: The Orchard protocol requires a minimum of 2 actions per bundle for privac
 action). Bundles with 1 action are structurally invalid.
 
 The totals above are the **base** `compute_minimum_shielded_fee` and apply directly to
-`ShieldedTransfer`. The two pool-paid transitions that write one extra per-transition output add a
-flat storage component on top of this base:
+`ShieldedTransfer`. The three pool-paid transitions that write one extra per-transition output
+add a flat component on top of this base:
 
 - **`Unshield` adds the output-address write cost**: a flat
   `unshield_address_storage_fee = 222 × per_byte_rate = 222 × 27,400 = 6,082,800` credits,
@@ -231,6 +273,12 @@ flat storage component on top of this base:
   `161,097,600 + 112,340,000 = 273,437,600` credits (and likewise `+112,340,000` at every action
   count). See the [Fee Extraction](#fee-extraction-by-transition-type) ShieldedWithdrawal row for
   why this component exists.
+- **`IdentityTopUpFromShieldedPool` adds the identity balance write cost**: a flat
+  `identity_balance_storage_fee = 8 × per_byte_rate = 8 × 27,400 = 219,200` credits,
+  independent of action count, so the top-up fee at any action count is the base plus
+  `219,200`. See the [Fee Extraction](#fee-extraction-by-transition-type) IdentityTopUpFromShieldedPool
+  row for why this component is so much smaller than the address write: it rewrites an existing
+  balance element instead of storing a new entry.
 
 ## Where Fee Validation Runs
 
@@ -284,7 +332,7 @@ pub struct DriveAbciValidationConstants {
 
 The `shielded_implicit_fee_cap` bounds the surplus that a `ShieldFromAssetLock` may
 implicitly donate to the fee pools when no `surplus_output` is set (see
-[Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock)).
+[Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity)).
 
 The storage component is not a separate constant — it is derived at runtime from
 `fee_version.storage.storage_disk_usage_credit_per_byte` and
@@ -303,9 +351,10 @@ shielded pool's total balance is decremented and the fee is booked via the
 `PaidFromShieldedPool` execution event:
 
 ```
-ShieldedTransfer:    pool_balance -= fee_amount          // fee == value_balance
-Unshield:            pool_balance -= unshielding_amount   // gross
-ShieldedWithdrawal:  pool_balance -= unshielding_amount   // gross
+ShieldedTransfer:              pool_balance -= fee_amount          // fee == value_balance
+Unshield:                      pool_balance -= unshielding_amount   // gross
+ShieldedWithdrawal:            pool_balance -= unshielding_amount   // gross
+IdentityTopUpFromShieldedPool: pool_balance -= top_up_amount        // gross
 ```
 
 For `Unshield` and `ShieldedWithdrawal`, `unshielding_amount` is the **gross** amount
@@ -324,6 +373,13 @@ extra write, the booking split (storage routed to the storage pool, the remainde
 the proposer) covers that write instead of zeroing the proposer's processing reward to
 cover it.
 
+For `IdentityTopUpFromShieldedPool`, `top_up_amount` is likewise the gross amount leaving the
+pool: `top_up_amount − fee_amount` is added to the existing identity's balance and
+`fee_amount` (`compute_shielded_identity_top_up_fee`, the base fee plus the flat identity
+balance write component) is booked as the transition fee; validation guarantees
+`top_up_amount ≥ fee_amount`. The identity balance and the pool total are both terms of the
+block conservation equation, so no system-credit adjustment is emitted.
+
 For `ShieldedTransfer`, the pool decreases by exactly the fee (the sender's notes are
 spent and the recipient's notes are created, but the pool's aggregate balance only drops
 by the fee).
@@ -334,7 +390,7 @@ fee: the storage cost of the permanent shielded writes is routed to the storage 
 remainder — proof verification plus per-action processing — is the processing fee paid to
 the current block proposer.
 
-The two entry transitions do not decrement the pool (they add to it), so their fees are
+The three entry transitions (`Shield`, `ShieldFromAssetLock`, `ShieldFromIdentity`) do not decrement the pool (they add to it), so their fees are
 booked from the funding side instead:
 
 ```
@@ -347,7 +403,7 @@ the standard `PaidFromAddressInputs` event (deducted == booked, no override): me
 storage and processing, plus the `shielded_verification_fee` folded into processing. For
 `ShieldFromAssetLock`, the consumed asset-lock value is partitioned into `shield_amount`
 (into the pool), `surplus_amount` (to `surplus_output`, or `0`), and `fee_amount` (to the
-fee pools); see [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock).
+fee pools); see [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity).
 
 ## Cryptographic Binding
 

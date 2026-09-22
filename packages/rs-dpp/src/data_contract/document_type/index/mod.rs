@@ -90,7 +90,8 @@ pub const TERMINAL: &str = "terminal";
 /// property must be either the referring property itself (it equals the
 /// referenced document's `$id`) or a key of that property's `refersTo`
 /// `propertyAgreement` (consensus-enforced equal to a referenced-document
-/// property). Only allowed on indexOnly document types with a same-contract
+/// property, its `$ownerId` and `$creatorId` included). Only allowed on
+/// indexOnly document types with a same-contract
 /// `permanentDocument` reference; the doc-type-level validation rejects every
 /// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";
@@ -463,8 +464,12 @@ pub struct Index {
     ///   suffixes) are wrapped with `Element::NonCounted` so their counts
     ///   do not pollute the value tree's count.
     ///
-    /// `range_countable: true` requires `countable` to be `Countable` or
-    /// `CountableAllowingOffset` (it's additive, not a replacement).
+    /// `range_countable: true` implies a countable index: an omitted
+    /// `countable` is promoted to `Countable`, an explicit
+    /// `CountableAllowingOffset` is kept (it still picks the value level's
+    /// tree), and an explicit `NotCountable` is rejected as a contradiction.
+    /// Meta-schema v3 and later; earlier generations require an explicit
+    /// countable `countable`.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub range_countable: bool,
     /// When set to `Some(property_name)`, this index's value-tree is laid out
@@ -685,6 +690,12 @@ pub(crate) struct IndexGrammarAdmissions {
     /// The `skipIfAbsent` keyword (indexOnly document types; generation 3
     /// and later).
     pub(crate) skip_if_absent: bool,
+    /// Whether `rangeCountable: true` promotes an omitted `countable` to
+    /// `"countable"`, as the doctype-level `rangeCountable` has always
+    /// implied `documentsCountable` (generation 3 and later). Earlier
+    /// generations reject the omission, and their frozen meta-schemas (v1,
+    /// v2) carry a `dependentRequired` row that says the same.
+    pub(crate) range_countable_implies_countable: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -699,6 +710,7 @@ impl IndexGrammarAdmissions {
             terminal: generation >= 3,
             preallocated: generation >= 3,
             skip_if_absent: generation >= 3,
+            range_countable_implies_countable: generation >= 3,
         }
     }
 }
@@ -1179,6 +1191,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
     }
@@ -1218,6 +1231,7 @@ impl Index {
             terminal: terminal_allowed,
             preallocated: preallocated_allowed,
             skip_if_absent: skip_if_absent_allowed,
+            range_countable_implies_countable,
         } = admissions;
         // Decouple the map
         // It contains properties and a unique key
@@ -1631,6 +1645,7 @@ impl Index {
                     let mut range_seconds: Option<u64> = None;
                     let mut step_seconds: Option<u64> = None;
                     let mut phase_seconds: u64 = 0;
+                    let mut ttl_seconds: Option<u64> = None;
 
                     for (tr_key_value, tr_value) in time_range_map {
                         let tr_key = tr_key_value
@@ -1668,6 +1683,13 @@ impl Index {
                                     )
                                 })?;
                             }
+                            "ttl" => {
+                                ttl_seconds = Some(tr_value.to_integer().map_err(|_| {
+                                    DataContractError::ValueWrongType(
+                                        "timeRange.ttl should be an integer".to_string(),
+                                    )
+                                })?);
+                            }
                             other => {
                                 return Err(DataContractError::InvalidContractStructure(format!(
                                     "unexpected timeRange field: {}",
@@ -1698,6 +1720,7 @@ impl Index {
                         range_seconds,
                         step_seconds,
                         phase_seconds,
+                        ttl_seconds,
                     });
                 }
                 // `terminal` is guarded the same way as the ranking keywords
@@ -1933,14 +1956,35 @@ impl Index {
         // the index's tree is laid out (property-name → ProvableCountTree,
         // value level → CountTree, sibling continuations → NonCounted) so
         // that range-count queries can be answered in O(log n). It is
-        // meaningless without the underlying countability.
+        // meaningless without the underlying countability, so from
+        // generation 3 it implies it: an omitted `countable` is promoted to
+        // `Countable` (an explicit `CountableAllowingOffset` is kept, since
+        // it still picks the value level's tree), exactly as the
+        // doctype-level `rangeCountable` implies `documentsCountable` and as
+        // `averageable` promotes `countable` above. An explicit
+        // `notCountable` beside `rangeCountable: true` says two opposite
+        // things and is rejected. Earlier generations keep demanding an
+        // explicit countable `countable`, matching the `rangeCountable` →
+        // `countable` row of their frozen meta-schemas.
         if range_countable && !countable.is_countable() {
-            return Err(DataContractError::InvalidContractStructure(
-                "rangeCountable requires countable to be \"countable\" or \
-                 \"countableAllowingOffset\"; range-count queries only make \
-                 sense on a count-bearing index"
-                    .to_string(),
-            ));
+            if range_countable_implies_countable && !countable_was_explicit {
+                countable = IndexCountability::Countable;
+            } else if range_countable_implies_countable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeCountable: true implies a countable index, but `countable` is \
+                     explicitly set to a non-countable value. Remove the explicit \
+                     `countable: \"notCountable\"` (or set it to `\"countable\"` / \
+                     `\"countableAllowingOffset\"`)"
+                        .to_string(),
+                ));
+            } else {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeCountable requires countable to be \"countable\" or \
+                     \"countableAllowingOffset\"; range-count queries only make \
+                     sense on a count-bearing index"
+                        .to_string(),
+                ));
+            }
         }
 
         // `rangeSummable` is additive on top of `summable`: it changes how
@@ -2170,6 +2214,25 @@ impl Index {
                     transform.source
                 )));
             }
+            // A TTL below the window length would expire a bucket that can
+            // still receive writes: `$createdAt` is consensus-assigned from
+            // block time, so a document entering the grid lands in every
+            // window containing *now* — the oldest of which started up to
+            // `range` ago. `ttl >= range` is the invariant that lets the
+            // cleanup, the delete walker's expired-entry skip and the
+            // `oldest` selector all assume a live window can never be
+            // expired. The upper bound (SystemLimits) is checked at the
+            // document-type level, where the platform version is in scope.
+            if let Some(ttl_seconds) = transform.ttl_seconds {
+                if ttl_seconds < transform.range_seconds {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "timeRange.ttl ({} seconds) must be at least the window length \
+                         ({} seconds): a window still able to receive consensus-timestamped \
+                         writes can never be expired",
+                        ttl_seconds, transform.range_seconds
+                    )));
+                }
+            }
             // Same reasoning as the ranked `nullSearchable` rejection above,
             // plus a write-path invariant: the insert, delete and update
             // walkers all agree that a null timestamp keeps a single ordinary
@@ -2195,6 +2258,7 @@ impl Index {
                 ("range", transform.range_seconds),
                 ("step", transform.step_seconds),
                 ("phase", transform.phase_seconds),
+                ("ttl", transform.ttl_seconds.unwrap_or(0)),
             ] {
                 if seconds > u64::MAX / 1_000 {
                     return Err(DataContractError::InvalidContractStructure(format!(
@@ -2486,6 +2550,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("should parse");
@@ -2503,6 +2568,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2520,6 +2586,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2541,6 +2608,7 @@ mod tests {
             terminal: false,
             preallocated: true,
             skip_if_absent: false,
+            range_countable_implies_countable: false,
         };
 
         let mut map = index_value_map("postId", None);
@@ -2571,6 +2639,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2602,6 +2671,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2625,6 +2695,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("should parse");
@@ -2648,6 +2719,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2672,6 +2744,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2697,6 +2770,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("should parse");
@@ -2718,6 +2792,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("should parse");
@@ -2744,6 +2819,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("should parse");
@@ -2770,6 +2846,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2794,6 +2871,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2823,6 +2901,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("the parser applies structural rules only");
@@ -2847,6 +2926,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2867,6 +2947,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2891,6 +2972,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -2946,6 +3028,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .unwrap_err();
@@ -2983,6 +3066,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("should parse");
@@ -3013,6 +3097,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -3045,6 +3130,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .unwrap_err();
@@ -3071,6 +3157,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         )
         .expect("a non-unique $updatedAt bucketing stays legal");
@@ -3092,6 +3179,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .unwrap_err();
@@ -3312,6 +3400,7 @@ mod tests {
             range_seconds: 86_400,
             step_seconds: 86_400,
             phase_seconds: 0,
+            ttl_seconds: None,
         });
         index
     }
@@ -4280,6 +4369,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .expect("all three ranked keywords must parse when the grammar allows them");
@@ -4307,6 +4397,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .expect("index without ranked keywords must parse");
@@ -4350,6 +4441,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .expect("ranked flags on a compound index must be accepted");
@@ -4381,6 +4473,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         );
         assert!(
@@ -4413,6 +4506,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         );
         assert!(
@@ -4443,6 +4537,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         );
         assert!(
@@ -4470,6 +4565,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         );
         assert!(
@@ -4499,6 +4595,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         );
         assert!(
@@ -4528,6 +4625,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         );
         assert!(
@@ -4559,6 +4657,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .expect("rankedAverageable on the averageable sugar form must parse");
@@ -4596,6 +4695,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .expect("rankedAverageable on the explicit longhand form must parse");
@@ -4623,6 +4723,7 @@ mod tests {
                     terminal: true,
                     preallocated: false,
                     skip_if_absent: false,
+                    range_countable_implies_countable: true,
                 },
             );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
@@ -4656,6 +4757,7 @@ mod tests {
                         terminal: false,
                         preallocated: false,
                         skip_if_absent: false,
+                        range_countable_implies_countable: false,
                     },
                 );
                 assert!(
@@ -4728,6 +4830,7 @@ mod tests {
             terminal: true,
             preallocated: false,
             skip_if_absent: false,
+            range_countable_implies_countable: true,
         }
     }
 
@@ -5024,6 +5127,75 @@ mod tests {
         );
     }
 
+    /// `ttl` parses into the transform; a ttl below the window length is
+    /// structurally rejected (a window still able to receive
+    /// consensus-timestamped writes can never expire).
+    #[test]
+    fn test_index_try_from_time_range_ttl_parses_and_bounds_below() {
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(21_600)),
+                (Value::Text("step".to_string()), Value::U64(21_600)),
+                (Value::Text("ttl".to_string()), Value::U64(86_400)),
+            ]),
+        ));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a ttl of at least the range parses");
+        assert_eq!(
+            index.time_range.expect("transform present").ttl_seconds,
+            Some(86_400)
+        );
+
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(21_600)),
+                (Value::Text("step".to_string()), Value::U64(21_600)),
+                (Value::Text("ttl".to_string()), Value::U64(21_599)),
+            ]),
+        ));
+        let msg = format!(
+            "{:?}",
+            Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+                .expect_err("a ttl below the window length must be rejected")
+        );
+        assert!(
+            msg.contains("must be at least the window length"),
+            "expected the lower-bound rejection, got {msg}"
+        );
+    }
+
     fn time_range_entry() -> Value {
         Value::Map(vec![
             (
@@ -5119,6 +5291,7 @@ mod tests {
                 terminal: false,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: false,
             },
         );
         let msg = format!(
@@ -5182,6 +5355,7 @@ mod tests {
                     terminal: true,
                     preallocated: false,
                     skip_if_absent: false,
+                    range_countable_implies_countable: true,
                 },
             );
             assert!(
@@ -5211,6 +5385,7 @@ mod tests {
                     terminal: true,
                     preallocated: false,
                     skip_if_absent: false,
+                    range_countable_implies_countable: true,
                 },
             )
             .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
@@ -5236,6 +5411,7 @@ mod tests {
                     terminal: true,
                     preallocated: false,
                     skip_if_absent: false,
+                    range_countable_implies_countable: true,
                 },
             )
             .unwrap_or_else(|e| {
@@ -5259,6 +5435,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .expect("nullSearchable: false on a plain index must still parse");
@@ -5277,6 +5454,7 @@ mod tests {
                 terminal: true,
                 preallocated: false,
                 skip_if_absent: false,
+                range_countable_implies_countable: true,
             },
         )
         .expect("nullSearchable: false on a range-averageable index must still parse");
@@ -5561,6 +5739,101 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("more than one"));
+    }
+    // -----------------------------------------------------------------------
+    // `rangeCountable` implies `countable` (generation 3 and later)
+    // -----------------------------------------------------------------------
+
+    fn pre_v3_admissions() -> IndexGrammarAdmissions {
+        IndexGrammarAdmissions {
+            ranked: false,
+            time_range: false,
+            terminal: false,
+            preallocated: false,
+            skip_if_absent: false,
+            range_countable_implies_countable: false,
+        }
+    }
+
+    /// `rangeCountable: true` with `countable` omitted promotes the index to
+    /// `Countable`, exactly as the doctype-level `rangeCountable` implies
+    /// `documentsCountable` and as `averageable` promotes `countable`.
+    #[test]
+    fn test_index_try_from_range_countable_alone_promotes_countable() {
+        let index_map = ranked_index_map(vec![("rangeCountable", Value::Bool(true))]);
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("rangeCountable alone is a complete declaration from generation 3");
+        assert!(index.range_countable);
+        assert_eq!(index.countable, IndexCountability::Countable);
+    }
+
+    /// An explicit `countableAllowingOffset` still picks the value level's
+    /// tree and is kept, not overwritten by the promotion.
+    #[test]
+    fn test_index_try_from_range_countable_keeps_explicit_allowing_offset() {
+        let index_map = ranked_index_map(vec![
+            (
+                "countable",
+                Value::Text("countableAllowingOffset".to_string()),
+            ),
+            ("rangeCountable", Value::Bool(true)),
+        ]);
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("an explicit countable tier beside rangeCountable is fine");
+        assert!(index.range_countable);
+        assert_eq!(index.countable, IndexCountability::CountableAllowingOffset);
+    }
+
+    /// An explicit `notCountable` (either spelling) beside a true
+    /// `rangeCountable` is a contradiction and is refused with a message
+    /// naming what to remove.
+    #[test]
+    fn test_index_try_from_range_countable_with_explicit_not_countable_rejected() {
+        for not_countable in [Value::Text("notCountable".to_string()), Value::Bool(false)] {
+            let index_map = ranked_index_map(vec![
+                ("countable", not_countable.clone()),
+                ("rangeCountable", Value::Bool(true)),
+            ]);
+            let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+            let msg = format!(
+                "{:?}",
+                result.expect_err("countable: notCountable contradicts rangeCountable: true")
+            );
+            assert!(
+                msg.contains("rangeCountable: true implies a countable index")
+                    && msg.contains("notCountable"),
+                "{not_countable:?}: the error must name the contradiction; got {msg}"
+            );
+        }
+    }
+
+    /// `rangeCountable: false` asks for nothing, so an omitted `countable`
+    /// stays `NotCountable` and nothing is promoted.
+    #[test]
+    fn test_index_try_from_range_countable_false_promotes_nothing() {
+        let index_map = ranked_index_map(vec![("rangeCountable", Value::Bool(false))]);
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("rangeCountable: false is an opt-out");
+        assert!(!index.range_countable);
+        assert_eq!(index.countable, IndexCountability::NotCountable);
+    }
+
+    /// Below generation 3 the parser keeps demanding an explicit countable
+    /// `countable`, byte-for-byte the error it always raised, matching the
+    /// `rangeCountable` -> `countable` row of the frozen v1 and v2
+    /// meta-schemas.
+    #[test]
+    fn test_index_try_from_range_countable_alone_rejected_when_grammar_disallows() {
+        let index_map = ranked_index_map(vec![("rangeCountable", Value::Bool(true))]);
+        let result = Index::try_from_value_map(index_map.as_slice(), pre_v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("pre-v3 grammar must keep rejecting the omission")
+        );
+        assert!(
+            msg.contains("rangeCountable requires countable to be"),
+            "pre-v3 rejection must be the original error; got {msg}"
+        );
     }
 }
 

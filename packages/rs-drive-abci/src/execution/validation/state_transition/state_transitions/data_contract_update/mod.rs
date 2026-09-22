@@ -4,6 +4,7 @@ mod state;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractUpdateStateTransitionBasicStructureValidationV1;
+use basic_structure::v2::DataContractUpdateStateTransitionBasicStructureValidationV2;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
@@ -46,9 +47,10 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
         {
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
+            Some(2) => self.validate_basic_structure_v2(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
@@ -721,6 +723,313 @@ mod tests {
         ));
     }
 
+    /// The data contract cache must hand block execution the definition its transaction holds,
+    /// never a committed copy a concurrent reader put back, and must not keep the definition
+    /// of an update the proposer rolled back.
+    mod contract_cache_coherence {
+        use super::*;
+        use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
+        use drive::grovedb::Transaction;
+
+        /// A platform with a funded identity that owns a committed contract at version 1, and
+        /// signed updates of that contract to versions 2 and 3.
+        struct Scenario {
+            platform: TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            update_to_v2: Vec<u8>,
+            update_to_v3: Vec<u8>,
+        }
+
+        async fn setup_scenario() -> Scenario {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json";
+            let mut contract = json_document_to_contract(card_game_path, true, platform_version)
+                .expect("expected to get data contract");
+            contract.set_owner_id(identity.id());
+            contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let partial_identity = identity.into_partial_identity_info();
+
+            let mut contract_v2 = contract.clone();
+            contract_v2.set_version(2);
+            let update_to_v2 = DataContractUpdateTransition::new_from_data_contract(
+                contract_v2,
+                &partial_identity,
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the update to version 2")
+            .serialize_to_bytes()
+            .expect("expected to serialize the update to version 2");
+
+            let mut contract_v3 = contract.clone();
+            contract_v3.set_version(3);
+            let update_to_v3 = DataContractUpdateTransition::new_from_data_contract(
+                contract_v3,
+                &partial_identity,
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the update to version 3")
+            .serialize_to_bytes()
+            .expect("expected to serialize the update to version 3");
+
+            Scenario {
+                platform,
+                contract_id: contract.id(),
+                update_to_v2,
+                update_to_v3,
+            }
+        }
+
+        fn execute(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transaction: &Transaction,
+            raw_state_transitions: &[Vec<u8>],
+            proposing: bool,
+        ) -> Vec<StateTransitionExecutionResult> {
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            platform
+                .platform
+                .process_raw_state_transitions(
+                    raw_state_transitions,
+                    &platform_state,
+                    &BlockInfo::default(),
+                    transaction,
+                    platform_version,
+                    proposing,
+                    None,
+                )
+                .expect("expected to process state transitions")
+                .into_execution_results()
+        }
+
+        fn contract_version_in(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            transaction: Option<&Transaction>,
+        ) -> u32 {
+            let platform_version = PlatformVersion::latest();
+            platform
+                .drive
+                .get_contract_with_fetch_info(
+                    contract_id.to_buffer(),
+                    false,
+                    transaction,
+                    platform_version,
+                )
+                .expect("expected to resolve the contract")
+                .expect("expected the contract to be present")
+                .contract
+                .version()
+        }
+
+        fn root_hash(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transaction: &Transaction,
+        ) -> [u8; 32] {
+            let platform_version = PlatformVersion::latest();
+            platform
+                .drive
+                .grove
+                .root_hash(Some(transaction), &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected the root hash")
+        }
+
+        /// Two validators execute a block that carries two sequential updates of the same
+        /// contract. On one of them a committed-state read of the contract lands between the
+        /// two updates, which is what a public `getDocuments` request does on a validator; the
+        /// other is quiet. Before the fix the raced validator resolved the second update's
+        /// "current" contract to the committed version 1 the query had put back into the
+        /// global cache, rejected the update as a version mismatch, and computed a different
+        /// app hash from the quiet one.
+        #[tokio::test]
+        async fn raced_and_quiet_validators_must_execute_two_sequential_updates_identically() {
+            let raced = setup_scenario().await;
+            let quiet = setup_scenario().await;
+            let platform_version = PlatformVersion::latest();
+
+            let raced_transaction = raced.platform.drive.grove.start_transaction();
+            let quiet_transaction = quiet.platform.drive.grove.start_transaction();
+
+            // The quiet validator: both updates back to back.
+            let quiet_results = execute(
+                &quiet.platform,
+                &quiet_transaction,
+                &[quiet.update_to_v2.clone(), quiet.update_to_v3.clone()],
+                false,
+            );
+            assert!(
+                matches!(
+                    quiet_results.as_slice(),
+                    [
+                        StateTransitionExecutionResult::SuccessfulExecution { .. },
+                        StateTransitionExecutionResult::SuccessfulExecution { .. }
+                    ]
+                ),
+                "precondition: both updates are valid in sequence, got {quiet_results:?}"
+            );
+
+            // The raced validator: the first update, then the query, then the second update.
+            let first = execute(
+                &raced.platform,
+                &raced_transaction,
+                &[raced.update_to_v2.clone()],
+                false,
+            );
+            assert!(
+                matches!(
+                    first.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "precondition: the first update is valid, got {first:?}"
+            );
+
+            let queried = raced
+                .platform
+                .drive
+                .get_contract_with_fetch_info(
+                    raced.contract_id.to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the query to succeed")
+                .expect("expected the committed contract");
+            assert_eq!(
+                queried.contract.version(),
+                1,
+                "precondition: the query reads committed state, which still holds version 1"
+            );
+
+            let second = execute(
+                &raced.platform,
+                &raced_transaction,
+                &[raced.update_to_v3.clone()],
+                false,
+            );
+            assert!(
+                matches!(
+                    second.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "the raced validator must accept the second update like the quiet one, got {second:?}"
+            );
+
+            assert_eq!(
+                contract_version_in(&raced.platform, raced.contract_id, Some(&raced_transaction)),
+                3
+            );
+            assert_eq!(
+                root_hash(&raced.platform, &raced_transaction),
+                root_hash(&quiet.platform, &quiet_transaction),
+                "both validators must compute the same app hash for the block"
+            );
+        }
+
+        /// The proposer strips a transition whose result is an internal error and rolls its
+        /// writes back. A contract update that got as far as applying had its definition
+        /// re-seeded into the block cache; the rollback must take that phantom definition with
+        /// it, or the rest of the proposal validates against a contract the block does not
+        /// contain.
+        #[tokio::test]
+        async fn a_rolled_back_contract_update_must_not_leave_its_definition_in_the_block_cache() {
+            let scenario = setup_scenario().await;
+            let transaction = scenario.platform.drive.grove.start_transaction();
+
+            FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.set(true));
+            let results = execute(
+                &scenario.platform,
+                &transaction,
+                &[scenario.update_to_v2.clone()],
+                true,
+            );
+            assert!(
+                matches!(
+                    results.as_slice(),
+                    [StateTransitionExecutionResult::InternalError(_)]
+                ),
+                "precondition: the injected fault must strip the update, got {results:?}"
+            );
+
+            assert_eq!(
+                contract_version_in(&scenario.platform, scenario.contract_id, Some(&transaction)),
+                1,
+                "the rollback must undo the update in what the block reads"
+            );
+            if let Some(cached) = scenario
+                .platform
+                .drive
+                .cache
+                .data_contracts
+                .get(scenario.contract_id.to_buffer(), true)
+            {
+                assert_eq!(
+                    cached.contract.version(),
+                    1,
+                    "no phantom definition may remain in the block cache after the rollback"
+                );
+            }
+
+            // The same update must then apply cleanly onto the rolled-back state, exactly as
+            // it would have had the failed attempt never run.
+            let results = execute(
+                &scenario.platform,
+                &transaction,
+                &[scenario.update_to_v2.clone()],
+                true,
+            );
+            assert!(
+                matches!(
+                    results.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "the update must apply onto the rolled-back state, got {results:?}"
+            );
+            assert_eq!(
+                contract_version_in(&scenario.platform, scenario.contract_id, Some(&transaction)),
+                2
+            );
+        }
+    }
+
     mod group_tests {
         use super::*;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
@@ -1236,7 +1545,16 @@ mod tests {
     mod token_tests {
         use super::*;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
+        use dpp::balances::credits::TokenAmount;
+        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+        use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+        use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+        use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::util::deserializer::ProtocolVersion;
         use dpp::data_contract::associated_token::token_configuration::accessors::v0::{TokenConfigurationV0Getters, TokenConfigurationV0Setters};
         use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
         use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
@@ -2380,6 +2698,612 @@ mod tests {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
+        }
+
+        /// Registers a contract without tokens, adds a token at position 0
+        /// through a data contract update, then has the contract owner claim
+        /// from that token at block height 41 / time 200, all under
+        /// `protocol_version`. Returns the claim's processing result and the
+        /// owner's resulting token balance.
+        async fn claim_from_token_added_by_update(
+            protocol_version: ProtocolVersion,
+            distribution_type: TokenDistributionType,
+            configure_distribution: impl FnOnce(&mut TokenConfiguration, Identifier),
+        ) -> (StateTransitionsProcessingResult, Option<TokenAmount>) {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a known protocol version");
+            // Genesis state: a claim writes a token history document, so the
+            // token history system contract has to be registered.
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+            // A perpetual distribution pays from the contract's creation moment.
+            data_contract.set_created_at(Some(0));
+            data_contract.set_created_at_block_height(Some(0));
+            data_contract.set_created_at_epoch(Some(0));
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let mut token_configuration =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            // No base supply, so the owner's balance is what the claim paid on
+            // every protocol version: from version 14 the update mints the base
+            // supply of a token it adds, to the owner here.
+            token_configuration.set_base_supply(0);
+            token_configuration.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "credit".to_string(),
+                            plural_form: "credits".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            configure_distribution(&mut token_configuration, identity.id());
+            updated_data_contract.add_token(0, token_configuration);
+
+            let token_id = updated_data_contract
+                .token_id(0)
+                .expect("expected the token added at position 0");
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract.clone(),
+                    &identity.clone().into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let update_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[update_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "the update adding the token must succeed on every protocol version"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let claim_block_info = BlockInfo {
+                time_ms: 200,
+                height: 41,
+                core_height: 42,
+                epoch: Epoch::new(0).unwrap(),
+            };
+
+            let claim_transition = BatchTransition::new_token_claim_transition(
+                token_id,
+                identity.id(),
+                data_contract.id(),
+                0,
+                distribution_type,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create the claim transition");
+
+            let claim_bytes = claim_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[claim_bytes],
+                    &platform_state,
+                    &claim_block_info,
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+
+            (processing_result, token_balance)
+        }
+
+        /// Pays the claimant 50 tokens every 10 blocks.
+        fn set_block_based_perpetual_distribution(
+            token_configuration: &mut TokenConfiguration,
+            recipient: Identifier,
+        ) {
+            token_configuration
+                .distribution_rules_mut()
+                .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 10,
+                            function: DistributionFunction::FixedAmount { amount: 50 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::Identity(recipient),
+                    },
+                )));
+        }
+
+        /// Pays the claimant 445 tokens at time 100.
+        fn set_pre_programmed_distribution(
+            token_configuration: &mut TokenConfiguration,
+            recipient: Identifier,
+        ) {
+            token_configuration
+                .distribution_rules_mut()
+                .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                    TokenPreProgrammedDistributionV0 {
+                        distributions: BTreeMap::from([(100, BTreeMap::from([(recipient, 445)]))]),
+                    },
+                )));
+        }
+
+        #[tokio::test]
+        async fn should_claim_perpetual_distribution_of_token_added_by_update() {
+            let (processing_result, token_balance) = claim_from_token_added_by_update(
+                PlatformVersion::latest().protocol_version,
+                TokenDistributionType::Perpetual,
+                set_block_based_perpetual_distribution,
+            )
+            .await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            // Four full 10-block cycles have passed at height 41.
+            assert_eq!(token_balance, Some(200));
+        }
+
+        #[tokio::test]
+        async fn should_claim_pre_programmed_distribution_of_token_added_by_update() {
+            let (processing_result, token_balance) = claim_from_token_added_by_update(
+                PlatformVersion::latest().protocol_version,
+                TokenDistributionType::PreProgrammed,
+                set_pre_programmed_distribution,
+            )
+            .await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            assert_eq!(token_balance, Some(445));
+        }
+
+        /// The frozen side of the gate. Protocol version 13 creates no
+        /// distribution storage for a token added by update, so the claim has
+        /// nowhere to record itself and fails as an internal error: never a
+        /// consensus error, never paid for, and stripped from every proposal.
+        #[tokio::test]
+        async fn should_fail_to_claim_distributions_of_token_added_by_update_on_protocol_version_13(
+        ) {
+            for (distribution_type, configure_distribution) in [
+                (
+                    TokenDistributionType::Perpetual,
+                    set_block_based_perpetual_distribution
+                        as fn(&mut TokenConfiguration, Identifier),
+                ),
+                (
+                    TokenDistributionType::PreProgrammed,
+                    set_pre_programmed_distribution,
+                ),
+            ] {
+                let (processing_result, token_balance) =
+                    claim_from_token_added_by_update(13, distribution_type, configure_distribution)
+                        .await;
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::InternalError(_)]
+                );
+                assert_eq!(token_balance, None);
+            }
+        }
+
+        /// Registers a contract without tokens, then processes a data contract
+        /// update that adds one token per entry of `releases`. Each token
+        /// releases its amounts at time 100, the first to the contract owner and
+        /// the others to further identities.
+        async fn process_update_adding_tokens_releasing(
+            releases: &[&[TokenAmount]],
+            protocol_version: ProtocolVersion,
+        ) -> StateTransitionsProcessingResult {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a known protocol version");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let recipient_count = releases.iter().map(|amounts| amounts.len()).max();
+            let mut recipients = vec![identity.id()];
+            for seed in 1..recipient_count.unwrap_or_default() {
+                let (recipient, _, _) =
+                    setup_identity(&mut platform, 958 + seed as u64, dash_to_credits!(0.1));
+                recipients.push(recipient.id());
+            }
+
+            let platform_state = platform.state.load();
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            for (position, amounts) in releases.iter().enumerate() {
+                let mut token_configuration =
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+                token_configuration
+                    .conventions_mut()
+                    .localizations_mut()
+                    .insert(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "credit".to_string(),
+                            plural_form: "credits".to_string(),
+                        }),
+                    );
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                        TokenPreProgrammedDistributionV0 {
+                            distributions: BTreeMap::from([(
+                                100,
+                                recipients
+                                    .iter()
+                                    .copied()
+                                    .zip(amounts.iter().copied())
+                                    .collect(),
+                            )]),
+                        },
+                    )));
+                updated_data_contract.add_token(position as u16, token_configuration);
+            }
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let update_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .platform
+                .process_raw_state_transitions(
+                    &[update_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition")
+        }
+
+        /// Every token releasing at one time keeps its references under one
+        /// shared release-time tree, which the update has to queue once however
+        /// many of the added tokens release at that time.
+        #[tokio::test]
+        async fn should_add_tokens_sharing_a_pre_programmed_release_time_by_update() {
+            let processing_result = process_update_adding_tokens_releasing(
+                &[&[445], &[445]],
+                PlatformVersion::latest().protocol_version,
+            )
+            .await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// A release is stored as a sum tree, so neither an amount above
+        /// `i64::MAX` nor amounts totalling more can be written. Nothing
+        /// validated them, so the update failed inside Drive as an internal
+        /// error instead of being rejected and paid for.
+        #[tokio::test]
+        async fn should_reject_update_adding_token_with_pre_programmed_release_over_the_limit() {
+            let over_limit_releases: [&[TokenAmount]; 2] = [
+                &[i64::MAX as TokenAmount + 1],
+                &[i64::MAX as TokenAmount, 1],
+            ];
+
+            for over_limit_release in over_limit_releases {
+                let processing_result = process_update_adding_tokens_releasing(
+                    &[&[445], over_limit_release],
+                    PlatformVersion::latest().protocol_version,
+                )
+                .await;
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
+                            BasicError::PreProgrammedDistributionAmountOverLimitError(error)
+                        ),
+                        ..
+                    }] if error.token_position() == 1 && error.timestamp() == 100
+                );
+            }
+        }
+
+        /// Before protocol version 14 an update wrote no distribution storage,
+        /// so it admitted a release whose amounts each fit but total over the
+        /// limit. That is shipped behaviour and stays; it is why the check only
+        /// covers the tokens an update adds.
+        #[tokio::test]
+        async fn should_still_add_token_with_pre_programmed_release_total_over_the_limit_on_protocol_version_13(
+        ) {
+            let processing_result =
+                process_update_adding_tokens_releasing(&[&[i64::MAX as TokenAmount, 1]], 13).await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// A single amount over the limit never got that far, not even before
+        /// protocol version 14: the fee estimation of an update takes the
+        /// contract insert path, which refuses the amount as an internal error.
+        #[tokio::test]
+        async fn should_still_fail_update_adding_token_with_pre_programmed_amount_over_the_limit_on_protocol_version_13(
+        ) {
+            let processing_result =
+                process_update_adding_tokens_releasing(&[&[i64::MAX as TokenAmount + 1]], 13).await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::InternalError(_)]
+            );
+        }
+
+        /// Registers a contract without tokens and adds a token with a base
+        /// supply of 1 000 000 at position 0 through a data contract update,
+        /// both under `protocol_version`. Returns the contract owner's resulting
+        /// balance of the token and the token's total supply.
+        async fn add_token_with_base_supply_by_update(
+            protocol_version: ProtocolVersion,
+        ) -> (Option<TokenAmount>, Option<TokenAmount>) {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a known protocol version");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let mut token_configuration =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_configuration.set_base_supply(1_000_000);
+            token_configuration.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "credit".to_string(),
+                            plural_form: "credits".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            updated_data_contract.add_token(0, token_configuration);
+
+            let token_id = updated_data_contract
+                .token_id(0)
+                .expect("expected the token added at position 0");
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.clone().into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let update_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[update_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "the update adding the token must succeed on every protocol version"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the token balance");
+            let total_supply = platform
+                .drive
+                .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch the token total supply");
+
+            (token_balance, total_supply)
+        }
+
+        #[tokio::test]
+        async fn should_mint_base_supply_of_token_added_by_update() {
+            let latest = PlatformVersion::latest().protocol_version;
+
+            assert_eq!(
+                add_token_with_base_supply_by_update(latest).await,
+                (Some(1_000_000), Some(1_000_000))
+            );
+        }
+
+        /// The frozen side of the gate: on protocol version 13 the update
+        /// creates the token with a total supply of zero and credits nobody.
+        #[tokio::test]
+        async fn should_not_mint_base_supply_of_token_added_by_update_on_protocol_version_13() {
+            assert_eq!(
+                add_token_with_base_supply_by_update(13).await,
+                (None, Some(0))
+            );
         }
     }
 

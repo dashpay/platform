@@ -13,14 +13,14 @@ use crate::query::Query;
 #[cfg(feature = "server")]
 use crate::util::common::encode::decode_u64;
 use crate::util::common::encode::encode_u64;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
 use dpp::fee::Credits;
 use dpp::prelude::{TimestampIncluded, TimestampMillis};
 #[cfg(feature = "server")]
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 #[cfg(feature = "server")]
 use dpp::voting::vote_polls::VotePoll;
 #[cfg(feature = "server")]
@@ -34,7 +34,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct VotePollsByEndDateDriveQuery {
     /// What is the start time we are asking for
     pub start_time: Option<(TimestampMillis, TimestampIncluded)>,
@@ -145,7 +145,7 @@ impl VotePollsByEndDateDriveQuery {
                         let timestamp = decode_u64(last_path_component)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
-                        let vote_poll = VotePoll::deserialize_from_bytes(
+                        let vote_poll = VotePoll::deserialize_from_bytes_trusted(
                             &contested_document_resource_vote_poll_bytes,
                         )?;
                         Ok((timestamp, vote_poll))
@@ -204,7 +204,7 @@ impl VotePollsByEndDateDriveQuery {
                         // Extract the bytes from the element
                         let vote_poll_bytes = element.into_item_bytes().map_err(Error::from)?;
                         // Deserialize the bytes into a VotePoll
-                        let vote_poll = VotePoll::deserialize_from_bytes(&vote_poll_bytes)?;
+                        let vote_poll = VotePoll::deserialize_from_bytes_trusted(&vote_poll_bytes)?;
                         Ok(vote_poll)
                     })
                     .collect::<Result<Vec<_>, Error>>()?;
@@ -389,7 +389,7 @@ impl VotePollsByEndDateDriveQuery {
                         let timestamp = decode_u64(last_path_component)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
-                        let vote_poll = VotePoll::deserialize_from_bytes(
+                        let vote_poll = VotePoll::deserialize_from_bytes_trusted(
                             &contested_document_resource_vote_poll_bytes,
                         )?;
                         Ok((timestamp, vote_poll))

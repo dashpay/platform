@@ -365,7 +365,7 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
         // 16 MiB is generous while matching the persisted-blob ceiling.
         unwrap_result_or_return!(validate_asset_lock_proof_size(proof_len));
         let data = std::slice::from_raw_parts(proof_bytes, proof_len);
-        let (p, _) = unwrap_result_or_return!(dpp::bincode::decode_from_slice(
+        let (p, _) = unwrap_result_or_return!(dpp::bincode::decode_from_slice_untrusted(
             data,
             dpp::bincode::config::standard().with_limit::<MAX_ASSET_LOCK_PROOF_SIZE_BYTES>()
         ));

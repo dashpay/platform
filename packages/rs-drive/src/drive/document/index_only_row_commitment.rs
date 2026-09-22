@@ -23,6 +23,18 @@ use dpp::version::PlatformVersion;
 /// commitment below.
 pub const INDEX_ONLY_ROW_COMMITMENT_SIZE: u32 = 32;
 
+/// The value size fee estimation claims for one indexOnly entry item: the
+/// commitment plus 32 bytes of padding, because the estimation layers
+/// under-count each entry's chain (the serialized item envelope: enum tag,
+/// length prefix, flags option; plus the per-entry share of parent-tree
+/// aggregate bytes) and estimation must UPPER-bound the applied fee. The
+/// padding is per entry, so it scales with a time-range index's bucket
+/// fan-out. Sum-bearing entries add the 10-byte sum-item worst case on top.
+/// One definition for the entry-insert terminal, the preallocated-tree
+/// estimate and the delete-side commitment-probe estimate, so the three
+/// cannot drift.
+pub const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 = INDEX_ONLY_ROW_COMMITMENT_SIZE + 32;
+
 /// The **row commitment** stored as every indexOnly terminal item's payload:
 /// `hash_double(owner ‖ (name ‖ raw index bytes)* ‖ [$createdAt bytes])`
 /// over the document's PRESENT properties in sorted-name order. A required

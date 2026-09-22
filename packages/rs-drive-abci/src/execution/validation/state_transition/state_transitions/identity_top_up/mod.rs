@@ -257,7 +257,32 @@ mod tests {
 
     #[test]
     fn test_identity_top_up_validation_latest_version() {
-        let platform_version = PlatformVersion::latest();
+        run_test_identity_top_up_validation_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            588840,
+            149993606160,
+        );
+    }
+
+    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
+    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
+    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
+    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
+    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
+    #[test]
+    fn test_identity_top_up_validation_protocol_version_13() {
+        run_test_identity_top_up_validation_at_protocol_version(13, 588840, 149993606160);
+    }
+
+    /// Helper for the paired fee tests above: the same scenario at the requested protocol
+    /// version, asserting the processing fee and the resulting identity balance.
+    fn run_test_identity_top_up_validation_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+        expected_identity_balance: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -267,6 +292,7 @@ mod tests {
         };
 
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -363,7 +389,10 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 588840);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee
+        );
 
         platform
             .drive
@@ -382,7 +411,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 149993606160); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+        assert_eq!(identity_balance, expected_identity_balance); // about 0.5 Dash starting balance + 1 Dash asset lock top up
     }
 
     /// Regression for the proposer-side mint accounting: a minting transition (an asset-lock

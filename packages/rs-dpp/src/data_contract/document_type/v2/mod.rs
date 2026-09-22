@@ -6,6 +6,7 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
@@ -43,6 +44,17 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
     /// The transient fields on the document type
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
+    /// The top-level properties frozen at document creation on a mutable
+    /// document type (`immutable` keyword, protocol version 14): a replace
+    /// that changes, adds or removes any of them is rejected. Always empty
+    /// when `documents_mutable` is false, where every property is already
+    /// immutable.
+    pub(in crate::data_contract) immutable_fields: BTreeSet<String>,
+    /// The subset of `immutable_fields` a replace may still set while the
+    /// stored document has no value for them (`immutableAllowSetting`
+    /// keyword, protocol version 14). Once present they are frozen like the
+    /// rest of the list. Every entry is also in `immutable_fields`.
+    pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Should transfers of documents of this type be recorded in the document
@@ -109,6 +121,25 @@ pub struct DocumentTypeV2 {
     /// indexed, `$ownerId` recoverable from at least one index, immutable /
     /// non-transferable / no history, and per-index terminal typing.
     pub(in crate::data_contract) index_only: bool,
+    /// The fixed fees in credits this document type charges for actions on its documents
+    /// (`actionFees` keyword, protocol version 14), `None` when it declares none. Fixed when
+    /// the document type is published: a contract update cannot add, change or remove them.
+    pub(in crate::data_contract) action_fees: Option<DocumentActionFees>,
+    /// When true, the contract's moderators may delete documents of this type
+    /// with a `ContractUserModeration` transition (`canBeDeletedByModerators`
+    /// keyword, protocol version 14), whatever `documents_can_be_deleted` says
+    /// about the documents' own owners. The parser
+    /// (`apply_can_be_deleted_by_moderators`) only admits it on a contract that
+    /// declares moderation, and refuses it on a type that keeps history, is
+    /// indexOnly or restricts document creation.
+    pub(in crate::data_contract) documents_can_be_deleted_by_moderators: bool,
+    /// For how many seconds after a document's last modification the moderators
+    /// may still delete it (`canBeDeletedByModeratorsFor` keyword, protocol
+    /// version 14). `None` means no limit. Only ever `Some` beside
+    /// `documents_can_be_deleted_by_moderators`, on a type that requires the
+    /// clock: `$updatedAt`, or `$createdAt` when its documents never change
+    /// (`apply_can_be_deleted_by_moderators_for`).
+    pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -154,6 +185,8 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             binary_paths: value.binary_paths,
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
+            immutable_fields: BTreeSet::new(),
+            immutable_fields_allow_setting: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,
@@ -177,6 +210,9 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            action_fees: None,
+            documents_can_be_deleted_by_moderators: false,
+            documents_can_be_deleted_by_moderators_for: None,
         }
     }
 }
@@ -194,6 +230,8 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             binary_paths: value.binary_paths,
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
+            immutable_fields: BTreeSet::new(),
+            immutable_fields_allow_setting: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,
@@ -217,6 +255,9 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            action_fees: None,
+            documents_can_be_deleted_by_moderators: false,
+            documents_can_be_deleted_by_moderators_for: None,
         }
     }
 }

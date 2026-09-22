@@ -4,7 +4,7 @@ use dashcore::{OutPoint, Transaction};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 pub use instant::*;
 use platform_value::Value;
@@ -34,7 +34,7 @@ pub mod validate_asset_lock_transaction_structure;
 // unions exposed to JS (see `AddressWitness`, `AddressFundsFeeStrategyStep`).
 // Bincode `Encode`/`Decode` derives are independent of serde, so consensus
 // binary format is unaffected.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode, DecodeUntrusted)]
 #[serde(tag = "$type", rename_all = "camelCase")]
 #[allow(clippy::large_enum_variant)]
 pub enum AssetLockProof {

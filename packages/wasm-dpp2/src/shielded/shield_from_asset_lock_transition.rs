@@ -6,7 +6,7 @@ use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_
 use crate::utils::{try_from_options, try_from_options_optional, try_vec_to_fixed_bytes};
 use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::platform_value::BinaryData;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
@@ -241,7 +241,7 @@ impl ShieldFromAssetLockTransitionWasm {
 
     #[wasm_bindgen(js_name = fromBytes)]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<ShieldFromAssetLockTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(&bytes)?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(&bytes)?;
         match st {
             StateTransition::ShieldFromAssetLock(inner) => Ok(inner.into()),
             _ => Err(WasmDppError::invalid_argument(

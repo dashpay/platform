@@ -1,3 +1,7 @@
+use crate::data_contract::document_type_immutability::{
+    DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
+    immutable_properties_for_document_type,
+};
 use crate::data_contract::document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs, references_for_document_type,
 };
@@ -20,6 +24,7 @@ use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
@@ -32,7 +37,7 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::platform_value::{Value, ValueMap};
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
@@ -108,6 +113,31 @@ export interface DataContractConfig {
     documentsCanBeDeletedContractDefault: boolean;
     requiresIdentityEncryptionBoundedKey?: number;
     requiresIdentityDecryptionBoundedKey?: number;
+    /**
+     * Contract moderation (protocol version 14): the banlist and/or suspension list the
+     * contract keeps and who may edit them. Absent for an unmoderated contract.
+     */
+    moderation?: ContractModerationConfig;
+}
+
+/**
+ * Who may ban and suspend identities on a moderated contract: the owner alone, or the owner
+ * and a fixed set of identities (at most 16, each of which must exist). The owner always may
+ * and need not be named; naming it counts toward the 16.
+ */
+export type ContractModerators =
+  | { $type: "contractOwner" }
+  | { $type: "appointedModerators"; identities: string[] };
+
+/**
+ * The moderation a data contract declares. At least one list must be kept, unless a document
+ * type sets `canBeDeletedByModerators`: moderators that only delete documents need no list. A
+ * list that is kept can never be turned off by a contract update.
+ */
+export interface ContractModerationConfig {
+    banlist: boolean;
+    suspensions: boolean;
+    moderators: ContractModerators;
 }
 "#;
 
@@ -663,6 +693,60 @@ impl DataContractWasm {
 
         Ok(JsValue::from(map).into())
     }
+
+    /// The `immutable` / `immutableAllowSetting` declarations of one
+    /// document type: `{ immutable: string[], immutableAllowSetting:
+    /// string[] }`, both sorted by property name.
+    ///
+    /// Both arrays are empty when the document type declares nothing (the
+    /// normal case, and the only case for a type whose documents are not
+    /// mutable). Throws when the contract has no document type by that
+    /// name, so "no such type" and "nothing frozen" stay distinguishable.
+    ///
+    /// The keywords are only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version reports
+    /// empty lists, which is exactly what consensus enforced at that
+    /// version, while `toJSON()` still shows the raw keywords either way.
+    #[wasm_bindgen(js_name = "documentTypeImmutableProperties")]
+    pub fn document_type_immutable_properties(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentTypeImmutablePropertiesJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let properties =
+            immutable_properties_for_document_type(document_type, document_type_name.as_str())?;
+        Ok(JsValue::from(properties).into())
+    }
+
+    /// Every document type that freezes at least one property, keyed by
+    /// document type name.
+    ///
+    /// Document types with an empty `immutable` list are omitted, so an
+    /// empty `Map` means "nothing in this contract is frozen per property".
+    #[wasm_bindgen(getter = "documentImmutableProperties")]
+    pub fn document_immutable_properties(
+        &self,
+    ) -> WasmDppResult<DocumentTypeImmutablePropertiesMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            if document_type.immutable_fields().is_empty() {
+                continue;
+            }
+            let properties = immutable_properties_for_document_type(document_type.as_ref(), name)?;
+            map.set(&JsValue::from_str(name), &properties.into());
+        }
+
+        Ok(JsValue::from(map).into())
+    }
 }
 
 impl DataContractWasm {
@@ -680,7 +764,7 @@ impl DataContractWasm {
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
-        let rs_data_contract = DataContract::versioned_deserialize(
+        let rs_data_contract = DataContract::versioned_deserialize_untrusted(
             bytes.as_slice(),
             full_validation,
             &platform_version.into(),

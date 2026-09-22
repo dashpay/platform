@@ -1,19 +1,28 @@
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::{
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
 };
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::{
+    TokenDistributionRulesV1Getters, TokenDistributionRulesV1Setters,
+};
+use crate::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
+use crate::data_contract::associated_token::token_distribution_rules::v1::TokenDistributionRulesV1;
 use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
+use crate::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
 use crate::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use crate::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use platform_value::Identifier;
 
 pub mod v0;
+pub mod v1;
+
 /// Implementing `TokenDistributionRulesV0Getters` for `TokenDistributionRules`
 impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     /// Returns the perpetual distribution configuration.
     fn perpetual_distribution(&self) -> Option<&TokenPerpetualDistribution> {
         match self {
             TokenDistributionRules::V0(v0) => v0.perpetual_distribution(),
+            TokenDistributionRules::V1(v1) => v1.perpetual_distribution(),
         }
     }
 
@@ -21,6 +30,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn perpetual_distribution_mut(&mut self) -> Option<&mut TokenPerpetualDistribution> {
         match self {
             TokenDistributionRules::V0(v0) => v0.perpetual_distribution_mut(),
+            TokenDistributionRules::V1(v1) => v1.perpetual_distribution_mut(),
         }
     }
 
@@ -28,6 +38,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn perpetual_distribution_rules(&self) -> &ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.perpetual_distribution_rules(),
+            TokenDistributionRules::V1(v1) => v1.perpetual_distribution_rules(),
         }
     }
 
@@ -35,6 +46,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn perpetual_distribution_rules_mut(&mut self) -> &mut ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.perpetual_distribution_rules_mut(),
+            TokenDistributionRules::V1(v1) => v1.perpetual_distribution_rules_mut(),
         }
     }
 
@@ -42,6 +54,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn pre_programmed_distribution(&self) -> Option<&TokenPreProgrammedDistribution> {
         match self {
             TokenDistributionRules::V0(v0) => v0.pre_programmed_distribution(),
+            TokenDistributionRules::V1(v1) => v1.pre_programmed_distribution(),
         }
     }
 
@@ -49,6 +62,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn pre_programmed_distribution_mut(&mut self) -> Option<&mut TokenPreProgrammedDistribution> {
         match self {
             TokenDistributionRules::V0(v0) => v0.pre_programmed_distribution_mut(),
+            TokenDistributionRules::V1(v1) => v1.pre_programmed_distribution_mut(),
         }
     }
 
@@ -56,6 +70,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn new_tokens_destination_identity(&self) -> Option<&Identifier> {
         match self {
             TokenDistributionRules::V0(v0) => v0.new_tokens_destination_identity(),
+            TokenDistributionRules::V1(v1) => v1.new_tokens_destination_identity(),
         }
     }
 
@@ -63,6 +78,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn new_tokens_destination_identity_rules(&self) -> &ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.new_tokens_destination_identity_rules(),
+            TokenDistributionRules::V1(v1) => v1.new_tokens_destination_identity_rules(),
         }
     }
 
@@ -70,6 +86,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn new_tokens_destination_identity_rules_mut(&mut self) -> &mut ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.new_tokens_destination_identity_rules_mut(),
+            TokenDistributionRules::V1(v1) => v1.new_tokens_destination_identity_rules_mut(),
         }
     }
 
@@ -77,6 +94,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn minting_allow_choosing_destination(&self) -> bool {
         match self {
             TokenDistributionRules::V0(v0) => v0.minting_allow_choosing_destination(),
+            TokenDistributionRules::V1(v1) => v1.minting_allow_choosing_destination(),
         }
     }
 
@@ -84,6 +102,7 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn minting_allow_choosing_destination_rules(&self) -> &ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.minting_allow_choosing_destination_rules(),
+            TokenDistributionRules::V1(v1) => v1.minting_allow_choosing_destination_rules(),
         }
     }
 
@@ -91,18 +110,21 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
     fn minting_allow_choosing_destination_rules_mut(&mut self) -> &mut ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.minting_allow_choosing_destination_rules_mut(),
+            TokenDistributionRules::V1(v1) => v1.minting_allow_choosing_destination_rules_mut(),
         }
     }
 
     fn change_direct_purchase_pricing_rules(&self) -> &ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.change_direct_purchase_pricing_rules(),
+            TokenDistributionRules::V1(v1) => v1.change_direct_purchase_pricing_rules(),
         }
     }
 
     fn change_direct_purchase_pricing_rules_mut(&mut self) -> &mut ChangeControlRules {
         match self {
             TokenDistributionRules::V0(v0) => v0.change_direct_purchase_pricing_rules_mut(),
+            TokenDistributionRules::V1(v1) => v1.change_direct_purchase_pricing_rules_mut(),
         }
     }
 }
@@ -116,6 +138,7 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
     ) {
         match self {
             TokenDistributionRules::V0(v0) => v0.set_perpetual_distribution(perpetual_distribution),
+            TokenDistributionRules::V1(v1) => v1.set_perpetual_distribution(perpetual_distribution),
         }
     }
 
@@ -123,6 +146,7 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
     fn set_perpetual_distribution_rules(&mut self, rules: ChangeControlRules) {
         match self {
             TokenDistributionRules::V0(v0) => v0.set_perpetual_distribution_rules(rules),
+            TokenDistributionRules::V1(v1) => v1.set_perpetual_distribution_rules(rules),
         }
     }
 
@@ -135,6 +159,9 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
             TokenDistributionRules::V0(v0) => {
                 v0.set_pre_programmed_distribution(pre_programmed_distribution)
             }
+            TokenDistributionRules::V1(v1) => {
+                v1.set_pre_programmed_distribution(pre_programmed_distribution)
+            }
         }
     }
 
@@ -142,6 +169,7 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
     fn set_new_tokens_destination_identity(&mut self, identity: Option<Identifier>) {
         match self {
             TokenDistributionRules::V0(v0) => v0.set_new_tokens_destination_identity(identity),
+            TokenDistributionRules::V1(v1) => v1.set_new_tokens_destination_identity(identity),
         }
     }
 
@@ -149,6 +177,7 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
     fn set_new_tokens_destination_identity_rules(&mut self, rules: ChangeControlRules) {
         match self {
             TokenDistributionRules::V0(v0) => v0.set_new_tokens_destination_identity_rules(rules),
+            TokenDistributionRules::V1(v1) => v1.set_new_tokens_destination_identity_rules(rules),
         }
     }
 
@@ -156,6 +185,7 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
     fn set_minting_allow_choosing_destination(&mut self, allow: bool) {
         match self {
             TokenDistributionRules::V0(v0) => v0.set_minting_allow_choosing_destination(allow),
+            TokenDistributionRules::V1(v1) => v1.set_minting_allow_choosing_destination(allow),
         }
     }
 
@@ -165,12 +195,86 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
             TokenDistributionRules::V0(v0) => {
                 v0.set_minting_allow_choosing_destination_rules(rules)
             }
+            TokenDistributionRules::V1(v1) => {
+                v1.set_minting_allow_choosing_destination_rules(rules)
+            }
         }
     }
 
     fn set_change_direct_purchase_pricing_rules(&mut self, rules: ChangeControlRules) {
         match self {
             TokenDistributionRules::V0(v0) => v0.set_change_direct_purchase_pricing_rules(rules),
+            TokenDistributionRules::V1(v1) => v1.set_change_direct_purchase_pricing_rules(rules),
+        }
+    }
+}
+
+/// Implementing `TokenDistributionRulesV1Getters` for `TokenDistributionRules`
+impl TokenDistributionRulesV1Getters for TokenDistributionRules {
+    /// Returns the once-per-identity distribution configuration. Version 0 rules never have one.
+    fn once_per_identity_distribution(&self) -> Option<&TokenOncePerIdentityDistribution> {
+        match self {
+            TokenDistributionRules::V0(_) => None,
+            TokenDistributionRules::V1(v1) => v1.once_per_identity_distribution(),
+        }
+    }
+
+    /// Returns the once-per-identity distribution configuration (mutable).
+    fn once_per_identity_distribution_mut(
+        &mut self,
+    ) -> Option<&mut TokenOncePerIdentityDistribution> {
+        match self {
+            TokenDistributionRules::V0(_) => None,
+            TokenDistributionRules::V1(v1) => v1.once_per_identity_distribution_mut(),
+        }
+    }
+}
+
+/// Implementing `TokenDistributionRulesV1Setters` for `TokenDistributionRules`
+impl TokenDistributionRulesV1Setters for TokenDistributionRules {
+    /// Sets the once-per-identity distribution. Version 0 rules are upgraded to version 1 when
+    /// a distribution is set, since version 0 has no field to hold it; clearing it on version 0
+    /// rules is a no-op, and clearing it on version 1 rules downgrades them to version 0, which
+    /// stays the wire format of every token without the distribution.
+    fn set_once_per_identity_distribution(
+        &mut self,
+        once_per_identity_distribution: Option<TokenOncePerIdentityDistribution>,
+    ) {
+        match self {
+            TokenDistributionRules::V0(v0) => {
+                if once_per_identity_distribution.is_some() {
+                    let mut v1 = TokenDistributionRulesV1::from(v0.clone());
+                    v1.once_per_identity_distribution = once_per_identity_distribution;
+                    *self = TokenDistributionRules::V1(v1);
+                }
+            }
+            TokenDistributionRules::V1(v1) => {
+                if once_per_identity_distribution.is_some() {
+                    v1.set_once_per_identity_distribution(once_per_identity_distribution);
+                } else {
+                    let TokenDistributionRulesV1 {
+                        perpetual_distribution,
+                        perpetual_distribution_rules,
+                        pre_programmed_distribution,
+                        new_tokens_destination_identity,
+                        new_tokens_destination_identity_rules,
+                        minting_allow_choosing_destination,
+                        minting_allow_choosing_destination_rules,
+                        change_direct_purchase_pricing_rules,
+                        once_per_identity_distribution: _,
+                    } = v1.clone();
+                    *self = TokenDistributionRules::V0(TokenDistributionRulesV0 {
+                        perpetual_distribution,
+                        perpetual_distribution_rules,
+                        pre_programmed_distribution,
+                        new_tokens_destination_identity,
+                        new_tokens_destination_identity_rules,
+                        minting_allow_choosing_destination,
+                        minting_allow_choosing_destination_rules,
+                        change_direct_purchase_pricing_rules,
+                    });
+                }
+            }
         }
     }
 }

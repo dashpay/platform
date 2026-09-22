@@ -95,7 +95,7 @@ impl Drive {
                     if &proved_vote != vote {
                         Err(Error::Proof(ProofError::IncorrectProof(format!(
                             "returned vote {:?} does not match the vote that was sent {:?}",
-                            &proved_vote, vote
+                            proved_vote, vote
                         ))))
                     } else {
                         Ok::<Vote, Error>(proved_vote)

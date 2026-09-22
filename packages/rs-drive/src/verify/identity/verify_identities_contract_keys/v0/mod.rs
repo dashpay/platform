@@ -8,7 +8,7 @@ use dpp::identity::{IdentityPublicKey, Purpose};
 
 use crate::error::drive::DriveError;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
@@ -111,7 +111,7 @@ impl Drive {
                     .transpose()?;
 
                 let maybe_identity_public_key = maybe_item_bytes
-                    .map(IdentityPublicKey::deserialize_from_bytes)
+                    .map(IdentityPublicKey::deserialize_from_bytes_untrusted)
                     .transpose()?;
 
                 entry.insert(purpose, maybe_identity_public_key);

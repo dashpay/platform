@@ -1,7 +1,7 @@
 // use crate::data_contract::DataContract;
 // use crate::document::document_transition::document_base_transition::JsonValue;
 // use crate::identity::KeyID;
-// use crate::serialization::PlatformDeserializable;
+// use crate::serialization::PlatformDeserializableUntrusted;
 // use crate::serialization::PlatformSerializable;
 // use crate::serialization::Signable;
 // use crate::state_transition::{
@@ -10,7 +10,7 @@
 // use crate::{ ProtocolError};
 // use bincode::{config, Decode, Encode};
 // use derive_more::From;
-// use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+// use platform_serialization_derive::{PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize};
 // use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 // use platform_value::{BinaryData, Identifier, Value};
 // use serde::de::{MapAccess, Visitor};

@@ -15,7 +15,7 @@ use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
@@ -329,7 +329,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         let rs_transition =
-            IdentityCreditWithdrawalTransition::deserialize_from_bytes(bytes.as_slice())?;
+            IdentityCreditWithdrawalTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityCreditWithdrawalTransitionWasm(rs_transition))
     }

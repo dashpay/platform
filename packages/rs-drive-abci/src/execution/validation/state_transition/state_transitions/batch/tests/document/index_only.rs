@@ -177,6 +177,8 @@ pub(super) mod index_only_tests {
                 platform_version,
             )
             .expect("expected a random post");
+        post.set_id_for_creation(post_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         match hashtag {
             Some(hashtag) => {
                 post.set("hashtag", hashtag.into());
@@ -218,6 +220,23 @@ pub(super) mod index_only_tests {
         platform_version: &PlatformVersion,
     ) -> crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult
     {
+        process_and_commit_at(
+            platform,
+            platform_state,
+            transition,
+            &BlockInfo::default(),
+            platform_version,
+        )
+    }
+
+    pub(super) fn process_and_commit_at(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        transition: &StateTransition,
+        block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
+    ) -> crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult
+    {
         let serialized = transition
             .serialize_to_bytes()
             .expect("expected the batch transition to serialize");
@@ -227,7 +246,7 @@ pub(super) mod index_only_tests {
             .process_raw_state_transitions(
                 &vec![serialized],
                 platform_state,
-                &BlockInfo::default(),
+                block_info,
                 &transaction,
                 platform_version,
                 false,
@@ -276,7 +295,7 @@ pub(super) mod index_only_tests {
 
         // ── Alice likes the post ───────────────────────────────────────
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let alice_like = build_like(
+        let mut alice_like = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -284,6 +303,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let create = BatchTransition::new_document_creation_transition_from_document(
             alice_like.clone(),
@@ -310,7 +332,7 @@ pub(super) mod index_only_tests {
 
         // ── the same like again (fresh entropy, same values) collides ──
         let entropy_2 = Bytes32::random_with_rng(&mut rng);
-        let alice_like_again = build_like(
+        let mut alice_like_again = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -318,6 +340,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_like_again
+            .set_id_for_creation(like_type, &entropy_2.0, 4, platform_version)
+            .expect("expected to set the document id");
         let create_again = BatchTransition::new_document_creation_transition_from_document(
             alice_like_again,
             like_type,
@@ -347,7 +372,7 @@ pub(super) mod index_only_tests {
 
         // ── Bob may like the same post ─────────────────────────────────
         let bob_entropy = Bytes32::random_with_rng(&mut rng);
-        let bob_like = build_like(
+        let mut bob_like = build_like(
             &contract,
             bob.id(),
             post.id(),
@@ -355,6 +380,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        bob_like
+            .set_id_for_creation(like_type, &bob_entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
         let bob_create = BatchTransition::new_document_creation_transition_from_document(
             bob_like.clone(),
             like_type,
@@ -466,7 +494,7 @@ pub(super) mod index_only_tests {
 
         // And re-liking after the unlike works again.
         let entropy_3 = Bytes32::random_with_rng(&mut rng);
-        let alice_relike = build_like(
+        let mut alice_relike = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -474,6 +502,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_relike
+            .set_id_for_creation(like_type, &entropy_3.0, 6, platform_version)
+            .expect("expected to set the document id");
         let re_create = BatchTransition::new_document_creation_transition_from_document(
             alice_relike,
             like_type,
@@ -547,6 +578,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        disagreeing_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         disagreeing_like.set("hashtag", "btc".into());
 
         let create = BatchTransition::new_document_creation_transition_from_document(
@@ -626,7 +660,7 @@ pub(super) mod index_only_tests {
 
         // Referring absent, referenced present: refused.
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let hashtag_less_on_tagged = build_untagged_like(
+        let mut hashtag_less_on_tagged = build_untagged_like(
             &contract,
             alice.id(),
             tagged_post.id(),
@@ -634,6 +668,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        hashtag_less_on_tagged
+            .set_id_for_creation(like_type, &entropy.0, 4, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             hashtag_less_on_tagged,
             like_type,
@@ -662,7 +699,7 @@ pub(super) mod index_only_tests {
 
         // Referring present, referenced absent: refused.
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let tagged_on_untagged = build_like(
+        let mut tagged_on_untagged = build_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -670,6 +707,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        tagged_on_untagged
+            .set_id_for_creation(like_type, &entropy.0, 5, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             tagged_on_untagged,
             like_type,
@@ -732,7 +772,7 @@ pub(super) mod index_only_tests {
 
         // ── the untagged like goes through ─────────────────────────────
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let untagged_like = build_untagged_like(
+        let mut untagged_like = build_untagged_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -740,6 +780,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        untagged_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             untagged_like.clone(),
             like_type,
@@ -790,7 +833,7 @@ pub(super) mod index_only_tests {
 
         // ── a second untagged like collides on byPost ──────────────────
         let entropy_2 = Bytes32::random_with_rng(&mut rng);
-        let again = build_untagged_like(
+        let mut again = build_untagged_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -798,6 +841,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        again
+            .set_id_for_creation(like_type, &entropy_2.0, 4, platform_version)
+            .expect("expected to set the document id");
         let create_again = BatchTransition::new_document_creation_transition_from_document(
             again,
             like_type,
@@ -914,7 +960,7 @@ pub(super) mod index_only_tests {
         .await;
 
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let alice_like = build_like(
+        let mut alice_like = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -922,6 +968,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             alice_like.clone(),
             like_type,
@@ -1171,6 +1220,213 @@ pub(super) mod index_only_tests {
             );
         }
     }
+
+    /// An UNSIGNED `mark` create for the given property values, for
+    /// assembling batches that carry more than one transition (the factory
+    /// signs exactly one create per batch). Same shape as
+    /// [`signed_mark_create`]; the document comes back alongside so the
+    /// test can probe the entries its values address.
+    fn mark_create_transition(
+        contract: &DataContract,
+        owner: Identifier,
+        a: &str,
+        b: &str,
+        nonce: u64,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> (
+        dpp::state_transition::batch_transition::batched_transition::DocumentCreateTransition,
+        Document,
+    ) {
+        use dpp::document::DocumentV0Setters;
+        use dpp::state_transition::batch_transition::batched_transition::DocumentCreateTransition;
+        let mark_type = contract
+            .document_type_for_name("mark")
+            .expect("mark doctype exists");
+        let entropy = Bytes32::random_with_rng(rng);
+        let mut mark = mark_type
+            .random_document_with_identifier_and_entropy(
+                rng,
+                owner,
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random mark");
+        mark.set("a", a.into());
+        mark.set("b", b.into());
+        mark.set_id_for_creation(mark_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
+        let create = DocumentCreateTransition::from_document(
+            mark.clone(),
+            mark_type,
+            entropy.0,
+            None,
+            nonce,
+            platform_version,
+            None,
+            None,
+        )
+        .expect("expected the create transition");
+        (create, mark)
+    }
+
+    /// Two creates in ONE batch whose entries collide under one index
+    /// (`byA`: same `a`, same owner) but not under another (`byB`:
+    /// different `b`). Every transition of a batch is validated against
+    /// the same unapplied state, so the state probe sees neither create's
+    /// entries, and the batch is then applied as one grove batch, where a
+    /// second insert at the same path and key silently replaces the
+    /// first. Left alone, the loser's `byA` entry would carry the winner's
+    /// row commitment while its `byB` entry stood: a document nobody could
+    /// delete (the commitment probe fails on the replaced entry) or
+    /// recreate (its surviving entry is a duplicate). The batch-scoped
+    /// entry tracking must refuse the second create exactly as the state
+    /// probe refuses a collision with committed state, while a pair that
+    /// shares no entry passes untouched.
+    ///
+    /// Driven through the transformer and the batch state validation
+    /// directly: `max_transitions_in_documents_batch` is 1 at every
+    /// protocol version, so `process_raw_state_transitions` refuses any
+    /// two-transition batch at basic structure (pinned by
+    /// `ranked_group_drain`) and this shape cannot reach the write path
+    /// from the network today. The tracker is what keeps that true for
+    /// indexOnly types on the day the cap is raised.
+    #[tokio::test]
+    async fn test_colliding_index_only_creates_in_one_batch_are_refused() {
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+        use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+        use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+        use crate::execution::validation::state_transition::ValidationMode;
+        use crate::platform_types::platform::PlatformRef;
+        use dpp::version::DefaultForPlatformVersion;
+        use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+        use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+        use drive::state_transition_action::StateTransitionAction;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(78056);
+
+        let (alice, _alice_signer, _alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+
+        let state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        // Transforms and state-validates an unsigned two-create batch (neither
+        // step checks signatures) and returns the consensus errors alongside
+        // whether each transition survived as a create.
+        let mut validate_pair = |pairs: [(&str, &str); 2]| {
+            let [(a_1, b_1), (a_2, b_2)] = pairs;
+            let (first, _) = mark_create_transition(
+                &contract,
+                alice.id(),
+                a_1,
+                b_1,
+                2,
+                &mut rng,
+                platform_version,
+            );
+            let (second, second_mark) = mark_create_transition(
+                &contract,
+                alice.id(),
+                a_2,
+                b_2,
+                3,
+                &mut rng,
+                platform_version,
+            );
+            let batch: StateTransition = BatchTransition::from(BatchTransitionV0 {
+                owner_id: alice.id(),
+                transitions: vec![first.into(), second.into()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            })
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected an execution context");
+            let transformed = batch
+                .transform_into_action(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    &None,
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                )
+                .expect("expected to transform the batch");
+            assert!(
+                transformed.errors.is_empty(),
+                "the batch must transform cleanly: {:?}",
+                transformed.errors
+            );
+            let action = transformed.data.expect("expected the batch action");
+
+            let validated = batch
+                .validate_state(
+                    Some(action),
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &BlockInfo::default(),
+                    &mut execution_context,
+                    None,
+                )
+                .expect("expected to validate the batch against state");
+            let Some(StateTransitionAction::BatchAction(action)) = validated.data else {
+                panic!("expected a batch action back from state validation");
+            };
+            let survived_as_creates: Vec<bool> = action
+                .transitions()
+                .iter()
+                .map(|transition| {
+                    matches!(
+                        transition,
+                        BatchedTransitionAction::DocumentAction(
+                            DocumentTransitionAction::CreateAction(_)
+                        )
+                    )
+                })
+                .collect();
+            (validated.errors, survived_as_creates, second_mark)
+        };
+
+        // ── colliding on `byA` (same `a`), differing on `byB` ──────────
+        let (errors, survived, second_mark) = validate_pair([("x", "one"), ("x", "two")]);
+        assert_matches!(
+            errors.as_slice(),
+            [ConsensusError::StateError(StateError::DuplicateUniqueIndexError(error))]
+                if error.document_id() == &second_mark.id()
+                    && error.duplicating_properties() == &["a".to_string(), "$ownerId".to_string()],
+            "the second create collides with the first on `byA` and must be refused, \
+             naming the second document and the colliding index: {errors:?}"
+        );
+        assert_eq!(
+            survived,
+            vec![true, false],
+            "the first create must stand and the second must become a nonce bump"
+        );
+
+        // ── sharing no entry: both stand ───────────────────────────────
+        let (errors, survived, _) = validate_pair([("y", "one"), ("z", "two")]);
+        assert!(
+            errors.is_empty(),
+            "two creates that share no entry must both pass: {errors:?}"
+        );
+        assert_eq!(survived, vec![true, true]);
+    }
 }
 
 mod index_only_executed_proof_tests {
@@ -1220,7 +1476,7 @@ mod index_only_executed_proof_tests {
         .await;
 
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let alice_like = build_like(
+        let mut alice_like = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -1228,6 +1484,9 @@ mod index_only_executed_proof_tests {
             &mut rng,
             platform_version,
         );
+        alice_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             alice_like.clone(),
             like_type,
@@ -1364,7 +1623,7 @@ mod index_only_executed_proof_tests {
         .await;
 
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let untagged_like = build_untagged_like(
+        let mut untagged_like = build_untagged_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -1372,6 +1631,9 @@ mod index_only_executed_proof_tests {
             &mut rng,
             platform_version,
         );
+        untagged_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             untagged_like.clone(),
             like_type,
@@ -1498,6 +1760,8 @@ mod index_only_executed_proof_tests {
                 platform_version,
             )
             .expect("expected a random mark");
+        mark.set_id_for_creation(mark_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         mark.set("a", a.into());
         mark.set("b", b.into());
         let create = BatchTransition::new_document_creation_transition_from_document(
@@ -1687,6 +1951,8 @@ mod index_only_executed_proof_tests {
                 platform_version,
             )
             .expect("expected a random beat");
+        beat.set_id_for_creation(beat_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         beat.set("hashtag", hashtag.into());
         // Consensus assigns `$createdAt` from the block time at create
         // (BlockInfo::default() in this suite), and the delete-by-values
@@ -1707,6 +1973,135 @@ mod index_only_executed_proof_tests {
         .await
         .expect("expected the create transition");
         (create, beat)
+    }
+
+    #[tokio::test]
+    async fn should_validate_signed_index_only_delete_after_ttl_drain() {
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let (alice, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let mut rng = StdRng::seed_from_u64(4581);
+        let contract = DataContractFactory::new(platform_version.protocol_version).unwrap()
+            .create_with_value_config(alice.id(), 0, platform_value!({"beat": {
+                "type": "object", "indexOnly": true, "documentsMutable": false,
+                "properties": {"hashtag": {"type": "string", "maxLength": 59, "position": 0}},
+                "required": ["hashtag", "$createdAt"],
+                "indices": [
+                    {"name": "allTime", "properties": [{"hashtag": "asc"}], "terminal": "$ownerId"},
+                    {"name": "windowed", "properties": [{"$createdAt": "asc"}, {"hashtag": "asc"}],
+                        "terminal": "$ownerId", "timeRange": {"on": "$createdAt", "range": 3600, "step": 3600, "ttl": 3600}}
+                ], "additionalProperties": false
+            }}), None, None).unwrap().data_contract_owned();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .unwrap();
+        let (create, old) = signed_beat_create(
+            &contract,
+            alice.id(),
+            "old",
+            2,
+            &key,
+            &signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_eq!(result.valid_count(), 1, "{:?}", result.execution_results());
+
+        let now = BlockInfo {
+            time_ms: 7_200_000,
+            ..Default::default()
+        };
+        let (trigger, _) = signed_beat_create(
+            &contract,
+            alice.id(),
+            "new",
+            3,
+            &key,
+            &signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let result =
+            process_and_commit_at(&platform, &platform_state, &trigger, &now, platform_version);
+        assert_eq!(result.valid_count(), 1, "{:?}", result.execution_results());
+
+        let dt = contract.document_type_for_name("beat").unwrap();
+        let (paths, _) = Drive::index_only_entry_paths_and_key(
+            contract.id(),
+            dt,
+            dt.indexes().get("windowed").unwrap(),
+            &old,
+            platform_version,
+        )
+        .unwrap();
+        assert!(
+            !platform
+                .drive
+                .grove
+                .has_raw(
+                    &paths[0][..5],
+                    &paths[0][5],
+                    None,
+                    &platform_version.drive.grove_version
+                )
+                .unwrap()
+                .unwrap(),
+            "expired bucket must be gone before validation"
+        );
+
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            old,
+            dt,
+            &key,
+            4,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .unwrap();
+        let result =
+            process_and_commit_at(&platform, &platform_state, &delete, &now, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "deletion must pass validation and execution: {:?}",
+            result.execution_results()
+        );
+        let proof = platform
+            .drive
+            .prove_state_transition(&delete, None, platform_version)
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let contract = Arc::new(contract);
+        let lookup = |_id: &Identifier| Ok(Some(Arc::clone(&contract)));
+        Drive::verify_state_transition_was_executed_with_proof(
+            &delete,
+            &now,
+            &proof,
+            &lookup,
+            platform_version,
+        )
+        .expect("permanent entry must be deleted and provable");
     }
 
     /// The bucketed lifecycle through the pipeline: a `beat` create fans
@@ -1880,6 +2275,8 @@ mod index_only_executed_proof_tests {
                 platform_version,
             )
             .expect("expected a random tip");
+        tip.set_id_for_creation(tip_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         tip.set(
             "postId",
             dpp::platform_value::Value::Identifier(post_id.to_buffer()),

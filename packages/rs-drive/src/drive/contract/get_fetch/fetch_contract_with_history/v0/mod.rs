@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use dpp::data_contract::DataContract;
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
@@ -82,9 +82,12 @@ impl Drive {
                     })?;
                     match value {
                         Element::Item(item, _flags) => {
-                            let contract =
-                                DataContract::versioned_deserialize(item, false, platform_version)
-                                    .map_err(Error::from)?;
+                            let contract = DataContract::versioned_deserialize_trusted(
+                                item,
+                                false,
+                                platform_version,
+                            )
+                            .map_err(Error::from)?;
                             Ok((contract_time, contract))
                         }
                         _ => Err(Error::Drive(DriveError::CorruptedContractPath(

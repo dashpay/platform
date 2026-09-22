@@ -142,6 +142,7 @@ fun DocumentActionsScreen(
     }
     val capabilities = documentTypeCapabilities(schema, contractConfig)
     val documentsMutable = capabilities.documentsMutable
+    val immutability = remember(schema) { documentTypeImmutability(schema) }
     val canBeDeleted = capabilities.canBeDeleted
 
     // Default acting identity to the on-chain owner when it's one of ours,
@@ -315,16 +316,42 @@ fun DocumentActionsScreen(
                     )
                 } else {
                     sortedProps.forEach { (name, propEl) ->
+                        // Frozen properties are locked up front: consensus
+                        // rejects a change, addition or removal of one as a
+                        // PAID invalid transition (code 40128). A settable-once
+                        // property stays open only while the stored document
+                        // has no value for it.
+                        val lock = immutablePropertyLock(
+                            property = name,
+                            immutability = immutability,
+                            hasStoredValue = probedDoc?.fields?.containsKey(name) == true,
+                        )
                         DocumentPropertyField(
                             name = name,
                             prop = propEl as? JsonObject ?: JsonObject(emptyMap()),
                             isRequired = name in required,
-                            enabled = !isSubmitting,
+                            enabled = !isSubmitting && lock != ImmutablePropertyLock.FROZEN,
                             textValues = textValues,
                             boolValues = boolValues,
                             touchedBools = touchedBools,
                             tagPrefix = "replaceDocument.field",
                         )
+                        when (lock) {
+                            ImmutablePropertyLock.FROZEN -> Text(
+                                "Immutable: frozen at creation, a replace cannot change it.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("replaceDocument.immutable.$name"),
+                            )
+                            ImmutablePropertyLock.SETTABLE_ONCE -> Text(
+                                "Immutable once set: this document has no value yet, so it " +
+                                    "can be set exactly once.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.testTag("replaceDocument.settableOnce.$name"),
+                            )
+                            ImmutablePropertyLock.EDITABLE -> Unit
+                        }
                     }
                 }
                 replaceSuccess?.let {

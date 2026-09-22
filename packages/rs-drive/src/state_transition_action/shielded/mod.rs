@@ -1,9 +1,13 @@
 /// IdentityCreateFromShieldedPool transition action
 pub mod identity_create_from_shielded_pool;
+/// IdentityTopUpFromShieldedPool transition action
+pub mod identity_top_up_from_shielded_pool;
 /// Shield transition action
 pub mod shield;
 /// Shield from asset lock transition action
 pub mod shield_from_asset_lock;
+/// Shield from identity transition action
+pub mod shield_from_identity;
 /// Shielded transfer transition action
 pub mod shielded_transfer;
 /// Shielded withdrawal transition action

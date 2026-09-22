@@ -11,6 +11,10 @@ use super::{common::setup_logs, config::Config};
 
 /// Given some existing identity ID, when I fetch the identity, and I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"
+)]
 async fn test_identity_read() {
     setup_logs();
 
@@ -46,6 +50,10 @@ async fn test_identity_read_not_found() {
 
 /// Given some existing identity public key, when I fetch the identity, and I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"
+)]
 async fn test_identity_read_by_key() {
     let cfg = Config::new();
     let id = cfg.existing_identity_id;
@@ -74,6 +82,10 @@ async fn test_identity_read_by_key() {
 
 /// Given some existing identity ID, when I fetch the identity balance, I get some number.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"
+)]
 async fn test_identity_balance_read() {
     setup_logs();
 
@@ -92,6 +104,10 @@ async fn test_identity_balance_read() {
 
 /// Given some existing identity ID, when I fetch the identity balance, I get some number.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"
+)]
 async fn test_identity_balance_revision_read() {
     setup_logs();
 
@@ -223,6 +239,10 @@ async fn test_identity_public_keys_specific_read() {
 
 /// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"
+)]
 async fn test_fetch_identity_by_non_unique_public_keys() {
     /// Unique key hash, generated when creating test data
     const UNIQUE_KEY_HASH: [u8; 20] = [

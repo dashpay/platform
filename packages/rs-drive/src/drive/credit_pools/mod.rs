@@ -30,6 +30,8 @@ use itertools::Itertools;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs module
 pub mod epochs;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod paths;
@@ -270,7 +272,7 @@ mod tests {
                     Epoch::new(i as EpochIndex).unwrap().get_path_vec()
                 );
 
-                let GroveOp::InsertOrReplace {
+                let GroveOp::InsertOrReplaceDontCheckForBackwardsReferences {
                     element: Element::SumItem(credits, _),
                 } = operation.op
                 else {
@@ -334,7 +336,7 @@ mod tests {
             let updated_credits: Vec<_> = batch
                 .into_iter()
                 .map(|operation| {
-                    let GroveOp::InsertOrReplace {
+                    let GroveOp::InsertOrReplaceDontCheckForBackwardsReferences {
                         element: Element::SumItem(credits, _),
                     } = operation.op
                     else {

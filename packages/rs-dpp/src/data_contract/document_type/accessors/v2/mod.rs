@@ -1,3 +1,6 @@
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
+use std::collections::BTreeSet;
+
 /// Trait providing getters for DocumentTypeV2-specific fields.
 pub trait DocumentTypeV2Getters {
     /// Returns whether documents of this type are countable.
@@ -30,6 +33,40 @@ pub trait DocumentTypeV2Getters {
     /// each terminating in an `Item` keyed by the index's `terminal`
     /// property. Only what is in the indexes exists and is recoverable.
     fn index_only(&self) -> bool;
+
+    /// Returns whether the contract's moderators may delete documents of this
+    /// type (the `canBeDeletedByModerators` keyword, protocol version 14).
+    /// Independent of `documents_can_be_deleted`, which rules what a document's
+    /// own owner may do. False on document types that predate the keyword.
+    fn documents_can_be_deleted_by_moderators(&self) -> bool;
+
+    /// For how many seconds after a document's last modification (`$updatedAt`,
+    /// or `$createdAt` on a type that carries no `$updatedAt`)
+    /// the moderators may still delete it (the `canBeDeletedByModeratorsFor`
+    /// keyword, protocol version 14). `None` means no limit, and is what every
+    /// document type that predates the keyword answers.
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32>;
+
+    /// The top-level properties frozen at document creation on a mutable
+    /// document type (the `immutable` keyword, protocol version 14). A
+    /// replace that changes, adds or removes any of them is rejected with
+    /// `DocumentImmutablePropertyChangedError`. Empty on document types
+    /// that predate the keyword and on types whose documents are not
+    /// mutable, where every property is already immutable.
+    fn immutable_fields(&self) -> &BTreeSet<String>;
+
+    /// The subset of [`Self::immutable_fields`] a replace may still set while
+    /// the stored document has no value for them (the
+    /// `immutableAllowSetting` keyword, protocol version 14). Once present
+    /// they are frozen like the rest of the list. Always a subset of
+    /// [`Self::immutable_fields`]; empty on document types that predate the
+    /// keyword.
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String>;
+
+    /// The fixed fees in credits this document type charges for actions on its documents
+    /// (the `actionFees` keyword, protocol version 14). `None` on document types that
+    /// declare none and on those that predate the keyword.
+    fn action_fees(&self) -> Option<&DocumentActionFees>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

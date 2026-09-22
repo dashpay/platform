@@ -1,6 +1,6 @@
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 #[cfg(feature = "random-public-keys")]
@@ -42,6 +42,7 @@ use std::convert::TryFrom;
     Decode,
     Default,
     strum::EnumIter,
+    DecodeUntrusted,
 )]
 pub enum KeyType {
     #[default]

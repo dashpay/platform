@@ -142,9 +142,28 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * pre-migration row reads back as an ordinary, unstamped, non-tombstone
  * entry, and a wallet with no recorded chainlock height has no boundary
  * at all (nothing collects).
+ *
+ * Version 12 (identity key usage limits, protocol version 14): adds the
+ * nullable `public_keys.totalBudget` and `public_keys.expiresAt` columns,
+ * so a key registered with a lifetime budget or an expiry restores as the
+ * limited key it is instead of an unlimited one.
+ *
+ * Version 13 (contract group key bounds): adds the nullable
+ * `public_keys.contractBoundsKind` column. The id and document type name
+ * alone cannot tell a ContractGroup bound (kind 3) from a SingleContract
+ * bound (kind 1), so a group-bound AUTHENTICATION key used to restore as
+ * SingleContract on the group id. The persist callback now records the
+ * kind the native row carries; a NULL kind (legacy row) keeps the old
+ * inference on restore.
+ *
+ * Version 14 (once-per-identity token distribution, protocol version 14):
+ * adds the nullable `tokens.oncePerIdentityDistribution` column holding the
+ * contract's `oncePerIdentityDistribution` block as JSON, so the claim
+ * screen can offer the third distribution kind. NULL for every pre-existing
+ * row; the next contract materialization fills it in.
  */
 @Database(
-    version = 11,
+    version = 14,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -617,6 +636,50 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v11 -> v12: identity key usage limits (protocol version 14). Two
+         * nullable columns on `public_keys`, `totalBudget` (credits the key may
+         * spend over its lifetime) and `expiresAt` (block time in ms from which
+         * it can no longer sign), so a limited key persisted from the
+         * identity-keys changeset restores as limited. Additive: every
+         * pre-migration row reads back as a key without limits, which is what
+         * every key registered before protocol version 14 is.
+         */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `totalBudget` INTEGER")
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `expiresAt` INTEGER")
+            }
+        }
+
+        /**
+         * v12 -> v13: additive nullable `public_keys.contractBoundsKind`, see
+         * the version-13 class doc above. NULL for every pre-existing row:
+         * the restore path infers a legacy row's kind as before, and the
+         * persist callback records the real kind on the next upsert of each
+         * key.
+         */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `contractBoundsKind` INTEGER",
+                )
+            }
+        }
+
+        /**
+         * v13 -> v14: additive nullable `tokens.oncePerIdentityDistribution`,
+         * see the version-14 class doc above. NULL for every pre-existing
+         * row; `TokenMaterializer` fills it on the next contract parse.
+         */
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `tokens` ADD COLUMN `oncePerIdentityDistribution` TEXT",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -635,6 +698,9 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .build()
 

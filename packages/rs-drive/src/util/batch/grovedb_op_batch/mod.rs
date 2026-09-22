@@ -8,8 +8,8 @@ use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{credit_pools, tokens, RootTree};
 use crate::util::batch::grovedb_op_batch::KnownPath::{
     TokenBalancesRoot, TokenContractInfoRoot, TokenDirectSellPriceRoot, TokenDistributionRoot,
-    TokenIdentityInfoRoot, TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot,
-    TokenStatusRoot, TokenTimedDistributionRoot,
+    TokenIdentityInfoRoot, TokenOncePerIdentityDistributionRoot, TokenPerpetualDistributionRoot,
+    TokenPreProgrammedDistributionRoot, TokenStatusRoot, TokenTimedDistributionRoot,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
@@ -48,6 +48,7 @@ enum KnownPath {
     IdentityTreeKeyReferencesInSecurityLevel(Purpose, SecurityLevel), //Level 4
     IdentityTreeNegativeCreditRoot,                                   //Level 2
     IdentityContractInfoRoot,                                         //Level 2
+    IdentityTreeKeyBudgetsRoot,                                       //Level 2
     UniquePublicKeyHashesToIdentitiesRoot,                            //Level 1
     NonUniquePublicKeyKeyHashesToIdentitiesRoot,                      //Level 1
     PoolsRoot,                                                        //Level 1
@@ -65,6 +66,7 @@ enum KnownPath {
     TokenTimedDistributionRoot,                                       //Level 3
     TokenPreProgrammedDistributionRoot,                               //Level 3
     TokenPerpetualDistributionRoot,                                   //Level 3
+    TokenOncePerIdentityDistributionRoot,                             //Level 3
     TokenIdentityInfoRoot,                                            //Level 2
     TokenContractInfoRoot,                                            //Level 2
     TokenStatusRoot,                                                  //Level 2
@@ -73,6 +75,7 @@ enum KnownPath {
     GroupActionsRoot,                                                 //Level 1
     SingleUseKeyBalancesRoot,                                         //Level 1
     ShieldedBalancesRoot,                                             //Level 1
+    ContractGroupsRoot,                                               //Level 1
 }
 
 impl From<RootTree> for KnownPath {
@@ -99,6 +102,7 @@ impl From<RootTree> for KnownPath {
             RootTree::GroupActions => KnownPath::GroupActionsRoot,
             RootTree::AddressBalances => KnownPath::SingleUseKeyBalancesRoot,
             RootTree::ShieldedBalances => KnownPath::ShieldedBalancesRoot,
+            RootTree::ContractGroups => KnownPath::ContractGroupsRoot,
         }
     }
 }
@@ -116,6 +120,7 @@ impl From<IdentityRootStructure> for KnownPath {
                 KnownPath::IdentityTreeNegativeCreditRoot
             }
             IdentityRootStructure::IdentityContractInfo => KnownPath::IdentityContractInfoRoot,
+            IdentityRootStructure::IdentityTreeKeyBudgets => KnownPath::IdentityTreeKeyBudgetsRoot,
         }
     }
 }
@@ -277,6 +282,9 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                     tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY => {
                         (format!("PreProgrammedDistribution({})", tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY), Some(TokenPreProgrammedDistributionRoot))
                     }
+                    tokens::paths::TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY => {
+                        (format!("OncePerIdentityDistribution({})", tokens::paths::TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY), Some(TokenOncePerIdentityDistributionRoot))
+                    }
                     _ => (hex_to_ascii(key), None),
                 },
                 KnownPath::TokenTimedDistributionRoot if key.len() == 1 => match key[0] {
@@ -347,6 +355,7 @@ impl fmt::Display for GroveDbOpBatch {
             writeln!(f, "   Key: {}", key_string)?;
             match &op.op {
                 GroveOp::InsertOrReplace { element }
+                | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element }
                 | GroveOp::InsertWithKnownToNotAlreadyExist { element }
                 | GroveOp::InsertIfNotExists { element, .. } => {
                     let flags = element.get_flags();
@@ -536,12 +545,10 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
 
     /// Adds an `Insert` operation with an empty tree at the specified path and key to a list of GroveDB ops.
     fn add_insert_empty_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
-        self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(
-                path,
-                key,
-                Element::empty_tree(),
-            ))
+        self.operations.push(
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, Element::empty_tree())
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Adds an `Insert` operation with an empty tree with storage flags to a list of GroveDB ops.
@@ -551,24 +558,24 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         key: Vec<u8>,
         storage_flags: &Option<Cow<StorageFlags>>,
     ) {
-        self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(
+        self.operations.push(
+            QualifiedGroveDbOp::insert_or_replace_op(
                 path,
                 key,
                 Element::empty_tree_with_flags(
                     StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                 ),
-            ))
+            )
+            .dont_check_for_backwards_references(),
+        )
     }
 
     /// Adds an `Insert` operation with an empty sum tree at the specified path and key to a list of GroveDB ops.
     fn add_insert_empty_sum_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
-        self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(
-                path,
-                key,
-                Element::empty_sum_tree(),
-            ))
+        self.operations.push(
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, Element::empty_sum_tree())
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Adds an `Insert` operation with an empty sum tree with storage flags to a list of GroveDB ops.
@@ -578,38 +585,45 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         key: Vec<u8>,
         storage_flags: &Option<Cow<StorageFlags>>,
     ) {
-        self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(
+        self.operations.push(
+            QualifiedGroveDbOp::insert_or_replace_op(
                 path,
                 key,
                 Element::empty_sum_tree_with_flags(
                     StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                 ),
-            ))
+            )
+            .dont_check_for_backwards_references(),
+        )
     }
 
     /// Adds a `Delete` operation to a list of GroveDB ops.
     fn add_delete(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
         self.operations
-            .push(QualifiedGroveDbOp::delete_op(path, key))
+            .push(QualifiedGroveDbOp::delete_op(path, key).dont_check_for_backwards_references())
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
     /// Uses `DontCheckWithNoCleanup` because callers (e.g. `batch_delete_up_tree_while_empty`)
     /// have already verified the tree is empty.
     fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, tree_type: TreeType) {
-        self.operations.push(QualifiedGroveDbOp::delete_tree_op(
-            path,
-            key,
-            tree_type,
-            SubelementsDeletionBehavior::DontCheckWithNoCleanup,
-        ))
+        self.operations.push(
+            QualifiedGroveDbOp::delete_tree_op(
+                path,
+                key,
+                tree_type,
+                SubelementsDeletionBehavior::DontCheckWithNoCleanup,
+            )
+            .dont_check_for_backwards_references(),
+        )
     }
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
     fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) {
-        self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(path, key, element))
+        self.operations.push(
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Verify consistency of operations
@@ -707,10 +721,13 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
             let op = if matches!(
                 op,
                 &GroveOp::InsertOrReplace { .. }
+                    | &GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { .. }
                     | &GroveOp::InsertWithKnownToNotAlreadyExist { .. }
                     | &GroveOp::InsertIfNotExists { .. }
                     | &GroveOp::Replace { .. }
+                    | &GroveOp::ReplaceDontCheckForBackwardsReferences { .. }
                     | &GroveOp::Patch { .. }
+                    | &GroveOp::PatchDontCheckForBackwardsReferences { .. }
             ) {
                 self.operations.remove(index).op
             } else {

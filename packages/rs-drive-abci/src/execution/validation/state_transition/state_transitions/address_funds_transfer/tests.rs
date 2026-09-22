@@ -5215,7 +5215,7 @@ mod tests {
 
     mod serialization {
         use super::*;
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
 
         #[tokio::test]
         async fn test_serialize_deserialize_roundtrip() {
@@ -5241,8 +5241,8 @@ mod tests {
                 .expect("expected to serialize");
 
             // Deserialize
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&bytes).expect("expected to deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+                .expect("expected to deserialize");
 
             // Re-serialize and compare
             let bytes2 = deserialized

@@ -1,11 +1,22 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error("`Chain Locked transaction {transaction_id:?} could not be validated for the given height {height_reported_not_locked}`")]
 #[platform_serialize(unversioned)]
@@ -32,3 +43,15 @@ impl InvalidIdentityAssetLockProofChainLockValidationError {
         self.height_reported_not_locked
     }
 }
+
+impl<C> DecodeUntrusted<C> for InvalidIdentityAssetLockProofChainLockValidationError {
+    fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            height_reported_not_locked: DecodeUntrusted::decode_untrusted(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_untrusted!(InvalidIdentityAssetLockProofChainLockValidationError);

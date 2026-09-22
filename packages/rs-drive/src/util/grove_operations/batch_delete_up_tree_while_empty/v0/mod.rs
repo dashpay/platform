@@ -7,7 +7,7 @@ use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteUpTr
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteUpTreeOptions;
-use grovedb::{GroveDb, TransactionArg};
+use grovedb::{BackwardsReferences, GroveDb, TransactionArg};
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
 use platform_version::version::drive_versions::DriveVersion;
 
@@ -46,6 +46,7 @@ impl Drive {
                 stop_path_height,
                 true,
                 estimated_layer_info,
+                BackwardsReferences::DontCheck,
                 &drive_version.grove_version,
             ),
             BatchDeleteUpTreeApplyType::StatefulBatchDelete {
@@ -57,6 +58,9 @@ impl Drive {
                     base_root_storage_is_free: true,
                     validate_tree_at_path_exists: false,
                     stop_path_height,
+                    // Drive stores no backward-reference participants; GroveDB checks
+                    // the claim for free from the value it reads for each delete.
+                    backwards_references: BackwardsReferences::DontCheck,
                 };
                 self.grove.delete_operations_for_delete_up_tree_while_empty(
                     path.to_path_refs().as_slice().into(),

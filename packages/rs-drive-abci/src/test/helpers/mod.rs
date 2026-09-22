@@ -1,3 +1,6 @@
+/// Contract group fixtures
+#[cfg(test)]
+pub mod contract_groups;
 /// Test helpers
 #[cfg(test)]
 pub mod fast_forward_to_block;

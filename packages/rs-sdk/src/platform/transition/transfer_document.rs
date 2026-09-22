@@ -58,6 +58,14 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
+        // A local failure after the nonce is reserved would leave the cached nonce ahead of
+        // Platform's, so what can be refused without it is refused first.
+        if let Some(creation_options) =
+            settings.and_then(|settings| settings.state_transition_creation_options)
+        {
+            creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
+        }
+
         let new_identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.owner_id(),

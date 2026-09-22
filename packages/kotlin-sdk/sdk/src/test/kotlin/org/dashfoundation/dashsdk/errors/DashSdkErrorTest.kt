@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.errors
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,6 +29,34 @@ class DashSdkErrorTest {
             val mapped = DashSdkError.fromNative(DashSDKException(code, "boom"))
             assertEquals("code $code", expected, mapped::class)
             assertEquals("boom", mapped.message)
+        }
+    }
+
+    @Test
+    fun shouldPreserveShieldedIdentityDebitPendingWithoutClaimingSubmission() {
+        val message = "Identity has an unresolved shielded debit; " +
+            "this request was not started. Wait for shielded sync"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 55, message)
+        val mapped = DashSdkError.fromNative(native)
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedIdentityDebitPending)
+        assertEquals(message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse("wait for the earlier debit to reconcile before retrying", mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldPreserveRecoveryErrorTypesWithoutRetryingBlindly() {
+        for ((code, expected) in mapOf(
+            56 to DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted::class,
+            57 to DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired::class,
+        )) {
+            val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, "record unreadable")
+            val mapped = DashSdkError.fromNative(native)
+            assertEquals(expected, mapped::class)
+            assertEquals("record unreadable", mapped.message)
+            assertEquals(native, mapped.cause)
+            assertFalse(mapped.isRetryable)
         }
     }
 
@@ -443,5 +472,53 @@ class DashSdkErrorTest {
         assertTrue(error is DashSdkError.PlatformWallet.NotFound)
         assertFalse(error is DashSdkError.NotFound)
         assertEquals("wallet not found", (error as DashSdkError).message)
+    }
+
+    @Test
+    fun shouldSurfaceTheConsensusErrorOfARejectedTokenOperation() {
+        // What the JNI bridge throws for a claim Platform rejected as already
+        // claimed: ErrorUnknown (99), consensus code 40722, kind State (4).
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 99,
+            "Token operation failed: Token claim failed: state transition broadcast error",
+            40722,
+            4,
+        )
+        val mapped = DashSdkError.fromNative(native)
+
+        // The consensus error rides along; the type and message are what they
+        // were without it.
+        assertTrue(mapped is DashSdkError.PlatformWallet.Generic)
+        assertEquals(native.message, mapped.message)
+        assertEquals(
+            PlatformConsensusError(40722, ConsensusErrorKind.STATE),
+            mapped.consensusError,
+        )
+    }
+
+    @Test
+    fun shouldMapEveryNativeConsensusErrorKind() {
+        val kinds = mapOf(
+            1 to ConsensusErrorKind.BASIC,
+            2 to ConsensusErrorKind.SIGNATURE,
+            3 to ConsensusErrorKind.FEE,
+            4 to ConsensusErrorKind.STATE,
+            // A family this build does not know keeps its code.
+            9 to ConsensusErrorKind.UNKNOWN,
+        )
+        kinds.forEach { (native, expected) ->
+            val error = DashSdkError.fromNative(DashSDKException(1099, "rejected", 10000, native))
+            assertEquals(PlatformConsensusError(10000, expected), error.consensusError)
+        }
+    }
+
+    @Test
+    fun shouldHaveNoConsensusErrorWithoutAConsensusRejection() {
+        val plain = DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 99, "code 40722 in text only"),
+        )
+        assertNull(plain.consensusError)
+        // An SDK error raised on the Kotlin side has no native cause at all.
+        assertNull(DashSdkError.InvalidParameter("bad argument").consensusError)
     }
 }

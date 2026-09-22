@@ -4,13 +4,16 @@ use std::convert::TryInto;
 use std::io::{BufReader, Cursor, Read};
 
 use crate::data_contract::errors::DataContractError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::property_names;
+use crate::document::property_names::{CREATOR_ID, OWNER_ID};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
@@ -84,7 +87,17 @@ pub struct ByteArrayPropertySizes {
 // This enum is embedded in consensus errors, so it is consensus-serialized.
 // @append_only
 #[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum DocumentPropertyReferenceTarget {
@@ -107,8 +120,18 @@ pub enum DocumentPropertyReferenceTarget {
         /// document's value and the referenced document's value, checked by
         /// consensus at document write time (the referenced document is
         /// already fetched for existence validation, so agreement adds no
-        /// reads). Declarations are validated at contract registration:
-        /// both properties must exist and share one property type.
+        /// reads). The referring side is a schema property of the declaring
+        /// document type or its own `$ownerId`, the writer, which makes the
+        /// pair a write gate (see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`]).
+        /// The referenced side is a schema
+        /// property of the referenced document type or one of the system
+        /// identifiers in [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`]:
+        /// `$ownerId`, which follows the referenced document through
+        /// transfers, or `$creatorId`, set once at creation. Declarations
+        /// are validated at contract registration: both sides must exist
+        /// and share one value kind (an identifier on the referring side
+        /// for the system names), and `$creatorId` needs a referenced
+        /// document type that records creator ids at all.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
     },
@@ -116,13 +139,128 @@ pub enum DocumentPropertyReferenceTarget {
     /// identity id and the named sibling property of the same document type
     /// holds the key id. Identity keys can be disabled but never removed, so
     /// an existing reference can never dangle; at write time the key must
-    /// exist and must not be disabled.
+    /// exist and must not be disabled. The referenced key is the (identity
+    /// id, key id) pair, so a replace that changes either property
+    /// re-validates the reference.
     #[serde(rename = "identityPublicKey")]
     IdentityPublicKey {
         /// The property of the same document type whose value carries the
         /// referenced key id
         key_id_property: String,
     },
+    /// A document of a document type whose documents CAN be deleted: the
+    /// counterpart of [`Self::PermanentDocument`], disjoint from it, so a
+    /// declaration always states which guarantee the reference carries.
+    /// The declaration shape and the write-time validation are the same:
+    /// the referenced document must exist, and every `property_agreement`
+    /// pair must hold, when the referring document is written. Nothing is
+    /// promised afterwards: the referenced document may be deleted, the
+    /// deletion is not blocked by referring documents, and a reader must
+    /// expect the reference to resolve to nothing. It can not come back
+    /// pointing at something else: a document id commits to the nonce of
+    /// its create transition, so an id is produced at most once and a
+    /// reference means that one document or nothing. A WRITER may not leave
+    /// it that way: every replace of the referring document re-validates
+    /// the reference, so a dead one has to be repointed at a document that
+    /// exists or cleared (on an `immutable` property, clearing is the only
+    /// move, and the immutable check lets it through). Features that lean
+    /// on the target staying in state (`preallocated` index trees) are not
+    /// available through it.
+    #[serde(rename = "deletableDocument")]
+    DeletableDocument {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+        /// See [`Self::PermanentDocument`]'s `property_agreement`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
+    },
+}
+
+/// The declaration content the two document reference targets,
+/// [`DocumentPropertyReferenceTarget::PermanentDocument`] and
+/// [`DocumentPropertyReferenceTarget::DeletableDocument`], share.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct DocumentReferenceDeclaration<'a> {
+    /// The contract the referenced document type lives in; `None` means
+    /// the declaring contract itself
+    pub contract_id: Option<Identifier>,
+    /// The referenced document type
+    pub document_type_name: &'a str,
+    /// The `{referring property: referenced property}` equalities
+    pub property_agreement: &'a BTreeMap<String, String>,
+    /// Whether the referenced document type must forbid deletion
+    /// (`permanentDocument`) or must allow it (`deletableDocument`)
+    pub permanent: bool,
+}
+
+impl DocumentPropertyReferenceTarget {
+    /// The declaration of a reference to a DOCUMENT, of either kind;
+    /// `None` for every other target.
+    pub fn as_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
+        match self {
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            } => Some(DocumentReferenceDeclaration {
+                contract_id: *contract_id,
+                document_type_name,
+                property_agreement,
+                permanent: true,
+            }),
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            } => Some(DocumentReferenceDeclaration {
+                contract_id: *contract_id,
+                document_type_name,
+                property_agreement,
+                permanent: false,
+            }),
+            DocumentPropertyReferenceTarget::Identity
+            | DocumentPropertyReferenceTarget::Contract
+            | DocumentPropertyReferenceTarget::Token
+            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => None,
+        }
+    }
+}
+
+/// The system properties of a referenced document that the referenced side
+/// of a `propertyAgreement` pair may name, next to the referenced document
+/// type's schema properties: `$ownerId`, the current owner (which follows
+/// the document through transfers), and `$creatorId`, the original creator
+/// (set once, and only recorded by transferable or tradeable document types
+/// of a format-1 contract). Both are identifiers, so the referring side must
+/// be an identifier property. The referring side is a schema property or
+/// the writer's own `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
+pub const REFERENCED_SYSTEM_AGREEMENT_PROPERTIES: [&str; 2] = [OWNER_ID, CREATOR_ID];
+
+/// Whether `name` is one of [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`].
+pub fn is_referenced_system_agreement_property(name: &str) -> bool {
+    REFERENCED_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
+}
+
+/// The system properties of the REFERRING document that the referring side
+/// of a `propertyAgreement` pair may name, next to the declaring document
+/// type's schema properties: only `$ownerId`, the writer. Such a pair is a
+/// write gate: consensus refuses a create or replace unless the writer's id
+/// equals the referenced side, so the referenced document's owner (or its
+/// creator, or a named identifier) is the only identity that may write
+/// referring documents. It is checked on every create and on EVERY replace
+/// of the referring document, not only when the reference changes, since
+/// either document may have been transferred in between; a transfer itself
+/// is not re-checked, so on a transferable referring type the gate governs
+/// writing, not holding. The writer's id lives on the transition rather
+/// than in the document data, which is why it is threaded into write-time
+/// validation separately.
+pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
+
+/// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
+pub fn is_referring_system_agreement_property(name: &str) -> bool {
+    REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
@@ -150,6 +288,22 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                 write!(f, "identity public key (key id property {key_id_property})")
             }
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: Some(contract_id),
+                document_type_name,
+                ..
+            } => write!(
+                f,
+                "deletable document (contract {contract_id}, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: None,
+                document_type_name,
+                ..
+            } => write!(
+                f,
+                "deletable document (own contract, document type {document_type_name})"
+            ),
         }
     }
 }
@@ -7354,6 +7508,53 @@ mod tests {
             .to_string(),
             "permanent document (own contract, document type note)"
         );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: Some(contract_id),
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            }
+            .to_string(),
+            format!("deletable document (contract {contract_id}, document type note)")
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            }
+            .to_string(),
+            "deletable document (own contract, document type note)"
+        );
+    }
+
+    #[test]
+    fn should_expose_the_shared_declaration_of_both_document_references() {
+        let agreement: BTreeMap<String, String> =
+            [("hashtag".to_string(), "hashtag".to_string())].into();
+        let permanent = DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: agreement.clone(),
+        };
+        let deletable = DocumentPropertyReferenceTarget::DeletableDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: agreement.clone(),
+        };
+
+        let permanent = permanent.as_document_reference().expect("a document");
+        let deletable = deletable.as_document_reference().expect("a document");
+        assert!(permanent.permanent);
+        assert!(!deletable.permanent);
+        for declaration in [permanent, deletable] {
+            assert_eq!(declaration.contract_id, None);
+            assert_eq!(declaration.document_type_name, "note");
+            assert_eq!(declaration.property_agreement, &agreement);
+        }
+        assert!(DocumentPropertyReferenceTarget::Identity
+            .as_document_reference()
+            .is_none());
     }
 
     /// A compile-time guard, not a behavioural test.
@@ -7363,7 +7564,7 @@ mod tests {
     /// and the conversion that builds it. Those live behind a `match` that
     /// a new variant would not break, because they can fall back to a
     /// catch-all. This exhaustive `match` has no catch-all, so adding a
-    /// sixth variant fails to compile *here*, in the crate that owns the
+    /// seventh variant fails to compile *here*, in the crate that owns the
     /// enum, where whoever adds it will see it.
     #[test]
     fn reference_targets_are_exhaustively_mirrored() {
@@ -7379,6 +7580,11 @@ mod tests {
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: "signerKeyId".to_string(),
             },
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            },
         ];
 
         for target in &targets {
@@ -7389,6 +7595,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::Token => "token",
                 DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
                 DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
+                DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
             };
 
             // The tag is the `refersTo` schema keyword's own `type` value,

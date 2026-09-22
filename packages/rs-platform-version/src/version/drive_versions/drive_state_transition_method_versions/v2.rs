@@ -36,6 +36,9 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 identity_top_up_transition: 0,
                 identity_top_up_from_addresses_transition: 0,
                 identity_update_transition: 1, //changed
+                identity_key_limits_update_transition: 0,
+                contract_user_moderation_transition: 0,
+                contract_fee_claim_transition: 0,
                 masternode_vote_transition: 0,
                 bump_identity_data_contract_nonce: 0,
                 bump_identity_nonce: 0,
@@ -58,6 +61,8 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 unshield_transition: 0,
                 shielded_withdrawal_transition: 0,
                 identity_create_from_shielded_pool_transition: 0,
+                shield_from_identity_transition: 0,
+                identity_top_up_from_shielded_pool_transition: 0,
             },
         document_from_action: DriveDocumentFromActionVersions {
             document_from_create_transition_action: 0,

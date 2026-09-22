@@ -276,6 +276,87 @@ impl_transport_request_grpc!(
     get_data_contract
 );
 
+// rpc getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetDataContractsByRangeRequest,
+    platform_proto::GetDataContractsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_data_contracts_by_range
+);
+
+// rpc getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetDataContractsLatestVersionsRequest,
+    platform_proto::GetDataContractsLatestVersionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_data_contracts_latest_versions
+);
+
+// rpc getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractGroupInfoRequest,
+    platform_proto::GetContractGroupInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_group_info
+);
+
+// rpc getContractModerationStatus(GetContractModerationStatusRequest) returns (GetContractModerationStatusResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractModerationStatusRequest,
+    platform_proto::GetContractModerationStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_moderation_status
+);
+
+// rpc getContractModerationEntries(GetContractModerationEntriesRequest) returns (GetContractModerationEntriesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractModerationEntriesRequest,
+    platform_proto::GetContractModerationEntriesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_moderation_entries
+);
+
+// rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest) returns (GetContractDocumentRemovalsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractDocumentRemovalsRequest,
+    platform_proto::GetContractDocumentRemovalsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_document_removals
+);
+
+// rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractFeePotsRequest,
+    platform_proto::GetContractFeePotsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_fee_pots
+);
+
+// rpc getContractGroupMembers(GetContractGroupMembersRequest) returns (GetContractGroupMembersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractGroupMembersRequest,
+    platform_proto::GetContractGroupMembersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_group_members
+);
+
+// rpc getContractGroupsForContract(GetContractGroupsForContractRequest) returns (GetContractGroupsForContractResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractGroupsForContractRequest,
+    platform_proto::GetContractGroupsForContractResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_groups_for_contract
+);
+
 impl_transport_request_grpc!(
     platform_proto::GetConsensusParamsRequest,
     platform_proto::GetConsensusParamsResponse,
@@ -360,6 +441,14 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_identity_contract_nonce
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityKeysRemainingBudgetsRequest,
+    platform_proto::GetIdentityKeysRemainingBudgetsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_keys_remaining_budgets
 );
 
 impl_transport_request_grpc!(
@@ -585,6 +674,14 @@ impl_transport_request_grpc!(
     CoreGrpcClient,
     RequestSettings::default(),
     get_transaction
+);
+
+impl_transport_request_grpc!(
+    core_proto::GetBlockRequest,
+    core_proto::GetBlockResponse,
+    CoreGrpcClient,
+    RequestSettings::default(),
+    get_block
 );
 
 impl_transport_request_grpc!(

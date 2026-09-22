@@ -19,9 +19,11 @@ use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -34,12 +36,14 @@ pub type UTXOTransferTransitionLatest = AddressFundsTransferTransitionV0;
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

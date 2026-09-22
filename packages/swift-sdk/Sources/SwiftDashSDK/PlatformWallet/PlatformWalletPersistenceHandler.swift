@@ -3939,26 +3939,38 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             )
             // Project the snapshot's ContractBounds enum into the
-            // pair of columns `PersistentPublicKey` uses:
-            //   * `contractBoundsIds` — `[contractId]` (or nil)
-            //   * `contractBoundsDocumentTypeName` — non-nil iff the
+            // three columns `PersistentPublicKey` uses:
+            //   * `contractBoundsIds`: `[boundId]` (or nil)
+            //   * `contractBoundsDocumentTypeName`: non-nil iff the
             //     bound was `.singleContractDocumentType`
-            // Keeping both lets the SwiftData row round-trip both
-            // variants verbatim; legacy stores without the
-            // doc-type column just see `nil` for the second field
-            // and reconstruct as `.singleContract`.
+            //   * `contractBoundsKind`: the FFI discriminant
+            // Keeping all three lets the SwiftData row round-trip
+            // every variant verbatim. The kind is what separates
+            // `.contractGroup` from `.singleContract`: both carry a
+            // bare id, so a store that only had the first two columns
+            // restored a group bound as unbounded. Legacy rows
+            // written before the column exists leave it `nil` and
+            // keep the old inference.
             let snapshotBoundsIds: [Data]?
             let snapshotBoundsDocType: String?
+            let snapshotBoundsKind: Int
             switch entry.contractBounds {
             case .some(.singleContract(let id)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = nil
+                snapshotBoundsKind = 1
             case .some(.singleContractDocumentType(let id, let name)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = name
+                snapshotBoundsKind = 2
+            case .some(.contractGroup(let id)):
+                snapshotBoundsIds = [id]
+                snapshotBoundsDocType = nil
+                snapshotBoundsKind = 3
             case .none:
                 snapshotBoundsIds = nil
                 snapshotBoundsDocType = nil
+                snapshotBoundsKind = 0
             }
 
             let row: PersistentPublicKey
@@ -3978,6 +3990,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     disabledAt: entry.disabledAt.map { Int64(bitPattern: $0) },
                     contractBounds: snapshotBoundsIds,
                     contractBoundsDocumentTypeName: snapshotBoundsDocType,
+                    contractBoundsKind: snapshotBoundsKind,
                     identityId: identityHex
                 )
                 backgroundContext.insert(row)
@@ -4005,6 +4018,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // scope) must overwrite any stale value here.
             row.contractBounds = snapshotBoundsIds
             row.contractBoundsDocumentTypeName = snapshotBoundsDocType
+            row.contractBoundsKind = snapshotBoundsKind
+
+            // Usage limits (protocol version 14). Rust is the source of
+            // truth on every callback, and a key limits update raises a
+            // budget / moves an expiry in place, so the row follows the
+            // snapshot rather than keeping whatever it held: a key whose
+            // budget was just raised must not read back at the old value.
+            row.totalBudgetCredits = entry.totalBudget
+            row.expiresAtMillis = entry.expiresAt
 
             // Private-key handling: no secret crosses the FFI. A
             // wallet-derivable key whose private bytes were materialized by
@@ -5000,6 +5022,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let keyType: UInt8
         let readOnly: Bool
         let disabledAt: UInt64?
+        /// Usage limit (protocol version 14): the credits the key may take
+        /// from the identity over its whole lifetime. `nil` for a key
+        /// without a budget.
+        let totalBudget: UInt64?
+        /// Usage limit (protocol version 14): the block time in
+        /// milliseconds from which the key can no longer sign. `nil` for a
+        /// key without an expiry.
+        let expiresAt: UInt64?
         let publicKeyData: Data
         let publicKeyHash: Data
         /// Owning wallet if this key is derivable from one we control.
@@ -5010,11 +5040,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
         /// Full ContractBounds projection mirrored from Rust:
         /// `nil` when the key has no bounds; `.singleContract` for
-        /// kind=1; `.singleContractDocumentType` for kind=2. Carried
-        /// so the SwiftData row preserves the doc-type name on
-        /// round-trip (would otherwise be silently downgraded to
-        /// `.singleContract` and break local DPP projections that
-        /// read `identity.identityPublicKeys`).
+        /// kind=1; `.singleContractDocumentType` for kind=2;
+        /// `.contractGroup` for kind=3. Carried so the SwiftData row
+        /// preserves the doc-type name on round-trip (would
+        /// otherwise be silently downgraded to `.singleContract` and
+        /// break local DPP projections that read
+        /// `identity.identityPublicKeys`) and so a group bound is not
+        /// mistaken for a whole-contract one.
         let contractBounds: ManagedPlatformWallet.ContractBounds?
     }
 
@@ -6591,7 +6623,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// A wallet is "restorable" when it has at least one
     /// `PersistentAccount` row with non-empty
     /// `accountExtendedPubKeyBytes`. The Rust side reconstructs the
-    /// watch-only `Wallet` via `Wallet::new_watch_only(network,
+    /// external-signable `Wallet` via `Wallet::new_external_signable(network,
     /// wallet_id, accounts)`; accounts come directly from the spec
     /// array, wallet id from the top-level struct.
     ///
@@ -7142,6 +7174,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
             entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
 
+            // Sends still unconfirmed on the host. Replayed Rust-side so
+            // their spend effect survives the restart; without it the
+            // input comes back spendable and the balance re-counts the
+            // coin — permanently, for a send that never reached the
+            // network. Asset-lock funding rows are excluded here because
+            // they already ride the array above and `resume_asset_lock`
+            // owns them.
+            let (unconfirmedBuf, unconfirmedCount) =
+                buildUnconfirmedOutgoingTxRecordBuffer(
+                    rows: unspentBuckets[w.walletId] ?? [],
+                    allocation: allocation,
+                    excludingTxids: unresolvedAssetLockFundingTxids(walletId: w.walletId)
+                )
+            entry.unconfirmed_outgoing_tx_records = unconfirmedBuf.map { UnsafePointer($0) }
+            entry.unconfirmed_outgoing_tx_records_count = UInt(unconfirmedCount)
+
             // Provider special transactions (ProRegTx / ProUpServTx /
             // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
             // accounts so #876 retention keeps them and the masternode
@@ -7643,6 +7691,127 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// transaction table) are skipped — the Rust side has no way to
     /// reconstruct a transaction without its consensus bytes, so
     /// projecting an empty row would just bloat the FFI surface.
+    /// Project the sends this wallet still holds as unconfirmed into the
+    /// FFI restore array, so the Rust load path can replay their spend
+    /// effect (see `ClientWalletStartState::unconfirmed_outgoing_txs`).
+    ///
+    /// Why this is needed at all: `spendIsInBlock` deliberately withholds
+    /// `isSpent` from an input whose spender is only in the mempool,
+    /// because that sighting is reversible by eviction. The UTXO restore
+    /// therefore hands the input back as spendable, and the balance
+    /// re-counts the coin. A running app never showed this — it held the
+    /// spend in memory — and a restart used to recover it only by
+    /// re-observing the transaction on the network, which never happens
+    /// for a send that did not reach the network in the first place.
+    ///
+    /// The selection is driven from the TXO side rather than the
+    /// transaction side, which makes the liveness rule fall out for free:
+    /// a row is offered only while one of *our* outputs still points at it
+    /// as its spender and is still unspent. A send that already lost a
+    /// conflict has had its inputs flipped by the winning spender, so it
+    /// drops out on its own — important, because the FFI restore does not
+    /// rebuild `observed_spent`, so Rust could not make that judgement.
+    ///
+    /// Asset-lock funding transactions are excluded: they ride
+    /// `unresolved_asset_lock_tx_records` and already have an owner in
+    /// `resume_asset_lock`. One owner per transaction.
+    ///
+    /// Takes the bucketed `isSpent == false` rows the caller already
+    /// fetched rather than querying by `walletId` again: that bucketing
+    /// routes a legacy row whose `walletId` was never backfilled through
+    /// `account.wallet.walletId`, and it prefetches `spendingTransaction`,
+    /// which this pass reads for every row.
+    /// Wire-order txids of the funding transactions already carried by
+    /// `unresolved_asset_lock_tx_records`. Read from the same rows that
+    /// buffer selects from, through the same decoder, rather than
+    /// re-deriving a txid from the serialized bytes.
+    private func unresolvedAssetLockFundingTxids(walletId: Data) -> Set<Data>? {
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate { entry in
+                entry.walletId == walletId && entry.statusRaw < 2
+            }
+        )
+        // `nil`, not an empty set, when the fetch fails: an empty exclusion
+        // set reads as "this wallet has no unresolved asset locks", which
+        // would let a funding transaction into the ordinary replay even
+        // though `resume_asset_lock` owns it. The caller offers nothing at
+        // all instead — one launch without a replay, rather than a
+        // transaction applied through the wrong path.
+        guard let locks = try? backgroundContext.fetch(descriptor) else { return nil }
+        return Set(locks.compactMap { Self.assetLockFundingTxid(outPointHex: $0.outPointHex) })
+    }
+
+    private func buildUnconfirmedOutgoingTxRecordBuffer(
+        rows txos: [PersistentTxo],
+        allocation: LoadAllocation,
+        excludingTxids excluded: Set<Data>?
+    ) -> (UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>?, Int) {
+        // Fail closed: without a trustworthy exclusion set we cannot tell an
+        // asset-lock funding transaction from an ordinary send.
+        guard let excluded else {
+            SDKLogger.event(
+                "persistence_unconfirmed_outgoing_skipped",
+                category: .persistence,
+                severity: .error,
+                fields: ["reason": .publicText("asset_lock_exclusion_fetch_failed")]
+            )
+            return (nil, 0)
+        }
+        guard !txos.isEmpty else { return (nil, 0) }
+
+        // Distinct spenders, still unconfirmed, still ours to replay.
+        var candidates: [Data: PersistentTransaction] = [:]
+        for txo in txos {
+            guard let spender = txo.spendingTransaction else { continue }
+            // Mirror `spendIsInBlock` exactly: it withholds `isSpent` for
+            // every context below `inBlock`, so an InstantSend-locked send
+            // (context 1) leaves its input unspent in the store too and needs
+            // the same replay. Filtering on `== 0` covered only half of that.
+            guard spender.context < TransactionContextType.inBlock.rawValue,
+                  spender.blockHeight == 0
+            else { continue }
+            guard !spender.transactionData.isEmpty else { continue }
+            guard !excluded.contains(spender.txid) else { continue }
+            candidates[spender.txid] = spender
+        }
+        guard !candidates.isEmpty else { return (nil, 0) }
+
+        // Ascending `firstSeen`: a parent send must be replayed before a
+        // child that spends its change, or the child finds no input and is
+        // discarded as irrelevant.
+        let ordered = candidates.values.sorted { $0.firstSeen < $1.firstSeen }
+
+        var entries: [UnconfirmedOutgoingTxRecordFFI] = []
+        entries.reserveCapacity(ordered.count)
+        for row in ordered {
+            let txBytes = row.transactionData
+            // Carry the row's identity so Rust can refuse bytes that do not
+            // hash to it. The replay applies the transaction through the
+            // ordinary state-update path, so a stale or partially-written
+            // `transactionData` would move accounting for inputs and outputs
+            // that have nothing to do with this send.
+            guard row.txid.count == 32 else { continue }
+            let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
+            txBytes.copyBytes(to: txBuf, count: txBytes.count)
+            allocation.scalarBuffers.append((txBuf, txBytes.count))
+            var entry = UnconfirmedOutgoingTxRecordFFI()
+            withUnsafeMutableBytes(of: &entry.txid) { raw in
+                raw.copyBytes(from: row.txid)
+            }
+            entry.tx_bytes = txBuf
+            entry.tx_bytes_len = UInt(txBytes.count)
+            entry.first_seen = row.firstSeen
+            entries.append(entry)
+        }
+
+        let buf = UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>.allocate(
+            capacity: entries.count
+        )
+        buf.initialize(from: entries, count: entries.count)
+        allocation.unconfirmedOutgoingTxRecordArrays.append((buf, entries.count))
+        return (buf, entries.count)
+    }
+
     private func buildUnresolvedAssetLockTxRecordBuffer(
         walletId: Data,
         allocation: LoadAllocation
@@ -7965,30 +8134,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                     // Mirror the contract-bounds projection into
                     // the restore row so scoped keys (DashPay's
-                    // SingleContractDocumentType, in particular)
-                    // come back with their full variant on cold
-                    // restart instead of silently degrading to
-                    // unbounded. Encoding matches
-                    // `IdentityKeyEntryFFI` on the persist side:
+                    // SingleContractDocumentType, and AUTHENTICATION
+                    // keys bound to a contract group) come back with
+                    // their full variant on cold restart instead of
+                    // silently degrading to unbounded. Encoding
+                    // matches `IdentityKeyEntryFFI` on the persist
+                    // side:
                     //   * kind=0 → no bounds; id zeroed, doc-type null
                     //   * kind=1 → SingleContract; id meaningful
                     //   * kind=2 → SingleContractDocumentType; id +
                     //     doc-type both meaningful
-                    // Length-validated by `pk.publicKeyData.count
-                    // == 32` (matches the gating in
-                    // `toIdentityPublicKey()`); a row with a
-                    // wrong-length id falls back to "no bounds"
-                    // rather than crashing FFI marshalling on the
-                    // Rust side.
-                    if let id = pk.contractBounds?.first, id.count == 32 {
+                    //   * kind=3 → ContractGroup; id meaningful (a
+                    //     group id), doc-type null
+                    // The kind comes off the row when it was stored
+                    // and from the legacy inference when it was not
+                    // (`effectiveContractBoundsKind`). A kind=2 row
+                    // whose doc-type went missing demotes to kind=1,
+                    // the same demotion Rust performs, rather than
+                    // handing the decoder a null doc-type for a
+                    // variant that needs one. Id length is validated
+                    // here; a row with a wrong-length id, or a kind
+                    // this build does not know, falls back to "no
+                    // bounds" rather than crashing FFI marshalling on
+                    // the Rust side or asserting a bound we cannot
+                    // describe.
+                    let boundsKind = pk.effectiveContractBoundsKind
+                    if (1...3).contains(boundsKind),
+                        let id = pk.contractBounds?.first, id.count == 32 {
                         withUnsafeMutableBytes(of: &row.contract_bounds_id) { dst in
                             id.copyBytes(to: dst.bindMemory(to: UInt8.self).baseAddress!, count: 32)
                         }
-                        if let docType = pk.contractBoundsDocumentTypeName, !docType.isEmpty {
+                        let docType = pk.contractBoundsDocumentTypeName
+                        if boundsKind == 2, let docType = docType, !docType.isEmpty {
                             row.contract_bounds_kind = 2
                             row.contract_bounds_document_type = UnsafePointer(
                                 duplicateCString(docType, allocation: allocation)
                             )
+                        } else if boundsKind == 3 {
+                            row.contract_bounds_kind = 3
+                            row.contract_bounds_document_type = nil
                         } else {
                             row.contract_bounds_kind = 1
                             row.contract_bounds_document_type = nil
@@ -7996,6 +8180,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     } else {
                         row.contract_bounds_kind = 0
                         row.contract_bounds_document_type = nil
+                    }
+
+                    // Usage limits (protocol version 14). Without them a
+                    // key registered with a budget or an expiry would come
+                    // back unlimited on cold restart, and the restored
+                    // identity would offer it for signing work consensus
+                    // rejects. `total_budget` is credits; `expires_at` is
+                    // block time in milliseconds.
+                    if let totalBudget = pk.totalBudgetCredits {
+                        row.total_budget_is_some = true
+                        row.total_budget = totalBudget
+                    } else {
+                        row.total_budget_is_some = false
+                        row.total_budget = 0
+                    }
+                    if let expiresAt = pk.expiresAtMillis {
+                        row.expires_at_is_some = true
+                        row.expires_at = expiresAt
+                    } else {
+                        row.expires_at_is_some = false
+                        row.expires_at = 0
                     }
 
                     keyBuf[k] = row
@@ -8782,6 +8987,10 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// `UnconfirmedOutgoingTxRecordFFI` arrays per wallet. The `tx_bytes`
+    /// each entry points at are staged on `scalarBuffers`, like the
+    /// asset-lock records above.
+    var unconfirmedOutgoingTxRecordArrays: [(UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>, Int)] = []
     /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
     /// special txs re-staged so #876 retention keeps them resident after a
     /// restart. The `tx_bytes` buffer each row references lives in
@@ -8859,6 +9068,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in unresolvedAssetLockTxRecordArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in unconfirmedOutgoingTxRecordArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -9658,6 +9871,8 @@ private func persistIdentityKeysCallback(
             //   0 → no bounds
             //   1 → SingleContract { id }
             //   2 → SingleContractDocumentType { id, doc_type_name }
+            //   3 → ContractGroup { id } (id is a group id, doc-type
+            //       pointer is always null)
             // The doc-type C-string for kind=2 is owned by Rust and
             // freed via `free_identity_key_entry_ffi` after this
             // callback returns, so we copy it into a Swift String
@@ -9677,6 +9892,8 @@ private func persistIdentityKeysCallback(
                 } else {
                     bounds = nil
                 }
+            case 3:
+                bounds = .contractGroup(id: dataFromTuple32(e.contract_bounds_id))
             default:
                 bounds = nil
             }
@@ -9689,6 +9906,8 @@ private func persistIdentityKeysCallback(
                 keyType: e.key_type,
                 readOnly: e.read_only,
                 disabledAt: e.disabled_at_is_some ? e.disabled_at : nil,
+                totalBudget: e.total_budget_is_some ? e.total_budget : nil,
+                expiresAt: e.expires_at_is_some ? e.expires_at : nil,
                 publicKeyData: pubKey,
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,

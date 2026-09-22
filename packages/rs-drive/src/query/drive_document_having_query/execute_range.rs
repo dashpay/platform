@@ -34,18 +34,21 @@ impl DriveDocumentHavingQuery<'_> {
     /// not an error; exactly `limit` entries may mean the match set was
     /// cut.
     ///
-    /// Missing paths follow the ranked surface's rule. Under a single
-    /// `==` pin (or no pins) a missing path *is* an error rather than an
-    /// empty result: the indexed property-name tree is created at
-    /// contract registration, so its absence means the contract-level
-    /// state is not what the request claims. On an `IN`-pinned request,
-    /// an element whose branch chain is missing at ANY depth — the
-    /// branch key, or any deeper pinned segment under a *present* key —
-    /// contributes an **empty branch** instead (union semantics, exactly
-    /// as the proved envelope authenticates it), and the union is served
-    /// from one committed state (a `None` read runs under a grovedb
-    /// snapshot read transaction). An index with no documents has the
-    /// tree, with an empty secondary, and yields an empty entry list.
+    /// Missing paths follow the ranked surface's rule. A pinned prefix
+    /// no document has written yet (a `timeRange` bucket before its
+    /// first document, a `hashtag` nobody has used) is an empty match
+    /// set, not an error: grovedb answers a single-path axis read over
+    /// a path that does not exist with the traversal's empty result on
+    /// the read and the proof alike. On an `IN`-pinned request, an
+    /// element whose branch chain is missing at ANY depth — the branch
+    /// key, or any deeper pinned segment under a *present* key —
+    /// contributes an **empty branch** (union semantics, exactly as the
+    /// proved envelope authenticates it), and the union is served from
+    /// one committed state (a `None` read runs under a grovedb snapshot
+    /// read transaction). What stays an error is a path that exists but
+    /// does not lead to an indexed tree carrying the axis. An index with
+    /// no documents has the tree, with an empty secondary, and yields an
+    /// empty entry list.
     pub fn execute_range_no_proof(
         &self,
         drive: &Drive,

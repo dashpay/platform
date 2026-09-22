@@ -9,7 +9,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
@@ -35,7 +35,7 @@ impl Drive {
                 &mut vec![],
                 &platform_version.drive,
             )?
-            .map(|value| Group::deserialize_from_bytes(&value))
+            .map(|value| Group::deserialize_from_bytes_trusted(&value))
             .transpose()?;
 
         Ok(maybe_group)
@@ -77,7 +77,7 @@ impl Drive {
                 drive_operations,
                 &platform_version.drive,
             )?
-            .map(|value| Group::deserialize_from_bytes(&value))
+            .map(|value| Group::deserialize_from_bytes_trusted(&value))
             .transpose()?;
 
         Ok(maybe_group)

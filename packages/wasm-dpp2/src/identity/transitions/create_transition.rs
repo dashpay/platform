@@ -12,7 +12,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
@@ -155,7 +155,8 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityCreateTransitionWasm> {
-        let rs_transition = IdentityCreateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let rs_transition =
+            IdentityCreateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityCreateTransitionWasm(rs_transition))
     }

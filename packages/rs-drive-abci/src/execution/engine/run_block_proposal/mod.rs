@@ -53,6 +53,9 @@ where
         timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        #[cfg(debug_assertions)]
+        let mut phases = crate::perf::PhaseTimer::new("run_block_proposal");
+
         // Epoch information is always calculated with the last committed platform version
         // even if we are switching to a new version in this block.
         let last_committed_platform_version = platform_state.current_platform_version()?;
@@ -66,6 +69,9 @@ where
             last_committed_platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
+        phases.end_phase("gather_epoch_info");
+
         // Cleanup block cache before we execute a new proposal.
         //
         // This has to happen before `perform_events_on_first_block_of_protocol_change` below:
@@ -74,8 +80,33 @@ where
         // them, leaving those reads to fall back to pre-change global cache entries.
         self.clear_drive_block_cache(last_committed_platform_version)?;
 
+        // Make sure the persisted protocol version votes are in the cache before anything in
+        // this block reads them. The epoch tally in `upgrade_protocol_version_on_epoch_change`
+        // reads the cache directly and runs before the block records its first vote, which is
+        // what used to load the cache. On a Drive that was just reopened the tally would
+        // otherwise count zero votes while warm peers count the persisted ones, and this node
+        // would lock in a different next protocol version. Loading through the block
+        // transaction keeps the read consistent with the rest of the block; it is a no-op once
+        // the cache is loaded.
+        self.drive
+            .cache
+            .protocol_versions_counter
+            .write()
+            .load_if_needed(
+                &self.drive,
+                Some(transaction),
+                &last_committed_platform_version.drive,
+            )?;
+
+        // The block cache clear above plus the votes load, a no-op once the cache is warm.
+        #[cfg(debug_assertions)]
+        phases.end_phase("prepare_drive_caches");
+
         // Create a bock state from previous committed state
         let mut block_platform_state = platform_state.clone();
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("clone_platform_state");
 
         // Determine a platform version for this block
         let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis()

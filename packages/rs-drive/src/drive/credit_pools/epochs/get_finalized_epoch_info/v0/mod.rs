@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
@@ -118,7 +118,7 @@ impl Drive {
 
                 let item_bytes = element.as_item_bytes()?;
 
-                let epoch_info = FinalizedEpochInfo::deserialize_from_bytes(item_bytes)?;
+                let epoch_info = FinalizedEpochInfo::deserialize_from_bytes_trusted(item_bytes)?;
 
                 Ok((epoch_index, epoch_info))
             })

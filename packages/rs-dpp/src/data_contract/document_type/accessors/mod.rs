@@ -2,6 +2,7 @@ mod v0;
 mod v1;
 mod v2;
 
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
@@ -940,6 +941,11 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
     }
 }
 
+/// What `immutable_fields` returns for the document type generations that
+/// predate the keyword: V0 and V1 have no field to borrow from, and the
+/// getter hands out a reference.
+static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+
 impl DocumentTypeV2Getters for DocumentType {
     fn documents_countable(&self) -> bool {
         match self {
@@ -978,6 +984,46 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.index_only(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.action_fees(),
         }
     }
 }
@@ -1056,6 +1102,46 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => v2.index_only(),
         }
     }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.action_fees(),
+        }
+    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
@@ -1096,6 +1182,46 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.index_only(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.action_fees(),
         }
     }
 }

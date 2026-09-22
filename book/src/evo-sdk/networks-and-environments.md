@@ -51,6 +51,11 @@ or `prefetchDevnetWithUrl(url)`; the same shape is available on
 `prefetchMainnetWithUrl` / `prefetchTestnetWithUrl` for staging endpoints
 (production networks must use `https://`).
 
+The prefetch issues the current-quorum and previous-quorum requests
+concurrently. It also asks the quorum service for masternode addresses, unless
+the SDK was given explicit `addresses`: those take precedence in the builder, so
+`connect()` passes `discoverAddresses: false` and skips that request.
+
 ## Local development with Docker
 
 When running a local Platform network via

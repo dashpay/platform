@@ -12,7 +12,7 @@ use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
@@ -320,7 +320,8 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityUpdateTransitionWasm> {
-        let rs_transition = IdentityUpdateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let rs_transition =
+            IdentityUpdateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityUpdateTransitionWasm(rs_transition))
     }

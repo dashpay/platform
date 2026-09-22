@@ -1,9 +1,9 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::de::{BorrowDecoder, Decoder};
+use bincode::de::BorrowDecoder;
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
-use bincode::{Decode, Encode};
+use bincode::Encode;
 use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -77,36 +77,46 @@ impl Encode for AddressWitness {
     }
 }
 
-impl<C> Decode<C> for AddressWitness {
-    fn decode<D: Decoder<Context = C>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let discriminant = u8::decode(decoder)?;
-        match discriminant {
-            0 => {
-                let signature = BinaryData::decode(decoder)?;
-                Ok(AddressWitness::P2pkh { signature })
-            }
-            1 => {
-                let signatures = Vec::<BinaryData>::decode(decoder)?;
-                if signatures.len() > MAX_P2SH_SIGNATURES {
-                    return Err(DecodeError::OtherString(format!(
-                        "P2SH signatures count {} exceeds maximum {}",
-                        signatures.len(),
-                        MAX_P2SH_SIGNATURES,
-                    )));
+// Share the wire schema and domain checks across both decoding APIs.
+macro_rules! impl_address_witness_decode {
+    ($decode:ident, $decoder:ident, $method:ident, $untrusted:expr) => {
+        impl<C> bincode::$decode<C> for AddressWitness {
+            fn $method<D: bincode::de::$decoder<Context = C>>(
+                decoder: &mut D,
+            ) -> Result<Self, DecodeError> {
+                let discriminant = u8::$method(decoder)?;
+                match discriminant {
+                    0 => {
+                        let signature = BinaryData::$method(decoder)?;
+                        Ok(AddressWitness::P2pkh { signature })
+                    }
+                    1 => {
+                        let signatures = Vec::<BinaryData>::$method(decoder)?;
+                        if signatures.len() > MAX_P2SH_SIGNATURES {
+                            return Err(DecodeError::OtherString(format!(
+                                "P2SH signatures count {} exceeds maximum {}",
+                                signatures.len(),
+                                MAX_P2SH_SIGNATURES,
+                            )));
+                        }
+                        let redeem_script = BinaryData::$method(decoder)?;
+                        Ok(AddressWitness::P2sh {
+                            signatures,
+                            redeem_script,
+                        })
+                    }
+                    _ => Err(DecodeError::OtherString(format!(
+                        "Invalid AddressWitness discriminant: {}",
+                        discriminant
+                    ))),
                 }
-                let redeem_script = BinaryData::decode(decoder)?;
-                Ok(AddressWitness::P2sh {
-                    signatures,
-                    redeem_script,
-                })
             }
-            _ => Err(DecodeError::OtherString(format!(
-                "Invalid AddressWitness discriminant: {}",
-                discriminant
-            ))),
         }
-    }
+    };
 }
+impl_address_witness_decode!(Decode, Decoder, decode, false);
+impl_address_witness_decode!(DecodeUntrusted, UntrustedDecoder, decode_untrusted, true);
+bincode::impl_borrow_decode_untrusted!(AddressWitness);
 
 impl<'de, C> bincode::BorrowDecode<'de, C> for AddressWitness {
     fn borrow_decode<D: BorrowDecoder<'de, Context = C>>(

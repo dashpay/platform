@@ -21,7 +21,7 @@
 //! path proves.
 
 use crate::error::MapGroveDbError;
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -42,6 +42,11 @@ pub struct CompositeDocuments {
     /// count per derived value that has a count tree (a value without
     /// an entry counts zero).
     pub sub_results: Vec<SubQueryResult>,
+    /// One list per sub-query, in request order: for a by-id join off a
+    /// `deletableDocument` property, the derived ids that have NO
+    /// document, in first-appearance order, each one a PROVEN absence;
+    /// empty for every other sub-query.
+    pub sub_result_missing_ids: Vec<Vec<dpp::identifier::Identifier>>,
 }
 
 /// Verify a composite query's single merged proof and bind its root
@@ -63,16 +68,20 @@ pub fn verify_composite_documents_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, CompositeDocuments), Error> {
     let (root_hash, result) = query
-        .verify_composite_documents_proof(&proof.grovedb_proof, platform_version)
+        .verify_composite_documents_proof(
+            supported_grovedb_proof_bytes(proof, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     Ok((
         root_hash,
         CompositeDocuments {
             page_documents: result.page_documents,
             sub_results: result.sub_results,
+            sub_result_missing_ids: result.sub_result_missing_ids,
         },
     ))
 }

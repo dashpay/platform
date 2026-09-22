@@ -7,8 +7,10 @@ use crate::serialization::PlatformSerializable;
 use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::{Identifier, Value};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -19,7 +21,17 @@ use std::fmt;
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
-#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    PartialEq,
+    DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

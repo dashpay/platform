@@ -20,8 +20,8 @@
 //! query carries the page and its sub-queries in one request and proves
 //! them together: the server materializes the page, derives every
 //! sub-query's `IN` clause from it (or from an earlier sub-query's
-//! documents), and `prove_query_many` merges all the component path
-//! queries into one proof over one state root.
+//! documents), and [`DriveDocumentQuery::merged_path_query`] merges all
+//! the component path queries into one proof over one state root.
 //!
 //! Soundness never rests on the server's derivation. The verifier
 //! bootstraps the page (a subset pass against the merged proof), derives
@@ -31,17 +31,23 @@
 //! refuses any divergence from the bootstrap, any result outside a
 //! derived value set, and (for by-id joins on `refersTo:
 //! permanentDocument` properties, which cannot dangle) any missing
-//! referenced document. A node that ignores the sub-queries serves a
+//! referenced document. A by-id join on a `refersTo: deletableDocument`
+//! property leaves a derived id with no document out instead: the
+//! target may have been deleted since, and the absence is proven (every
+//! derived id is a queried key grovedb must show present or absent). A
+//! node that ignores the sub-queries serves a
 //! page-only proof, which cannot satisfy the merged query whenever a
 //! sub-query derived anything — the composition fails closed.
 //!
 //! Three sub-query shapes, one binding rule:
 //!
 //! - **Documents by id** (`bind.field == "$id"`): the classic join. The
-//!   source property must declare `refersTo: permanentDocument` targeting
-//!   the sub-query's type, so every derived id MUST resolve — the result
-//!   is the referenced documents in first-appearance order, set-equal to
-//!   the derived ids.
+//!   source property must declare `refersTo: permanentDocument` or
+//!   `refersTo: deletableDocument` targeting the sub-query's type — the
+//!   result is the referenced documents in first-appearance order. For a
+//!   `permanentDocument` source every derived id MUST resolve, so the
+//!   result is set-equal to the derived ids; for a `deletableDocument`
+//!   source a derived id whose document was deleted is left out.
 //! - **Documents by an indexed property** (`bind.field` is `$ownerId` or
 //!   an indexed property): a lookup, `WHERE <fixed clauses> AND <field>
 //!   IN <derived values>`, with an explicit limit unless the values
@@ -67,7 +73,9 @@
 //! most that many values); the page takes no cursor and no offset —
 //! paginate with a range clause, exactly as chained queries do. A by-ids
 //! page is proven without its limit, which must therefore cover its ids
-//! (a plain documents query would truncate instead).
+//! (a plain documents query would truncate instead). Every component
+//! carries its limit as its root query's per-instance cap, the form the
+//! merged proof budgets it in.
 //!
 //! Direction: grovedb merges only queries that agree on their walk
 //! direction, so every component walks in the page's. Counts and by-id
@@ -91,7 +99,7 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    DocumentPropertyType, DocumentReferenceDeclaration, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -214,6 +222,14 @@ pub struct CompositeDocumentsResult {
     pub page_documents: Vec<Document>,
     /// One result per sub-query, in request order.
     pub sub_results: Vec<SubQueryResult>,
+    /// One list per sub-query, in request order: for a by-id join, the
+    /// derived ids that have NO document, in first-appearance order;
+    /// empty for every other sub-query. Only a join off a `refersTo:
+    /// deletableDocument` property can report any (a referenced document
+    /// deleted after the referring one was written); off a
+    /// `permanentDocument` property a missing document is refused
+    /// instead. On the proof path each reported id is a proven absence.
+    pub sub_result_missing_ids: Vec<Vec<Identifier>>,
 }
 
 /// The values one binding derived, deduplicated to first appearance.
@@ -287,6 +303,18 @@ fn sorted_values(values: &[Identifier]) -> Vec<Identifier> {
     let mut sorted = values.to_vec();
     sorted.sort();
     sorted
+}
+
+/// The document reference a property type declares, of either kind.
+fn document_reference_of(
+    property_type: &DocumentPropertyType,
+) -> Option<DocumentReferenceDeclaration<'_>> {
+    match property_type {
+        DocumentPropertyType::IdentifierWithReference(reference_target) => {
+            reference_target.as_document_reference()
+        }
+        _ => None,
+    }
 }
 
 impl<'a> DriveSubQuery<'a> {
@@ -578,17 +606,19 @@ impl<'a> DriveDocumentQuery<'a> {
                          first appearance",
                     ));
                 }
-                // Only a permanentDocument reference guarantees every
-                // derived id resolves, which is what lets a missing
-                // document be an invalid proof instead of an absence.
-                match source_property_type {
-                    Some(DocumentPropertyType::IdentifierWithReference(
-                        DocumentPropertyReferenceTarget::PermanentDocument {
-                            contract_id,
-                            document_type_name,
-                            ..
-                        },
-                    )) => {
+                // The source must be a document reference: it is what
+                // names the type the derived ids resolve in. A
+                // permanentDocument one guarantees every derived id
+                // resolves, which lets a missing document be an invalid
+                // proof; a deletableDocument one does not, and a missing
+                // document is then a proven absence (see
+                // `assemble_documents`).
+                match source_property_type.and_then(document_reference_of) {
+                    Some(DocumentReferenceDeclaration {
+                        contract_id,
+                        document_type_name,
+                        ..
+                    }) => {
                         let referenced_contract =
                             contract_id.unwrap_or_else(|| source_contract.id());
                         if referenced_contract != sub_query.contract.id()
@@ -602,11 +632,12 @@ impl<'a> DriveDocumentQuery<'a> {
                             )));
                         }
                     }
-                    _ => {
+                    None => {
                         return Err(label(&format!(
                             "a by-id join needs a source property declaring `refersTo: \
-                             permanentDocument` (\"{}\" does not): only a permanent-document \
-                             reference guarantees every derived id resolves",
+                             permanentDocument` or `refersTo: deletableDocument` (\"{}\" \
+                             does not): the declaration names the document type the derived \
+                             ids resolve in",
                             binding.source_property,
                         )));
                     }
@@ -738,11 +769,31 @@ impl<'a> DriveDocumentQuery<'a> {
             || self.internal_clauses.primary_key_equal_clause.is_some()
     }
 
-    /// The page's path query as the proof covers it. A by-ids page is
-    /// built WITHOUT its limit: its ids already bound it, and grovedb
-    /// cannot lift a limit off a query that lands at the merged root
-    /// (which a by-ids page shares with a join on the same type). Every
-    /// other page keeps its limit, lifted into its branch on merge.
+    /// A component's budget lives on its root query as a per-instance
+    /// cap (`Query::limit`), never on the path query's global
+    /// `SizedQuery::limit` that the plain documents lowering emits. The
+    /// two are not interchangeable once proven: at a layer with subquery
+    /// branches the prover truncates the children it emits under a
+    /// global limit but only the descendant rows under an instance cap.
+    /// The merge would lift a global limit into exactly this cap, so
+    /// authoring it at construction keeps ONE form for validation, the
+    /// merge, the prover and every subset pass of the verifier, whether
+    /// or not the component ends up merged with anything. A component's
+    /// root executes once (its path is a concrete key chain), so "N rows
+    /// per instance" is "N rows".
+    fn budget_as_instance_cap(mut path_query: PathQuery) -> PathQuery {
+        if let Some(limit) = path_query.query.limit.take() {
+            path_query.query.query.limit = Some(limit);
+        }
+        path_query
+    }
+
+    /// The page as a component of the proof, its limit carried as its
+    /// root query's per-instance cap (see [`Self::budget_as_instance_cap`]).
+    /// A by-ids page is built WITHOUT its limit: its ids already bound
+    /// it, and grovedb refuses a budget on a query that lands at the
+    /// merged root (which a by-ids page shares with a join on the same
+    /// type).
     pub fn page_path_query(&self, platform_version: &PlatformVersion) -> Result<PathQuery, Error> {
         if self.page_is_by_ids() {
             let mut unlimited = self.clone();
@@ -754,7 +805,9 @@ impl<'a> DriveDocumentQuery<'a> {
             path_query.query.limit = None;
             return Ok(path_query);
         }
-        self.construct_path_query(None, platform_version)
+        Ok(Self::budget_as_instance_cap(
+            self.construct_path_query(None, platform_version)?,
+        ))
     }
 
     /// The shape rules routing and merging need up front. Document
@@ -764,8 +817,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// path must be tellable apart by their derived values: a sibling,
     /// which has none, stays alone, and a page only shares the primary
     /// tree with joins when it is itself a by-ids fetch. And no limited
-    /// component may land at the merged root, where grovedb has no
-    /// branch to lift its limit into. A bound sub-query that derives
+    /// component may land at the merged root, where grovedb refuses a
+    /// budget (it would govern every component's rows). A bound
+    /// sub-query that derives
     /// nothing contributes no branch, so the merged root is not fixed by
     /// the shapes: it is the common prefix of whichever components are
     /// present, and a limited component lands on it exactly when every
@@ -779,7 +833,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let mut components: Vec<(Vec<Vec<u8>>, Component, bool)> = Vec::new();
         let page = self.page_path_query(platform_version)?;
         let direction = page.query.query.left_to_right;
-        components.push((page.path, Component::Page, page.query.limit.is_some()));
+        components.push((page.path, Component::Page, page.query.query.limit.is_some()));
         for (index, sub_query) in self.sub_queries.iter().enumerate() {
             let path_query = self.sub_query_proof_path_query(
                 sub_query,
@@ -790,7 +844,7 @@ impl<'a> DriveDocumentQuery<'a> {
             components.push((
                 path_query.path,
                 Component::Sub(index),
-                path_query.query.limit.is_some(),
+                path_query.query.query.limit.is_some(),
             ));
         }
 
@@ -824,8 +878,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 return Err(unsupported(format!(
                     "{} carries a limit and lands at the merged root of the composite proof \
                      (once the bound sub-queries that derive nothing drop out), where grovedb \
-                     has no branch to lift the limit into; give it a clause that narrows its \
-                     path, or split it into a separate request",
+                     refuses a budget; give it a clause that narrows its path, or split it \
+                     into a separate request",
                     match component {
                         Component::Page => "the page".to_string(),
                         Component::Sub(index) => format!("sub-query {}", index),
@@ -1106,7 +1160,7 @@ impl<'a> DriveDocumentQuery<'a> {
         direction: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        match sub_query.kind {
+        let path_query = match sub_query.kind {
             SubQueryKind::Documents => self
                 .sub_query_document_query_with_direction(
                     sub_query,
@@ -1114,11 +1168,12 @@ impl<'a> DriveDocumentQuery<'a> {
                     direction,
                     platform_version,
                 )?
-                .construct_path_query(None, platform_version),
+                .construct_path_query(None, platform_version)?,
             SubQueryKind::Count => self
                 .sub_query_count_query(sub_query, values, platform_version)?
-                .point_lookup_count_path_query(platform_version),
-        }
+                .point_lookup_count_path_query(platform_version)?,
+        };
+        Ok(Self::budget_as_instance_cap(path_query))
     }
 
     /// The page's walk direction: what every component of the merged
@@ -1173,9 +1228,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// bound sub-query whose binding derived nothing (it has no branch).
     /// Every sub-query walks in the page's direction: documents must
     /// already agree, while counts and by-id joins may be aligned without
-    /// changing their selected sets. ONE builder both the prover
-    /// (`prove_query_many`) and the verifier (`PathQuery::merge`) call,
-    /// so the merged query is byte-identical on both sides.
+    /// changing their selected sets. ONE builder both the prover and the
+    /// verifier feed into [`Self::merged_path_query`], so the merged
+    /// query is byte-identical on both sides.
     pub fn proof_path_queries(
         &self,
         derived: &[DerivedValues],
@@ -1296,7 +1351,10 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     /// Merges the component path queries into the one query the proof
-    /// covers.
+    /// covers. Components carry their budgets as per-instance caps (see
+    /// [`Self::budget_as_instance_cap`]), which the merge carries along
+    /// on their branches, so a page alone is proven in the very form it
+    /// would have inside a merge.
     pub fn merged_path_query(
         page: &PathQuery,
         sub_path_queries: &[Option<PathQuery>],
@@ -1385,11 +1443,70 @@ impl<'a> DriveDocumentQuery<'a> {
         entries
     }
 
+    /// The derived ids of each by-id join that have no document among its
+    /// assembled result, in first-appearance order; an empty list for
+    /// every other sub-query. [`Self::assemble_documents`] has already
+    /// refused a missing document of a `permanentDocument` join, so what
+    /// is left here are the deleted targets of `deletableDocument` joins.
+    fn sub_result_missing_ids(
+        &self,
+        derived: &[DerivedValues],
+        sub_results: &[SubQueryResult],
+    ) -> Vec<Vec<Identifier>> {
+        self.sub_queries
+            .iter()
+            .zip(derived)
+            .zip(sub_results)
+            .map(|((sub_query, values), result)| {
+                if !sub_query.is_by_id_join() {
+                    return Vec::new();
+                }
+                let present: BTreeSet<Identifier> = result
+                    .documents()
+                    .iter()
+                    .map(|document| document.id())
+                    .collect();
+                values
+                    .iter()
+                    .filter(|value| !present.contains(*value))
+                    .copied()
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Whether a by-id join's source property guarantees its targets stay
+    /// in state (`permanentDocument`) or not (`deletableDocument`). A
+    /// source that is neither, which `validate_sub_query` refuses, is held
+    /// to the strict rule.
+    fn by_id_join_target_is_permanent(&self, binding: &SubQueryBinding) -> bool {
+        let source_type = match binding.source {
+            BindingSource::Page => Some(self.document_type),
+            BindingSource::SubQuery(source_index) => self
+                .sub_queries
+                .get(source_index)
+                .map(|source| source.document_type),
+        };
+        let Some(source_type) = source_type else {
+            return true;
+        };
+        source_type
+            .flattened_properties()
+            .get(binding.source_property.as_str())
+            .and_then(|property| document_reference_of(&property.property_type))
+            .is_none_or(|declaration| declaration.permanent)
+    }
+
     /// Assembles one documents sub-query's result from its decoded
     /// documents, keeping only the ones its derived values admit and, for
-    /// a by-id join, enforcing exact set equality in first-appearance
-    /// order. Shared by the server (where a violation is corrupted state)
-    /// and the verifier (where it is an invalid proof).
+    /// a by-id join, putting them in first-appearance order. A derived id
+    /// with no document is refused when the source property is a
+    /// `permanentDocument` reference (exact set equality: it cannot
+    /// dangle) and left out when it is a `deletableDocument` reference
+    /// (the target was deleted since, and the fetch that found nothing
+    /// under it is the query the proof covers). Shared by the server
+    /// (where a violation is corrupted state) and the verifier (where it
+    /// is an invalid proof).
     fn assemble_documents(
         &self,
         sub_query: &DriveSubQuery<'a>,
@@ -1415,17 +1532,22 @@ impl<'a> DriveDocumentQuery<'a> {
                     )));
                 }
             }
+            let target_is_permanent = self.by_id_join_target_is_permanent(binding);
             let mut ordered = Vec::with_capacity(values.len());
             for value in values {
-                let document = by_id.remove(value).ok_or_else(|| {
-                    corrupted_proof(format!(
-                        "composite join results are missing referenced document {}: a \
-                         permanentDocument reference cannot dangle, so the proof does not \
-                         cover the derived query",
-                        value
-                    ))
-                })?;
-                ordered.push(document.clone());
+                match by_id.remove(value) {
+                    Some(document) => ordered.push(document.clone()),
+                    None if target_is_permanent => {
+                        return Err(corrupted_proof(format!(
+                            "composite join results are missing referenced document {}: a \
+                             permanentDocument reference cannot dangle, so the proof does \
+                             not cover the derived query",
+                            value
+                        )));
+                    }
+                    // A deletableDocument target that is no longer in state.
+                    None => {}
+                }
             }
             return Ok(ordered);
         }
@@ -1638,18 +1760,21 @@ impl<'a> DriveDocumentQuery<'a> {
             )?));
         }
 
+        let sub_results: Vec<SubQueryResult> = sub_results
+            .into_iter()
+            .zip(&self.sub_queries)
+            .map(|(result, sub_query)| {
+                result.unwrap_or_else(|| match sub_query.kind {
+                    SubQueryKind::Documents => SubQueryResult::Documents(Vec::new()),
+                    SubQueryKind::Count => SubQueryResult::Counts(Vec::new()),
+                })
+            })
+            .collect();
+        let sub_result_missing_ids = self.sub_result_missing_ids(derived, &sub_results);
         Ok(CompositeDocumentsResult {
             page_documents: page_documents.unwrap_or_default(),
-            sub_results: sub_results
-                .into_iter()
-                .zip(&self.sub_queries)
-                .map(|(result, sub_query)| {
-                    result.unwrap_or_else(|| match sub_query.kind {
-                        SubQueryKind::Documents => SubQueryResult::Documents(Vec::new()),
-                        SubQueryKind::Count => SubQueryResult::Counts(Vec::new()),
-                    })
-                })
-                .collect(),
+            sub_results,
+            sub_result_missing_ids,
         })
     }
 
@@ -1743,32 +1868,72 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 }
 
+/// Whether a grovedb error says the queried path does not exist yet (no
+/// document of the type, no entry under the index), which a query
+/// answers with no rows.
+#[cfg(feature = "server")]
+fn is_absent_path(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::GroveDB(e) if matches!(
+            e.as_ref(),
+            grovedb::Error::PathKeyNotFound(_)
+                | grovedb::Error::PathNotFound(_)
+                | grovedb::Error::PathParentLayerNotFound(_)
+        )
+    )
+}
+
 #[cfg(feature = "server")]
 impl<'a> DriveDocumentQuery<'a> {
-    /// Materializes a documents query without a proof: indexOnly
-    /// projections are synthesized, stored documents deserialized.
-    fn materialize_documents(
+    /// Materializes a documents component without a proof, from the
+    /// very path query the proof covers. The plain documents lowering
+    /// would walk the same selection under a global limit, and grovedb
+    /// charges an empty index branch (a preallocated bucket nobody wrote
+    /// to yet) against a global limit but not against the per-instance
+    /// cap the component carries (see [`Self::budget_as_instance_cap`]),
+    /// so the two can fill a page differently. Everything derived from
+    /// the page rides on this selection, so it has to be the proof's.
+    /// indexOnly projections are synthesized from their positions,
+    /// stored documents deserialized.
+    fn materialize_component(
         query: &DriveDocumentQuery<'a>,
+        path_query: &PathQuery,
         drive: &crate::drive::Drive,
         transaction: grovedb::TransactionArg,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
+        use grovedb::query_result_type::QueryResultType;
+
         if query.document_type.index_only() {
-            let (documents, _skipped) = query.execute_index_only_documents_no_proof_internal(
-                drive,
+            let results = match drive.grove_get_path_query(
+                path_query,
                 transaction,
+                QueryResultType::QueryPathKeyElementTrioResultType,
                 drive_operations,
+                &platform_version.drive,
+            ) {
+                Err(error) if is_absent_path(&error) => return Ok(Vec::new()),
+                other => other?.0,
+            };
+            return Self::decode_document_trios(
+                query,
+                results.to_path_key_elements(),
                 platform_version,
-            )?;
-            return Ok(documents);
+            );
         }
-        let (serialized, _skipped) = query.execute_raw_results_no_proof_internal(
-            drive,
+        // Stored documents sit behind index references: the serialized
+        // read follows them, a trio read would hand back the references.
+        let serialized = match drive.grove_get_path_query_serialized_results(
+            path_query,
             transaction,
             drive_operations,
-            platform_version,
-        )?;
+            &platform_version.drive,
+        ) {
+            Err(error) if is_absent_path(&error) => return Ok(Vec::new()),
+            other => other?.0,
+        };
         serialized
             .into_iter()
             .map(|bytes| {
@@ -1808,8 +1973,15 @@ impl<'a> DriveDocumentQuery<'a> {
                     direction,
                     platform_version,
                 )?;
-                let documents = Self::materialize_documents(
+                let path_query = self.sub_query_proof_path_query(
+                    sub_query,
+                    values,
+                    direction,
+                    platform_version,
+                )?;
+                let documents = Self::materialize_component(
                     &query,
+                    &path_query,
                     drive,
                     transaction,
                     drive_operations,
@@ -1870,9 +2042,11 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<CompositeDocumentsResult, Error> {
         self.validate_composite(platform_version)?;
 
-        let direction = self.page_direction(platform_version)?;
-        let page_documents = Self::materialize_documents(
+        let page_path_query = self.page_path_query(platform_version)?;
+        let direction = page_path_query.query.query.left_to_right;
+        let page_documents = Self::materialize_component(
             self,
+            &page_path_query,
             drive,
             transaction,
             drive_operations,
@@ -1899,9 +2073,11 @@ impl<'a> DriveDocumentQuery<'a> {
         // just the representative shapes checked by validate(). Reject
         // them on the materialized entry point as on the proof entry point.
         self.proof_path_queries(&derived, platform_version)?;
+        let sub_result_missing_ids = self.sub_result_missing_ids(&derived, &sub_results);
         Ok(CompositeDocumentsResult {
             page_documents,
             sub_results,
+            sub_result_missing_ids,
         })
     }
 
@@ -1911,8 +2087,8 @@ impl<'a> DriveDocumentQuery<'a> {
     /// The page (and every sub-query that feeds a later binding) is
     /// materialized so the sub-queries can be derived; then
     /// [`Self::proof_path_queries`] builds the component path queries
-    /// and `prove_query_many` merges them — one proof, one root by
-    /// construction. Grovedb proves committed state only, so the
+    /// and [`Self::merged_path_query`] merges them — one proof, one root
+    /// by construction. Grovedb proves committed state only, so the
     /// materialize/prove sequence is bracketed by root-hash reads and
     /// retried if a block commit interleaved (otherwise the proof's page
     /// branch could disagree with the sub-queries derived from a stale
@@ -1928,7 +2104,8 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
         self.validate_composite(platform_version)?;
-        let direction = self.page_direction(platform_version)?;
+        let page_path_query = self.page_path_query(platform_version)?;
+        let direction = page_path_query.query.query.left_to_right;
 
         // Block commits are seconds apart while an attempt is
         // milliseconds, so a bracket collision is rare and two in a row
@@ -1943,8 +2120,14 @@ impl<'a> DriveDocumentQuery<'a> {
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()?;
 
-            let page_documents =
-                Self::materialize_documents(self, drive, None, drive_operations, platform_version)?;
+            let page_documents = Self::materialize_component(
+                self,
+                &page_path_query,
+                drive,
+                None,
+                drive_operations,
+                platform_version,
+            )?;
             // Sub-queries that feed later bindings are materialized in
             // order; everything else is only derived.
             let mut derived: Vec<DerivedValues> = Vec::with_capacity(self.sub_queries.len());
@@ -1972,13 +2155,14 @@ impl<'a> DriveDocumentQuery<'a> {
 
             let (page_path_query, sub_path_queries) =
                 self.proof_path_queries(&derived, platform_version)?;
-            let mut components: Vec<&PathQuery> = vec![&page_path_query];
-            components.extend(sub_path_queries.iter().flatten());
+            // The same builder the verifier re-merges with, so the proof
+            // covers exactly the query the verifier reconstructs.
+            let merged_query =
+                Self::merged_path_query(&page_path_query, &sub_path_queries, platform_version)?;
             let proof = drive
                 .grove
-                .prove_query_many(components, None, &platform_version.drive.grove_version)
-                .unwrap()
-                .map_err(merge_error_to_shape_error)?;
+                .prove_query(&merged_query, None, &platform_version.drive.grove_version)
+                .unwrap()?;
 
             let root_after = drive
                 .grove

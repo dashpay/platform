@@ -129,6 +129,10 @@ async fn contested_resource_vote_states_nx_contract() {
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_vote_states_ok() {
     setup_logs();
@@ -210,6 +214,10 @@ fn base_query(cfg: &Config) -> ContestedDocumentVotePollDriveQuery {
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"
+)]
 #[allow(non_snake_case)]
 async fn contested_resource_vote_states_with_limit_PLAN_674() {
     setup_logs();
@@ -280,7 +288,7 @@ type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
 
 #[test_case(|q| q.limit = Some(0), Err("limit 0 out of bounds of [1, 100]"); "limit 0")]
 #[test_case(|q| q.limit = Some(u16::MAX), Err("limit 65535 out of bounds of [1, 100]"); "limit u16::MAX")]
-#[test_case(|q| q.start_at = Some(([0x11; 32], true)), Ok("Contenders { winner: None, contenders: {Identifier("); "start_at does not exist should return next contenders")]
+#[test_case(|q| q.start_at = Some(([0x11; 32], true)), Ok("Contenders { winner: None, contenders: {Identifier(") => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "start_at does not exist should return next contenders")]
 #[test_case(|q| q.start_at = Some(([0xff; 32], true)), Ok("Contenders { winner: None, contenders: {}, abstain_vote_tally: None, lock_vote_tally: None }"); "start_at 0xff;32 should return zero contenders")]
 #[test_case(|q| q.vote_poll.document_type_name = "nx doctype".to_string(), Err(r#"status: InvalidArgument, message: "document type nx doctype not found"#); "non existing document type returns InvalidArgument")]
 #[test_case(|q| q.vote_poll.index_name = "nx index".to_string(), Err(r#"status: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
@@ -293,7 +301,7 @@ type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
         Value::Text("dash".to_string()),
         Value::Text(TEST_DPNS_NAME.to_string()),
     ]
-}, Ok("contenders: {Identifier("); "index_values with two values returns contenders")]
+}, Ok("contenders: {Identifier(") => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "index_values with two values returns contenders")]
 #[test_case(|q| {
     q.vote_poll.index_values = vec![
         Value::Text("dash".to_string()),
@@ -302,16 +310,16 @@ type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
     ]
 }, Err("query uses index parentNameAndLabel, this index has 2 properties, but the query provided 3 index values instead"); "index_values too many items should return error")]
 #[test_case(|q| q.vote_poll.contract_id = Identifier::from([0xff; 32]), Err(r#"InvalidArgument, message: "contract not found error"#); "invalid contract id should cause InvalidArgument error")]
-#[test_case(|q| q.allow_include_locked_and_abstaining_vote_tally = false, Ok(r#"contenders: {Identifier(IdentifierBytes32"#); "allow_include_locked_and_abstaining_vote_tally false should return some contenders")]
+#[test_case(|q| q.allow_include_locked_and_abstaining_vote_tally = false, Ok(r#"contenders: {Identifier(IdentifierBytes32"#) => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "allow_include_locked_and_abstaining_vote_tally false should return some contenders")]
 #[test_case(|q| {
     q.result_type = ContestedDocumentVotePollDriveQueryResultType::Documents
 }, Ok(r#"]), vote_tally: None })"#); "result_type Documents")]
 #[test_case(|q| {
     q.result_type = ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally
-}, Ok(r#"]), vote_tally: Some("#); "result_type DocumentsAndVoteTally")]
+}, Ok(r#"]), vote_tally: Some("#) => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "result_type DocumentsAndVoteTally")]
 #[test_case(|q| {
     q.result_type = ContestedDocumentVotePollDriveQueryResultType::VoteTally
-}, Ok(r#"serialized_document: None, vote_tally: Some"#); "result_type VoteTally")]
+}, Ok(r#"serialized_document: None, vote_tally: Some"#) => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "result_type VoteTally")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),

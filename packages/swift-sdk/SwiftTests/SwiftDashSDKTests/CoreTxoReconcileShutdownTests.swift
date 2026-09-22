@@ -132,6 +132,79 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(outcome, .skipped(.notConfigured))
     }
 
+    func testShouldCancelParkedReconcileBeforeBlockingShieldedStop() async throws {
+        let (handler, container) = try makeHandler()
+        let pageEntered = expectation(description: "Reconcile entered first page")
+        let stopEntered = expectation(description: "Shielded stop entered")
+        let finished = expectation(description: "Reconcile stopped while shielded stop remained blocked")
+        let pageGate = DispatchSemaphore(value: 0)
+        let stopGate = DispatchSemaphore(value: 0)
+        defer { pageGate.signal(); stopGate.signal() }
+        let base = FakeCoreTxoEngine(inventory: [engineUtxo(0x41), engineUtxo(0x42)])
+        let engine = PausedPageEngine(base: base, entered: pageEntered, gate: pageGate)
+        let ok: @Sendable (Handle) -> PlatformWalletFFIResult = { _ in
+            PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        }
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 43,
+            calls: PlatformWalletNativeTeardownCalls(
+                spvStop: ok, platformAddressSyncStop: ok,
+                shieldedSyncStop: { handle in
+                    stopEntered.fulfill()
+                    XCTAssertEqual(stopGate.wait(timeout: .now() + 10), .success)
+                    return ok(handle)
+                },
+                dashPaySyncStop: ok, dpnsSyncStop: ok, destroy: ok))
+        let epoch = manager.coreTxoReconcileEpoch
+        let generation = epoch.current()
+        let walletId = self.walletId
+        let box = ReportBox()
+        manager.coreTxoReconcileQueue.async {
+            box.set(PlatformWalletManager.runCoreTxoReconcile(
+                walletId: walletId, tipHeight: 2_535_898, pageSize: 1,
+                engine: engine, handler: handler,
+                isCancelled: { epoch.current() != generation }))
+            finished.fulfill()
+        }
+        await fulfillment(of: [pageEntered], timeout: 5)
+        let shutdown = Task { await manager.shutdown() }
+        await fulfillment(of: [stopEntered], timeout: 5)
+        pageGate.signal()
+        await fulfillment(of: [finished], timeout: 5)
+
+        let report = try XCTUnwrap(box.get())
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(base.pageCalls, 1, "No second engine read may start during early stop")
+        XCTAssertEqual(report.mutations, 0, "The old page must not reach persistence after shutdown")
+        XCTAssertEqual(try txoCount(container), 0)
+        stopGate.signal()
+        _ = await shutdown.value
+    }
+
+    private final class PausedPageEngine: CoreTxoEngineInventory, @unchecked Sendable {
+        let base: FakeCoreTxoEngine
+        let entered: XCTestExpectation
+        let gate: DispatchSemaphore
+
+        init(base: FakeCoreTxoEngine, entered: XCTestExpectation, gate: DispatchSemaphore) {
+            self.base = base
+            self.entered = entered
+            self.gate = gate
+        }
+
+        func utxoPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreEngineUtxo], hasMore: Bool) {
+            if after == nil {
+                entered.fulfill()
+                XCTAssertEqual(gate.wait(timeout: .now() + 10), .success)
+            }
+            return try base.utxoPage(after: after, limit: limit)
+        }
+
+        func classify(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass] {
+            try base.classify(queries)
+        }
+    }
+
     private final class Counter: @unchecked Sendable {
         private let lock = NSLock()
         private var value = 0

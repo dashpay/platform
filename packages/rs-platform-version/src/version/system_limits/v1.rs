@@ -39,7 +39,16 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // = dpp MIN_WITHDRAWAL_AMOUNT: ASSET_UNLOCK_TX_SIZE(190) * MIN_CORE_FEE_PER_BYTE(1)
     // * CREDITS_PER_DUFF(1000) = 190_000 credits = 190 duffs.
     min_withdrawal_amount: 190_000,
-    max_contract_group_size: 256,
+    core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
+    max_core_fee_per_byte: None,
+    max_group_member_count: 256,
+    max_contract_group_memberships_per_contract: 16,
+    max_contract_group_admins: 16,
+    max_contract_group_name_length: 64,
+    max_contract_group_description_length: 256,
+    max_contract_moderators: 16,
+    max_contract_suspension_until: 9_007_199_254_740_991,
+    max_contract_moderation_reason_length: 1024,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is
@@ -50,4 +59,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: None,
+    max_time_range_ttl_seconds: None,
+    min_time_range_ttl_drop_operations_per_write: None,
+    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
 };

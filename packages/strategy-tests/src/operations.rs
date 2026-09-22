@@ -48,7 +48,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyCount};
 use dpp::platform_value::Value;
 use dpp::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::tokens::token_event::TokenEvent;
@@ -137,8 +137,8 @@ impl PlatformSerializableWithPlatformVersion for TokenOp {
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for TokenOp {
-    fn versioned_deserialize(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for TokenOp {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -272,8 +272,8 @@ impl PlatformSerializableWithPlatformVersion for DocumentOp {
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DocumentOp {
-    fn versioned_deserialize(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for DocumentOp {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -369,8 +369,8 @@ impl PlatformSerializableWithPlatformVersion for Operation {
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Operation {
-    fn versioned_deserialize(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for Operation {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -389,7 +389,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 .0;
         let OperationInSerializationFormat { op_type, frequency } =
             operation_in_serialization_format;
-        let op_type = OperationType::versioned_deserialize(
+        let op_type = OperationType::versioned_deserialize_trusted(
             op_type.as_slice(),
             full_validation,
             platform_version,
@@ -494,8 +494,10 @@ impl PlatformSerializableWithPlatformVersion for DataContractUpdateOp {
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContractUpdateOp {
-    fn versioned_deserialize(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted
+    for DataContractUpdateOp
+{
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -1007,8 +1009,8 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for OperationType {
-    fn versioned_deserialize(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for OperationType {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -1027,7 +1029,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 .0;
         Ok(match operation_type {
             OperationTypeInSerializationFormat::Document(serialized_op) => {
-                let document_op = DocumentOp::versioned_deserialize(
+                let document_op = DocumentOp::versioned_deserialize_trusted(
                     serialized_op.as_slice(),
                     full_validation,
                     platform_version,
@@ -1050,7 +1052,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 OperationType::ContractCreate(p, c)
             }
             OperationTypeInSerializationFormat::ContractUpdate(serialized_op) => {
-                let update_op = DataContractUpdateOp::versioned_deserialize(
+                let update_op = DataContractUpdateOp::versioned_deserialize_trusted(
                     serialized_op.as_slice(),
                     full_validation,
                     platform_version,
@@ -1065,7 +1067,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 OperationType::ResourceVote(vote_op)
             }
             OperationTypeInSerializationFormat::Token(serialized_token_op) => {
-                let token_op = TokenOp::versioned_deserialize(
+                let token_op = TokenOp::versioned_deserialize_trusted(
                     serialized_token_op.as_slice(),
                     full_validation,
                     platform_version,

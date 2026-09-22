@@ -8,8 +8,12 @@ pub use address_inputs::fetch_inputs_with_nonce;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
+pub mod contract_fee_claim;
+pub mod contract_user_moderation;
 #[cfg(feature = "shielded")]
 pub mod identity_create_from_shielded_pool;
+/// Shielded pool to an existing identity's balance.
+pub mod identity_top_up_from_shielded_pool;
 pub mod masternode_vote_keys;
 pub mod purchase_document;
 pub mod put_contract;
@@ -20,6 +24,8 @@ pub mod put_settings;
 pub mod shield;
 #[cfg(feature = "shielded")]
 pub mod shield_from_asset_lock;
+/// Identity balance to shielded pool.
+pub mod shield_from_identity;
 #[cfg(feature = "shielded")]
 pub mod shielded_transfer;
 #[cfg(feature = "shielded")]
@@ -34,6 +40,7 @@ pub mod transfer_to_addresses;
 mod txid;
 #[cfg(feature = "shielded")]
 pub mod unshield;
+pub mod update_identity_key_limits;
 pub mod update_price_of_document;
 pub(crate) mod validation;
 pub mod vote;

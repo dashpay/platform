@@ -17,6 +17,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreation {
     fn into_identity_public_key(self) -> IdentityPublicKey {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.into_identity_public_key(),
+            IdentityPublicKeyInCreation::V1(v1) => v1.into_identity_public_key(),
         }
     }
 }

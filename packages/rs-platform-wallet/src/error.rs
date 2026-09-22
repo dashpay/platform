@@ -1,5 +1,6 @@
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
@@ -492,10 +493,13 @@ pub enum PlatformWalletError {
     /// While the sibling stands, peers reject the lock as a double spend
     /// and an unbounded proof wait would hang (Core stopped sending BIP61
     /// `reject` by default in 0.17, so the drop is silent and looks
-    /// exactly like a slow network). The sighting therefore bounds the
-    /// wait rather than replacing it: the resume still (re-)broadcasts and
-    /// still waits, and this is what the bounded wait expired with — a
-    /// `Broadcast`-status lock was also already sent on an earlier call.
+    /// exactly like a slow network). The resume still attempts recovery. If
+    /// the transport is ready, the sighting bounds the proof wait and this is
+    /// what that wait expired with. In the `Broadcast` arm, if readiness was
+    /// missed and the send was rejected before dispatch, a still-standing
+    /// conflict returns immediately after refreshing local finality, and the
+    /// readiness-deferred retry owns the next proof wait. A `Broadcast`-status
+    /// lock may also represent an earlier attempt that sent the transaction.
     ///
     /// The verdict is PROVISIONAL and carries NO licence to discard the
     /// tracked lock. Keep the lock and retry later. Note what a retry can
@@ -803,6 +807,21 @@ pub enum PlatformWalletError {
     #[error("Token operation failed: {0}")]
     TokenError(String),
 
+    /// A token state transition failed inside the SDK. Unlike
+    /// [`Self::TokenError`] it keeps the `dash_sdk::Error` instead of
+    /// rendering it, so a consensus rejection stays reachable through
+    /// [`Self::consensus_error`] and the FFI boundary can hand hosts its
+    /// numeric code rather than leaving them to match the message. The
+    /// `Display` text is what `TokenError` rendered for the same failure.
+    /// Build it with [`Self::token_operation_failed`].
+    #[error("Token operation failed: Token {operation} failed: {source}")]
+    TokenOperationFailed {
+        /// The operation as it reads in the message: `claim`, `mint`, …
+        operation: &'static str,
+        #[source]
+        source: dash_sdk::Error,
+    },
+
     #[error("Timed out waiting for finality proof for outpoint {0}")]
     /// IS-lock did not propagate within `wait_for_proof`'s deadline.
     /// Carries the outpoint (not just the txid) so the caller can
@@ -854,6 +873,22 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// A previous identity-funded shield is unresolved. This new call did not
+    /// build or broadcast a transaction; wait for the original payment's sync.
+    #[error("Identity {} has an unresolved shielded debit; this request was not started. Wait for shielded sync", hex::encode(identity_id))]
+    ShieldedIdentityDebitPending { identity_id: [u8; 32] },
+
+    /// Durable recovery data cannot safely identify or reconstruct a payment.
+    #[error("shielded recovery record is damaged (account {account_index:?}): {reason}; restore a known-good backup or inspect recovery records before explicitly accepting an unknown payment outcome")]
+    ShieldedRecoveryCorrupted {
+        account_index: Option<u32>,
+        reason: String,
+    },
+
+    /// An unresolved payment still needs compatible account viewing keys.
+    #[error("shielded account {account_index} is required for payment recovery: {reason}; restore its original viewing keys or inspect the unresolved payment before choosing recovery")]
+    ShieldedRecoveryKeysRequired { account_index: u32, reason: String },
+
     /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
     /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
     /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
@@ -868,7 +903,7 @@ pub enum PlatformWalletError {
     /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
     /// carries the derived identity id so the caller can hold the registration slot.
     #[error(
-        "Shielded {operation} broadcast succeeded but its execution result could not be \
+        "Shielded {operation} was submitted but its execution result could not be \
          confirmed; it may already be executed on chain — do not re-submit \
          (the next sync reconciles the outcome): {reason}"
     )]
@@ -983,6 +1018,35 @@ impl PlatformWalletError {
     pub fn from_restore_failure(source: PlatformWalletError) -> Self {
         Self::PersisterRestore(Box::new(source))
     }
+
+    /// A token state transition failed in the SDK.
+    ///
+    /// A structured key-unavailable signer failure is kept verbatim under
+    /// [`Self::Sdk`] so the FFI boundary can still restore code 31 (see
+    /// [`preserve_signer_key_unavailable_or`]); every other failure becomes
+    /// [`Self::TokenOperationFailed`], which keeps `source` rather than
+    /// formatting it away.
+    pub fn token_operation_failed(operation: &'static str, source: dash_sdk::Error) -> Self {
+        preserve_signer_key_unavailable_or(source, |source| Self::TokenOperationFailed {
+            operation,
+            source,
+        })
+    }
+
+    /// The consensus error Platform rejected the operation with, when this
+    /// error still carries the `dash_sdk::Error` that holds one.
+    ///
+    /// `None` for the variants that stringified their cause, and for the
+    /// typed promotions (`AddressNonceMismatch`, `DocumentNotForSale`, …),
+    /// which keep the values they need and have FFI codes of their own.
+    pub fn consensus_error(&self) -> Option<&ConsensusError> {
+        match self {
+            Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
+                consensus_error_of(source)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was
@@ -993,19 +1057,26 @@ impl PlatformWalletError {
 /// (typically because the quorum that signed it has rotated out).
 pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
     use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
 
-    let consensus_error = match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        _ => None,
-    };
     matches!(
-        consensus_error,
+        consensus_error_of(error),
         Some(ConsensusError::BasicError(
             BasicError::InvalidInstantAssetLockProofSignatureError(_),
+        ))
+    )
+}
+
+/// Check whether an SDK error is Platform rejecting a ChainLock asset-lock
+/// proof because the funding transaction is not in a block at or below the
+/// proof's height (`InvalidAssetLockProofTransactionHeightError`) — the proof
+/// named a height the transaction was not mined at.
+pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -> bool {
+    use dpp::consensus::basic::BasicError;
+
+    matches!(
+        consensus_error_of(error),
+        Some(ConsensusError::BasicError(
+            BasicError::InvalidAssetLockProofTransactionHeightError(_),
         ))
     )
 }
@@ -1066,7 +1137,6 @@ pub fn as_asset_lock_proof_cl_height_too_low(
     error: &dash_sdk::Error,
 ) -> Option<&dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError> {
     use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
 
     let consensus_error = match error {
         dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
@@ -1094,7 +1164,6 @@ pub fn as_asset_lock_proof_cl_height_too_low(
 /// recurses into — staying in lockstep with `broadcast_definitely_failed`.
 pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInvalidNonceError> {
     use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
 
     let consensus_error = match error {
         dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
@@ -1144,7 +1213,7 @@ pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWal
 /// matchers below; the same coverage caveat as
 /// [`as_asset_lock_proof_cl_height_too_low`] applies (re-audit when
 /// `dash_sdk::Error` gains consensus-carrying variants).
-fn consensus_error_of(error: &dash_sdk::Error) -> Option<&dpp::consensus::ConsensusError> {
+fn consensus_error_of(error: &dash_sdk::Error) -> Option<&ConsensusError> {
     match error {
         dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
             broadcast_err.cause.as_ref()
@@ -1169,7 +1238,6 @@ pub fn is_asset_lock_already_consumed(
     out_point: &dashcore::OutPoint,
 ) -> bool {
     use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
 
     matches!(
         consensus_error_of(error),
@@ -1195,7 +1263,6 @@ pub fn is_asset_lock_already_consumed(
 /// in charge.
 pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
     use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
 
     match consensus_error_of(error)? {
         ConsensusError::StateError(StateError::DocumentNotForSaleError(e)) => {
@@ -1288,6 +1355,109 @@ pub fn preserve_signer_key_unavailable_or(
         PlatformWalletError::Sdk(error)
     } else {
         wrap(error)
+    }
+}
+
+#[cfg(test)]
+mod token_operation_failed_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
+
+    fn already_claimed() -> ConsensusError {
+        ConsensusError::from(TokenOncePerIdentityDistributionAlreadyClaimedError::new(
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+            1_758_140_722_000,
+        ))
+    }
+
+    /// The wait-stream shape a state rejection arrives in: the claim was
+    /// accepted by CheckTx and rejected at block execution.
+    fn broadcast_rejection(cause: ConsensusError) -> dash_sdk::Error {
+        dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: cause.code(),
+            message: cause.to_string(),
+            cause: Some(cause),
+        })
+    }
+
+    #[test]
+    fn should_keep_the_consensus_error_of_a_rejected_token_operation() {
+        let error = PlatformWalletError::token_operation_failed(
+            "claim",
+            broadcast_rejection(already_claimed()),
+        );
+
+        let consensus_error = error.consensus_error().expect("consensus error kept");
+        assert_eq!(consensus_error.code(), 40722);
+        assert!(matches!(
+            consensus_error,
+            ConsensusError::StateError(
+                StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(_)
+            )
+        ));
+    }
+
+    /// The CheckTx shape, and the dapi-client's exhausted-retry envelope
+    /// around it.
+    #[test]
+    fn should_find_the_consensus_error_in_every_sdk_error_shape() {
+        let check_tx = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            already_claimed(),
+        )));
+        let enveloped =
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(dash_sdk::Error::Protocol(
+                dpp::ProtocolError::ConsensusError(Box::new(already_claimed())),
+            )));
+
+        for source in [check_tx, enveloped] {
+            let error = PlatformWalletError::token_operation_failed("claim", source);
+            assert_eq!(error.consensus_error().map(|e| e.code()), Some(40722));
+        }
+        // An SDK error propagated with `?` carries it too.
+        let propagated = PlatformWalletError::from(broadcast_rejection(already_claimed()));
+        assert_eq!(propagated.consensus_error().map(|e| e.code()), Some(40722));
+    }
+
+    /// Hosts and logs already see this text for a failed token operation, so
+    /// keeping the SDK error must not reword it.
+    #[test]
+    fn should_render_the_text_token_error_rendered() {
+        let source = || dash_sdk::Error::Generic("boom".to_string());
+        let kept = PlatformWalletError::token_operation_failed("claim", source());
+        let stringified =
+            PlatformWalletError::TokenError(format!("Token claim failed: {}", source()));
+
+        assert_eq!(kept.to_string(), stringified.to_string());
+    }
+
+    #[test]
+    fn should_have_no_consensus_error_without_a_consensus_rejection() {
+        let transport = PlatformWalletError::token_operation_failed(
+            "claim",
+            dash_sdk::Error::Generic("boom".to_string()),
+        );
+        assert!(transport.consensus_error().is_none());
+
+        // A rejection that was rendered into a string is gone for good, however
+        // much its text looks like one.
+        let stringified = PlatformWalletError::TokenError(already_claimed().to_string());
+        assert!(stringified.consensus_error().is_none());
+    }
+
+    /// The key-unavailable signer failure keeps its own route to code 31.
+    #[test]
+    fn should_leave_a_key_unavailable_signer_failure_under_sdk() {
+        let error = PlatformWalletError::token_operation_failed(
+            "claim",
+            dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+                "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+            ))),
+        );
+        assert!(matches!(error, PlatformWalletError::Sdk(_)));
     }
 }
 
@@ -1500,6 +1670,36 @@ mod address_nonce_tests {
         let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
         assert_eq!(got.provided_nonce(), 9);
         assert_eq!(got.expected_nonce(), 10);
+    }
+
+    /// The tx-height rejection is still recognised when the dapi-client wraps
+    /// it in the exhausted-retry envelope.
+    #[test]
+    fn transaction_height_rejection_is_recognised_through_the_retry_envelope() {
+        use dpp::consensus::basic::identity::InvalidAssetLockProofTransactionHeightError;
+
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            dpp::consensus::ConsensusError::from(InvalidAssetLockProofTransactionHeightError::new(
+                100, None,
+            )),
+        )));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+        assert!(is_asset_lock_proof_transaction_height_invalid(&wrapped));
+        assert!(!is_instant_lock_proof_invalid(&wrapped));
+    }
+
+    /// The InstantSend-signature rejection is still recognised when the
+    /// dapi-client wraps it in the exhausted-retry envelope.
+    #[test]
+    fn instant_proof_rejection_is_recognised_through_the_retry_envelope() {
+        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            dpp::consensus::ConsensusError::from(InvalidInstantAssetLockProofSignatureError::new()),
+        )));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+        assert!(is_instant_lock_proof_invalid(&wrapped));
+        assert!(!is_asset_lock_proof_transaction_height_invalid(&wrapped));
     }
 }
 

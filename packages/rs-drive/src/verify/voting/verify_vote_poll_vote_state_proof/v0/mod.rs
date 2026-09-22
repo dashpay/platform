@@ -1,6 +1,6 @@
 use crate::verify::RootHash;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use grovedb::{Element, GroveDb};
 
 use crate::error::Error;
@@ -138,7 +138,7 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
                             if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                 // this is the stored info, let's check to see if the vote is over
                                 let finalized_contested_document_vote_poll_stored_info =
-                                    ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(
+                                    ContestedDocumentVotePollStoredInfo::deserialize_from_bytes_untrusted(
                                         &serialized_item_info,
                                     )?;
                                 if finalized_contested_document_vote_poll_stored_info
@@ -249,7 +249,7 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
                             if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                 // this is the stored info, let's check to see if the vote is over
                                 let finalized_contested_document_vote_poll_stored_info =
-                                    ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(
+                                    ContestedDocumentVotePollStoredInfo::deserialize_from_bytes_untrusted(
                                         &serialized_item_info,
                                     )?;
                                 if finalized_contested_document_vote_poll_stored_info

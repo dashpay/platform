@@ -3,7 +3,7 @@ use crate::address_funds::AddressWitnessVerificationOperations;
 use crate::prelude::AddressNonce;
 use crate::ProtocolError;
 use bech32::{Bech32m, Hrp};
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::{sha256d, Hash};
@@ -12,7 +12,9 @@ use dashcore::secp256k1::ecdsa::RecoverableSignature;
 use dashcore::secp256k1::Message;
 use dashcore::signer::CompactSignature;
 use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -33,7 +35,9 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub enum PlatformAddress {
@@ -428,9 +432,9 @@ impl PlatformAddress {
     /// Uses bincode deserialization which expects: 0x00 for P2pkh, 0x01 for P2sh.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
         let (address, _): (Self, usize) =
-            bincode::decode_from_slice(bytes, bincode::config::standard()).map_err(|e| {
-                ProtocolError::DecodingError(format!("cannot decode PlatformAddress: {}", e))
-            })?;
+            bincode::decode_from_slice_untrusted(bytes, bincode::config::standard()).map_err(
+                |e| ProtocolError::DecodingError(format!("cannot decode PlatformAddress: {}", e)),
+            )?;
         Ok(address)
     }
 

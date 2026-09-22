@@ -1,6 +1,8 @@
 use super::EMPTY_KEYWORDS;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::property_names::CAN_BE_DELETED_BY_MODERATORS;
 use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
@@ -17,7 +19,7 @@ use crate::serialization::ValueConvertible;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use platform_version::{IntoPlatformVersioned, TryFromPlatformVersioned};
@@ -103,7 +105,7 @@ impl fmt::Display for DataContractMismatch {
     all(feature = "value-conversion", feature = "serde-conversion"),
     derive(ValueConvertible)
 )]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -138,6 +140,20 @@ impl DataContractInSerializationFormat {
             DataContractInSerializationFormat::V0(v0) => &v0.document_schemas,
             DataContractInSerializationFormat::V1(v1) => &v1.document_schemas,
         }
+    }
+
+    /// Whether any document schema sets `canBeDeletedByModerators: true`, read from the raw
+    /// schemas: a contract in this format has no parsed document types. Used where a
+    /// moderation declaration is validated before the contract is parsed, since a
+    /// declaration that keeps no list is only valid with such a document type.
+    pub fn has_document_type_deletable_by_moderators(&self) -> bool {
+        self.document_schemas().values().any(|schema| {
+            schema
+                .get_optional_bool(CAN_BE_DELETED_BY_MODERATORS)
+                .ok()
+                .flatten()
+                .unwrap_or(false)
+        })
     }
 
     pub fn document_schemas_mut(&mut self) -> &mut BTreeMap<DocumentName, Value> {
@@ -266,6 +282,9 @@ impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFor
         value: DataContractV0,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -298,6 +317,9 @@ impl TryFromPlatformVersioned<&DataContractV0> for DataContractInSerializationFo
         value: &DataContractV0,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -330,6 +352,9 @@ impl TryFromPlatformVersioned<DataContractV1> for DataContractInSerializationFor
         value: DataContractV1,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -362,6 +387,9 @@ impl TryFromPlatformVersioned<&DataContractV1> for DataContractInSerializationFo
         value: &DataContractV1,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -394,6 +422,9 @@ impl TryFromPlatformVersioned<&DataContract> for DataContractInSerializationForm
         value: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config()
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -426,6 +457,9 @@ impl TryFromPlatformVersioned<DataContract> for DataContractInSerializationForma
         value: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config()
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -489,13 +523,114 @@ impl DataContract {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Setters;
+    use crate::data_contract::config::moderation::ContractModerationConfig;
     use crate::data_contract::config::v0::DataContractConfigV0;
     use crate::data_contract::config::v1::DataContractConfigV1;
     use crate::data_contract::group::v0::GroupV0;
     use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
     use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
+    use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use crate::tests::fixtures::get_data_contract_fixture;
     use platform_value::Identifier;
     use std::collections::BTreeMap;
+
+    /// A contract of the generation `protocol_version` builds, declaring moderation.
+    fn moderated_contract(protocol_version: u32) -> DataContract {
+        let mut contract =
+            get_data_contract_fixture(None, 0, protocol_version).data_contract_owned();
+        let config = contract
+            .config()
+            .clone()
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                moderators: Default::default(),
+            }));
+        contract.set_config(config);
+        contract
+    }
+
+    /// Every way into the serialization format for `contract`.
+    fn every_conversion(
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Vec<Result<DataContractInSerializationFormat, ProtocolError>> {
+        let mut conversions = vec![
+            DataContractInSerializationFormat::try_from_platform_versioned(
+                contract.clone(),
+                platform_version,
+            ),
+            DataContractInSerializationFormat::try_from_platform_versioned(
+                contract,
+                platform_version,
+            ),
+        ];
+        match contract {
+            DataContract::V0(v0) => {
+                conversions.push(
+                    DataContractInSerializationFormat::try_from_platform_versioned(
+                        v0.clone(),
+                        platform_version,
+                    ),
+                );
+                conversions.push(
+                    DataContractInSerializationFormat::try_from_platform_versioned(
+                        v0,
+                        platform_version,
+                    ),
+                );
+            }
+            DataContract::V1(v1) => {
+                conversions.push(
+                    DataContractInSerializationFormat::try_from_platform_versioned(
+                        v1.clone(),
+                        platform_version,
+                    ),
+                );
+                conversions.push(
+                    DataContractInSerializationFormat::try_from_platform_versioned(
+                        v1,
+                        platform_version,
+                    ),
+                );
+            }
+        }
+        conversions
+    }
+
+    #[test]
+    fn should_refuse_to_serialize_a_moderated_contract_below_protocol_version_14() {
+        let latest = PlatformVersion::latest();
+        let v13 = PlatformVersion::get(13).expect("protocol version 13");
+
+        // Both contract generations, so that all six conversions are reached.
+        assert!(matches!(moderated_contract(1), DataContract::V0(_)));
+        assert!(matches!(moderated_contract(14), DataContract::V1(_)));
+        for contract in [moderated_contract(1), moderated_contract(14)] {
+            // Lowering the config would drop the declaration for good, so nothing serializes
+            // the contract where the platform version cannot carry it.
+            for conversion in every_conversion(&contract, v13) {
+                assert!(matches!(conversion, Err(ProtocolError::NotSupported(_))));
+            }
+            assert!(matches!(
+                contract.serialize_to_bytes_with_platform_version(v13),
+                Err(ProtocolError::NotSupported(_))
+            ));
+            assert!(matches!(
+                DataContractCreateTransition::try_from_platform_versioned(contract.clone(), v13),
+                Err(ProtocolError::NotSupported(_))
+            ));
+
+            for conversion in every_conversion(&contract, latest) {
+                assert!(conversion.is_ok());
+            }
+            assert!(contract
+                .serialize_to_bytes_with_platform_version(latest)
+                .is_ok());
+        }
+    }
 
     /// Helper to create a default V0 serialization format.
     fn make_v0() -> DataContractInSerializationFormatV0 {

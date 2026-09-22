@@ -72,7 +72,7 @@ where
                 } else {
                     let start_time = Instant::now();
 
-                    match StateTransition::deserialize_from_bytes_in_version(
+                    match StateTransition::deserialize_from_bytes_untrusted_in_version(
                         raw_state_transition.as_ref(),
                         platform_version,
                     ) {

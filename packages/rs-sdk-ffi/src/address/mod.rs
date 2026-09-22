@@ -174,7 +174,8 @@ pub unsafe extern "C" fn dash_sdk_format_grovedb_proof(
             .with_big_endian()
             .with_limit::<{ 256 * 1024 * 1024 }>();
 
-        let grovedb_proof: GroveDBProof = match bincode::decode_from_slice(bytes, config) {
+        let grovedb_proof: GroveDBProof = match bincode::decode_from_slice_untrusted(bytes, config)
+        {
             Ok((proof, _)) => proof,
             Err(e) => {
                 return DashSDKResult::error(DashSDKError::new(

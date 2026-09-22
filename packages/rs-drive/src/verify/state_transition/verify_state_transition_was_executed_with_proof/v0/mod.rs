@@ -28,8 +28,20 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
+use crate::drive::contract::moderation::types::{
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+};
+use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionWitnessSigned};
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dpp::state_transition::batch_transition::document_replace_transition::DocumentFromReplaceTransition;
@@ -48,7 +60,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1142,6 +1154,215 @@ impl Drive {
                 }
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
+            StateTransition::ContractUserModeration(transition)
+                if transition.action().document().is_some() =>
+            {
+                verify_contract_document_deletion_execution(proof, transition, platform_version)
+            }
+            StateTransition::ContractUserModeration(transition) => {
+                // The proof holds the entries of the lists the moderation touched, present or
+                // absent, and nothing more. A ban touched both lists the contract keeps (it
+                // removes a suspension too), so the contract's config says which to expect.
+                let contract_id = transition.data_contract_id();
+                let identity_id = transition.target_identity_id().ok_or(Error::Proof(
+                    ProofError::CorruptedProof(
+                        "a moderation that names no document names an identity".to_string(),
+                    ),
+                ))?;
+                let lists = match transition.action() {
+                    ContractUserModerationAction::Ban { .. } => {
+                        let contract = known_contracts_provider_fn(&contract_id)?.ok_or(
+                            Error::Proof(ProofError::UnknownContract(format!(
+                                "unknown contract with id {} in contract moderation verification",
+                                contract_id
+                            ))),
+                        )?;
+                        contract
+                            .config()
+                            .moderation()
+                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                            .unwrap_or_else(|| vec![ContractModerationList::Banlist])
+                    }
+                    ContractUserModerationAction::Unban { .. } => {
+                        vec![ContractModerationList::Banlist]
+                    }
+                    ContractUserModerationAction::Suspend { .. }
+                    | ContractUserModerationAction::Unsuspend { .. } => {
+                        vec![ContractModerationList::Suspensions]
+                    }
+                    ContractUserModerationAction::DeleteDocument { .. } => {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "a document deletion is verified above".to_string(),
+                        )))
+                    }
+                };
+                // Only `lists` are proved: the verifier says nothing about the rest.
+                let (root_hash, statuses) = Drive::verify_contract_moderation_status(
+                    proof,
+                    contract_id,
+                    identity_id,
+                    &lists,
+                    platform_version,
+                )?;
+                let as_expected = match transition.action() {
+                    // Banned for the reason the transition gives, and no suspension left behind
+                    // on a contract that keeps them.
+                    ContractUserModerationAction::Ban { reason, .. } => {
+                        statuses
+                            .ban()
+                            .flatten()
+                            .is_some_and(|ban| ban.reason == *reason)
+                            && statuses.suspension().flatten().is_none()
+                    }
+                    ContractUserModerationAction::Unban { .. } => statuses.banned() == Some(false),
+                    // Suspended until the time and for the reason the transition gives.
+                    ContractUserModerationAction::Suspend { until, reason, .. } => {
+                        statuses.suspension().flatten().is_some_and(|suspension| {
+                            suspension.until == *until && suspension.reason == *reason
+                        })
+                    }
+                    ContractUserModerationAction::Unsuspend { .. } => {
+                        statuses.suspended_until() == Some(None)
+                    }
+                    ContractUserModerationAction::DeleteDocument { .. } => false,
+                };
+                if !as_expected {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "proof of state transition execution does not show the {} of {} on contract {}",
+                        transition.action(),
+                        identity_id,
+                        contract_id
+                    ))));
+                }
+                Ok((
+                    root_hash,
+                    VerifiedContractModerationListStatuses(contract_id, identity_id, statuses),
+                ))
+            }
+            StateTransition::ContractFeeClaim(transition) => {
+                let contract_id = transition.data_contract_id();
+                let pot = transition.pot();
+                let contract = known_contracts_provider_fn(&contract_id)?.ok_or(Error::Proof(
+                    ProofError::UnknownContract(format!(
+                        "unknown contract with id {} in contract fee claim verification",
+                        contract_id
+                    )),
+                ))?;
+                let recipients: Vec<[u8; 32]> = pot
+                    .recipients(&contract)
+                    .into_iter()
+                    .map(|recipient| recipient.to_buffer())
+                    .collect();
+
+                // The proof holds the pot with its last claim and the recipients'
+                // balances; each part is verified as a subset of it, and they must agree on
+                // the state they are read from.
+                let (root_hash, fee_pots) = Drive::verify_contract_fee_pots(
+                    proof,
+                    contract_id,
+                    &[pot],
+                    true,
+                    platform_version,
+                )?;
+                let (balances_root_hash, balances): (
+                    RootHash,
+                    BTreeMap<Identifier, Option<Credits>>,
+                ) = Drive::verify_identity_balances_for_identity_ids(
+                    proof,
+                    true,
+                    &recipients,
+                    platform_version,
+                )?;
+                if balances_root_hash != root_hash {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "the pot and the balances of a contract fee claim proof are read from different states"
+                            .to_string(),
+                    )));
+                }
+
+                let fee_pot = fee_pots.pot(pot);
+                // A pot that was never claimed has no last claim: the claim did not execute.
+                // A later claim leaves its own and verifies just the same, so this only
+                // authenticates the affected state. The last claim names its claimant and
+                // its block time, which tell the caller whether it is this claim.
+                let last_claim =
+                    fee_pot
+                        .last_claim
+                        .ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                            "proof of state transition execution does not show a claim of the {} fee pot of contract {}",
+                            pot, contract_id
+                        ))))?;
+                let balances = balances
+                    .into_iter()
+                    .map(|(recipient, balance)| {
+                        balance.map(|balance| (recipient, balance)).ok_or(Error::Proof(
+                            ProofError::IncorrectProof(format!(
+                                "proof did not contain the balance of {}, a recipient of the {} fee pot of contract {}",
+                                recipient, pot, contract_id
+                            )),
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<Identifier, Credits>, Error>>()?;
+                Ok((
+                    root_hash,
+                    VerifiedContractFeeClaim(
+                        contract_id,
+                        pot,
+                        last_claim,
+                        fee_pot.credits,
+                        balances,
+                    ),
+                ))
+            }
+            StateTransition::IdentityKeyLimitsUpdate(transition) => {
+                // The proof holds the rewritten key, nothing more.
+                let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
+                    proof,
+                    IdentityKeysRequest::new_specific_key_query_without_limit(
+                        &transition.identity_id().into_buffer(),
+                        transition.key_id(),
+                    ),
+                    false,
+                    false,
+                    false,
+                    platform_version,
+                )?;
+                let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                    "proof did not contain identity {} expected to exist because of state transition (key limits update)",
+                    transition.identity_id()
+                ))))?;
+
+                let Some(key) = identity.loaded_public_keys.get(&transition.key_id()) else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof does not contain key {}",
+                        transition.key_id()
+                    ))));
+                };
+
+                // Both limits carry the value the transition asked for, so the proved key must
+                // hold exactly that value.
+                if transition.total_budget().is_some()
+                    && key.total_budget() != transition.total_budget()
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof shows key {} with total budget {:?}, expected {:?}",
+                        transition.key_id(),
+                        key.total_budget(),
+                        transition.total_budget()
+                    ))));
+                }
+                if transition.expires_at().is_some() && key.expires_at() != transition.expires_at()
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof shows key {} expiring at {:?}, expected {:?}",
+                        transition.key_id(),
+                        key.expires_at(),
+                        transition.expires_at()
+                    ))));
+                }
+
+                Ok((root_hash, VerifiedPartialIdentity(identity)))
+            }
             StateTransition::IdentityCreditTransfer(identity_credit_transfer) => {
                 // snapshot of the sender's and recipient's balances at the proof's block
                 let (root_hash_identity, balance_identity) =
@@ -1693,7 +1914,7 @@ impl Drive {
                 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
                 use dpp::asset_lock::StoredAssetLockInfo;
                 use dpp::identity::state_transition::AssetLockProved;
-                use dpp::serialization::PlatformDeserializable;
+                use dpp::serialization::PlatformDeserializableUntrusted;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::{
                     VerifiedAssetLockConsumed, VerifiedAssetLockConsumedWithAddressInfos,
                 };
@@ -1805,7 +2026,7 @@ impl Drive {
                                     StoredAssetLockInfo::FullyConsumed
                                 } else {
                                     StoredAssetLockInfo::PartiallyConsumed(
-                                        AssetLockValue::deserialize_from_bytes(&bytes)?,
+                                        AssetLockValue::deserialize_from_bytes_untrusted(&bytes)?,
                                     )
                                 }
                             }
@@ -1849,7 +2070,9 @@ impl Drive {
                                         StoredAssetLockInfo::FullyConsumed
                                     } else {
                                         StoredAssetLockInfo::PartiallyConsumed(
-                                            AssetLockValue::deserialize_from_bytes(&bytes)?,
+                                            AssetLockValue::deserialize_from_bytes_untrusted(
+                                                &bytes,
+                                            )?,
                                         )
                                     }
                                 }
@@ -1884,14 +2107,14 @@ impl Drive {
                 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
                 use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID};
                 use dpp::prelude::Revision;
-                use dpp::serialization::PlatformDeserializable;
+                use dpp::serialization::PlatformDeserializableUntrusted;
                 use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
                 use dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers;
                 use std::collections::{BTreeMap, BTreeSet};
 
                 // Recompute the id from the actions (the canonical value) instead of trusting the
-                // wire field, and reject a tampered transition whose wire id doesn't match — so a
+                // wire field, and reject a tampered transition whose wire id doesn't match: so a
                 // client verifying a proof cannot be fed a transition that reuses these nullifiers
                 // while pointing `identity_id` at a different identity. (Consensus enforces the same
                 // equality in `validate_structure`; this independently re-checks it here so the
@@ -1929,7 +2152,7 @@ impl Drive {
                 // STRICT verification via `verify_query` (succinctness on). Unlike the other
                 // shielded merged queries (which target only explicit keys and go through
                 // `verify_merged_query_strict`), this one embeds `full_identity_query`, whose
-                // all-keys sub-query is an unbounded RangeFull — and
+                // all-keys sub-query is an unbounded RangeFull: and
                 // `verify_query_with_absence_proof` enumerates the query's terminal keys, which
                 // is impossible for unbounded ranges ("terminal keys are not supported with
                 // unbounded ranges"). Absence synthesis isn't needed here anyway: every queried
@@ -1944,7 +2167,7 @@ impl Drive {
                     &platform_version.drive.grove_version,
                 )?;
 
-                // Partition the proved key/values by PATH (NOT key length — nullifier keys and the
+                // Partition the proved key/values by PATH (NOT key length: nullifier keys and the
                 // identity id are both 32 bytes): nullifier-tree entries vs the identity subtrees
                 // (balance / revision / keys). Reconstruct the identity exactly as
                 // `verify_full_identity_by_identity_id_v0` does.
@@ -2005,7 +2228,8 @@ impl Drive {
                             ))
                         })?;
                         let item_bytes = element.into_item_bytes().map_err(Error::from)?;
-                        let public_key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
+                        let public_key =
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(&item_bytes)?;
                         keys.insert(public_key.id(), public_key);
                     } else {
                         return Err(Error::Proof(ProofError::TooManyElements(
@@ -2078,6 +2302,206 @@ impl Drive {
                 Ok((
                     root_hash,
                     VerifiedIdentityWithShieldedNullifiers(identity, statuses),
+                ))
+            }
+            StateTransition::IdentityTopUpFromShieldedPool(st) => {
+                use crate::drive::balances::balance_path;
+                use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
+                use crate::drive::identity::{identity_key_tree_path, identity_path};
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+                use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+                use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID};
+                use dpp::prelude::Revision;
+                use dpp::serialization::PlatformDeserializableUntrusted;
+                use dpp::state_transition::identity_top_up_from_shielded_pool_transition::accessors::IdentityTopUpFromShieldedPoolTransitionAccessorsV0;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers;
+                use std::collections::{BTreeMap, BTreeSet};
+
+                // The credited identity is the transition's declared `identity_id`; consensus
+                // binds it into the Orchard sighash, so a proof for these nullifiers can only
+                // have been produced for a transition crediting this identity.
+                let identity_id = st.identity_id().to_buffer();
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                // Rebuild the BYTE-IDENTICAL merged query the prove side built: the nullifier
+                // sub-query over the nullifier tree + the full-identity sub-query, each with its
+                // limit cleared (PathQuery::merge rejects limited sub-queries).
+                let mut nf_query = grovedb::Query::new();
+                nf_query.insert_keys(nullifier_keys.clone());
+                let nullifier_pq = grovedb::PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(nf_query, None, None),
+                );
+
+                let mut identity_pq = Drive::full_identity_query(
+                    &identity_id,
+                    &platform_version.drive.grove_version,
+                )?;
+                identity_pq.query.limit = None;
+
+                let merged_pq = grovedb::PathQuery::merge(
+                    vec![&nullifier_pq, &identity_pq],
+                    &platform_version.drive.grove_version,
+                )?;
+
+                // STRICT verification via `verify_query` (succinctness on). Unlike the other
+                // shielded merged queries (which target only explicit keys and go through
+                // `verify_merged_query_strict`), this one embeds `full_identity_query`, whose
+                // all-keys sub-query is an unbounded RangeFull: and
+                // `verify_query_with_absence_proof` enumerates the query's terminal keys, which
+                // is impossible for unbounded ranges ("terminal keys are not supported with
+                // unbounded ranges"). Absence synthesis isn't needed here anyway: every queried
+                // element (the spent nullifiers and the credited identity) must be PRESENT, so
+                // presence is checked directly against the result set below. The succinctness
+                // check still rejects proofs padded with branches beyond {nullifiers, identity}
+                // (the strict-from-day-one guarantee of #3812), and the limit stays None exactly
+                // as the prove side built it, so no layer's result loop can break early.
+                let (root_hash, proved_key_values) = grovedb::GroveDb::verify_query(
+                    proof,
+                    &merged_pq,
+                    &platform_version.drive.grove_version,
+                )?;
+
+                // Partition the proved key/values by PATH (NOT key length: nullifier keys and the
+                // identity id are both 32 bytes): nullifier-tree entries vs the identity subtrees
+                // (balance / revision / keys). Reconstruct the identity exactly as
+                // `verify_full_identity_by_identity_id_v0` does.
+                let nullifier_path = shielded_credit_pool_nullifiers_path_vec();
+                let balance_path = balance_path();
+                let identity_path = identity_path(identity_id.as_slice());
+                let identity_keys_path = identity_key_tree_path(identity_id.as_slice());
+
+                let mut spent_nullifiers = BTreeSet::<Vec<u8>>::new();
+                let mut balance: Option<Credits> = None;
+                let mut revision: Option<Revision> = None;
+                let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
+
+                for (path, key, maybe_element) in proved_key_values {
+                    if path == nullifier_path {
+                        if !nullifier_keys.contains(&key) {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "identity top up from shielded pool proof contains a nullifier \
+                                 entry that was not requested"
+                                    .to_string(),
+                            )));
+                        }
+                        if maybe_element.is_some() {
+                            spent_nullifiers.insert(key);
+                        }
+                    } else if path == balance_path && key == identity_id {
+                        let element = maybe_element.ok_or_else(|| {
+                            Error::Proof(ProofError::IncompleteProof(
+                                "balance wasn't provided for the topped-up identity",
+                            ))
+                        })?;
+                        let signed_balance = element.as_sum_item_value().map_err(Error::from)?;
+                        if signed_balance < 0 {
+                            return Err(Error::Proof(ProofError::Overflow(
+                                "balance can't be negative",
+                            )));
+                        }
+                        balance = Some(signed_balance as Credits);
+                    } else if path == identity_path && key == vec![IdentityTreeRevision as u8] {
+                        let element = maybe_element.ok_or_else(|| {
+                            Error::Proof(ProofError::IncompleteProof(
+                                "revision wasn't provided for the topped-up identity",
+                            ))
+                        })?;
+                        let item_bytes = element.into_item_bytes().map_err(Error::from)?;
+                        revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
+                            |_| {
+                                Error::Proof(ProofError::IncorrectValueSize(
+                                    "revision should be 8 bytes",
+                                ))
+                            },
+                        )?));
+                    } else if path == identity_keys_path {
+                        let element = maybe_element.ok_or_else(|| {
+                            Error::Proof(ProofError::CorruptedProof(
+                                "received an absence proof for a key but didn't request one"
+                                    .to_string(),
+                            ))
+                        })?;
+                        let item_bytes = element.into_item_bytes().map_err(Error::from)?;
+                        let public_key =
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(&item_bytes)?;
+                        keys.insert(public_key.id(), public_key);
+                    } else {
+                        return Err(Error::Proof(ProofError::TooManyElements(
+                            "identity top up from shielded pool proof contains an element outside \
+                             the nullifier tree and the topped-up identity",
+                        )));
+                    }
+                }
+
+                // Without absence synthesis an unspent nullifier yields no result entry (or a
+                // bare absence entry), so each expected nullifier's spend status is its
+                // membership in the proved-present set.
+                let statuses: Vec<(Vec<u8>, bool)> = nullifier_keys
+                    .iter()
+                    .map(|nf| (nf.clone(), spent_nullifiers.contains(nf)))
+                    .collect();
+
+                // Every funding nullifier must be present (spent) in the post-execution state.
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the identity-top-up-from-shielded-pool proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                // The credited identity MUST be fully present (it existed before the top-up).
+                let (balance, revision) = match (balance, revision, keys.is_empty()) {
+                    (Some(balance), Some(revision), false) => (balance, revision),
+                    _ => {
+                        return Err(Error::Proof(ProofError::IncompleteProof(
+                            "identity top up from shielded pool was executed but the topped-up identity is absent or incomplete in the proof",
+                        )))
+                    }
+                };
+
+                // The balance is deliberately NOT checked against `top_up_amount`: the proof is a
+                // post-execution snapshot of an identity that already held credits, so the
+                // pre-top-up balance and the flat fee are not recoverable here. (`top_up_amount`
+                // is bound into the Orchard `extra_sighash_data` at consensus.)
+                let identity: dpp::prelude::Identity = IdentityV0 {
+                    id: Identifier::from(identity_id),
+                    public_keys: keys,
+                    balance,
+                    revision,
+                }
+                .into();
+
+                Ok((
+                    root_hash,
+                    VerifiedIdentityWithShieldedNullifiers(identity, statuses),
+                ))
+            }
+            StateTransition::ShieldFromIdentity(st) => {
+                use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+                // snapshot of the identity's balance at the proof's block
+                let identity_id = st.identity_id();
+                let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+                    proof,
+                    identity_id.into_buffer(),
+                    false,
+                    platform_version,
+                )?;
+                let balance = balance.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                    "proof did not contain balance for identity {} expected to exist because of state transition (shield from identity)",
+                    identity_id
+                ))))?;
+                Ok((
+                    root_hash,
+                    VerifiedPartialIdentity(PartialIdentity {
+                        id: identity_id,
+                        loaded_public_keys: Default::default(),
+                        balance: Some(balance),
+                        revision: None,
+                        not_found_public_keys: Default::default(),
+                    }),
                 ))
             }
         }?;
@@ -2187,6 +2611,18 @@ impl Drive {
             // Binds the transition's revision and its exact key additions
             // and disabling timestamps.
             StateTransition::IdentityUpdate(_) => true,
+            // The proof shows the key holding the limits the transition named, no more: any
+            // later state of that key with those limits verifies just the same, so this only
+            // authenticates the affected state.
+            StateTransition::IdentityKeyLimitsUpdate(_) => false,
+            // The proven entry shows the target's state on the list; an earlier or later
+            // moderation leaving the same entry verifies just the same, so this only
+            // authenticates the affected state.
+            StateTransition::ContractUserModeration(_) => false,
+            // The proven pot shows that it was claimed and what it holds now; a later claim
+            // of the same pot verifies just the same, so this only authenticates the affected
+            // state.
+            StateTransition::ContractFeeClaim(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.
             StateTransition::MasternodeVote(_) => true,
@@ -2214,6 +2650,15 @@ impl Drive {
             // complete Orchard request, denomination context, or fallback
             // address.
             StateTransition::IdentityCreateFromShieldedPool(_) => false,
+            // Only the identity's post-debit balance is proven; the shielded note
+            // and the requested amount are not bound.
+            StateTransition::ShieldFromIdentity(_) => false,
+            // A spent nullifier is stored as an empty item shared by every
+            // spend family, so its presence cannot tell this top-up apart from
+            // a competing spend of the same notes that credits another
+            // identity, and the credited identity's balance is a snapshot at
+            // the proof's block.
+            StateTransition::IdentityTopUpFromShieldedPool(_) => false,
         };
 
         Ok(binds)
@@ -2267,7 +2712,60 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "server")]
+/// A moderator's document deletion is proved by the record it left: the one of the document
+/// named, saying that the transition's signer removed it for the transition's reason. When is
+/// the block's to say, and whose the document was only the record knows. A document id is
+/// produced at most once, so the record is of that document and of no other.
+fn verify_contract_document_deletion_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let ContractUserModerationAction::DeleteDocument {
+        document_type_name,
+        document_id,
+        reason,
+    } = transition.action()
+    else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only a document deletion is verified by its removal record".to_string(),
+        )));
+    };
+    let (root_hash, mut entries) = Drive::verify_contract_document_removals(
+        proof,
+        contract_id,
+        &ContractDocumentRemovalsQuery {
+            document_type_name: document_type_name.clone(),
+            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![*document_id]),
+        },
+        platform_version,
+    )?;
+    match (entries.pop(), entries.is_empty()) {
+        (Some(entry), true)
+            if entry.document_id == *document_id
+                && entry.removal.moderator_id == transition.owner_id()
+                && entry.removal.reason == *reason =>
+        {
+            Ok((
+                root_hash,
+                VerifiedContractDocumentRemoval(
+                    contract_id,
+                    document_type_name.clone(),
+                    *document_id,
+                    entry.removal,
+                ),
+            ))
+        }
+        _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
+            "proof of state transition execution does not show the {} on contract {} by {}",
+            transition.action(),
+            contract_id,
+            transition.owner_id()
+        )))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4619,6 +5117,7 @@ mod tests {
         use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
         use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
         use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
         use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
@@ -4628,6 +5127,12 @@ mod tests {
             (
                 "identity top up",
                 StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(Default::default())),
+            ),
+            (
+                "identity key limits update",
+                StateTransition::IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition::V0(
+                    Default::default(),
+                )),
             ),
             (
                 "identity credit withdrawal",

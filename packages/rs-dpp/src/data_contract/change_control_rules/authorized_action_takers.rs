@@ -7,13 +7,15 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-#[derive(Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default)]
+#[derive(
+    Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default, DecodeUntrusted,
+)]
 // Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
 // can't produce the desired flat wire shape because the `Identity` variant
 // wraps `Identifier` (serializes as a base58 string, not a map) and `Group`

@@ -223,7 +223,7 @@ struct DiagnosticsView: View {
                     )
                 }),
 
-                // Data Contract Queries (3 queries)
+                // Data Contract Queries (4 queries)
                 ("getDataContract", "Get Data Contract", "Data Contract", {
                     try await sdk.dataContractGet(id: TestData.dpnsContractId)
                 }),
@@ -234,6 +234,10 @@ struct DiagnosticsView: View {
 
                 ("getDataContracts", "Get Data Contracts", "Data Contract", {
                     try await sdk.dataContractGetMultiple(ids: [TestData.dpnsContractId])
+                }),
+
+                ("getDataContractsByRange", "Get Data Contracts by Range", "Data Contract", {
+                    try await sdk.getDataContractsByRange(limit: 5)
                 }),
 
                 // Document Queries (2 queries)
@@ -629,7 +633,10 @@ struct DiagnosticsView: View {
             return formatDictionary(dict)
         } else if let array = result as? [[String: Any]] {
             return "[\(array.count) items]"
-        } else if let uint = result as? UInt64 {
+        } else if let uint = UInt64(jsonValue: result) {
+            // A protocol `u64` arrives as a number below 2^53 and as a decimal
+            // string above it. Ordered before the `Bool` branch, which still
+            // fires because the reader refuses booleans.
             return String(uint)
         } else if let bool = result as? Bool {
             return bool ? "true" : "false"

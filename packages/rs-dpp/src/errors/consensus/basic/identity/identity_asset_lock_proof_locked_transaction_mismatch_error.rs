@@ -1,13 +1,24 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error("`Instant Lock transaction {instant_lock_transaction_id:?} and Asset lock transaction {asset_lock_transaction_id:?} mismatch`")]
 #[platform_serialize(unversioned)]
@@ -46,3 +57,15 @@ impl From<IdentityAssetLockProofLockedTransactionMismatchError> for ConsensusErr
         Self::BasicError(BasicError::IdentityAssetLockProofLockedTransactionMismatchError(err))
     }
 }
+
+impl<C> DecodeUntrusted<C> for IdentityAssetLockProofLockedTransactionMismatchError {
+    fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            instant_lock_transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            asset_lock_transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_untrusted!(IdentityAssetLockProofLockedTransactionMismatchError);

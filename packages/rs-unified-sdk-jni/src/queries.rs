@@ -19,20 +19,22 @@ use rs_sdk_ffi::{
     dash_sdk_contested_resource_get_voters_for_identity, dash_sdk_data_contract_destroy,
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_json,
     dash_sdk_data_contract_fetch_result_free, dash_sdk_data_contract_fetch_with_serialization,
-    dash_sdk_document_average, dash_sdk_document_count, dash_sdk_document_search,
-    dash_sdk_document_sum, dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames,
-    dash_sdk_dpns_resolve, dash_sdk_dpns_search, dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
+    dash_sdk_data_contracts_fetch_by_range, dash_sdk_document_average, dash_sdk_document_count,
+    dash_sdk_document_search, dash_sdk_document_sum, dash_sdk_dpns_check_availability,
+    dash_sdk_dpns_get_usernames, dash_sdk_dpns_resolve, dash_sdk_dpns_search,
+    dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
     dash_sdk_evonode_get_proposed_epoch_blocks_by_range, dash_sdk_group_get_action_signers,
     dash_sdk_group_get_actions, dash_sdk_group_get_info, dash_sdk_identities_fetch_balances,
     dash_sdk_identities_fetch_contract_keys, dash_sdk_identity_fetch,
     dash_sdk_identity_fetch_balance, dash_sdk_identity_fetch_balance_and_revision,
     dash_sdk_identity_fetch_by_non_unique_public_key_hash,
     dash_sdk_identity_fetch_by_public_key_hash, dash_sdk_identity_fetch_contract_nonce,
-    dash_sdk_identity_fetch_nonce, dash_sdk_identity_fetch_public_keys,
-    dash_sdk_identity_fetch_token_balances, dash_sdk_protocol_version_get_upgrade_state,
-    dash_sdk_protocol_version_get_upgrade_vote_status, dash_sdk_refresh_protocol_version,
-    dash_sdk_system_get_current_quorums_info, dash_sdk_system_get_epochs_info,
-    dash_sdk_system_get_path_elements, dash_sdk_system_get_prefunded_specialized_balance,
+    dash_sdk_identity_fetch_keys_remaining_budgets, dash_sdk_identity_fetch_nonce,
+    dash_sdk_identity_fetch_public_keys, dash_sdk_identity_fetch_token_balances,
+    dash_sdk_protocol_version_get_upgrade_state, dash_sdk_protocol_version_get_upgrade_vote_status,
+    dash_sdk_refresh_protocol_version, dash_sdk_system_get_current_quorums_info,
+    dash_sdk_system_get_epochs_info, dash_sdk_system_get_path_elements,
+    dash_sdk_system_get_prefunded_specialized_balance,
     dash_sdk_system_get_total_credits_in_platform, dash_sdk_token_get_contract_info,
     dash_sdk_token_get_direct_purchase_prices,
     dash_sdk_token_get_perpetual_distribution_last_claim,
@@ -99,6 +101,54 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
         let id = require_cstr!(env, identity_id);
         let result =
             unsafe { dash_sdk_identity_fetch_balance(sdk as *const SDKHandle, id.as_ptr()) };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// What is left of the budgets of the given keys of an identity (protocol version
+/// 14), as a JSON object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key
+/// maps to the credits left, as a decimal string; a key without a budget, or that the
+/// identity does not have, maps to null. `keyIds` is a JVM `int[]` of at least one id.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identityFetchKeysRemainingBudgets(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    identity_id: JString,
+    key_ids: jni::objects::JIntArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let id = require_cstr!(env, identity_id);
+        let key_ids: Vec<u32> = match env.get_array_length(&key_ids) {
+            Ok(len) if len > 0 => {
+                let mut buf = vec![0i32; len as usize];
+                if env.get_int_array_region(&key_ids, 0, &mut buf).is_err() {
+                    let _ = env.exception_clear();
+                    throw_sdk_exception(env, 1, "keyIds could not be read");
+                    return ptr::null_mut();
+                }
+                if buf.iter().any(|&i| i < 0) {
+                    throw_sdk_exception(env, 1, "keyIds must be non-negative");
+                    return ptr::null_mut();
+                }
+                buf.into_iter().map(|i| i as u32).collect()
+            }
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "keyIds must hold at least one key id");
+                return ptr::null_mut();
+            }
+        };
+        let result = unsafe {
+            dash_sdk_identity_fetch_keys_remaining_budgets(
+                sdk as *const SDKHandle,
+                id.as_ptr(),
+                key_ids.as_ptr(),
+                key_ids.len(),
+            )
+        };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())
@@ -234,6 +284,39 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     guard(&mut env, (), |_| unsafe {
         dash_sdk_data_contract_destroy(handle as *mut DataContractHandle)
     });
+}
+
+/// One page of every data contract, in ascending contract id order, as a JSON
+/// array of `{"id", "dataContract"}` objects. `startAfter`/`startAt` (base58
+/// contract id) may be null and are mutually exclusive; `limit` 0 means the
+/// default page size. With `idsOnly` every `dataContract` field is null.
+/// Returns JSON, or null.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataContractsFetchByRange(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    limit: jint,
+    start_after: JString,
+    start_at: JString,
+    ids_only: jboolean,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let after = opt_c_string(env, &start_after);
+        let at = opt_c_string(env, &start_at);
+        let result = unsafe {
+            dash_sdk_data_contracts_fetch_by_range(
+                sdk as *const SDKHandle,
+                limit.max(0) as u32,
+                c_ptr(&after),
+                c_ptr(&at),
+                ids_only != 0,
+            )
+        };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
 }
 
 /// Search documents of a type; returns a JSON array of documents.

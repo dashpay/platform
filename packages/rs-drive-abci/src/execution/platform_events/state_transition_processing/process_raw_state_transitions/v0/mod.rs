@@ -239,6 +239,15 @@ where
                                     // credit inflow for a transition the proposal omits and
                                     // validators re-executing it would compute other state.
                                     block_credit_mints = credit_mints_at_savepoint;
+                                    // Any contract the transition rewrote was re-seeded into
+                                    // the block cache as it was applied, and the rollback
+                                    // just reverted it in state. Drop those copies so the
+                                    // next transactional read of them goes to the rolled-back
+                                    // transaction rather than to a phantom definition.
+                                    self.drive
+                                        .cache
+                                        .data_contracts
+                                        .drop_block_modified_entries();
                                 }
                                 StateTransitionExecutionResult::SuccessfulExecution { .. }
                                 | StateTransitionExecutionResult::PaidConsensusError { .. } => {
