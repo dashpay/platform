@@ -286,6 +286,24 @@ impl WasmSdk {
     }
 }
 
+/// Hands the owner's credit balance the verified outcome carried (from
+/// protocol version 14, for owned fee-paying transitions) to JavaScript as an
+/// `ownerBalance` `BigInt` property on the verified result; absent otherwise.
+fn with_owner_balance(
+    result: StateTransitionProofResultTypeJs,
+    owner_balance: Option<u64>,
+) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+    if let Some(owner_balance) = owner_balance {
+        js_sys::Reflect::set(
+            result.as_ref(),
+            &JsValue::from_str("ownerBalance"),
+            &js_sys::BigInt::from(owner_balance).into(),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set ownerBalance".to_string()))?;
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,22 +660,4 @@ mod tests {
             .expect("preparation must skip compiled-in system contracts");
         assert!(sdk.get_cached_contract(&dpns_id).is_none());
     }
-}
-
-/// Hands the owner's credit balance the verified outcome carried (from
-/// protocol version 14, for owned fee-paying transitions) to JavaScript as an
-/// `ownerBalance` `BigInt` property on the verified result; absent otherwise.
-fn with_owner_balance(
-    result: StateTransitionProofResultTypeJs,
-    owner_balance: Option<u64>,
-) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
-    if let Some(owner_balance) = owner_balance {
-        js_sys::Reflect::set(
-            result.as_ref(),
-            &JsValue::from_str("ownerBalance"),
-            &js_sys::BigInt::from(owner_balance).into(),
-        )
-        .map_err(|_| WasmSdkError::generic("Failed to set ownerBalance".to_string()))?;
-    }
-    Ok(result)
 }
