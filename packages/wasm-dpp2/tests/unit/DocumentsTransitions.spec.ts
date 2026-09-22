@@ -311,6 +311,97 @@ describe('DocumentsTransitions', () => {
     });
   });
 
+  describe('DocumentEraseTransition', () => {
+    describe('constructor', () => {
+      it('should create instance from document', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(eraseTransition).to.be.an.instanceof(wasm.DocumentEraseTransition);
+      });
+    });
+
+    describe('toDocumentTransition()', () => {
+      it('should create DocumentTransition from EraseTransition', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        const documentTransition = eraseTransition.toDocumentTransition();
+
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+      });
+    });
+
+    describe('base', () => {
+      it('should return base', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        expect(eraseTransition.base.constructor.name).to.equal('DocumentBaseTransition');
+      });
+
+      it('should set base', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        const newBase = new wasm.DocumentBaseTransition({
+          documentId: documentInstance.id,
+          identityContractNonce: BigInt(12350),
+          documentTypeName: 'bbbbb',
+          dataContractId,
+        });
+
+        eraseTransition.base = newBase;
+
+        expect(eraseTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
+      });
+    });
+
+    describe('BatchTransition serialization roundtrip', () => {
+      it('should serialize and deserialize through state transition', () => {
+        const documentInstance = createDocument();
+        const eraseTransition = new wasm.DocumentEraseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        const documentTransition = eraseTransition.toDocumentTransition();
+
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
+
+        const st = batchTransition.toStateTransition();
+
+        const deserializedBatch = wasm.BatchTransition.fromStateTransition(st);
+
+        const deserializedTransitions = deserializedBatch.transitions;
+
+        expect(deserializedTransitions.length).to.equal(2);
+
+        const deserializedEraseTransition = deserializedTransitions[0].toTransition().eraseTransition;
+
+        expect(deserializedEraseTransition).to.be.an.instanceof(wasm.DocumentEraseTransition);
+      });
+    });
+  });
+
   describe('DocumentReplaceTransition', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
