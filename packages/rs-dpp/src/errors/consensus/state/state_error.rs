@@ -68,6 +68,7 @@ use crate::consensus::state::document::document_contest_not_required_error::Docu
 use crate::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -582,6 +583,10 @@ pub enum StateError {
     // Contested indexes resolved without a Lock choice (protocol version 14).
     #[error(transparent)]
     VoteChoiceNotAllowedForVotePollError(VoteChoiceNotAllowedForVotePollError),
+
+    // Requirements on a referenced contract (protocol version 14).
+    #[error(transparent)]
+    ReferencedContractRequirementNotMetError(ReferencedContractRequirementNotMetError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1064,7 +1069,7 @@ mod tests {
             )),
             141
         );
-        // Contested indexes without a Lock choice (protocol version 14): the tail of the enum.
+        // Contested indexes without a Lock choice (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::VoteChoiceNotAllowedForVotePollError(
                 VoteChoiceNotAllowedForVotePollError::new(
@@ -1080,6 +1085,18 @@ mod tests {
                 )
             )),
             142
+        );
+        // Requirements on a referenced contract (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedContractRequirementNotMetError(
+                ReferencedContractRequirementNotMetError::new(
+                    group_id,
+                    "moderation".to_string(),
+                    "elected".to_string(),
+                    "targetContractId".to_string(),
+                )
+            )),
+            143
         );
     }
 }

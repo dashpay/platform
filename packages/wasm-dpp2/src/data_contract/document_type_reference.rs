@@ -32,7 +32,17 @@ const DOCUMENT_PROPERTY_REFERENCE_TS: &'static str = r#"
  */
 export type DocumentPropertyReferenceTarget =
   | { type: 'identity' }
-  | { type: 'contract' }
+  | {
+      type: 'contract';
+      /**
+       * What the referenced contract must declare beyond existing, checked
+       * by consensus when the referring document is written against the
+       * contract fetched for the existence check: `moderation: 'elected'`
+       * requires an elected moderation team (code 40135 when unmet).
+       * Absent when the declaration carries no requirement.
+       */
+      contractRequirements?: { moderation?: 'elected' };
+    }
   | { type: 'token' }
   | {
       type: 'permanentDocument';
@@ -156,7 +166,7 @@ fn reference_to_js(
 
     let kind = match target {
         DocumentPropertyReferenceTarget::Identity => "identity",
-        DocumentPropertyReferenceTarget::Contract => "contract",
+        DocumentPropertyReferenceTarget::Contract { .. } => "contract",
         DocumentPropertyReferenceTarget::Token => "token",
         DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
@@ -165,9 +175,23 @@ fn reference_to_js(
     set_field(&object, "type", &JsValue::from_str(kind), path)?;
 
     match target {
-        DocumentPropertyReferenceTarget::Identity
-        | DocumentPropertyReferenceTarget::Contract
-        | DocumentPropertyReferenceTarget::Token => {}
+        DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
+        DocumentPropertyReferenceTarget::Contract {
+            contract_requirements,
+        } => {
+            // Absent, not `{}`-valued, when the declaration requires nothing,
+            // matching the schema's own omission.
+            if let Some(moderation) = contract_requirements.moderation {
+                let fields = Object::new();
+                set_field(
+                    &fields,
+                    "moderation",
+                    &JsValue::from_str(moderation.as_str()),
+                    path,
+                )?;
+                set_field(&object, "contractRequirements", &fields, path)?;
+            }
+        }
         DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id,
             document_type_name,

@@ -10,9 +10,13 @@ use platform_serialization_derive::{
 };
 
 use crate::consensus::basic::decode::DecodingError;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::config::moderation::ContractModerators;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
+use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::property_names;
+use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, OWNER_ID};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
@@ -27,7 +31,7 @@ use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub mod array;
 
@@ -84,6 +88,106 @@ pub struct ByteArrayPropertySizes {
     pub max_size: Option<u16>,
 }
 
+/// What a `contract` reference requires of the contract it points at, beyond its existence.
+///
+/// Declared as `refersTo: { "type": "contract", "contractRequirements": { ... } }`: each key names an
+/// aspect of the referenced contract and its value the requirement on it. Consensus checks the
+/// requirements when the referring document is written, against the contract it has already
+/// fetched for the existence check, so a requirement costs no further read. An unmet one
+/// refuses the write with `ReferencedContractRequirementNotMetError` (40135).
+#[derive(
+    Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContractReferenceRequirements {
+    /// The moderation the referenced contract must declare.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moderation: Option<ContractReferenceModeration>,
+}
+
+/// The moderation a `contract` reference may require of the referenced contract.
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum ContractReferenceModeration {
+    /// The contract declares an elected moderation team (`ContractModerators::Elected`),
+    /// whatever its interim and whether a team is seated yet.
+    Elected,
+}
+
+impl ContractReferenceModeration {
+    /// The wire name, the value of `contractRequirements.moderation`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ContractReferenceModeration::Elected => "elected",
+        }
+    }
+
+    /// The moderation a wire name names, `None` for any other name.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            "elected" => Some(ContractReferenceModeration::Elected),
+            _ => None,
+        }
+    }
+
+    /// Whether `contract` declares what this requires.
+    pub fn is_met_by(&self, contract: &DataContract) -> bool {
+        match self {
+            ContractReferenceModeration::Elected => {
+                contract.config().moderation().is_some_and(|moderation| {
+                    matches!(moderation.moderators, ContractModerators::Elected(_))
+                })
+            }
+        }
+    }
+}
+
+/// One requirement of a [`ContractReferenceRequirements`] declaration, named the way the
+/// declaration spells it, for the error that reports it unmet.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ContractReferenceRequirement {
+    Moderation(ContractReferenceModeration),
+}
+
+impl ContractReferenceRequirement {
+    /// The `contractRequirements` key the requirement was declared under.
+    pub fn field(&self) -> &'static str {
+        match self {
+            ContractReferenceRequirement::Moderation(_) => property_names::MODERATION,
+        }
+    }
+
+    /// The value the declaration requires, as spelled in the schema.
+    pub fn required(&self) -> &'static str {
+        match self {
+            ContractReferenceRequirement::Moderation(moderation) => moderation.as_str(),
+        }
+    }
+}
+
+impl ContractReferenceRequirements {
+    /// Whether the declaration requires nothing beyond the contract's existence.
+    pub fn is_empty(&self) -> bool {
+        self.moderation.is_none()
+    }
+
+    /// The requirements, in declaration order.
+    pub fn requirements(&self) -> impl Iterator<Item = ContractReferenceRequirement> + '_ {
+        self.moderation
+            .into_iter()
+            .map(ContractReferenceRequirement::Moderation)
+    }
+
+    /// The first requirement `contract` does not meet, `None` when it meets them all.
+    pub fn first_unmet_by(&self, contract: &DataContract) -> Option<ContractReferenceRequirement> {
+        self.requirements().find(|requirement| match requirement {
+            ContractReferenceRequirement::Moderation(moderation) => !moderation.is_met_by(contract),
+        })
+    }
+}
+
 // This enum is embedded in consensus errors, so it is consensus-serialized.
 // @append_only
 #[derive(
@@ -102,7 +206,15 @@ pub struct ByteArrayPropertySizes {
 #[serde(rename_all = "lowercase")]
 pub enum DocumentPropertyReferenceTarget {
     Identity,
-    Contract,
+    /// A data contract, which must exist when the referring document is written and meet the
+    /// declared [`ContractReferenceRequirements`], if any.
+    Contract {
+        #[serde(
+            default,
+            skip_serializing_if = "ContractReferenceRequirements::is_empty"
+        )]
+        contract_requirements: ContractReferenceRequirements,
+    },
     Token,
     /// A document of a document type whose documents can never be deleted
     /// (`canBeDeleted: false`). Only such document types may be referenced:
@@ -221,7 +333,7 @@ impl DocumentPropertyReferenceTarget {
                 permanent: false,
             }),
             DocumentPropertyReferenceTarget::Identity
-            | DocumentPropertyReferenceTarget::Contract
+            | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
             | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => None,
         }
@@ -267,7 +379,15 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
-            DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements,
+            } => {
+                write!(f, "contract")?;
+                if let Some(moderation) = contract_requirements.moderation {
+                    write!(f, " with {} moderation", moderation.as_str())?;
+                }
+                Ok(())
+            }
             DocumentPropertyReferenceTarget::Token => write!(f, "token"),
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
@@ -7519,8 +7639,20 @@ mod tests {
             "identity"
         );
         assert_eq!(
-            DocumentPropertyReferenceTarget::Contract.to_string(),
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: Default::default()
+            }
+            .to_string(),
             "contract"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                },
+            }
+            .to_string(),
+            "contract with elected moderation"
         );
         assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
         assert_eq!(
@@ -7603,7 +7735,9 @@ mod tests {
     fn reference_targets_are_exhaustively_mirrored() {
         let targets = [
             DocumentPropertyReferenceTarget::Identity,
-            DocumentPropertyReferenceTarget::Contract,
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: Default::default(),
+            },
             DocumentPropertyReferenceTarget::Token,
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
@@ -7624,7 +7758,7 @@ mod tests {
             // No `_ =>` arm: a new variant is a compile error.
             let json_tag = match target {
                 DocumentPropertyReferenceTarget::Identity => "identity",
-                DocumentPropertyReferenceTarget::Contract => "contract",
+                DocumentPropertyReferenceTarget::Contract { .. } => "contract",
                 DocumentPropertyReferenceTarget::Token => "token",
                 DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
                 DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",

@@ -526,6 +526,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document id) for every resolution, where the shipped rule awarded the
 ///     latest; DPNS contests ending from this version on follow the new rule.
 ///
+/// 24. **Contract references may require elected moderation**: a `contract`
+///     `refersTo` declaration may carry `contractRequirements`, what the referenced
+///     contract must declare beyond existing, with `moderation: "elected"` as
+///     the first requirement (meta-schema v3, `apply_property_reference` 0,
+///     `ContractReferenceRequirements` on `DocumentPropertyReferenceTarget::Contract`).
+///     The document reference validation checks it against the contract it
+///     fetched for the existence check, so it costs no further read, and
+///     refuses an unmet requirement with
+///     `ReferencedContractRequirementNotMetError` (40135). A changed
+///     `contractRequirements` is an incompatible schema change on update.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
