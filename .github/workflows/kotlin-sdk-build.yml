@@ -23,6 +23,8 @@ on:
       - 'scripts/check_sdk_parity_manifest.py'
       - 'scripts/tests/**'
       - '.github/workflows/kotlin-sdk-build.yml'
+      - '.github/scripts/kotlin-instrumented-tests.sh'
+      - '.github/actions/rust/**'
 
 permissions:
   contents: read
@@ -59,7 +61,7 @@ jobs:
           set -euo pipefail
 
           missing=()
-          for tool in cmake curl jq python3 unzip zip; do
+          for tool in cmake curl jq python3 rustup unzip zip; do
             command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
           done
           for pkg in build-essential libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config; do
@@ -70,12 +72,6 @@ jobs:
             echo "::error::Provision these in the pinned runner image; CI jobs must not install host packages."
             exit 1
           fi
-
-          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --no-modify-path --default-toolchain none
-          fi
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Validate executable SDK parity manifest
         run: |
@@ -91,19 +87,23 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME_RESOLVED" >> "$GITHUB_ENV"
           echo "$JAVA_HOME_RESOLVED/bin" >> "$GITHUB_PATH"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: >-
-            platforms;android-35
-            build-tools;35.0.0
-            ndk;28.1.13356709
-            platform-tools
+      - name: Verify prebaked Android SDK
+        run: |
+          set -euo pipefail
+          test "${ANDROID_HOME:-}" = /opt/android-sdk
+          test -x "$ANDROID_HOME/ndk/28.1.13356709/ndk-build"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -f "$ANDROID_HOME/system-images/android-35/default/x86_64/system.img"
+          command -v ci-android-emulator
+          command -v adb
+          # Do not run setup-android/sdkmanager: the SDK is pinned and root-owned.
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up repository-pinned Rust toolchain
+        uses: ./.github/actions/rust
         with:
-          targets: x86_64-linux-android
+          target: x86_64-linux-android
+          cache: false
 
       # Pinned: this runner is persistent, so cargo-ndk is provisioned in the
       # image and checked here before the NDK build can start.
@@ -121,10 +121,18 @@ jobs:
           # from a job required sudo and made the CI container mutable.
           protoc --version | grep -qx 'libprotoc 32.0'
 
+      # KVM is the only host device this job needs. The container receives it
+      # through the kvm group; no Docker socket or host package-management
+      # access is required.
+      - name: Verify KVM access
+        run: |
+          test -c /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          ls -l /dev/kvm
+
       - name: Build native library (x86_64, dev profile)
         working-directory: packages/kotlin-sdk
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.1.13356709
         run: ./build_android.sh --abi x86_64 --profile dev --verify
 
       - name: Setup Gradle
@@ -142,82 +150,9 @@ jobs:
         working-directory: packages/kotlin-sdk
         run: ./gradlew :sdk:compileDebugAndroidTestKotlin --stacktrace
 
-      # KVM is the only host device this job needs. The container receives it
-      # through the kvm group; no Docker socket or host package-management
-      # access is required.
-      - name: Verify KVM access
-        run: |
-          test -c /dev/kvm
-          test -r /dev/kvm
-          test -w /dev/kvm
-          ls -l /dev/kvm
-
-      - name: Align Android emulator configuration paths
-        run: |
-          # android-emulator-runner puts AVD data in $HOME/.android/avd.
-          # An inherited user/emulator-home override can make avdmanager
-          # write the .ini elsewhere, leaving the emulator unable to find it.
-          mkdir -p "$HOME/.android/avd"
-          {
-            printf 'ANDROID_USER_HOME=%s/.android\n' "$HOME"
-            printf 'ANDROID_EMULATOR_HOME=%s/.android\n' "$HOME"
-            printf 'ANDROID_SDK_HOME=%s\n' "$HOME"
-          } >> "$GITHUB_ENV"
-
-      - name: Run instrumented FFI smoke test (API 35 emulator)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_6
-          # Avoid sharing the default "test" AVD with other jobs on this host.
-          avd-name: platform-${{ github.run_id }}-${{ github.run_attempt }}
-          disable-animations: true
-          emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
-          working-directory: packages/kotlin-sdk
-          script: |
-            # NOTE: android-emulator-runner executes this script line by line —
-            # each line is its own `sh -c` with no shared state — so every
-            # command must be self-contained on a single line (multi-line loops
-            # or cross-line variables silently fail).
-
-            # Keep the screen on and never time out. THIS is the fix: the flake
-            # was the emulator screen turning off mid-run and RE-LOCKING the
-            # device. The mnemonic MASTER_ALIAS AES key is
-            # setUnlockedDeviceRequired(true), so once the device re-locks even
-            # an ENCRYPT throws `InvalidKeyException: Keystore operation failed`
-            # (see WalletStorage.storeMnemonic). Unlocking alone is not enough —
-            # a slower suite (more instrumented tests) crosses the screen-off
-            # deadline before its wallet tests run, which is why this branch
-            # failed where lighter ones passed. Prevent the re-lock outright.
-            adb shell settings put system screen_off_timeout 2147483647
-            adb shell svc power stayon true
-
-            # Enroll a device-wide secure lock screen (PIN) — Android Keystore
-            # refuses to generate an auth-required key
-            # (setUserAuthenticationRequired(true), used for the identity-key
-            # KEYS_ALIAS RSA pair) without one enrolled, even though nothing
-            # here ever prompts for it (private-key ENCRYPT is never auth-gated;
-            # only DECRYPT is).
-            adb shell locksettings set-pin 1234
-
-            # Unlock the keyguard. With the screen kept on above, the device now
-            # stays unlocked for the whole run instead of re-locking.
-            # Credential acceptance and keyguard dismissal can race during a
-            # cold emulator boot. Retry the complete sequence atomically, then
-            # fail loudly before tests if the device never reaches unlocked.
-            for attempt in 1 2 3; do adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; adb shell input text 1234; adb shell input keyevent KEYCODE_ENTER; sleep 2; adb shell wm dismiss-keyguard; sleep 1; adb shell dumpsys trust | grep -q 'deviceLocked=0' && exit 0; done; echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1
-
-            ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
-
-      - name: Remove this run's emulator device
-        if: always()
-        env:
-          CI_AVD_NAME: platform-${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          if [ -f "$HOME/.android/avd/$CI_AVD_NAME.ini" ]; then
-            avdmanager delete avd --name "$CI_AVD_NAME"
-          fi
+      - name: Run instrumented FFI smoke test (prebaked API 35 emulator)
+        working-directory: packages/kotlin-sdk
+        run: ci-android-emulator bash ../../.github/scripts/kotlin-instrumented-tests.sh
 
       - name: Upload test reports on failure
         if: failure()

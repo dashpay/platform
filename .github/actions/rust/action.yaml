@@ -21,6 +21,16 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Verify persistent Linux runner image contract
+      if: runner.os == 'Linux' && runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        if [ "$(cat /opt/ci/contract-version 2>/dev/null)" != 1 ]; then
+          echo '::error::This runner needs the versioned dashpay/dash-selfhosted-image (contract 1); see .github/SELF_HOSTED_RUNNER.md.'
+          exit 1
+        fi
+        command -v rustup
+
     - name: Resolve HOME path for caching
       id: resolved_home
       shell: bash
@@ -47,7 +57,7 @@ runs:
         components: ${{ inputs.components }}
 
     - name: Get protoc arch
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       shell: bash
       id: protoc_arch
       run: |
@@ -67,7 +77,7 @@ runs:
         esac
 
     - name: Restore cached protoc (v32.0)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       id: cache-protoc
       uses: actions/cache@v5
       with:
@@ -77,7 +87,7 @@ runs:
         key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
     - name: Install protoc (cached v32.0)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       id: deps-protoc
       shell: bash
       run: |
@@ -93,13 +103,21 @@ runs:
         echo "PROTOC=${PROTOC_DIR}/bin/protoc" >> "$GITHUB_ENV"
 
     - name: Save cached protoc (v32.0)
-      if: runner.os == 'Linux' && steps.cache-protoc.outputs.cache-hit != 'true'
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted' && steps.cache-protoc.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
         path: |
           ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
           ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/include
         key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
+
+    - name: Verify prebaked protoc (v32.0)
+      if: runner.os == 'Linux' && runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        set -euo pipefail
+        protoc --version | grep -qx 'libprotoc 32.0'
+        echo "PROTOC=$(command -v protoc)" >> "$GITHUB_ENV"
 
     - name: Set HOME variable to github context
       shell: bash
@@ -118,6 +136,15 @@ runs:
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
           ${{ runner.os }}/cargo/registry/
 
+    # This composite is also used by hosted release, nightly and book jobs.
+    # Keep their bootstrap path; only persistent runners require a prebaked image.
+    - name: Install native dependencies on ephemeral GitHub-hosted Linux
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends clang llvm libsnappy-dev
+
     # Linux self-hosted runners provide the compiler and native libraries in
     # the pinned image. Do not install packages or mutate system alternatives
     # from a job: the runner is intentionally non-root.
@@ -135,8 +162,8 @@ runs:
           dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
         done
         if [ ${#missing[@]} -gt 0 ]; then
-          echo "::error::Self-hosted runner image is missing: ${missing[*]}"
-          echo "::error::Provision these dependencies in the pinned image; Rust CI must not use sudo or apt."
+          echo "::error::Linux runner is missing: ${missing[*]}"
+          echo "::error::Persistent runners must provision these dependencies in the pinned image; hosted runners use the install step above."
           exit 1
         fi
         # Use clang for native C/C++ build scripts without changing the

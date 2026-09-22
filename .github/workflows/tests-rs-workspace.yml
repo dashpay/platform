@@ -124,7 +124,7 @@ jobs:
           set -euo pipefail
 
           missing=()
-          for tool in clang cmake gh jq llvm-config zip; do
+          for tool in clang cmake gh jq llvm-config rustup zip; do
             command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
           done
           for pkg in build-essential clang libgmp-dev libsnappy-dev libssl-dev llvm pkg-config; do
@@ -136,13 +136,8 @@ jobs:
             exit 1
           fi
 
-          # dtolnay/rust-toolchain drives rustup; it may install the toolchain
-          # under the runner user's home, but never needs root.
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --no-modify-path --default-toolchain none
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          fi
+          # rustup is prebaked; Setup Rust may install the repository-selected
+          # toolchain under the runner user's home, without root.
 
       - name: Setup Rust
         uses: ./.github/actions/rust
