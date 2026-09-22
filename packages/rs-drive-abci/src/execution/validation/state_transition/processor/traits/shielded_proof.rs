@@ -1053,7 +1053,22 @@ fn validate_batch_token_shielded_proofs(
                     &extra_sighash_data,
                 )
             }
-            _ => continue,
+            // Deliberately exhaustive: a batched transition that carries an Orchard bundle must
+            // have an arm above. Naming the bundle-less kinds means a new kind that does carry
+            // one stops the build here rather than silently skipping proof verification.
+            BatchedTransitionRef::Token(
+                TokenTransition::Burn(_)
+                | TokenTransition::Mint(_)
+                | TokenTransition::Transfer(_)
+                | TokenTransition::Freeze(_)
+                | TokenTransition::Unfreeze(_)
+                | TokenTransition::DestroyFrozenFunds(_)
+                | TokenTransition::Claim(_)
+                | TokenTransition::EmergencyAction(_)
+                | TokenTransition::ConfigUpdate(_)
+                | TokenTransition::DirectPurchase(_)
+                | TokenTransition::SetPriceForDirectPurchase(_),
+            ) => continue,
         };
         if let Err(e) = result {
             return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -1360,8 +1375,34 @@ fn validate_shielded_proof_v1(
                         }
                     },
                     // ShieldFromAssetLock retains proof verification in transform_into_action;
-                    // its paid-failure action comes from the asset lock.
-                    _ => return Ok(SimpleConsensusValidationResult::new()),
+                    // its paid-failure action comes from the asset lock, so it is not reached
+                    // through this path.
+                    //
+                    // Deliberately exhaustive: the remaining kinds carry no Orchard bundle, and
+                    // `has_shielded_proof_validation` keeps them out of here. Naming them means a
+                    // new shielded kind stops the build until it is given an arm above, rather
+                    // than falling through and being reported valid without a proof ever running.
+                    StateTransition::ShieldFromAssetLock(_)
+                    | StateTransition::DataContractCreate(_)
+                    | StateTransition::DataContractUpdate(_)
+                    | StateTransition::Batch(_)
+                    | StateTransition::IdentityCreate(_)
+                    | StateTransition::IdentityTopUp(_)
+                    | StateTransition::IdentityCreditWithdrawal(_)
+                    | StateTransition::IdentityUpdate(_)
+                    | StateTransition::IdentityCreditTransfer(_)
+                    | StateTransition::MasternodeVote(_)
+                    | StateTransition::IdentityCreditTransferToAddresses(_)
+                    | StateTransition::IdentityCreateFromAddresses(_)
+                    | StateTransition::IdentityTopUpFromAddresses(_)
+                    | StateTransition::AddressFundsTransfer(_)
+                    | StateTransition::AddressFundingFromAssetLock(_)
+                    | StateTransition::AddressCreditWithdrawal(_)
+                    | StateTransition::IdentityKeyLimitsUpdate(_)
+                    | StateTransition::ContractUserModeration(_)
+                    | StateTransition::ContractFeeClaim(_) => {
+                        return Ok(SimpleConsensusValidationResult::new())
+                    }
                 };
 
     match result {
