@@ -255,7 +255,8 @@
                   {
                     "required": ["type", "identityProperty"],
                     "properties": {
-                      "keyIdProperty": false
+                      "keyIdProperty": false,
+                      "propertyAgreement": false
                     }
                   }
                 ]

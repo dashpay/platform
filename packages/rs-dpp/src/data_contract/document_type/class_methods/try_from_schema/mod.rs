@@ -1839,7 +1839,7 @@ mod tests {
     }
 
     fn u32_key_id_schema() -> serde_json::Value {
-        json!({ "type": "integer", "minimum": 0, "maximum": 4294967295 })
+        json!({ "type": "integer", "minimum": 0, "maximum": 4294967295u64 })
     }
 
     fn owner_key_refers_to() -> serde_json::Value {
@@ -1908,7 +1908,7 @@ mod tests {
             json!({ "type": "integer", "minimum": 0, "maximum": 255 }),
             // Wider than a key id
             json!({ "type": "integer", "minimum": 0 }),
-            json!({ "type": "integer", "minimum": -1, "maximum": 4294967295 }),
+            json!({ "type": "integer", "minimum": -1, "maximum": 4294967295u64 }),
             // Not an integer at all
             json!({ "type": "string", "maxLength": 10 }),
         ] {

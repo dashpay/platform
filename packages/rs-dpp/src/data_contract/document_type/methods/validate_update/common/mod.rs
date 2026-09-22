@@ -2113,6 +2113,8 @@ mod tests {
         /// checking a stored key id against the owner's keys.
         #[test]
         fn should_return_invalid_result_when_a_key_id_reference_is_added_removed_or_changed() {
+            use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
+
             let platform_version = PlatformVersion::latest();
             let owner_key = platform_value!({
                 "type": "identityPublicKey",
@@ -2155,10 +2157,13 @@ mod tests {
                     // through a type built without the reference, then swap
                     // the schema in
                     let mut document_type = key_id_document_type(None, platform_version);
-                    let schema = document_type.schema_mut();
-                    schema
+                    document_type
+                        .schema_mut()
                         .get_mut("properties")
-                        .and_then(|properties| properties.get_mut("senderKeyId"))
+                        .expect("the schema should be a map")
+                        .expect("properties should exist")
+                        .get_mut("senderKeyId")
+                        .expect("properties should be a map")
                         .expect("senderKeyId should exist")
                         .insert(
                             "refersTo".to_string(),
