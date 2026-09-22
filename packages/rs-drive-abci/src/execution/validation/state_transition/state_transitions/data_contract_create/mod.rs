@@ -5796,6 +5796,28 @@ mod tests {
             );
         }
 
+        /// An agreement is checked at write time by comparing index key
+        /// encodings, which a typed array does not have, so one between two
+        /// typed arrays of the same element type is refused at registration
+        /// rather than refusing every write that carries them.
+        #[tokio::test]
+        async fn should_reject_agreement_on_typed_array_properties() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-typed-array.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.reason().contains("not typed arrays")
+            );
+        }
+
         /// `$ownerId` and `$creatorId` may sit on the referenced side of an
         /// agreement when the referring side is an identifier and, for
         /// `$creatorId`, the referenced type records creator ids

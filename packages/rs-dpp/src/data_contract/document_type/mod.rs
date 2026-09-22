@@ -96,6 +96,8 @@ pub(crate) mod property_names {
     pub const MAXIMUM: &str = "maximum";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
+    pub const ITEMS: &str = "items";
+    pub const UNIQUE_ITEMS: &str = "uniqueItems";
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";

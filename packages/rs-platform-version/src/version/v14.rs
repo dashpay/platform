@@ -556,7 +556,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
-/// 25. **Key references on the writer's own identity**: an `identityPublicKey`
+/// 25. **Typed arrays of scalars in document schemas**: a document property
+///     may be `type: "array"` with an `items` element schema instead of
+///     `byteArray` (meta-schema v3, `parse_typed_array` 0,
+///     `DocumentPropertyType::TypedArray`). An element is an integer, a
+///     number, a string, a boolean, a byte array or an identifier; objects
+///     and arrays of arrays are refused. On the array `minItems` and
+///     `maxItems` count elements, `maxItems` is required (with `minItems`
+///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
+///     (1024), and `uniqueItems` refuses a document repeating an element.
+///     The array is stored inline, a varint element count followed by the
+///     elements, and cannot be an index property or one side of a
+///     `propertyAgreement`. Its identifier and byte array elements are
+///     conversion paths (`find_identifier_and_binary_paths` 1). A byte array
+///     refuses `items`, and an identifier (a byte array with the identifier
+///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
+///     no byte repeat.
+///
+/// 26. **Key references on the writer's own identity**: an `identityPublicKey`
 ///     `refersTo` declaration may sit on the key id property itself, an
 ///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
 ///     `u32`), naming through `identityProperty` whose key the value is;

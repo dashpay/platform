@@ -21,7 +21,7 @@ use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, OWNER_ID};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
-use array::ArrayItemType;
+use array::{ArrayItemType, TypedArrayProperty};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
@@ -748,9 +748,18 @@ pub enum DocumentPropertyType {
     Boolean,
     Date,
     Object(IndexMap<String, DocumentProperty>),
+    /// A list of elements of one type with no element count bounds. The
+    /// schema parser never produces it: a typed array property parses to
+    /// [`DocumentPropertyType::TypedArray`], which shares its encoding.
     Array(ArrayItemType),
     VariableTypeArray(Vec<ArrayItemType>),
     IdentifierWithReference(DocumentPropertyReferenceTarget),
+    /// A typed array property (`type: "array"` with an `items` element
+    /// schema), from protocol version 14: the element type with the
+    /// `minItems` / `maxItems` element count bounds and `uniqueItems`. Stored
+    /// inline like [`DocumentPropertyType::Array`], a varint element count
+    /// followed by the elements.
+    TypedArray(TypedArrayProperty),
     /// A `u32` key id carrying a `refersTo: identityPublicKey` declaration
     /// with `identityProperty`: the value is the id of a key of the named
     /// identity, which must exist and not be disabled when the document is
@@ -819,7 +828,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::Boolean => "boolean".to_string(),
             DocumentPropertyType::Date => "date".to_string(),
             DocumentPropertyType::Object(_) => "object".to_string(),
-            DocumentPropertyType::Array(_) => "array".to_string(),
+            DocumentPropertyType::Array(_) | DocumentPropertyType::TypedArray(_) => {
+                "array".to_string()
+            }
             DocumentPropertyType::VariableTypeArray(_) => "variableTypeArray".to_string(),
         }
     }
@@ -851,7 +862,7 @@ impl DocumentPropertyType {
                 .iter()
                 .map(|(_, sub_field)| sub_field.property_type.min_size())
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::TypedArray(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Some(32)
@@ -900,6 +911,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::TypedArray(typed_array) => {
+                Ok(Some(typed_array.min_encoded_size()))
+            }
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Ok(Some(32))
             }
@@ -947,6 +961,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::TypedArray(typed_array) => {
+                Ok(Some(typed_array.max_encoded_size()))
+            }
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Ok(Some(32))
             }
@@ -980,7 +997,7 @@ impl DocumentPropertyType {
                 .iter()
                 .map(|(_, sub_field)| sub_field.property_type.max_size())
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::TypedArray(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Some(32)
@@ -1019,7 +1036,8 @@ impl DocumentPropertyType {
             DocumentPropertyType::String(_)
             | DocumentPropertyType::Object(_)
             | DocumentPropertyType::Array(_)
-            | DocumentPropertyType::VariableTypeArray(_) => None,
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => None,
         }
     }
 
@@ -1158,6 +1176,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Value::Identifier(rng.gen())
             }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.random_value(rng),
         }
     }
 
@@ -1210,6 +1229,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Value::Identifier(rng.gen())
+            }
+            DocumentPropertyType::TypedArray(typed_array) => {
+                typed_array.random_sub_filled_value(rng)
             }
         }
     }
@@ -1264,6 +1286,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Value::Identifier(rng.gen())
             }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.random_filled_value(rng),
         }
     }
 
@@ -1516,9 +1539,24 @@ impl DocumentPropertyType {
                     Ok((Some(Value::Map(values)), false))
                 }
             }
-            DocumentPropertyType::Array(_array_field_type) => Err(DataContractError::Unsupported(
-                "serialization of arrays not yet supported".to_string(),
-            )),
+            DocumentPropertyType::Array(item_type)
+            | DocumentPropertyType::TypedArray(TypedArrayProperty { item_type, .. }) => {
+                // Mirrors the encoding: a varint element count, then the
+                // elements. The count comes from the serialized document, so
+                // it never sizes an allocation; every element takes at least
+                // one byte, so a count the document cannot hold fails once
+                // the input runs out.
+                let count: usize = buf.read_varint().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading varint of array element count".to_string(),
+                    )
+                })?;
+                let mut items = Vec::new();
+                for _ in 0..count {
+                    items.push(item_type.read_from(buf)?);
+                }
+                Ok((Some(Value::Array(items)), false))
+            }
             DocumentPropertyType::VariableTypeArray(_) => Err(DataContractError::Unsupported(
                 "serialization of variable type arrays not yet supported".to_string(),
             )),
@@ -1724,7 +1762,11 @@ impl DocumentPropertyType {
                     Err(get_field_type_matching_error(&value).into())
                 }
             }
-            DocumentPropertyType::Array(array_field_type) => {
+            DocumentPropertyType::Array(array_field_type)
+            | DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type: array_field_type,
+                ..
+            }) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -1879,7 +1921,11 @@ impl DocumentPropertyType {
                 len_prepended_vec.append(&mut r_vec);
                 Ok(len_prepended_vec)
             }
-            DocumentPropertyType::Array(array_field_type) => {
+            DocumentPropertyType::Array(array_field_type)
+            | DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type: array_field_type,
+                ..
+            }) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -1990,13 +2036,14 @@ impl DocumentPropertyType {
                     "we should never try encoding an object".to_string(),
                 ),
             )),
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try encoding an array".to_string(),
-                    ),
-                ))
-            }
+            // Arrays are never index keys: the parser refuses an index on one
+            DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::DataContractError(
+                DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an array".to_string(),
+                ),
+            )),
         }
     }
 
@@ -2113,13 +2160,13 @@ impl DocumentPropertyType {
                     "we should never try decoding an object".to_string(),
                 ),
             )),
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try decoding an array".to_string(),
-                    ),
-                ))
-            }
+            DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::DataContractError(
+                DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try decoding an array".to_string(),
+                ),
+            )),
         }
     }
 
@@ -2245,7 +2292,10 @@ impl DocumentPropertyType {
                     "we should never try encoding an object".to_string(),
                 ))
             }
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
+            // A string names one value, never a list of them
+            DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => {
                 Err(DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding an array".to_string(),
                 ))
@@ -3122,7 +3172,11 @@ impl DocumentPropertyType {
             }
 
             // Handle Array type - sanitize all elements
-            (DocumentPropertyType::Array(item_type), Value::Array(_)) => {
+            (DocumentPropertyType::Array(item_type), Value::Array(_))
+            | (
+                DocumentPropertyType::TypedArray(TypedArrayProperty { item_type, .. }),
+                Value::Array(_),
+            ) => {
                 if let Value::Array(items) = value {
                     for item in items.iter_mut() {
                         item_type.sanitize_value_mut(item);
@@ -5185,14 +5239,159 @@ mod tests {
         assert_eq!(value, Some(Value::Bytes(vec![10, 20, 30])));
     }
 
+    fn typed_array(item_type: ArrayItemType) -> DocumentPropertyType {
+        DocumentPropertyType::TypedArray(TypedArrayProperty {
+            item_type,
+            min_items: None,
+            max_items: 8,
+            unique_items: false,
+        })
+    }
+
     #[test]
-    fn test_read_optionally_from_array_returns_error() {
+    fn should_round_trip_every_array_element_type_through_encode_and_read_optionally_from() {
         use std::io::BufReader;
-        let prop = DocumentPropertyType::Array(ArrayItemType::Integer);
+        for (item_type, items) in [
+            (
+                ArrayItemType::Integer,
+                vec![Value::I64(i64::MIN), Value::I64(-1), Value::I64(i64::MAX)],
+            ),
+            (
+                ArrayItemType::Number,
+                vec![Value::Float(-0.5), Value::Float(1e300)],
+            ),
+            (
+                ArrayItemType::String(None, Some(20)),
+                vec![Value::Text("".to_string()), Value::Text("über".to_string())],
+            ),
+            (
+                ArrayItemType::ByteArray(Some(1), Some(40)),
+                vec![Value::Bytes(vec![0xFF]), Value::Bytes(vec![7; 40])],
+            ),
+            // Fixed-size elements read back as the fixed-size value kinds
+            (
+                ArrayItemType::ByteArray(Some(32), Some(32)),
+                vec![Value::Bytes32([0x80; 32])],
+            ),
+            (
+                ArrayItemType::Identifier,
+                vec![Value::Identifier([1; 32]), Value::Identifier([2; 32])],
+            ),
+            (
+                ArrayItemType::Boolean,
+                vec![Value::Bool(true), Value::Bool(false)],
+            ),
+        ] {
+            for property_type in [
+                typed_array(item_type.clone()),
+                DocumentPropertyType::Array(item_type.clone()),
+            ] {
+                for items in [items.clone(), vec![]] {
+                    let value = Value::Array(items);
+                    // The document serializer writes the presence flag of a
+                    // property that is not required itself
+                    let encoded = property_type
+                        .encode_value_ref_with_size(&value, true)
+                        .expect("encodes");
+                    let mut reader = BufReader::new(encoded.as_slice());
+                    let (decoded, finished) = property_type
+                        .read_optionally_from(&mut reader, true)
+                        .expect("decodes");
+                    assert_eq!(decoded, Some(value.clone()), "{item_type:?}");
+                    assert!(!finished);
+
+                    let mut with_marker = vec![1];
+                    with_marker.extend(&encoded);
+                    let mut reader = BufReader::new(with_marker.as_slice());
+                    let (decoded, _) = property_type
+                        .read_optionally_from(&mut reader, false)
+                        .expect("decodes behind a presence flag");
+                    assert_eq!(decoded, Some(value), "{item_type:?} behind a presence flag");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn should_refuse_an_array_whose_elements_run_past_the_serialized_document() {
+        use std::io::BufReader;
+        // One element claimed, two of its eight bytes present
         let data: &[u8] = &[1, 2, 3];
         let mut reader = BufReader::new(data);
-        let result = prop.read_optionally_from(&mut reader, true);
-        assert!(result.is_err());
+        let result = typed_array(ArrayItemType::Integer).read_optionally_from(&mut reader, true);
+        assert!(matches!(
+            result,
+            Err(DataContractError::CorruptedSerialization(_))
+        ));
+
+        // A count no document could hold fails when the input runs out,
+        // without sizing anything by it
+        let mut data = u64::MAX.encode_var_vec();
+        data.push(1);
+        let mut reader = BufReader::new(data.as_slice());
+        let result = typed_array(ArrayItemType::Boolean).read_optionally_from(&mut reader, true);
+        assert!(matches!(
+            result,
+            Err(DataContractError::CorruptedSerialization(_))
+        ));
+    }
+
+    #[test]
+    fn should_refuse_malformed_identifier_and_boolean_array_elements() {
+        use std::io::BufReader;
+        // An identifier element carries its length, which must be 32
+        let mut data = vec![1];
+        data.extend(31usize.encode_var_vec());
+        data.extend([5; 31]);
+        let mut reader = BufReader::new(data.as_slice());
+        assert!(matches!(
+            typed_array(ArrayItemType::Identifier).read_optionally_from(&mut reader, true),
+            Err(DataContractError::CorruptedSerialization(_))
+        ));
+
+        // A boolean element is written as 0 or 1
+        let data: &[u8] = &[1, 2];
+        let mut reader = BufReader::new(data);
+        assert!(matches!(
+            typed_array(ArrayItemType::Boolean).read_optionally_from(&mut reader, true),
+            Err(DataContractError::CorruptedSerialization(_))
+        ));
+    }
+
+    #[test]
+    fn should_bound_a_typed_array_by_its_item_counts_times_its_element_bounds() {
+        let pv = PlatformVersion::latest();
+        let bounded = |item_type, min_items, max_items| {
+            DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type,
+                min_items,
+                max_items,
+                unique_items: true,
+            })
+        };
+
+        // Identifiers carry a one-byte length prefix: 33 bytes each
+        let identifiers = bounded(ArrayItemType::Identifier, Some(2), 64);
+        assert_eq!(identifiers.min_byte_size(pv).unwrap(), Some(1 + 2 * 33));
+        assert_eq!(identifiers.max_byte_size(pv).unwrap(), Some(1 + 64 * 33));
+
+        // A string element's maxLength counts characters of up to four bytes
+        let strings = bounded(ArrayItemType::String(Some(3), Some(40)), None, 200);
+        assert_eq!(strings.min_byte_size(pv).unwrap(), Some(1));
+        assert_eq!(
+            strings.max_byte_size(pv).unwrap(),
+            Some(2 + 200 * (2 + 160))
+        );
+
+        // Unbounded, or past what a u16 holds, reports u16::MAX
+        let unbounded_elements = bounded(ArrayItemType::String(None, None), None, 4);
+        assert_eq!(
+            unbounded_elements.max_byte_size(pv).unwrap(),
+            Some(u16::MAX)
+        );
+        let saturated = bounded(ArrayItemType::String(None, Some(5000)), Some(1024), 1024);
+        assert_eq!(saturated.max_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(saturated.min_byte_size(pv).unwrap(), Some(2 + 1024));
     }
 
     #[test]

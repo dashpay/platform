@@ -345,6 +345,18 @@ pub(super) fn validate_data_contract_references_v0(
                         "agreement properties must be plain values, not object containers",
                     ));
                 }
+                // The write-time check compares index key encodings, which a
+                // list does not have, so an agreement on one would never hold
+                if matches!(referring_type, DocumentPropertyType::TypedArray(_))
+                    || matches!(
+                        referenced.property_type,
+                        DocumentPropertyType::TypedArray(_)
+                    )
+                {
+                    return Ok(invalid(
+                        "agreement properties must be single values, not typed arrays",
+                    ));
+                }
                 if !same_value_kind(referring_type, &referenced.property_type) {
                     return Ok(invalid(
                         "the two properties must share one value kind: a cross-kind \

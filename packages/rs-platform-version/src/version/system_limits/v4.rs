@@ -50,12 +50,16 @@ use crate::version::system_limits::SystemLimits;
 /// * Elected moderation teams (protocol version 14): a contract that declares an elected
 ///   moderation team sets its join window and vote window between one day and four weeks,
 ///   and its challenge cool-down between two weeks and three years, all in seconds.
+/// * Typed array document properties (protocol version 14): a typed array property declares
+///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
+///   earlier tables, whose parsers never read it).
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     // Use the protocol's existing data-contract schema-depth ceiling as the conservative
     // instance budget, bounding pre-schema work well above known document requirements.
     max_document_value_depth: Some(256),
+    max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
