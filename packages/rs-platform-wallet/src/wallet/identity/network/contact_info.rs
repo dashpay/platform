@@ -18,11 +18,10 @@
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
-use super::signing_key::available_signing_key;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -539,6 +538,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // here; the encrypt step below reuses these bytes.
         let plaintext = encode_private_data_bounded(&metadata)?;
 
+        let dashpay_contract = super::dashpay_contract()?;
+
         // 1. Local state first — works offline and feeds SwiftData.
         let (established_count, identity_index, identity, root_key_id) = {
             let mut wm = self.wallet_manager.write().await;
@@ -563,6 +564,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             let established_count = managed.dashpay().established_contacts().len();
             let identity_index = managed.identity_index;
+            // Key resolution is deferred until after the wallet-manager lock is
+            // dropped below — `usable_authentication_key` now takes `signer`,
+            // and an external signer callback must never run while holding
+            // this lock (see `should_release_profile_wallet_lock_before_signer_callback`).
             let identity = managed.identity.clone();
             // Shared own-ECDH-root selector (same policy as the
             // contact-request send path); `Option` preserved — a missing
@@ -594,13 +599,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             );
             return Ok(ContactInfoPublishOutcome::SkippedWatchOnly);
         };
-        let signing_key = available_signing_key(
+        let signing_key = super::usable_authentication_key(
             &identity,
             signer,
-            Purpose::AUTHENTICATION,
+            dashpay_contract.id(),
+            "contactInfo",
             &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
             &[KeyType::ECDSA_SECP256K1],
-            false,
         )
         .map_err(dash_sdk::Error::from)?
         .cloned()
@@ -747,7 +752,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             creator_id: None,
         });
 
-        let dashpay_contract = super::dashpay_contract()?;
         let document_type = dashpay_contract
             .document_type_for_name("contactInfo")
             .map_err(|e| {

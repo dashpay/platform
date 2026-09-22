@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL THE RELEASE CARRYING PROTOCOL V14 SHIPS — FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once the release carrying protocol v14 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -100,7 +100,8 @@
                 "contract",
                 "token",
                 "permanentDocument",
-                "identityPublicKey"
+                "identityPublicKey",
+                "deletableDocument"
               ]
             },
             "contractId": {
@@ -125,7 +126,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type; it must forbid deletion (canBeDeleted: false)",
+              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -139,18 +140,35 @@
               "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
             },
             "propertyAgreement": {
-              "description": "permanentDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time; both properties must exist and share one property type, validated at contract registration",
+              "description": "permanentDocument and deletableDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
               "propertyNames": {
-                "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                "anyOf": [
+                  {
+                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                  },
+                  {
+                    "const": "$ownerId"
+                  }
+                ]
               },
               "additionalProperties": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 256,
-                "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                  },
+                  {
+                    "enum": [
+                      "$ownerId",
+                      "$creatorId"
+                    ]
+                  }
+                ]
               }
             }
           },
@@ -161,7 +179,9 @@
           "allOf": [
             {
               "if": {
-                "properties": { "type": { "const": "permanentDocument" } },
+                "properties": {
+                  "type": { "enum": ["permanentDocument", "deletableDocument"] }
+                },
                 "required": ["type"]
               },
               "then": {
@@ -457,13 +477,36 @@
             1,
             2
           ],
-          "description": "0 - DocumentOwner (default), 1 - ContractOwner, 2 - PreferContractOwner"
+          "description": "Who the contract owner offers to have pay the gas (storage and processing fee) of this token-paid action: 0 - DocumentOwner (default, the contract owner never pays), 1 - ContractOwner (pays, and accepts every request), 2 - PreferContractOwner (pays when their balance covers the fee, but refuses a transition that insists on them). The transition asks with the same values in $tokenPaymentInfo.gasFeesPaidBy: DocumentOwner always pays itself, PreferContractOwner is accepted by every offer, and ContractOwner is accepted only by offer 1, else the transition is rejected (GasFeesPaidByNotAllowedError, code 40129). Acted on from protocol version 14; a failed transition is always paid for by its signer."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "True if a transition may leave $tokenPaymentInfo out for this action and pay no token, in which case its signer pays the gas in credits as for an action without a token cost and no gas sponsorship applies; with $tokenPaymentInfo present the token is charged exactly as for a required cost, and an insufficient token balance is a rejection, never a fallback to credits. Default false: the token payment is required (RequiredTokenPaymentInfoNotSetError, code 40115). Available from protocol version 14."
         }
       },
       "required": [
         "tokenPosition",
         "amount"
       ],
+      "additionalProperties": false
+    },
+    "documentActionFee": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807,
+          "description": "Credits added to the contract's owner pot, which the contract owner claims."
+        },
+        "moderators": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807,
+          "description": "Credits added to the contract's moderators pot, which the contract's moderation team shares equally. Requires the contract config to declare moderation."
+        }
+      },
+      "minProperties": 1,
       "additionalProperties": false
     }
   },
@@ -575,7 +618,7 @@
           },
           "rangeCountable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\"."
+            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Implies `countable: \"countable\"` when `countable` is omitted, as the doctype-level `rangeCountable` implies `documentsCountable`; an explicit `\"countableAllowingOffset\"` is kept, and an explicit `\"notCountable\"` is rejected as a contradiction."
           },
           "summable": {
             "type": "string",
@@ -585,7 +628,7 @@
           },
           "rangeSummable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set."
+            "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set; `averageable` satisfies this, since it implies `summable`."
           },
           "averageable": {
             "type": "string",
@@ -637,11 +680,11 @@
           },
           "rankedSummable": {
             "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property, so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true`. Adds the Sum ranking axis only."
+            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property, so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true` (or `rangeAverageable: true`, which implies it). Adds the Sum ranking axis only."
           },
           "rankedAverageable": {
             "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`). Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
+            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`), or the explicit `rangeCountable: true` + `rangeSummable: true` pair. Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
           },
           "timeRange": {
             "type": "object",
@@ -681,7 +724,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or an identifier property carrying a refersTo declaration (identity, contract, token, or permanentDocument). Must not repeat one of the index's listed properties. Available from protocol version 14."
+            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or an identifier property carrying a refersTo declaration (identity, contract, token, permanentDocument, or deletableDocument). Must not repeat one of the index's listed properties. Available from protocol version 14."
           },
           "preallocated": {
             "type": "boolean",
@@ -697,12 +740,17 @@
           "name"
         ],
         "dependentRequired": {
-          "rangeCountable": ["countable"],
-          "rangeSummable": ["summable"],
           "rangeAverageable": ["averageable"]
         },
-        "$comment": "The ranked prerequisites are value-sensitive, unlike the range* rows above: `dependentRequired` fires on key *presence*, so listing them there would make an explicit `\"rankedCountable\": false` — a written-out opt-out, which the structural parser accepts as such — demand a `rangeCountable` the index does not need. The range* rows keep presence semantics because that is what they shipped with in v2 and changing them would move historical validation results.",
+        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeSummable` accepts `averageable` in place of `summable`, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. `rangeCountable` has no row at all: it implies `countable`, as it does at the doctype level, and the parser promotes an omitted `countable`. The remaining range rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeSummable\": false` still needs a `summable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
         "allOf": [
+          {
+            "if": {
+              "required": ["rangeSummable"],
+              "not": { "required": ["averageable"] }
+            },
+            "then": { "required": ["summable"] }
+          },
           {
             "if": {
               "properties": {
@@ -710,21 +758,24 @@
                   "anyOf": [{ "const": true }, { "type": "object" }]
                 }
               },
-              "required": ["rankedCountable"]
+              "required": ["rankedCountable"],
+              "not": { "required": ["rangeAverageable"] }
             },
             "then": { "required": ["rangeCountable"] }
           },
           {
             "if": {
               "properties": { "rankedSummable": { "const": true } },
-              "required": ["rankedSummable"]
+              "required": ["rankedSummable"],
+              "not": { "required": ["rangeAverageable"] }
             },
             "then": { "required": ["rangeSummable"] }
           },
           {
             "if": {
               "properties": { "rankedAverageable": { "const": true } },
-              "required": ["rankedAverageable"]
+              "required": ["rankedAverageable"],
+              "not": { "required": ["rangeCountable", "rangeSummable"] }
             },
             "then": { "required": ["rangeAverageable"] }
           }
@@ -826,7 +877,7 @@
     },
     "rangeSummable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Rarely useful — range-sum on the primary key with no where-clause filter is unusual; most callers want per-index `rangeSummable` instead. Set this only when you need a provable global range-sum tree."
+      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set; `documentsAverageable` satisfies this, since it implies `documentsSummable`. Rarely useful — range-sum on the primary key with no where-clause filter is unusual; most callers want per-index `rangeSummable` instead. Set this only when you need a provable global range-sum tree."
     },
     "documentsAverageable": {
       "type": "string",
@@ -838,9 +889,52 @@
       "type": "boolean",
       "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `documentsAverageable` to be set. Same caveat as `rangeSummable` — rarely useful on the primary key; per-index `rangeAverageable` is what most callers want."
     },
+    "canBeDeletedByModerators": {
+      "type": "boolean",
+      "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract. Independent of `canBeDeleted`, which rules what a document's own owner may do. Requires the contract to declare `moderation` in its config, and is refused on a type that keeps history, is indexOnly, or restricts document creation. Fixed when the document type is created. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it. `canBeDeletedByModeratorsFor` limits it to a window after a document's last modification. Available from protocol version 14."
+    },
+    "canBeDeletedByModeratorsFor": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "For how many seconds after a document's last modification the contract's moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer or a purchase does not. Absent means no limit. Requires `canBeDeletedByModerators: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Fixed when the document type is created. Says nothing about what a document's own owner may do. Available from protocol version 14."
+    },
     "indexOnly": {
       "type": "boolean",
       "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index (except a `skipIfAbsent` index's optional first property), $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
+    },
+    "actionFees": {
+      "type": "object",
+      "description": "A fixed fee in credits charged, on top of the gas, for actions on documents of this type, split between the contract's owner pot and its moderators pot (each paid out by a ContractFeeClaim state transition). Whoever pays the gas of the action pays its fee. A transition on a priced action must name the declared owner and moderators amounts, and for feeMultiplier pricing the fee multiplier its signer knew with the increase in percent they accept, in $actionFeeAgreement; it is refused without one (DocumentActionFeeAgreementNotSetError, code 40132), with other amounts or another pricing (code 40133), or when the epoch's multiplier rose beyond the accepted increase (code 40134). At least one action must be priced and a priced action must charge something. Fixed when the document type is published: a contract update cannot add, change or remove the fees of an existing document type. Available from protocol version 14.",
+      "properties": {
+        "pricing": {
+          "type": "string",
+          "enum": [
+            "feeMultiplier",
+            "fixed"
+          ],
+          "description": "feeMultiplier (default): the declared amounts are scaled by the fee multiplier of the epoch the action executes in. fixed: the declared amounts are charged as written."
+        },
+        "create": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "replace": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "delete": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "transfer": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "update_price": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "purchase": {
+          "$ref": "#/$defs/documentActionFee"
+        }
+      },
+      "additionalProperties": false
     },
     "tokenCost": {
       "type": "object",
@@ -925,6 +1019,22 @@
         "type": "string"
       }
     },
+    "immutable": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128), unless the property is listed under immutableAllowSetting and the stored document has no value for it yet, or the replace removes a refersTo deletableDocument reference whose referenced document has been deleted. Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property that is not transient: system properties ($-prefixed) are excluded because the platform manages them, nested paths are not accepted (list the containing object to freeze it whole), and a transient property is never stored so it could never be written once frozen. On contract update the list may gain entries but never lose one. Available from protocol version 14."
+    },
+    "immutableAllowSetting": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "The subset of the immutable properties a replace may still set while the stored document has no value for them: a first-time set is accepted, after which the property is frozen like the rest of the immutable list (it can neither change nor be removed). Every entry must also appear in immutable; it is only meaningful for optional properties, since a required one always has a value from creation. On contract update an entry may be dropped (tightening) at any time, but may only be added for a property that becomes immutable in the same update: an already-immutable property cannot start allowing a set. Available from protocol version 14."
+    },
     "additionalProperties": {
       "type": "boolean",
       "const": false
@@ -968,8 +1078,17 @@
     "additionalProperties"
   ],
   "dependentRequired": {
-    "rangeSummable": ["documentsSummable"],
     "rangeAverageable": ["documentsAverageable"]
   },
+  "allOf": [
+    {
+      "$comment": "`documentsAverageable` is sugar for `documentsCountable` + `documentsSummable`, so it satisfies `rangeSummable`'s prerequisite exactly as `documentsSummable` does; an `if`/`then` pair because `dependentRequired` cannot express the alternative, with the presence semantics the row shipped with in v2.",
+      "if": {
+        "required": ["rangeSummable"],
+        "not": { "required": ["documentsAverageable"] }
+      },
+      "then": { "required": ["documentsSummable"] }
+    }
+  ],
   "additionalProperties": false
 }

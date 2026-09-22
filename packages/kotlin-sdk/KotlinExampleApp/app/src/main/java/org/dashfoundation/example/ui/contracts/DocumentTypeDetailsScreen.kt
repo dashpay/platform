@@ -155,6 +155,19 @@ fun DocumentTypeDetailsScreen(
                     "Mutable",
                     if (capabilities.documentsMutable) "Yes" else "No",
                 )
+                val immutability = documentTypeImmutability(schema)
+                if (!immutability.isEmpty) {
+                    LabeledContent(
+                        "Immutable Properties",
+                        immutability.immutable.sorted().joinToString(", "),
+                    )
+                    if (immutability.allowSetting.isNotEmpty()) {
+                        LabeledContent(
+                            "Settable Once While Absent",
+                            immutability.allowSetting.sorted().joinToString(", "),
+                        )
+                    }
+                }
                 LabeledContent(
                     "Can Be Deleted",
                     if (capabilities.canBeDeleted) "Yes" else "No",

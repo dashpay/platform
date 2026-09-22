@@ -1,10 +1,12 @@
 //! Shared JNI plumbing: JVM caching, panic guards, exception throwing.
 
 use dash_network::ffi::FFINetwork;
-use jni::objects::JThrowable;
+use jni::objects::{JThrowable, JValue};
+use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
 use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
+    platform_wallet_ffi_result_free, PlatformWalletFFIConsensusErrorKind, PlatformWalletFFIResult,
+    PlatformWalletFFIResultCode,
 };
 use std::ffi::CStr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -59,6 +61,18 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
     if result.code == PlatformWalletFFIResultCode::Success {
         return false;
     }
+    throw_pwffi_result(env, &result);
+    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
+    unsafe { platform_wallet_ffi_result_free(&mut result) };
+    true
+}
+
+/// Throw the `DashSDKException` for a non-`Success` `result`, leaving its
+/// message for the caller to free. The exception code is the result code
+/// shifted by [`PWFFI_CODE_OFFSET`]; a result that carries a consensus
+/// rejection (`consensus_code != 0`) hands its code and kind to the exception
+/// as well, so Kotlin can branch on them instead of on the message.
+pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
     let message = if result.message.is_null() {
         format!("platform-wallet error (code {})", result.code as i32)
     } else {
@@ -67,10 +81,18 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
             .to_string_lossy()
             .into_owned()
     };
-    throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
-    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
-    unsafe { platform_wallet_ffi_result_free(&mut result) };
-    true
+    let code = result.code as i32 + PWFFI_CODE_OFFSET;
+    if result.consensus_code == 0 {
+        throw_sdk_exception(env, code, &message);
+    } else {
+        throw_sdk_consensus_exception(
+            env,
+            code,
+            &message,
+            result.consensus_code,
+            result.consensus_kind,
+        );
+    }
 }
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback
@@ -84,6 +106,41 @@ pub const SDK_EXCEPTION_CLASS: &str = "org/dashfoundation/dashsdk/ffi/DashSDKExc
 /// `RuntimeException` if the class or constructor lookup fails (e.g. the
 /// library is loaded outside the Kotlin SDK).
 pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
+    throw_sdk_exception_with(env, code, message, "(ILjava/lang/String;)V", &[]);
+}
+
+/// Throw `DashSDKException(code, message, consensusCode, consensusKind)` for
+/// a failure that is a consensus rejection. `consensus_kind` crosses as its
+/// discriminant, which Kotlin's `ConsensusErrorKind.fromNative` decodes. Same
+/// `RuntimeException` fallback as [`throw_sdk_exception`].
+pub fn throw_sdk_consensus_exception(
+    env: &mut JNIEnv,
+    code: i32,
+    message: &str,
+    consensus_code: u32,
+    consensus_kind: PlatformWalletFFIConsensusErrorKind,
+) {
+    // Consensus codes top out in the 40000s, far inside a `jint`; one that
+    // somehow is not goes out as `jint::MAX` rather than wrapping negative.
+    let consensus_code = jint::try_from(consensus_code).unwrap_or(jint::MAX);
+    throw_sdk_exception_with(
+        env,
+        code,
+        message,
+        "(ILjava/lang/String;II)V",
+        &[consensus_code, consensus_kind as jint],
+    );
+}
+
+/// Construct `DashSDKException` through the constructor `signature` names,
+/// passing `code`, `message` and then `extra`, and throw it.
+fn throw_sdk_exception_with(
+    env: &mut JNIEnv,
+    code: i32,
+    message: &str,
+    signature: &str,
+    extra: &[jint],
+) {
     // If an exception is already pending we must not call further JNI
     // functions that would themselves throw.
     if env.exception_check().unwrap_or(false) {
@@ -91,11 +148,9 @@ pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
     }
     let thrown = (|| -> jni::errors::Result<()> {
         let jmsg = env.new_string(message)?;
-        let obj = env.new_object(
-            SDK_EXCEPTION_CLASS,
-            "(ILjava/lang/String;)V",
-            &[code.into(), (&jmsg).into()],
-        )?;
+        let mut args: Vec<JValue> = vec![code.into(), (&jmsg).into()];
+        args.extend(extra.iter().map(|value| JValue::from(*value)));
+        let obj = env.new_object(SDK_EXCEPTION_CLASS, signature, &args)?;
         env.throw(JThrowable::from(obj))
     })();
     if thrown.is_err() {

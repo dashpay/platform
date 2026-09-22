@@ -177,6 +177,11 @@ impl TokenDistributionRecipient {
                     ))
                 }
             },
+            // A once-per-identity distribution has no configured recipient to resolve: the
+            // claimant is whoever submits the claim, which the contract owner id does not say.
+            TokenDistributionType::OncePerIdentity => Err(ProtocolError::NotSupported(
+                "trying to simple resolve for once-per-identity distribution".to_string(),
+            )),
         }
     }
 }

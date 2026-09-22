@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
+#[cfg(test)]
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
 use dpp::identity::KeyType;
@@ -13,25 +14,28 @@ use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use dpp::ProtocolError;
 
-use super::signing_key::available_signing_key;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
-// for identity operations and cannot authorize an ordinary document write.
+// for identity operations and cannot authorize an ordinary document write. A key
+// bound to another contract or document type is skipped, a key without limits is
+// preferred, an expired one is skipped, and a key the signer cannot reach is
+// skipped in favor of the next eligible candidate.
 fn profile_signing_key<'a>(
     identity: &'a Identity,
+    dashpay_contract_id: Identifier,
     signer: &impl Signer<IdentityPublicKey>,
 ) -> Result<Option<&'a IdentityPublicKey>, ProtocolError> {
-    available_signing_key(
+    super::usable_authentication_key(
         identity,
         signer,
-        Purpose::AUTHENTICATION,
+        dashpay_contract_id,
+        "profile",
         &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
         &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
-        false,
     )
 }
 
@@ -187,7 +191,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             let identity = managed.identity.clone();
             drop(wm);
-            profile_signing_key(&identity, signer)
+            profile_signing_key(&identity, dashpay_contract.id(), signer)
                 .map_err(dash_sdk::Error::from)?
                 .cloned()
                 .ok_or_else(|| {
@@ -339,7 +343,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             let identity = managed.identity.clone();
             drop(wm);
-            profile_signing_key(&identity, signer)
+            profile_signing_key(&identity, dashpay_contract.id(), signer)
                 .map_err(dash_sdk::Error::from)?
                 .cloned()
                 .ok_or_else(|| {
@@ -840,12 +844,18 @@ mod tests {
             second.id = 2;
             identity.add_public_key(second.into());
             assert_eq!(
-                profile_signing_key(&identity, &AvailableKeys(&[2])).unwrap(),
+                profile_signing_key(&identity, Identifier::from(DASHPAY), &AvailableKeys(&[2]))
+                    .unwrap(),
                 identity.public_keys().get(&2),
                 "unavailable {first_type:?} must not shadow available {second_type:?}"
             );
             assert_eq!(
-                profile_signing_key(&identity, &AvailableKeys(&[1, 2])).unwrap(),
+                profile_signing_key(
+                    &identity,
+                    Identifier::from(DASHPAY),
+                    &AvailableKeys(&[1, 2])
+                )
+                .unwrap(),
                 identity.public_keys().get(&1),
                 "select the first available eligible key"
             );
@@ -856,7 +866,10 @@ mod tests {
     fn should_reject_profile_keys_unavailable_to_signer() {
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             let identity = identity_with_key(profile_key(key_type, SecurityLevel::HIGH));
-            assert!(profile_signing_key(&identity, &AvailableKeys(&[])).is_err());
+            assert!(
+                profile_signing_key(&identity, Identifier::from(DASHPAY), &AvailableKeys(&[]))
+                    .is_err()
+            );
         }
     }
 
@@ -877,17 +890,36 @@ mod tests {
         identity
     }
 
+    const DASHPAY: [u8; 32] = [0xDA; 32];
+
+    fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
+        profile_signing_key(identity, Identifier::from(DASHPAY), &AvailableKeys(&[1])).unwrap()
+    }
+
+    #[test]
+    fn should_reject_a_key_bound_to_another_contract() {
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+        let mut elsewhere = profile_key(KeyType::ECDSA_SECP256K1, SecurityLevel::HIGH);
+        elsewhere.contract_bounds = Some(ContractBounds::SingleContract {
+            id: Identifier::from([0x0E; 32]),
+        });
+        assert!(pick(&identity_with_key(elsewhere)).is_none());
+
+        let mut dashpay = profile_key(KeyType::ECDSA_SECP256K1, SecurityLevel::HIGH);
+        dashpay.contract_bounds = Some(ContractBounds::SingleContractDocumentType {
+            id: Identifier::from(DASHPAY),
+            document_type_name: "profile".to_string(),
+        });
+        assert!(pick(&identity_with_key(dashpay)).is_some());
+    }
+
     #[test]
     fn should_select_high_and_critical_ecdsa_profile_keys() {
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
                 let identity = identity_with_key(profile_key(key_type, level));
-                assert!(
-                    profile_signing_key(&identity, &AvailableKeys(&[1]))
-                        .unwrap()
-                        .is_some(),
-                    "{key_type:?}/{level:?}"
-                );
+                assert!(pick(&identity).is_some(), "{key_type:?}/{level:?}");
             }
         }
     }
@@ -895,44 +927,28 @@ mod tests {
     #[test]
     fn should_reject_ineligible_profile_keys() {
         let empty = Identity::default_versioned(PlatformVersion::latest()).unwrap();
-        assert!(profile_signing_key(&empty, &AvailableKeys(&[1]))
-            .unwrap()
-            .is_none());
+        assert!(pick(&empty).is_none());
         for key_type in [
             KeyType::BLS12_381,
             KeyType::BIP13_SCRIPT_HASH,
             KeyType::EDDSA_25519_HASH160,
         ] {
-            assert!(profile_signing_key(
-                &identity_with_key(profile_key(key_type, SecurityLevel::HIGH)),
-                &AvailableKeys(&[1])
-            )
-            .unwrap()
+            assert!(pick(&identity_with_key(profile_key(
+                key_type,
+                SecurityLevel::HIGH
+            )))
             .is_none());
         }
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             for level in [SecurityLevel::MASTER, SecurityLevel::MEDIUM] {
-                assert!(profile_signing_key(
-                    &identity_with_key(profile_key(key_type, level)),
-                    &AvailableKeys(&[1])
-                )
-                .unwrap()
-                .is_none());
+                assert!(pick(&identity_with_key(profile_key(key_type, level))).is_none());
             }
             let mut key = profile_key(key_type, SecurityLevel::HIGH);
             key.disabled_at = Some(1);
-            assert!(
-                profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1]))
-                    .unwrap()
-                    .is_none()
-            );
+            assert!(pick(&identity_with_key(key)).is_none());
             let mut key = profile_key(key_type, SecurityLevel::CRITICAL);
             key.purpose = Purpose::TRANSFER;
-            assert!(
-                profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1]))
-                    .unwrap()
-                    .is_none()
-            );
+            assert!(pick(&identity_with_key(key)).is_none());
         }
     }
 
@@ -947,10 +963,7 @@ mod tests {
         transfer.id = 2;
         transfer.purpose = Purpose::TRANSFER;
         identity.add_public_key(transfer.into());
-        assert_eq!(
-            profile_signing_key(&identity, &AvailableKeys(&[1])).unwrap(),
-            identity.public_keys().get(&1)
-        );
+        assert_eq!(pick(&identity), identity.public_keys().get(&1));
     }
 
     fn existing_full() -> BTreeMap<String, Value> {

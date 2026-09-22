@@ -183,11 +183,12 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
       // Withdraw credits - not specifying toAddress means withdrawal
       // will be to the identity's registered withdrawal address
-      // Minimum is 1000000 credits (raised from 190000 in protocol v12),
-      // maximum is 50000000000000
+      // Since protocol v14 the minimum is 1000000 credits plus the Core fee of the
+      // asset unlock transaction (190000 credits at 1 duff per byte), because that
+      // fee is carved out of the withdrawn amount; maximum is 50000000000000
       const remainingBalance = await client.identityCreditWithdrawal({
         identity,
-        amount: 1000000n, // Must be >= 1000000
+        amount: 2000000n, // Must be >= 1000000 + Core fee
         coreFeePerByte: 1,
         signer,
       });

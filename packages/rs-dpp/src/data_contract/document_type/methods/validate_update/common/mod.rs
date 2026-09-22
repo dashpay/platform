@@ -1832,6 +1832,42 @@ mod tests {
                     && e.property_path() == "/properties/toUserId/refersTo/type"
             );
         }
+
+        /// A property's document reference cannot trade the permanence
+        /// promise existing documents were written under for the weaker
+        /// one, nor the other way round (which would brick every write
+        /// against a deletable target type).
+        #[test]
+        fn should_return_invalid_result_when_a_document_reference_changes_kind() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_kind, new_kind) in [
+                ("permanentDocument", "deletableDocument"),
+                ("deletableDocument", "permanentDocument"),
+            ] {
+                let old_document_type = identifier_document_type(
+                    Some(platform_value!({ "type": old_kind, "documentType": "note" })),
+                    platform_version,
+                );
+                let new_document_type = identifier_document_type(
+                    Some(platform_value!({ "type": new_kind, "documentType": "note" })),
+                    platform_version,
+                );
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.operation() == "replace"
+                        && e.property_path() == "/properties/toUserId/refersTo/type"
+                );
+            }
+        }
     }
 
     mod validate_byte_array_encoding {

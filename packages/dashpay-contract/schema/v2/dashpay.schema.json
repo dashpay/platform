@@ -74,6 +74,14 @@
         "maxItems": 21,
         "description": "Platform address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments. The type byte is consensus-enforced by a data trigger.",
         "position": 6
+      },
+      "shieldedAddress": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 43,
+        "maxItems": 43,
+        "description": "Raw Orchard receiving address: 11-byte diversifier followed by 32-byte diversified transmission key. Clients validate before payment; wallets should use a dedicated tip account.",
+        "position": 7
       }
     },
     "minProperties": 1,

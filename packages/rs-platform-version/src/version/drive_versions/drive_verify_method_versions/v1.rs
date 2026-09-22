@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
     DriveVerifyAddressFundsMethodVersions, DriveVerifyChainedDocumentMethodVersions,
-    DriveVerifyCompositeDocumentMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyCompositeDocumentMethodVersions, DriveVerifyContractGroupMethodVersions,
+    DriveVerifyContractMethodVersions, DriveVerifyContractModerationMethodVersions,
     DriveVerifyDocumentCountMethodVersions, DriveVerifyDocumentMethodVersions,
     DriveVerifyDocumentRankedMethodVersions, DriveVerifyDocumentSumMethodVersions,
     DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
@@ -68,6 +69,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_identity_revision_for_identity_id: 0,
         verify_full_identity_by_non_unique_public_key_hash: 0,
         verify_identity_id_by_non_unique_public_key_hash: 0,
+        verify_identity_keys_remaining_budgets: 0,
     },
     group: DriveVerifyGroupMethodVersions {
         verify_group_info: 0,
@@ -75,6 +77,17 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_action_infos: 0,
         verify_action_signers: 0,
         verify_action_signers_total_power: 0,
+    },
+    contract_group: DriveVerifyContractGroupMethodVersions {
+        verify_contract_group_info: 0,
+        verify_contract_group_members: 0,
+        verify_contract_group_memberships_for_contract: 0,
+    },
+    contract_moderation: DriveVerifyContractModerationMethodVersions {
+        verify_contract_moderation_status: 0,
+        verify_contract_moderation_entries: 0,
+        verify_contract_fee_pots: 0,
+        verify_contract_document_removals: 0,
     },
     token: DriveVerifyTokenMethodVersions {
         verify_token_balances_for_identity_ids: 0,

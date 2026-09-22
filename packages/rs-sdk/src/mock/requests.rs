@@ -25,6 +25,16 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use drive_proof_verifier::types::contract_moderation::{
+    ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
+    ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries,
+    ContractModerationEntry, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractModerationReason,
+};
+use drive_proof_verifier::types::contract_groups::{
+    ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
+};
 use drive_proof_verifier::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
@@ -364,6 +374,239 @@ impl MockResponse for DataContractsLatestVersions {
         DataContractsLatestVersions(
             IndexMap::<Identifier, Option<DataContractLatestVersion>>::mock_deserialize(sdk, buf),
         )
+    }
+}
+
+impl MockResponse for ContractGroupInfo {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode ContractGroupInfo")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContractGroupInfo")
+            .0
+    }
+}
+
+/// One byte for the kind (0 contracts, 1 document types, 2 tokens) followed by the bincode
+/// entries of that kind.
+impl MockResponse for ContractModerationListStatuses {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(&self.0, BINCODE_CONFIG)
+            .expect("encode ContractModerationListStatuses")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (statuses, _): (Vec<ContractModerationListStatus>, usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractModerationListStatuses");
+        ContractModerationListStatuses(statuses)
+    }
+}
+
+impl MockResponse for ContractFeePots {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let pots: [(u64, Option<ContractFeePotLastClaim>); 2] = [
+            (self.owner.credits, self.owner.last_claim),
+            (self.moderators.credits, self.moderators.last_claim),
+        ];
+        bincode::encode_to_vec(pots, BINCODE_CONFIG).expect("encode ContractFeePots")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ([owner, moderators], _): ([(u64, Option<ContractFeePotLastClaim>); 2], usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode ContractFeePots");
+        let pot = |(credits, last_claim)| ContractFeePotState {
+            credits,
+            last_claim,
+        };
+        ContractFeePots {
+            owner: pot(owner),
+            moderators: pot(moderators),
+        }
+    }
+}
+
+impl MockResponse for ContractModerationEntries {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let entries: Vec<(Identifier, Option<u64>, ContractModerationReason)> = self
+            .entries()
+            .iter()
+            .map(|entry| (entry.identity_id, entry.until, entry.reason.clone()))
+            .collect();
+        bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode ContractModerationEntries")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (entries, _): (Vec<(Identifier, Option<u64>, ContractModerationReason)>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractModerationEntries");
+        ContractModerationEntries(
+            entries
+                .into_iter()
+                .map(|(identity_id, until, reason)| ContractModerationEntry {
+                    identity_id,
+                    until,
+                    reason,
+                })
+                .collect(),
+        )
+    }
+}
+
+/// One removal record as a fixture holds it: the document id, its owner, the moderator, when
+/// the removal happened and why. `ContractDocumentRemoval` has no bincode encoding of its own.
+type EncodedContractDocumentRemoval = (
+    Identifier,
+    Identifier,
+    Identifier,
+    u64,
+    ContractModerationReason,
+);
+
+impl MockResponse for ContractDocumentRemovals {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let removals: Vec<EncodedContractDocumentRemoval> = self
+            .removals()
+            .iter()
+            .map(|entry| {
+                (
+                    entry.document_id,
+                    entry.removal.document_owner_id,
+                    entry.removal.moderator_id,
+                    entry.removal.removed_at,
+                    entry.removal.reason.clone(),
+                )
+            })
+            .collect();
+        bincode::encode_to_vec(removals, BINCODE_CONFIG).expect("encode ContractDocumentRemovals")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (removals, _): (Vec<EncodedContractDocumentRemoval>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractDocumentRemovals");
+        ContractDocumentRemovals(
+            removals
+                .into_iter()
+                .map(
+                    |(document_id, document_owner_id, moderator_id, removed_at, reason)| {
+                        ContractDocumentRemovalEntry {
+                            document_id,
+                            removal: ContractDocumentRemoval {
+                                document_owner_id,
+                                moderator_id,
+                                reason,
+                                removed_at,
+                            },
+                        }
+                    },
+                )
+                .collect(),
+        )
+    }
+}
+
+impl MockResponse for ContractGroupMembersPage {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let (kind, entries) = match self {
+            ContractGroupMembersPage::Contracts(entries) => (
+                0u8,
+                bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode member contracts"),
+            ),
+            ContractGroupMembersPage::DocumentTypes(entries) => (
+                1u8,
+                bincode::encode_to_vec(entries, BINCODE_CONFIG)
+                    .expect("encode member document types"),
+            ),
+            ContractGroupMembersPage::Tokens(entries) => (
+                2u8,
+                bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode member tokens"),
+            ),
+        };
+        let mut buf = vec![kind];
+        buf.extend(entries);
+        buf
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (kind, entries) = buf.split_first().expect("members page kind byte");
+        match kind {
+            0 => ContractGroupMembersPage::Contracts(
+                bincode::decode_from_slice(entries, BINCODE_CONFIG)
+                    .expect("decode member contracts")
+                    .0,
+            ),
+            1 => ContractGroupMembersPage::DocumentTypes(
+                bincode::decode_from_slice(entries, BINCODE_CONFIG)
+                    .expect("decode member document types")
+                    .0,
+            ),
+            2 => ContractGroupMembersPage::Tokens(
+                bincode::decode_from_slice(entries, BINCODE_CONFIG)
+                    .expect("decode member tokens")
+                    .0,
+            ),
+            other => panic!("unknown members page kind {other}"),
+        }
+    }
+}
+
+/// The three membership maps, bincode encoded as a tuple.
+impl MockResponse for ContractGroupMembershipsForContract {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(
+            (&self.contract, &self.document_types, &self.tokens),
+            BINCODE_CONFIG,
+        )
+        .expect("encode ContractGroupMembershipsForContract")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (contract, document_types, tokens) = bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContractGroupMembershipsForContract")
+            .0;
+        ContractGroupMembershipsForContract {
+            contract,
+            document_types,
+            tokens,
+        }
+    }
+}
+
+impl MockResponse for IdentityKeysRemainingBudgets {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let map = RetrievedValues::mock_deserialize(sdk, buf);
+        Self(map)
     }
 }
 
@@ -877,7 +1120,7 @@ impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
 
 /// Wire shape for `ChainedDocuments` mock round-trip: both halves as
 /// per-document CBOR lists.
-type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>);
+type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<[u8; 32]>);
 
 impl MockResponse for drive_proof_verifier::ChainedDocuments {
     /// Both halves as per-document CBOR, bincode-framed as
@@ -895,6 +1138,10 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
                 .iter()
                 .map(|d| d.to_cbor().expect("encode outer document"))
                 .collect(),
+            self.missing_outer_ids
+                .iter()
+                .map(|id| id.to_buffer())
+                .collect(),
         );
         bincode::encode_to_vec(halves, bincode_config).expect("encode ChainedDocuments")
     }
@@ -904,7 +1151,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((inner, outer), _): (MockChainedHalves, _) =
+        let ((inner, outer, missing), _): (MockChainedHalves, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode ChainedDocuments");
         let decode = |bufs: Vec<Vec<u8>>| {
             bufs.into_iter()
@@ -916,6 +1163,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
         drive_proof_verifier::ChainedDocuments {
             inner_documents: decode(inner),
             outer_documents: decode(outer),
+            missing_outer_ids: missing.into_iter().map(Identifier::from).collect(),
         }
     }
 }
@@ -926,7 +1174,11 @@ type MockCompositeSubResult = (bool, Vec<Vec<u8>>, DocumentSplitCountTriples);
 
 /// Wire shape for `CompositeDocuments` mock round-trip: the page as a
 /// per-document CBOR list, then one entry per sub-query.
-type MockCompositeShape = (Vec<Vec<u8>>, Vec<MockCompositeSubResult>);
+type MockCompositeShape = (
+    Vec<Vec<u8>>,
+    Vec<MockCompositeSubResult>,
+    Vec<Vec<[u8; 32]>>,
+);
 
 impl MockResponse for drive_proof_verifier::CompositeDocuments {
     /// The page and every documents sub-result as per-document CBOR,
@@ -960,6 +1212,10 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
                     ),
                 })
                 .collect(),
+            self.sub_result_missing_ids
+                .iter()
+                .map(|ids| ids.iter().map(|id| id.to_buffer()).collect())
+                .collect(),
         );
         bincode::encode_to_vec(shape, bincode_config).expect("encode CompositeDocuments")
     }
@@ -969,7 +1225,7 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((page, sub_results), _): (MockCompositeShape, _) =
+        let ((page, sub_results, missing_ids), _): (MockCompositeShape, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode CompositeDocuments");
         let decode = |bufs: Vec<Vec<u8>>| -> Vec<Document> {
             bufs.into_iter()
@@ -1000,6 +1256,10 @@ impl MockResponse for drive_proof_verifier::CompositeDocuments {
                         )
                     }
                 })
+                .collect(),
+            sub_result_missing_ids: missing_ids
+                .into_iter()
+                .map(|ids| ids.into_iter().map(Identifier::from).collect())
                 .collect(),
         }
     }

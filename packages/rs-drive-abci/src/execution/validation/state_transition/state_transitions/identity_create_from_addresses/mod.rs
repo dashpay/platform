@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use crate::execution::validation::state_transition::identity_create_from_addresses::basic_structure::v0::IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::state::v0::IdentityCreateFromAddressesStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_create_from_addresses::state::v1::IdentityCreateFromAddressesStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::platform_types::platform::PlatformRef;
 
@@ -155,6 +156,7 @@ pub trait StateTransitionStateValidationForIdentityCreateFromAddressesTransition
         &self,
         action: IdentityCreateFromAddressesTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -167,6 +169,7 @@ impl StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0
         &self,
         action: IdentityCreateFromAddressesTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -179,9 +182,17 @@ impl StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0
             .state
         {
             0 => self.validate_state_v0(platform, action, execution_context, tx, platform_version),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                action,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create from addresses transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

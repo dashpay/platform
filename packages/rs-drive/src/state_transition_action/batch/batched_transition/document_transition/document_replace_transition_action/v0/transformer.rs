@@ -1,7 +1,7 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::document::{property_names, Document, DocumentV0Getters};
 use dpp::platform_value::Identifier;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::fee::fee_result::FeeResult;
@@ -44,6 +44,7 @@ impl DocumentReplaceTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_replacement_token_cost(),
+                |action_fees| action_fees.document_replacement_action_fee(),
                 "replace",
             )?;
 
@@ -108,6 +109,32 @@ impl DocumentReplaceTransitionActionV0 {
 
         let original_creator_id = original_document.creator_id();
 
+        // The fields the stored document had no value for: this replace sets
+        // them for the first time. A subset of the changed fields below, kept
+        // apart because the immutable-property check treats a first-time set
+        // differently from a change or a removal.
+        let added_fields: BTreeSet<String> = data
+            .keys()
+            .filter(|key| !original_document.properties().contains_key(*key))
+            .cloned()
+            .collect();
+
+        // The identifier each removed field held. Kept because a removed
+        // `deletableDocument` reference is only allowed on an `immutable`
+        // property once its target is gone, and after this point nothing
+        // else remembers what the target was.
+        let removed_identifier_fields: BTreeMap<String, Identifier> = original_document
+            .properties()
+            .iter()
+            .filter(|(key, _)| !data.contains_key(*key))
+            .filter_map(|(key, value)| {
+                value
+                    .to_identifier()
+                    .ok()
+                    .map(|identifier| (key.clone(), identifier))
+            })
+            .collect();
+
         // Determine which fields have changed between the original document and the new data
         let changed_fields: BTreeSet<String> = data
             .iter()
@@ -153,6 +180,8 @@ impl DocumentReplaceTransitionActionV0 {
                         original_document_transferred_at_core_block_height,
                     data: data.clone(),
                     changed_data_fields: changed_fields,
+                    added_data_fields: added_fields,
+                    removed_identifier_fields,
                     creator_id: original_creator_id,
                 }
                 .into(),

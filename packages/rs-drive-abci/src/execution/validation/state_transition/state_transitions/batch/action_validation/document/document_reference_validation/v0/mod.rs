@@ -6,13 +6,20 @@ use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
+use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
+use dpp::document::DocumentV0Getters;
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
@@ -25,6 +32,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use std::borrow::Cow;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
@@ -49,9 +57,22 @@ use crate::platform_types::platform::PlatformStateRef;
 /// `DocumentReferenceValidation` dispatcher that selects the version.
 pub(crate) trait DocumentReferenceValidationV0 {
     #[allow(clippy::too_many_arguments)]
+    fn deletable_document_reference_target_is_gone_v0(
+        &self,
+        property: &str,
+        referenced_id: Identifier,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error>;
+
+    #[allow(clippy::too_many_arguments)]
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -62,9 +83,84 @@ pub(crate) trait DocumentReferenceValidationV0 {
 }
 
 impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
+    fn deletable_document_reference_target_is_gone_v0(
+        &self,
+        property: &str,
+        referenced_id: Identifier,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let contract_fetch_info = self.data_contract_fetch_info();
+        let contract = &contract_fetch_info.contract;
+        let Some(document_type) =
+            contract.document_type_optional_for_name(self.document_type_name())
+        else {
+            return Ok(false);
+        };
+        let Some(DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: referenced_contract_id,
+                document_type_name,
+                ..
+            },
+        )) = document_type
+            .flattened_properties()
+            .get(property)
+            .map(|property| &property.property_type)
+        else {
+            // Not a deletableDocument reference: nothing can be "gone"
+            return Ok(false);
+        };
+
+        let effective_contract_id = referenced_contract_id.unwrap_or(contract.id());
+        let referenced_contract_fetch_info;
+        let referenced_contract = if effective_contract_id == contract.id() {
+            contract
+        } else {
+            let (fee, fetch_info) = platform.drive.get_contract_with_fetch_info_and_fee(
+                effective_contract_id.to_buffer(),
+                Some(&block_info.epoch),
+                false,
+                transaction,
+                platform_version,
+            )?;
+            let fee = fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "fee must exist when fetching a referenced contract with an epoch",
+            )))?;
+            // The cost is added even if the referenced contract does not exist or was cached
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+            let Some(fetch_info) = fetch_info else {
+                return Ok(true);
+            };
+            referenced_contract_fetch_info = fetch_info;
+            &referenced_contract_fetch_info.contract
+        };
+        let Some(referenced_document_type) =
+            referenced_contract.document_type_optional_for_name(document_type_name)
+        else {
+            return Ok(true);
+        };
+
+        let referenced_document = fetch_document_with_id(
+            platform.drive,
+            referenced_contract,
+            referenced_document_type,
+            referenced_id,
+            &block_info.epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        Ok(referenced_document.is_none())
+    }
+
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -87,6 +183,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             contract,
             document_type,
             document_data,
+            owner_id,
             changed_fields,
             platform,
             block_info,
@@ -102,6 +199,7 @@ fn validate_document_type_references_v0(
     contract: &DataContract,
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
     changed_fields: Option<&BTreeSet<String>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
@@ -117,18 +215,44 @@ fn validate_document_type_references_v0(
         };
 
         if let Some(changed) = changed_fields {
-            // A propertyAgreement pair binds the referring property too:
-            // replacing it must re-validate the reference even when the
-            // reference property itself is untouched.
-            let agreement_property_changed = match reference_target {
+            // Some targets bind a sibling property of the same document to
+            // the reference; replacing that sibling must re-validate the
+            // reference even when the reference property itself is untouched:
+            // - a propertyAgreement pair binds each referring property;
+            // - an identityPublicKey reference binds the key id property,
+            //   since the referenced key is the (identity id, key id) pair
+            //   and a freshly written key id must exist and not be disabled.
+            // A writer gate (an agreement keyed by `$ownerId`) is re-checked
+            // on EVERY replace: the writer is transition metadata that never
+            // appears among the changed fields, and either document may have
+            // been transferred since the last write, so a replace of an
+            // unrelated field by a now-unauthorized owner must still fail.
+            let bound_property_changed = match reference_target {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     property_agreement, ..
-                } => property_agreement
-                    .keys()
-                    .any(|referring_property| is_changed_field(changed, referring_property)),
-                _ => false,
+                } => property_agreement.keys().any(|referring_property| {
+                    is_referring_system_agreement_property(referring_property)
+                        || is_changed_field(changed, referring_property)
+                }),
+                // A deletableDocument reference is re-validated on EVERY
+                // replace, touched or not: its target may have been deleted
+                // since the last write, and a referring document is not
+                // allowed to be rewritten around a dead reference. The
+                // replace has to repoint it at a document that exists, or
+                // clear it; leaving it (or pointing it at another missing
+                // document) fails the existence check below. A writer gate
+                // is therefore never evaluated against a missing document:
+                // it is checked against the new target, or not at all once
+                // the reference is cleared.
+                DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
+                DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+                    is_changed_field(changed, key_id_property)
+                }
+                DocumentPropertyReferenceTarget::Identity
+                | DocumentPropertyReferenceTarget::Contract
+                | DocumentPropertyReferenceTarget::Token => false,
             };
-            if !is_changed_field(changed, path) && !agreement_property_changed {
+            if !is_changed_field(changed, path) && !bound_property_changed {
                 continue;
             }
         }
@@ -195,7 +319,16 @@ fn validate_document_type_references_v0(
                 contract_id: referenced_contract_id,
                 document_type_name,
                 property_agreement,
+            }
+            | DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: referenced_contract_id,
+                document_type_name,
+                property_agreement,
             } => {
+                let permanent = matches!(
+                    reference_target,
+                    DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                );
                 // An absent contract id targets the declaring contract itself; the
                 // declaring contract may also name its own id explicitly. Either
                 // way it is already loaded for this transition, so no fetch is
@@ -252,13 +385,31 @@ fn validate_document_type_references_v0(
                     ));
                 };
 
-                // Only document types whose documents can never be deleted may be
-                // referenced: `canBeDeleted` is immutable on contract updates and
-                // document types can not be removed, so a reference validated here
-                // can never dangle
-                if referenced_document_type.documents_can_be_deleted() {
+                // A `permanentDocument` reference admits only document types
+                // whose documents can never be deleted: `canBeDeleted` is
+                // immutable on contract updates and document types can not be
+                // removed, so a reference validated here can never dangle. A
+                // `deletableDocument` reference makes no such promise, and
+                // admits only document types whose documents CAN be deleted:
+                // the referenced document must exist now, and may be deleted
+                // later. Deletable means by anyone, the contract's moderators
+                // included (`canBeDeletedByModerators`), as at contract
+                // registration
+                let target_is_deletable = referenced_document_type.documents_can_be_deleted()
+                    || referenced_document_type.documents_can_be_deleted_by_moderators();
+                if permanent && target_is_deletable {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeDeletableError::new(
+                            effective_contract_id,
+                            document_type_name.clone(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                if !permanent && !target_is_deletable {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeNotDeletableError::new(
                             effective_contract_id,
                             document_type_name.clone(),
                             path.to_string(),
@@ -296,9 +447,6 @@ fn validate_document_type_references_v0(
                 // agreement key triggers a skipIfAbsent index stay
                 // consistently absent for untagged targets.
                 if let Some(referenced_document) = &referenced_document {
-                    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-                    use dpp::document::DocumentV0Getters;
-
                     for (referring_property, referenced_property) in property_agreement {
                         let mismatch = || {
                             SimpleConsensusValidationResult::new_with_error(
@@ -315,17 +463,48 @@ fn validate_document_type_references_v0(
                         // mismatch, never absence — folding it into `None`
                         // would let two malformed sides "agree" as
                         // both-absent.
-                        let Ok(referring_value) =
-                            document_data.get_optional_at_path(referring_property)
-                        else {
-                            return Ok(mismatch());
+                        // The referring side is a schema property of the document
+                        // being written, or the writer's own `$ownerId`, which
+                        // lives on the transition rather than in its data: that
+                        // pair is a write gate, and the writer is `owner_id`.
+                        let referring_value: Option<Cow<Value>> = if referring_property == OWNER_ID
+                        {
+                            Some(Cow::Owned(Value::Identifier(owner_id.to_buffer())))
+                        } else {
+                            let Ok(referring_value) =
+                                document_data.get_optional_at_path(referring_property)
+                            else {
+                                return Ok(mismatch());
+                            };
+                            referring_value.map(Cow::Borrowed)
                         };
-                        let Ok(referenced_value) = referenced_document
-                            .properties()
-                            .get_optional_at_path(referenced_property)
-                        else {
-                            return Ok(mismatch());
-                        };
+                        // The referenced side may name one of the two system
+                        // identifiers a document carries outside its data:
+                        // `$ownerId`, which follows the document through
+                        // transfers, and `$creatorId`, set once at creation
+                        // and absent on document types that do not record
+                        // it. Contract registration validated that either
+                        // faces an identifier property on the referring
+                        // side, and the key serializer below already encodes
+                        // both names as 32-byte identifiers.
+                        let referenced_value: Option<Cow<Value>> =
+                            match referenced_property.as_str() {
+                                OWNER_ID => Some(Cow::Owned(Value::Identifier(
+                                    referenced_document.owner_id().to_buffer(),
+                                ))),
+                                CREATOR_ID => referenced_document.creator_id().map(|creator_id| {
+                                    Cow::Owned(Value::Identifier(creator_id.to_buffer()))
+                                }),
+                                _ => {
+                                    let Ok(referenced_value) = referenced_document
+                                        .properties()
+                                        .get_optional_at_path(referenced_property)
+                                    else {
+                                        return Ok(mismatch());
+                                    };
+                                    referenced_value.map(Cow::Borrowed)
+                                }
+                            };
                         let (referring_value, referenced_value) =
                             match (referring_value, referenced_value) {
                                 (Some(referring_value), Some(referenced_value)) => {
@@ -339,7 +518,7 @@ fn validate_document_type_references_v0(
                             };
                         let Ok(referring_encoded) = document_type.serialize_value_for_key(
                             referring_property,
-                            referring_value,
+                            &referring_value,
                             platform_version,
                         ) else {
                             return Ok(mismatch());
@@ -347,7 +526,7 @@ fn validate_document_type_references_v0(
                         let Ok(referenced_encoded) = referenced_document_type
                             .serialize_value_for_key(
                                 referenced_property,
-                                referenced_value,
+                                &referenced_value,
                                 platform_version,
                             )
                         else {

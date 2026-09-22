@@ -19,6 +19,7 @@
 //! generation 2 (schema 1 and 2).
 
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 use crate::data_contract::document_type::index::Index;
@@ -26,10 +27,11 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
-    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR,
+    CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY,
+    DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY,
+    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
+    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -40,6 +42,7 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -217,6 +220,11 @@ pub(super) struct ParserGeneration {
     /// (conditional-participation indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_index_skip_if_absent: bool,
+    /// Whether `rangeCountable: true` promotes an omitted `countable` to
+    /// `"countable"` (generation 3 and later), as the doctype-level
+    /// `rangeCountable` has always implied `documentsCountable`. Forwarded to
+    /// [`Index::try_from_value_map`] exactly like the admissions above.
+    pub admit_range_countable_implies_countable: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -858,6 +866,9 @@ fn parse_indices(
                             terminal: ctx.generation.admit_index_terminal,
                             preallocated: ctx.generation.admit_index_preallocated,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
+                            range_countable_implies_countable: ctx
+                                .generation
+                                .admit_range_countable_implies_countable,
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -1412,6 +1423,11 @@ fn parse_token_costs(
                         .map(|int| int.try_into())
                         .transpose()?
                         .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
+                    // Whether a transition may skip the token payment and have its signer pay
+                    // the gas in credits instead (the v3 meta-schema admits the flag)
+                    let optional = action_cost
+                        .get_optional_bool("optional")?
+                        .unwrap_or_default();
 
                     #[cfg(feature = "validation")]
                     if ctx.full_validation {
@@ -1471,6 +1487,7 @@ fn parse_token_costs(
                         token_amount,
                         effect,
                         gas_fees_paid_by,
+                        optional,
                     })
                 })
                 .transpose()
@@ -1511,12 +1528,13 @@ pub(super) fn parse_doctype_aggregate_keywords(
     //
     // Note on pre-v12 contracts: contracts created before v12 used the
     // generation-1 parser, which ignores these fields. After v12 upgrade,
-    // deserialization uses the generation-2 parser which will read them. This
-    // is safe because the contract update path runs through that parser with
-    // full_validation=true, and the primary key tree type is set correctly at
-    // contract creation time. Pre-v12 contracts can only have these flags if
-    // they were explicitly set in the schema — the meta-schema allows them as
-    // optional boolean properties.
+    // deserialization uses the generation-2 parser which will read them.
+    // Meta-schema v0 does not declare these fields: it admits them as unknown
+    // keys of any shape, so a pre-v12 contract carrying one was never
+    // validated against it, and reading it would assume a primary key tree
+    // type the contract was not created with. No such contract exists on
+    // mainnet or testnet; see `try_from_schema_generation_3` for the census
+    // and the rule that follows from it.
     let schema_map_opt = schema.to_map().ok();
 
     let documents_countable = schema_map_opt
@@ -1963,6 +1981,315 @@ pub(super) fn parse_index_only_keyword(schema: &Value) -> Result<bool, ProtocolE
         .unwrap_or(false))
 }
 
+/// Reads the doctype-level `canBeDeletedByModerators` flag before the core
+/// parse consumes `schema`, same shape as [`parse_index_only_keyword`]. Only
+/// the generation-3 driver calls this; earlier generations predate the keyword
+/// and their meta-schemas reject it under `full_validation`.
+pub(super) fn parse_can_be_deleted_by_moderators_keyword(
+    schema: &Value,
+) -> Result<bool, ProtocolError> {
+    let schema_map_opt = schema.to_map().ok();
+
+    Ok(schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED_BY_MODERATORS)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false))
+}
+
+/// Applies the `canBeDeletedByModerators` flag and checks what it requires.
+///
+/// The flag lets the contract's moderators delete documents of the type, so:
+/// - the contract must declare moderation, or there would be nobody to delete
+///   anything (moderation can not be switched on by a later update);
+/// - the type must not keep history: Drive refuses to delete such documents;
+/// - the type must not be indexOnly: such a document has no stored row a
+///   moderator could name by id;
+/// - the type must not restrict creation: its documents are the contract
+///   owner's, which no moderator may delete.
+///
+/// The rules hold for every contract that could be stored (the keyword and
+/// the moderation config both arrive with protocol version 14), so they are
+/// not skipped when a stored contract is read back.
+pub(super) fn apply_can_be_deleted_by_moderators(
+    document_type: &mut DocumentTypeV2,
+    can_be_deleted_by_moderators: bool,
+    data_contract_config: &DataContractConfig,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !can_be_deleted_by_moderators {
+        return Ok(());
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if data_contract_config.moderation().is_none() {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModerators: true`, but the contract \
+             declares no `moderation` in its config, so nobody could delete its documents \
+             (moderation can only be declared when the contract is created)",
+            name,
+        )));
+    }
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets both `documentsKeepHistory: true` and \
+             `canBeDeletedByModerators: true`, but the storage layer refuses to delete a \
+             document whose type keeps history",
+            name,
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must not set `canBeDeletedByModerators`: there \
+             is no stored row a moderator could name by id",
+            name,
+        )));
+    }
+    if document_type.creation_restriction_mode != CreationRestrictionMode::NoRestrictions {
+        return Err(structure_error(format!(
+            "document type \"{}\" restricts document creation and must not set \
+             `canBeDeletedByModerators`: its documents belong to the contract owner, whose \
+             documents no moderator may delete",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_deleted_by_moderators = true;
+    Ok(())
+}
+
+/// Reads the doctype-level `canBeDeletedByModeratorsFor` keyword, a number of
+/// seconds, before the core parse consumes `schema`. Its shape is enforced here
+/// and not left to the meta-schema: a stored contract is read without one, and
+/// no doctype-level keyword of this generation is read more leniently there.
+pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
+    schema: &Value,
+) -> Result<Option<u32>, ProtocolError> {
+    schema
+        .get_optional_integer::<u32>(CAN_BE_DELETED_BY_MODERATORS_FOR)
+        .map_err(consensus_or_protocol_value_error)
+}
+
+/// Applies the `canBeDeletedByModeratorsFor` window and checks what it
+/// requires.
+///
+/// The window limits how long after a document's last modification the
+/// moderators may delete it, so:
+/// - the type must let moderators delete its documents at all, or the window
+///   would limit nothing;
+/// - the type must require the clock the window is measured on. That is
+///   `$updatedAt`, set at creation and moved by every replace, and where a type
+///   does not carry it, `$createdAt`. A type whose documents can be replaced
+///   must require `$updatedAt`: measured from creation alone, its author could
+///   wait the window out and then rewrite the document into something no
+///   moderator can remove any more. A type whose documents never change has
+///   no modification after the creation, so `$createdAt` says as much;
+/// - it lasts at least a second: a window of none would be a type moderators
+///   can never delete from, which is said by not setting the flag.
+///
+/// Runs after `apply_can_be_deleted_by_moderators`, which sets the flag read
+/// here.
+pub(super) fn apply_can_be_deleted_by_moderators_for(
+    document_type: &mut DocumentTypeV2,
+    can_be_deleted_by_moderators_for: Option<u32>,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    let Some(seconds) = can_be_deleted_by_moderators_for else {
+        return Ok(());
+    };
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if !document_type.documents_can_be_deleted_by_moderators {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which limits \
+             `canBeDeletedByModerators: true` and means nothing without it",
+            name,
+        )));
+    }
+    if seconds == 0 {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor: 0`: a window lasts at \
+             least one second (leave `canBeDeletedByModerators` out for a type moderators can \
+             not delete from)",
+            name,
+        )));
+    }
+    let requires_updated_at = document_type.required_fields.contains(UPDATED_AT);
+    if document_type.documents_mutable && !requires_updated_at {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
+             a document's last modification, and its documents can be replaced: list \
+             `$updatedAt` in `required`",
+            name,
+        )));
+    }
+    if !requires_updated_at && !document_type.required_fields.contains(CREATED_AT) {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
+             a document's last modification: list `$updatedAt`, or `$createdAt` for documents \
+             that never change, in `required`",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
+    Ok(())
+}
+
+/// Reads a doctype-level array of top-level property names (`immutable`, the
+/// properties frozen at document creation on a mutable type, or
+/// `immutableAllowSetting`, the frozen properties a replace may still set
+/// while absent) before the core parse consumes `schema`, same shape as
+/// [`parse_index_only_keyword`]. Only the generation-3 driver calls this;
+/// earlier generations ignore both keywords exactly as they ignore every
+/// doctype-level keyword they predate (their meta-schemas still reject them
+/// under `full_validation`).
+///
+/// Every entry must be a string, on either path. A non-string entry is refused
+/// rather than silently dropped: dropping it would record a smaller set than
+/// the author declared. A contract admitted under meta-schema v0 was never
+/// checked against this keyword; `try_from_schema_generation_3` states why the
+/// stored path is strict all the same.
+pub(super) fn parse_property_name_list_keyword(
+    schema: &Value,
+    name: &str,
+    keyword: &str,
+) -> Result<BTreeSet<String>, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(BTreeSet::new());
+    };
+    let Some(value) = Value::get_optional_from_map(schema_map, keyword) else {
+        return Ok(BTreeSet::new());
+    };
+    let Value::Array(entries) = value else {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{keyword}` must be an array of top-level property names"
+        )));
+    };
+
+    entries
+        .iter()
+        .map(|entry| {
+            entry.as_text().map(str::to_owned).ok_or_else(|| {
+                structure_error(format!(
+                    "document type \"{name}\": every `{keyword}` entry must be a property name \
+                     (a string)"
+                ))
+            })
+        })
+        .collect()
+}
+
+/// Write the `immutable` and `immutableAllowSetting` property lists onto the
+/// parsed document type and, under full validation, check them against the
+/// rest of the type.
+///
+/// The checks are schema lints rather than storage-layout invariants: an
+/// entry naming an unknown property could never match a changed field, and a
+/// list on a non-mutable type is unreachable because replaces of such
+/// documents are refused before any property is compared. So, like the
+/// keep-history/delete check in the generation-3 driver, they only run for
+/// contracts entering the chain. Stored contracts bypass them, which keeps a
+/// later tightening of these rules from ever making a committed contract
+/// unreadable.
+///
+/// Entries are top-level property names only. A nested path is refused with
+/// a hint to list the containing object instead: the replace action compares
+/// top-level properties, so freezing an object freezes everything inside it.
+/// Every `immutableAllowSetting` entry must also be in `immutable`: the
+/// second list only relaxes the first (a frozen property may still be set
+/// while the stored document has no value for it), so on its own it means
+/// nothing.
+pub(super) fn apply_immutable_fields(
+    document_type: &mut DocumentTypeV2,
+    immutable_fields: BTreeSet<String>,
+    immutable_fields_allow_setting: BTreeSet<String>,
+    name: &str,
+    full_validation: bool,
+) -> Result<(), ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if full_validation {
+        if !immutable_fields.is_empty() && !document_type.documents_mutable {
+            return Err(structure_error(format!(
+                "document type \"{name}\" lists `immutable` properties but its documents are not \
+                 mutable (documentsMutable: false), so every property is already immutable; \
+                 remove the `immutable` list or set documentsMutable: true"
+            )));
+        }
+
+        for property in &immutable_fields {
+            if property.starts_with('$') {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists system property \"{property}\" as immutable: \
+                     system properties are managed by the platform and cannot be listed"
+                )));
+            }
+            if !document_type.properties.contains_key(property) {
+                let hint = if property.contains('.') {
+                    "; nested paths are not accepted, list the top-level property that contains \
+                     it to freeze it whole"
+                } else {
+                    ""
+                };
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as immutable, but it is not a \
+                     top-level property of the document type{hint}"
+                )));
+            }
+            // A transient property is never stored, so the stored document
+            // always lacks it and any replace that supplies it counts as
+            // setting it. Frozen at "absent", it could never be written; if
+            // it is also required, no replace could ever pass at all.
+            if document_type.transient_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as both transient and \
+                     immutable: a transient property is never stored, so every replace that \
+                     supplies it would be refused as changing an immutable property; remove it \
+                     from one of the two lists"
+                )));
+            }
+        }
+
+        for property in &immutable_fields_allow_setting {
+            if !immutable_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" in `immutableAllowSetting`, but \
+                     it is not in `immutable`: only an immutable property can be allowed to be \
+                     set while absent"
+                )));
+            }
+        }
+    }
+
+    document_type.immutable_fields = immutable_fields;
+    document_type.immutable_fields_allow_setting = immutable_fields_allow_setting;
+
+    Ok(())
+}
+
 /// Write the `indexOnly` flag onto the parsed document type, normalize each
 /// index's `terminal` (an omitted terminal defaults to `$ownerId`), and run
 /// the structural cross-checks the index-only on-disk layout depends on.
@@ -2242,8 +2569,10 @@ pub(super) fn apply_index_only(
         // The terminal is the member key — it must be a referable entity id:
         // the owner identity, or a property carrying a refersTo declaration
         // whose value alone IS the referenced entity's id (identity,
-        // contract, token, or permanent document — all kinds that can never
-        // dangle). `identityPublicKey` is deliberately NOT admitted: it is a
+        // contract, token, or a document of either reference kind; a
+        // deletable document's entries simply outlive it, as the member key
+        // is an Item, not a Reference). `identityPublicKey` is deliberately
+        // NOT admitted: it is a
         // compound reference — this property carries the identity id while a
         // separate `keyIdProperty` carries the key id — so a terminal keyed
         // by it would conflate references to different keys of the same
@@ -2259,14 +2588,16 @@ pub(super) fn apply_index_only(
                                 | DocumentPropertyReferenceTarget::Contract
                                 | DocumentPropertyReferenceTarget::Token
                                 | DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                                | DocumentPropertyReferenceTarget::DeletableDocument { .. }
                         )
                     ) => {}
                 Some(_) => {
                     return Err(structure_error(format!(
                         "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
                          must be \"$ownerId\" or an identifier property with a refersTo \
-                         declaration targeting identity, contract, token, or \
-                         permanentDocument: the terminal is the entry's member key and must \
+                         declaration targeting identity, contract, token, \
+                         permanentDocument, or deletableDocument: the terminal is the \
+                         entry's member key and must \
                          alone be a referable entity id (an identityPublicKey reference is \
                          compound — its key id lives in a separate property — and is not \
                          admitted)",
@@ -2382,10 +2713,14 @@ pub(super) fn apply_index_only(
                  but its path is not determined by a reference: every index property must \
                  be either a property with a same-contract permanentDocument `refersTo` \
                  declaration (the referring property — its value is the referenced \
-                 document's $id) or a key of that declaration's `propertyAgreement` \
-                 (consensus-equal to a referenced-document property). System properties \
-                 like $ownerId cannot be determined by the referenced document, so a \
-                 preallocated index may carry $ownerId only as its terminal",
+                 document's $id; a deletableDocument declaration does not qualify, \
+                 since the trees would outlive a deleted target) or a key of that \
+                 declaration's `propertyAgreement` \
+                 (consensus-equal to a referenced-document property, which may be the \
+                 referenced document's $ownerId or $creatorId). The referring document's \
+                 OWN system properties like $ownerId cannot be determined by the \
+                 referenced document, so a preallocated index may carry $ownerId only as \
+                 its terminal",
                 index_name, name,
             )));
         }

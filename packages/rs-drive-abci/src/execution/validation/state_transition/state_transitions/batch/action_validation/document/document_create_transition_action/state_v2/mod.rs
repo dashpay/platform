@@ -59,6 +59,7 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
 
         let reference_result = self.base().validate_document_references(
             self.data(),
+            owner_id,
             None,
             platform,
             block_info,

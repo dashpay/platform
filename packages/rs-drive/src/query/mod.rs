@@ -1,4 +1,6 @@
-use dpp::data_contract::document_type::{DocumentPropertyType, TimeRangeTransform};
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::DocumentPropertyType;
+use dpp::data_contract::document_type::TimeRangeTransform;
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]

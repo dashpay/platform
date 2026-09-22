@@ -23,7 +23,10 @@
 use crate::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
 };
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -54,6 +57,15 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that the type keeps whether moderators may delete its
+        // documents (a generation 1 rule: the keyword arrives with protocol
+        // version 14, and the shared config checks above also serve v0)
+        let result = self.validate_can_be_deleted_by_moderators_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that index definitions are unchanged
         let result = self.validate_index_definitions_unchanged(new_document_type);
 
@@ -77,8 +89,109 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate immutable-property changes (the schema compatibility
+        // differ has the top-level `immutable` key stripped, so this is the
+        // only place those changes are judged)
+        let result = self.validate_immutable_fields_update(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // Validate that the action fees are unchanged
+        let result = self.validate_action_fees_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate schema compatibility
         self.validate_schema_with_options(new_document_type, platform_version, &options)
+    }
+
+    /// The action fees of a document type are fixed when it is published: an
+    /// update may not add, change or remove them, nor switch their pricing.
+    /// A document type added by the update is not judged here and may declare
+    /// its own. A transition names the fee it agrees to pay (its action fee
+    /// agreement), so lifting this later cannot make a signed transition pay
+    /// a fee its signer never saw.
+    fn validate_action_fees_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        if self.action_fees() == new_document_type.action_fees() {
+            return SimpleConsensusValidationResult::new();
+        }
+        let change = match (self.action_fees(), new_document_type.action_fees()) {
+            (None, Some(_)) => "add",
+            (Some(_), None) => "remove",
+            _ => "change",
+        };
+        SimpleConsensusValidationResult::new_with_error(
+            DocumentTypeUpdateError::new(
+                self.data_contract_id(),
+                self.name(),
+                format!(
+                    "document type can not {change} its action fees: they are fixed when the \
+                     document type is published"
+                ),
+            )
+            .into(),
+        )
+    }
+
+    /// Whether moderators may delete documents of a type is fixed when the
+    /// type is created: whoever wrote a document knows from the type's first
+    /// version who may take it down, and a type that is the target of a
+    /// permanentDocument reference was admitted as one nobody can delete.
+    /// A document type added by an update declares the flag freely.
+    fn validate_can_be_deleted_by_moderators_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        if new_document_type.documents_can_be_deleted_by_moderators()
+            == self.documents_can_be_deleted_by_moderators()
+        {
+            // The window the moderators have is fixed with the flag: a longer one would
+            // reopen documents that had settled, and one rule for both directions keeps
+            // what an author was told when they wrote.
+            let (old_window, new_window) = (
+                self.documents_can_be_deleted_by_moderators_for(),
+                new_document_type.documents_can_be_deleted_by_moderators_for(),
+            );
+            if old_window == new_window {
+                return SimpleConsensusValidationResult::new();
+            }
+            let seconds = |window: Option<u32>| {
+                window.map_or("no limit".to_string(), |seconds| {
+                    format!("{seconds} seconds")
+                })
+            };
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change for how long after a document's last modification moderators can delete it: changing from {} to {}",
+                        seconds(old_window),
+                        seconds(new_window)
+                    ),
+                )
+                .into(),
+            );
+        }
+        SimpleConsensusValidationResult::new_with_error(
+            DocumentTypeUpdateError::new(
+                self.data_contract_id(),
+                self.name(),
+                format!(
+                    "document type can not change whether its documents can be deleted by moderators: changing from {} to {}",
+                    self.documents_can_be_deleted_by_moderators(),
+                    new_document_type.documents_can_be_deleted_by_moderators()
+                ),
+            )
+            .into(),
+        )
     }
 
     /// Top-level requiredness may only change in one way: a brand-new
@@ -164,6 +277,66 @@ impl DocumentTypeRef<'_> {
         SimpleConsensusValidationResult::new()
     }
 
+    /// The `immutable` property list may only grow. Removing an entry would
+    /// let a later replace change a property that documents were created
+    /// under the promise of never changing; adding one only narrows what
+    /// future replaces may touch and invalidates no stored document (the
+    /// parser has already checked that every new entry names a top-level
+    /// property of the new type).
+    ///
+    /// `immutableAllowSetting` may only shrink, with one exception: a
+    /// property that becomes immutable in this very update may arrive with
+    /// the allowance. Dropping an entry is a tightening (a still-absent
+    /// property can no longer be set). Adding one for a property that was
+    /// already immutable would relax a promise the documents were created
+    /// under, exactly like removing it from `immutable`.
+    ///
+    /// Judged here because both top-level keys are stripped from the schema
+    /// compatibility diff, exactly like `indices` and `required`.
+    fn validate_immutable_fields_update(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let old_immutable = self.immutable_fields();
+        let new_immutable = new_document_type.immutable_fields();
+
+        for property in old_immutable {
+            if !new_immutable.contains(property) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "document type can not remove immutable property '{property}': the \
+                             immutable list may only grow"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        let old_allow_setting = self.immutable_fields_allow_setting();
+        for property in new_document_type.immutable_fields_allow_setting() {
+            if !old_allow_setting.contains(property) && old_immutable.contains(property) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "document type can not allow setting immutable property '{property}' \
+                             once it is already immutable: only a property that becomes \
+                             immutable in this update may be listed in immutableAllowSetting"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        SimpleConsensusValidationResult::new()
+    }
+
     /// Index definitions are immutable once a document type is registered:
     /// Drive lays out the index trees at contract creation and never
     /// backfills them, so an added index would silently miss every
@@ -221,6 +394,7 @@ impl DocumentTypeRef<'_> {
 #[cfg(test)]
 mod tests {
     use crate::consensus::basic::BasicError;
+    use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::DocumentType;
@@ -266,6 +440,469 @@ mod tests {
             ]),
             platform_version,
         )
+    }
+
+    /// A mutable document type with three string properties and the given
+    /// `immutable` list.
+    fn doc_type_with_immutable(
+        immutable: Value,
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
+        let schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                "c": {"type": "string", "position": 2, "maxLength": 60_u32},
+            },
+            "immutable": immutable,
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create document type")
+    }
+
+    // The `immutable` list may only grow: removing an entry would let a
+    // later replace change a property documents were created under the
+    // promise of never changing.
+    #[test]
+    fn should_return_invalid_result_when_can_be_deleted_by_moderators_is_changed() {
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators,
+        };
+
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+
+        let schema = |deletable_by_moderators: bool| {
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                },
+                "additionalProperties": false,
+                "canBeDeletedByModerators": deletable_by_moderators,
+            })
+        };
+
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+            }));
+
+        let make_document_type = |schema: platform_value::Value| {
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "post",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+
+        // Neither direction is allowed: authors keep the rules they wrote under, and a
+        // permanentDocument reference was admitted against a type nobody can delete.
+        for (old_flag, new_flag) in [(false, true), (true, false)] {
+            let old_document_type = make_document_type(schema(old_flag));
+            let new_document_type = make_document_type(schema(new_flag));
+
+            // The whole generation 1 pipeline: the rule answers before the schema
+            // compatibility differ, which has no rule for the keyword.
+            let result = old_document_type
+                .as_ref()
+                .validate_update(new_document_type.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+
+            let expected = format!(
+                "document type can not change whether its documents can be deleted by moderators: changing from {} to {}",
+                old_flag, new_flag
+            );
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == expected
+            );
+        }
+    }
+
+    #[test]
+    fn should_return_invalid_result_when_the_moderators_window_is_changed() {
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators,
+        };
+
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+            }));
+        let make_document_type = |window: Option<u32>| {
+            let mut schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                },
+                "required": ["$updatedAt"],
+                "additionalProperties": false,
+                "canBeDeletedByModerators": true,
+            });
+            if let Some(seconds) = window {
+                schema
+                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
+                    .expect("expected to set the window");
+            }
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "post",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+
+        // Longer would reopen documents that had settled; shorter, given or taken away, would
+        // still change what an author was told. One rule for every direction.
+        for (old_window, new_window, from, to) in [
+            (Some(86400), Some(172800), "86400 seconds", "172800 seconds"),
+            (Some(86400), Some(3600), "86400 seconds", "3600 seconds"),
+            (Some(86400), None, "86400 seconds", "no limit"),
+            (None, Some(86400), "no limit", "86400 seconds"),
+        ] {
+            let result = make_document_type(old_window)
+                .as_ref()
+                .validate_update(make_document_type(new_window).as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            let expected = format!(
+                "document type can not change for how long after a document's last modification moderators can delete it: changing from {from} to {to}"
+            );
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message() == expected
+            );
+        }
+
+        // Unchanged, it passes.
+        let result = make_document_type(Some(86400))
+            .as_ref()
+            .validate_update(
+                make_document_type(Some(86400)).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_reject_removing_an_immutable_property() {
+        let platform_version = PlatformVersion::latest();
+
+        let old = doc_type_with_immutable(platform_value!(["a", "b"]), platform_version);
+        let new = doc_type_with_immutable(platform_value!(["a"]), platform_version);
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message()
+                    == "document type can not remove immutable property 'b': the immutable list may only grow"
+        );
+    }
+
+    // Adding an entry narrows what future replaces may touch and invalidates
+    // no stored document. This runs the whole v1 pipeline, so it also pins
+    // that the compatibility differ ignores the top-level `immutable` key
+    // instead of hard-erroring on a keyword it has no rule for.
+    #[test]
+    fn should_accept_adding_an_immutable_property() {
+        let platform_version = PlatformVersion::latest();
+
+        let old = doc_type_with_immutable(platform_value!(["a"]), platform_version);
+        let new = doc_type_with_immutable(platform_value!(["a", "c"]), platform_version);
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error");
+
+        assert!(
+            result.is_valid(),
+            "growing the immutable list must be accepted, got {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn should_accept_an_unchanged_immutable_list() {
+        let platform_version = PlatformVersion::latest();
+
+        let old = doc_type_with_immutable(platform_value!(["a", "b"]), platform_version);
+        let new = doc_type_with_immutable(platform_value!(["b", "a"]), platform_version);
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error");
+
+        assert!(
+            result.is_valid(),
+            "an unchanged (reordered) immutable list must be accepted, got {:?}",
+            result.errors
+        );
+    }
+
+    /// A document type with one string property and, when given, `actionFees`.
+    fn doc_type_with_action_fees(
+        action_fees: Option<Value>,
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
+        let mut schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+            },
+            "additionalProperties": false,
+        });
+        if let Some(action_fees) = action_fees {
+            schema
+                .insert("actionFees".to_string(), action_fees)
+                .expect("expected to set the action fees");
+        }
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create document type")
+    }
+
+    // The fees of a published document type do not change yet, although a transition names
+    // the fee it agrees to pay.
+    #[test]
+    fn should_reject_adding_changing_or_removing_action_fees() {
+        let platform_version = PlatformVersion::latest();
+        let free = doc_type_with_action_fees(None, platform_version);
+        let priced = doc_type_with_action_fees(
+            Some(platform_value!({"create": {"owner": 10_u64}})),
+            platform_version,
+        );
+        let repriced = doc_type_with_action_fees(
+            Some(platform_value!({"create": {"owner": 11_u64}})),
+            platform_version,
+        );
+        let fixed = doc_type_with_action_fees(
+            Some(platform_value!({"pricing": "fixed", "create": {"owner": 10_u64}})),
+            platform_version,
+        );
+
+        for (old, new, change) in [
+            (&free, &priced, "add"),
+            (&priced, &free, "remove"),
+            (&priced, &repriced, "change"),
+            (&priced, &fixed, "change"),
+        ] {
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("expected the update to be judged");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message().contains(&format!("can not {change} its action fees"))
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_unchanged_action_fees() {
+        let platform_version = PlatformVersion::latest();
+        let priced = doc_type_with_action_fees(
+            Some(platform_value!({"create": {"owner": 10_u64, "moderators": 3_u64}})),
+            platform_version,
+        );
+        let result = priced
+            .as_ref()
+            .validate_update(priced.as_ref(), 2, platform_version)
+            .expect("expected the update to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    /// Like `doc_type_with_immutable`, with an `immutableAllowSetting` list
+    /// as well.
+    fn doc_type_with_immutable_lists(
+        immutable: Value,
+        allow_setting: Value,
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
+        let schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                "c": {"type": "string", "position": 2, "maxLength": 60_u32},
+            },
+            "immutable": immutable,
+            "immutableAllowSetting": allow_setting,
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create document type")
+    }
+
+    // Dropping an allow-setting entry only tightens: a still-absent property
+    // can no longer be set.
+    #[test]
+    fn should_accept_removing_an_allow_setting_entry() {
+        let platform_version = PlatformVersion::latest();
+
+        let old = doc_type_with_immutable_lists(
+            platform_value!(["a", "b"]),
+            platform_value!(["b"]),
+            platform_version,
+        );
+        let new = doc_type_with_immutable_lists(
+            platform_value!(["a", "b"]),
+            platform_value!([]),
+            platform_version,
+        );
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error");
+
+        assert!(
+            result.is_valid(),
+            "dropping an allow-setting entry must be accepted, got {:?}",
+            result.errors
+        );
+    }
+
+    // An already-immutable property cannot start allowing a set: that would
+    // relax the promise its documents were created under.
+    #[test]
+    fn should_reject_allowing_setting_of_an_already_immutable_property() {
+        let platform_version = PlatformVersion::latest();
+
+        let old = doc_type_with_immutable_lists(
+            platform_value!(["a", "b"]),
+            platform_value!([]),
+            platform_version,
+        );
+        let new = doc_type_with_immutable_lists(
+            platform_value!(["a", "b"]),
+            platform_value!(["b"]),
+            platform_version,
+        );
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message().starts_with(
+                    "document type can not allow setting immutable property 'b' once it is already immutable"
+                )
+        );
+    }
+
+    // A property that becomes immutable in this update may arrive with the
+    // allowance: nothing was promised about it before.
+    #[test]
+    fn should_accept_a_newly_immutable_property_that_allows_setting() {
+        let platform_version = PlatformVersion::latest();
+
+        let old = doc_type_with_immutable_lists(
+            platform_value!(["a"]),
+            platform_value!([]),
+            platform_version,
+        );
+        let new = doc_type_with_immutable_lists(
+            platform_value!(["a", "c"]),
+            platform_value!(["c"]),
+            platform_version,
+        );
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error");
+
+        assert!(
+            result.is_valid(),
+            "a newly immutable property may allow setting, got {:?}",
+            result.errors
+        );
     }
 
     // The v0 regression this generation fixes: the outcome of adding an

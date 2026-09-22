@@ -10,6 +10,7 @@ use dash_sdk::dpp::data_contract::document_type::DocumentType;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
@@ -149,8 +150,13 @@ impl WasmSdk {
     /// 4. Broadcasts and waits for confirmation
     ///
     /// @param options - Creation options including document, identity key, and signer
+    /// The id of a new document commits to the identity contract nonce of its
+    /// create transition (protocol version 14), so it only exists once the
+    /// document is put: the `id` of the document passed in is a placeholder
+    /// until then, and is updated to the final id when this resolves.
+    ///
     /// @returns Promise resolving to the confirmed Document as Platform
-    ///          committed it — consensus-populated system fields
+    ///          committed it — its final `id` and the consensus-populated system fields
     ///          (`$createdAt` and friends) included. Keep THIS instance
     ///          when you later intend to delete an indexOnly document
     ///          whose type requires `$createdAt`: the delete carries the
@@ -215,6 +221,22 @@ impl WasmSdk {
                 settings,
             )
             .await?;
+
+        // From protocol version 14 the id of a new document commits to the
+        // identity contract nonce of its create transition, which is only
+        // assigned while the document is being put: the id the caller's
+        // document was built with is a placeholder. Hand the final id back to
+        // that document too, so code that keeps using it (to replace,
+        // transfer or delete what it just created) addresses the document
+        // Platform stored. Best effort: the returned document is the
+        // authoritative one.
+        if let Ok(caller_document) = Reflect::get(&options, &JsValue::from_str("document")) {
+            let _ = Reflect::set(
+                &caller_document,
+                &JsValue::from_str("id"),
+                &JsValue::from_str(&confirmed_document.id().to_string(Encoding::Base58)),
+            );
+        }
 
         Ok(DocumentWasm::new(
             confirmed_document,

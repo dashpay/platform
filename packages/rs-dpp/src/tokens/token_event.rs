@@ -831,6 +831,9 @@ impl TokenEvent {
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::Evonode(identifier),
                     ) => (2, identifier, 1),
+                    TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(identifier) => {
+                        (1, identifier, 2)
+                    }
                 };
 
                 let mut properties = BTreeMap::from([

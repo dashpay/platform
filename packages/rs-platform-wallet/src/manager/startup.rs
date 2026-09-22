@@ -1841,6 +1841,7 @@ mod tests {
                     wallet_info: self.managed.clone(),
                     identity_manager: crate::changeset::IdentityManagerStartState::default(),
                     unused_asset_locks: std::collections::BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
                 },
             );
             Ok(crate::changeset::ClientStartState {

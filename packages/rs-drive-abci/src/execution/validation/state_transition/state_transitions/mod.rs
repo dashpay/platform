@@ -16,6 +16,9 @@ pub mod identity_top_up;
 /// Module for updating an existing identity entity.
 pub mod identity_update;
 
+/// Module for raising the limits of an identity key.
+pub mod identity_key_limits_update;
+
 /// Validation shared by the data contract create and update transitions.
 pub mod data_contract_common;
 
@@ -24,6 +27,12 @@ pub mod data_contract_create;
 
 /// Module for updating an existing data contract entity.
 pub mod data_contract_update;
+
+/// Module for banning and suspending identities on a moderated data contract.
+pub mod contract_user_moderation;
+
+/// Module for paying out the fee pots a data contract's document action fees collect in.
+pub mod contract_fee_claim;
 
 /// Module for voting from a masternode.
 pub mod masternode_vote;
@@ -62,6 +71,21 @@ pub mod shielded_transfer;
 pub mod shielded_withdrawal;
 /// Module for unshield transition validation
 pub mod unshield;
+
+use dpp::document::Document;
+use dpp::version::PlatformVersion;
+
+pub(crate) fn stamp_withdrawal_document(
+    document: &mut Document,
+    platform_version: &PlatformVersion,
+) {
+    match document {
+        Document::V0(document) => {
+            document.contract_version =
+                Some(platform_version.system_data_contracts.withdrawals as u32);
+        }
+    }
+}
 
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1176,6 +1200,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(
+                preorder,
+                &entropy.0,
+                2 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -1187,6 +1219,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(
+                preorder,
+                &entropy.0,
+                2 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1198,6 +1238,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(
+                domain,
+                &entropy.0,
+                3 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -1209,6 +1257,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(
+                domain,
+                &entropy.0,
+                3 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -1488,6 +1544,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -1499,6 +1558,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1510,6 +1572,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -1521,6 +1586,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -1758,6 +1826,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1769,6 +1840,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -2658,6 +2732,7 @@ pub(in crate::execution) mod tests {
                     token_amount: token_cost_amount,
                     effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                     gas_fees_paid_by,
+                    optional: false,
                 }));
                 let gas_fees_paid_by_int: u8 = gas_fees_paid_by.into();
                 let schema = document_type.schema_mut();
@@ -3218,6 +3293,9 @@ pub(in crate::execution) mod tests {
                     platform_version,
                 )
                 .expect("expected a random preorder document");
+            preorder_document
+                .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
 
             let mut domain_document = domain
                 .random_document_with_identifier_and_entropy(
@@ -3229,6 +3307,9 @@ pub(in crate::execution) mod tests {
                     platform_version,
                 )
                 .expect("expected a random domain document");
+            domain_document
+                .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+                .expect("expected to set the document id");
 
             domain_document.set("parentDomainName", "dash".into());
             domain_document.set("normalizedParentDomainName", "dash".into());
@@ -3688,6 +3769,9 @@ pub(in crate::execution) mod tests {
             document.set("subdomainRules.allowSubdomains", false.into());
             document.set("preorderSalt", rng.gen::<[u8; 32]>().into());
 
+            document
+                .set_id_for_creation(domain, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
             let owner_id = document.owner_id();
             let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
                 base: DocumentBaseTransition::from_document(

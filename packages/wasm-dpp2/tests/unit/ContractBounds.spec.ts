@@ -46,6 +46,38 @@ describe('ContractBounds', () => {
     });
   });
 
+  describe('ContractGroup()', () => {
+    it('should create ContractGroup bounds via static method', () => {
+      const bounds = wasm.ContractBounds.ContractGroup(contractIdBase58);
+
+      expect(bounds.contractBoundsType).to.equal('contractGroup');
+      expect(bounds.contractBoundsTypeNumber).to.equal(2);
+      expect(bounds.identifier.toBase58()).to.equal(contractIdBase58);
+      expect(bounds.contractGroupId.toBase58()).to.equal(contractIdBase58);
+      expect(bounds.documentTypeName).to.be.undefined();
+    });
+
+    it('should round trip ContractGroup bounds through JSON', () => {
+      const bounds = wasm.ContractBounds.ContractGroup(contractIdBase58);
+
+      const json = bounds.toJSON();
+      expect(json).to.deep.equal({
+        $type: 'contractGroup',
+        id: contractIdBase58,
+      });
+
+      const restored = wasm.ContractBounds.fromJSON(json);
+      expect(restored.contractBoundsType).to.equal('contractGroup');
+      expect(restored.contractGroupId.toBase58()).to.equal(contractIdBase58);
+    });
+
+    it('should not expose a contract group id on contract bounds', () => {
+      const bounds = wasm.ContractBounds.SingleContract(contractIdBase58);
+
+      expect(bounds.contractGroupId).to.be.undefined();
+    });
+  });
+
   describe('toJSON()', () => {
     it('should convert SingleContract to JSON matching fixture', () => {
       const bounds = wasm.ContractBounds.SingleContract(contractIdBase58);

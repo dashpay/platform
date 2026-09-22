@@ -26,6 +26,8 @@ mod document;
 mod dpns;
 mod dpns_marketplace;
 mod identity_handle;
+mod key_limits;
+mod key_selection;
 mod loading;
 mod register_from_addresses;
 mod registration;
@@ -34,6 +36,7 @@ mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
 mod update;
+pub(crate) use key_selection::usable_authentication_key;
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
@@ -53,10 +56,7 @@ pub(crate) use payment_handler::DashPayPaymentHandler;
 #[cfg(test)]
 pub(crate) use payment_handler::run_dashpay_payment_hooks;
 mod payments;
-pub(crate) use payments::{
-    confirm_sent_dashpay_payment, confirm_sent_dashpay_payment_by_txid,
-    record_incoming_dashpay_payments,
-};
+pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_for_record};
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;

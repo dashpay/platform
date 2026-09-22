@@ -87,7 +87,38 @@ pub struct SystemLimits {
     /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
     /// method version 2). `None` for the protocol versions that predate the rule.
     pub core_dust_relay_fee_per_kb: Option<u64>,
-    pub max_contract_group_size: u16,
+    /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
+    /// `None` preserves the behavior of protocol versions that predate this limit.
+    pub max_core_fee_per_byte: Option<u32>,
+    /// Maximum number of members a change-control `Group` declared inside a data contract may
+    /// have (the groups token change-control rules delegate to). Not to be confused with
+    /// contract groups, the identity-owned sets of contracts below.
+    pub max_group_member_count: u16,
+    /// Maximum number of contract group memberships one data contract create transition may
+    /// declare. Contract groups exist from protocol version 14; earlier versions never reach
+    /// the check.
+    pub max_contract_group_memberships_per_contract: u16,
+    /// Maximum number of admins a contract group may name besides its owner.
+    pub max_contract_group_admins: u16,
+    /// Maximum length, in characters, of a contract group name.
+    pub max_contract_group_name_length: u16,
+    /// Maximum length, in characters, of a contract group description.
+    pub max_contract_group_description_length: u16,
+    /// Maximum number of moderator identities a moderated data contract may name
+    /// (`DataContractConfigV2::moderation`); the owner counts when it is named, and moderates
+    /// without being named. Contract moderation exists from protocol
+    /// version 14; read by the contract's `validate_moderation_config` v0 and never reached
+    /// before.
+    pub max_contract_moderators: u16,
+    /// Latest block time, in milliseconds, a contract suspension may run until: 2^53 - 1, the
+    /// largest integer JSON and JavaScript numbers hold exactly, which is how `until` travels
+    /// to clients. Read by the `ContractUserModeration` basic structure validation v0
+    /// (protocol version 14) and never reached before.
+    pub max_contract_suspension_until: u64,
+    /// Maximum length, in bytes of UTF-8, of the text of the reason a ban or a suspension
+    /// carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
+    /// structure validation v0 (protocol version 14) and never reached before.
+    pub max_contract_moderation_reason_length: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
@@ -235,6 +266,67 @@ mod tests {
                 .system_limits
                 .max_document_value_depth,
             Some(256)
+        );
+    }
+
+    /// The withdrawal structure generations selected from protocol version 14 read the cap
+    /// through `dpp::withdrawal::validate_core_fee_per_byte_cap`, which treats `None` as "no
+    /// cap" per the field's contract. A table that selected one of those generations without a
+    /// cap would drop the limit silently, so that combination has to be a deliberate edit here.
+    #[test]
+    fn should_carry_a_core_fee_cap_wherever_the_capped_withdrawal_rules_are_selected() {
+        let selecting_capped_rules: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| {
+                let dpp_transitions = &platform_version.dpp.state_transitions;
+                let identity_structure = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_credit_withdrawal_state_transition
+                    .basic_structure;
+                dpp_transitions
+                    .address_funds
+                    .validate_credit_withdrawal_structure
+                    >= 1
+                    || dpp_transitions.shielded.validate_withdrawal_structure >= 1
+                    || identity_structure.is_some_and(|version| version >= 2)
+            })
+            .collect();
+        assert!(
+            !selecting_capped_rules.is_empty(),
+            "no protocol version selects the fee-capped withdrawal rules; this test would \
+             assert nothing"
+        );
+        for platform_version in selecting_capped_rules {
+            assert!(
+                platform_version
+                    .system_limits
+                    .max_core_fee_per_byte
+                    .is_some(),
+                "protocol version {} selects the fee-capped withdrawal structure rules without \
+                 a Core fee-rate cap; see SystemLimits::max_core_fee_per_byte",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    #[test]
+    fn core_fee_per_byte_limit_starts_at_protocol_version_14() {
+        // v13 is already active on live networks, so the limit must not apply there.
+        assert_eq!(
+            PlatformVersion::get(13)
+                .expect("protocol version 13 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            None
+        );
+        assert_eq!(
+            PlatformVersion::get(14)
+                .expect("protocol version 14 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            Some(6_765)
         );
     }
 }

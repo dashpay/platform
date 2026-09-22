@@ -40,6 +40,18 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
     /// Updated fields
     pub changed_data_fields: BTreeSet<String>,
+    /// The subset of `changed_data_fields` the stored document had no value
+    /// for: properties this replace supplies for the first time. Read by the
+    /// immutable-property check, which lets a property listed under
+    /// `immutableAllowSetting` through exactly when it is set from absent.
+    pub added_data_fields: BTreeSet<String>,
+    /// The identifier each REMOVED top-level property held in the stored
+    /// document (removed properties that held anything else are absent).
+    /// Read by the immutable-property check, which lets an `immutable`
+    /// `deletableDocument` reference be cleared once the document it
+    /// pointed at is gone: the stored value is the only record of what
+    /// that was.
+    pub removed_identifier_fields: BTreeMap<String, Identifier>,
     /// Creator id
     pub creator_id: Option<Identifier>,
 }
@@ -81,6 +93,12 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// The fields that have changed
     fn changed_data_fields(&self) -> &BTreeSet<String>;
+    /// The changed fields the stored document had no value for (set for the
+    /// first time by this replace)
+    fn added_data_fields(&self) -> &BTreeSet<String>;
+    /// The identifier each removed top-level property held in the stored
+    /// document
+    fn removed_identifier_fields(&self) -> &BTreeMap<String, Identifier>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
 

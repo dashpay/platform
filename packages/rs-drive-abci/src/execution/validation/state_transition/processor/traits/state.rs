@@ -97,11 +97,36 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
             }
             StateTransition::IdentityUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::ContractUserModeration(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::ContractFeeClaim(st) => st.validate_state(
                 action,
                 platform,
                 validation_mode,
@@ -168,6 +193,7 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_from_addresses_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
@@ -257,6 +283,7 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_from_shielded_pool_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
@@ -273,6 +300,9 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => true,
             StateTransition::AddressFundsTransfer(_)

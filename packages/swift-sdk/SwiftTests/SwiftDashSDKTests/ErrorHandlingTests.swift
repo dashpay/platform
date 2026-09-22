@@ -58,7 +58,7 @@ final class ErrorHandlingTests: XCTestCase {
         )
 
         // The structured available/required duffs ride the message string —
-        // PlatformWalletFFIResult is ABI-frozen at code + message — so the
+        // PlatformWalletFFIResult carries no per-error value fields, so the
         // typed error must carry them through unaltered.
         let rendered = "asset lock coin selection is short: available 18000000 duffs, "
             + "required 100000000 duffs"
@@ -192,6 +192,97 @@ final class ErrorHandlingTests: XCTestCase {
             XCTAssertEqual(error.errorDescription, userText, "code \(code)")
             XCTAssertEqual(error.failureReason, busy, "code \(code) must keep the chain for logs")
         }
+    }
+
+    // MARK: - Consensus rejections
+
+    /// The four consensus families decode from their generated C constants,
+    /// and the `None` value is absence rather than a family: it is what
+    /// pairs with `consensus_code == 0`.
+    func testShouldMapEveryConsensusErrorKindFromFFI() {
+        let mappings: [(PlatformWalletFFIConsensusErrorKind, PlatformConsensusError.Kind)] = [
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_BASIC, .basic),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_SIGNATURE, .signature),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_FEE, .fee),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE, .state),
+        ]
+        for (ffi, expected) in mappings {
+            XCTAssertEqual(PlatformConsensusError.Kind(ffi: ffi), expected)
+        }
+        XCTAssertNil(
+            PlatformConsensusError.Kind(ffi: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE)
+        )
+    }
+
+    /// A rejection Rust left on the catch-all code reaches the host as the
+    /// typed consensus case, carrying Platform's own code and family plus the
+    /// message the `.unknown` case would have carried. 40722 is the second
+    /// once-per-identity token claim, which the example app branches on.
+    func testShouldSurfaceAConsensusRejectionOnTheCatchAllCode() {
+        let rendered = "Token operation failed: Token claim failed: identity already claimed"
+        let error = PlatformWalletError(
+            code: .errorUnknown,
+            message: rendered,
+            consensus: PlatformConsensusError(code: 40722, kind: .state)
+        )
+
+        guard case .consensusRejection(let consensus, let message) = error else {
+            return XCTFail("expected typed consensusRejection error, got \(error)")
+        }
+        XCTAssertEqual(consensus.code, 40722)
+        XCTAssertEqual(consensus.kind, .state)
+        XCTAssertEqual(message, rendered)
+        XCTAssertEqual(error.errorDescription, rendered)
+        // The accessor is what callers branch on, so it must agree.
+        XCTAssertEqual(error.consensusError, consensus)
+    }
+
+    /// The catch-all without a verdict stays `.unknown`, and a dedicated code
+    /// keeps its own case even when a verdict rides along: the wallet layer
+    /// chose that classification and it carries what the case exists for.
+    func testShouldNotTurnEveryFailureIntoAConsensusRejection() {
+        let plain = PlatformWalletError(code: .errorUnknown, message: "timed out")
+        guard case .unknown = plain else {
+            return XCTFail("a catch-all with no verdict must stay unknown, got \(plain)")
+        }
+        XCTAssertNil(plain.consensusError)
+
+        let dedicated = PlatformWalletError(
+            code: .errorAddressNonceMismatch,
+            message: "submitted nonce 1, Platform expected 2",
+            consensus: PlatformConsensusError(code: 40603, kind: .state)
+        )
+        guard case .addressNonceMismatch = dedicated else {
+            return XCTFail("a dedicated code must keep its case, got \(dedicated)")
+        }
+        XCTAssertNil(dedicated.consensusError)
+    }
+
+    /// The result wrapper reads the verdict off the C struct's own fields, so
+    /// a result with no rejection reports none rather than a zero code.
+    func testShouldReadTheConsensusVerdictFromTheFFIResult() {
+        let rejected = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN,
+                message: nil,
+                consensus_code: 40722,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE
+            )
+        )
+        XCTAssertEqual(
+            rejected.consensusError,
+            PlatformConsensusError(code: 40722, kind: .state)
+        )
+
+        // The two-field convenience init is the "this side invented the
+        // failure" shape, and must not fabricate a rejection.
+        let invented = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NULL_POINTER,
+                message: nil
+            )
+        )
+        XCTAssertNil(invented.consensusError)
     }
 
     func testPlatformWalletNotFoundFFIResultMapping() {

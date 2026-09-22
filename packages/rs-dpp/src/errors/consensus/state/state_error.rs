@@ -11,10 +11,28 @@ use crate::consensus::state::shielded::insufficient_shielded_fee_error::Insuffic
 use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use crate::consensus::state::contract_moderation::{
+    ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
+    ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
+    ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
+    ContractModerationTargetNotFoundError,
+    ContractModeratorIdentityNotFoundError,
+    ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
+    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
+    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
+    IdentityNotContractModeratorError,
+};
+use crate::consensus::state::contract_group::{
+    ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
+    ContractGroupAdminNotFoundError, IdentityNotContractGroupOwnerOrAdminError,
+};
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::consensus::state::data_trigger::DataTriggerError;
+use crate::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use crate::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
+use crate::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
@@ -44,6 +62,7 @@ use crate::consensus::state::document::document_contest_not_joinable_error::Docu
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
 use crate::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
@@ -56,13 +75,20 @@ use crate::consensus::state::document::document_not_for_sale_error::DocumentNotF
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use crate::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use crate::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
+use crate::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
+use crate::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
+use crate::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
+use crate::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
+use crate::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
+use crate::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use crate::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -407,6 +433,123 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedDocumentPropertyMismatchError(ReferencedDocumentPropertyMismatchError),
+
+    // Contract groups (protocol version 14).
+    #[error(transparent)]
+    ContractGroupAlreadyExistsError(ContractGroupAlreadyExistsError),
+
+    #[error(transparent)]
+    ContractGroupNotFoundError(ContractGroupNotFoundError),
+
+    #[error(transparent)]
+    IdentityNotContractGroupOwnerOrAdminError(IdentityNotContractGroupOwnerOrAdminError),
+
+    #[error(transparent)]
+    ContractGroupAdminNotFoundError(ContractGroupAdminNotFoundError),
+
+    // Authentication key limits (protocol version 14).
+    #[error(transparent)]
+    IdentityPublicKeyBudgetExceededError(IdentityPublicKeyBudgetExceededError),
+
+    #[error(transparent)]
+    IdentityPublicKeyAlreadyExpiredError(IdentityPublicKeyAlreadyExpiredError),
+
+    // Identity key limits update (protocol version 14).
+    #[error(transparent)]
+    IdentityPublicKeyLimitNotSetError(IdentityPublicKeyLimitNotSetError),
+
+    #[error(transparent)]
+    IdentityPublicKeyLimitNotRaisedError(IdentityPublicKeyLimitNotRaisedError),
+
+    // Immutable document properties (protocol version 14).
+    #[error(transparent)]
+    DocumentImmutablePropertyChangedError(DocumentImmutablePropertyChangedError),
+
+    // Once-per-identity token distribution (protocol version 14).
+    #[error(transparent)]
+    TokenOncePerIdentityDistributionAlreadyClaimedError(
+        TokenOncePerIdentityDistributionAlreadyClaimedError,
+    ),
+
+    // Gas paid by the contract owner (protocol version 14).
+    #[error(transparent)]
+    GasFeesPaidByNotAllowedError(GasFeesPaidByNotAllowedError),
+
+    #[error(transparent)]
+    InconsistentGasFeesPaidByInBatchError(InconsistentGasFeesPaidByInBatchError),
+
+    #[error(transparent)]
+    GasSponsorInsufficientBalanceError(GasSponsorInsufficientBalanceError),
+
+    // Contract moderation (protocol version 14).
+    #[error(transparent)]
+    ContractModerationNotEnabledError(ContractModerationNotEnabledError),
+
+    #[error(transparent)]
+    IdentityNotContractModeratorError(IdentityNotContractModeratorError),
+
+    #[error(transparent)]
+    ContractModerationTargetNotAllowedError(ContractModerationTargetNotAllowedError),
+
+    #[error(transparent)]
+    ContractUserAlreadyBannedError(ContractUserAlreadyBannedError),
+
+    #[error(transparent)]
+    ContractUserNotBannedError(ContractUserNotBannedError),
+
+    #[error(transparent)]
+    ContractUserNotSuspendedError(ContractUserNotSuspendedError),
+
+    #[error(transparent)]
+    ContractSuspensionNotInFutureError(ContractSuspensionNotInFutureError),
+
+    #[error(transparent)]
+    ContractUserBannedError(ContractUserBannedError),
+
+    #[error(transparent)]
+    ContractUserSuspendedError(ContractUserSuspendedError),
+
+    #[error(transparent)]
+    ContractModerationTargetNotFoundError(ContractModerationTargetNotFoundError),
+
+    #[error(transparent)]
+    ContractModeratorIdentityNotFoundError(ContractModeratorIdentityNotFoundError),
+
+    #[error(transparent)]
+    ContractModerationCounterpartyBarredError(ContractModerationCounterpartyBarredError),
+
+    // Contract fee claims (protocol version 14).
+    #[error(transparent)]
+    ContractFeesAlreadyClaimedThisEpochError(ContractFeesAlreadyClaimedThisEpochError),
+
+    #[error(transparent)]
+    ContractFeesNothingToClaimError(ContractFeesNothingToClaimError),
+
+    #[error(transparent)]
+    ContractFeeClaimNotAllowedError(ContractFeeClaimNotAllowedError),
+
+    // `refersTo: deletableDocument` (protocol version 14). Appended here,
+    // away from the other reference errors, because the enum is append-only.
+    #[error(transparent)]
+    ReferencedDocumentTypeNotDeletableError(ReferencedDocumentTypeNotDeletableError),
+
+    // Document deletion by moderators (protocol version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableByModeratorsError(DocumentTypeNotDeletableByModeratorsError),
+
+    // Document action fee agreements (protocol version 14).
+    #[error(transparent)]
+    DocumentActionFeeAgreementNotSetError(DocumentActionFeeAgreementNotSetError),
+
+    #[error(transparent)]
+    DocumentActionFeeAgreementMismatchError(DocumentActionFeeAgreementMismatchError),
+
+    #[error(transparent)]
+    DocumentActionFeeMultiplierNotToleratedError(DocumentActionFeeMultiplierNotToleratedError),
+
+    // The moderators' deletion window (protocol version 14).
+    #[error(transparent)]
+    DocumentModerationWindowElapsedError(DocumentModerationWindowElapsedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -418,6 +561,16 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
+    use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
+    use crate::data_contract::config::moderation::ContractModerationList;
+    use crate::data_contract::document_type::action_fees::agreement::{
+        AgreedFeeMultiplier, DocumentActionFeeAgreement,
+    };
+    use crate::data_contract::document_type::action_fees::{
+        ActionFeePricing, ContractFeePot, DocumentActionFee,
+    };
+    use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use platform_value::Identifier;
 
     /// `StateError` is encoded by variant position, so inserting a variant
@@ -426,7 +579,7 @@ mod tests {
     /// clients, which would then decode an existing error as a different one.
     /// These are the frozen discriminants of the first variant, of the variant
     /// that follows the document contest block (the one an insertion there
-    /// would shift first), and of the last two.
+    /// would shift first), and of the last four.
     fn discriminant_of(error: StateError) -> u8 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
@@ -553,6 +706,279 @@ mod tests {
                 )
             )),
             100
+        );
+        // Contract groups (protocol version 14).
+        let group_id = Identifier::from([1u8; 32]);
+        let identity_id = Identifier::from([2u8; 32]);
+        assert_eq!(
+            discriminant_of(StateError::ContractGroupAlreadyExistsError(
+                ContractGroupAlreadyExistsError::new(group_id)
+            )),
+            101
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractGroupNotFoundError(
+                ContractGroupNotFoundError::new(group_id)
+            )),
+            102
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityNotContractGroupOwnerOrAdminError(
+                IdentityNotContractGroupOwnerOrAdminError::new(identity_id, group_id)
+            )),
+            103
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractGroupAdminNotFoundError(
+                ContractGroupAdminNotFoundError::new(group_id, identity_id)
+            )),
+            104
+        );
+        // Authentication key limits (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyBudgetExceededError(
+                IdentityPublicKeyBudgetExceededError::new(identity_id, 1, 2, 3)
+            )),
+            105
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyAlreadyExpiredError(
+                IdentityPublicKeyAlreadyExpiredError::new(1, 2, 3)
+            )),
+            106
+        );
+        // Identity key limits update (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyLimitNotSetError(
+                IdentityPublicKeyLimitNotSetError::new(1, KeyLimit::Budget)
+            )),
+            107
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyLimitNotRaisedError(
+                IdentityPublicKeyLimitNotRaisedError::new(1, KeyLimit::Expiry, 2, 3)
+            )),
+            108
+        );
+        // Immutable document properties (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentImmutablePropertyChangedError(
+                DocumentImmutablePropertyChangedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "author".to_string()
+                )
+            )),
+            109
+        );
+        // Once-per-identity token distribution (protocol version 14).
+        assert_eq!(
+            discriminant_of(
+                StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(
+                    TokenOncePerIdentityDistributionAlreadyClaimedError::new(
+                        group_id,
+                        identity_id,
+                        1
+                    )
+                )
+            ),
+            110
+        );
+        // Gas paid by the contract owner (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::GasFeesPaidByNotAllowedError(
+                GasFeesPaidByNotAllowedError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    GasFeesPaidBy::ContractOwner,
+                    GasFeesPaidBy::DocumentOwner,
+                )
+            )),
+            111
+        );
+        assert_eq!(
+            discriminant_of(StateError::InconsistentGasFeesPaidByInBatchError(
+                InconsistentGasFeesPaidByInBatchError::new(Some(identity_id), None)
+            )),
+            112
+        );
+        assert_eq!(
+            discriminant_of(StateError::GasSponsorInsufficientBalanceError(
+                GasSponsorInsufficientBalanceError::new(identity_id, 1, 2)
+            )),
+            113
+        );
+        // Contract moderation (protocol version 14): every variant, the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationNotEnabledError(
+                ContractModerationNotEnabledError::new(group_id, ContractModerationList::Banlist,)
+            )),
+            114
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityNotContractModeratorError(
+                IdentityNotContractModeratorError::new(group_id, identity_id)
+            )),
+            115
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTargetNotAllowedError(
+                ContractModerationTargetNotAllowedError::new(group_id, identity_id)
+            )),
+            116
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserAlreadyBannedError(
+                ContractUserAlreadyBannedError::new(group_id, identity_id)
+            )),
+            117
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotBannedError(
+                ContractUserNotBannedError::new(group_id, identity_id)
+            )),
+            118
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotSuspendedError(
+                ContractUserNotSuspendedError::new(group_id, identity_id)
+            )),
+            119
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractSuspensionNotInFutureError(
+                ContractSuspensionNotInFutureError::new(group_id, identity_id, 1, 2)
+            )),
+            120
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserBannedError(
+                ContractUserBannedError::new(group_id, identity_id)
+            )),
+            121
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserSuspendedError(
+                ContractUserSuspendedError::new(group_id, identity_id, 1)
+            )),
+            122
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTargetNotFoundError(
+                ContractModerationTargetNotFoundError::new(group_id, identity_id)
+            )),
+            123
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModeratorIdentityNotFoundError(
+                ContractModeratorIdentityNotFoundError::new(group_id, identity_id)
+            )),
+            124
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationCounterpartyBarredError(
+                ContractModerationCounterpartyBarredError::new(
+                    group_id,
+                    identity_id,
+                    ContractModerationCounterpartyRole::Recipient,
+                )
+            )),
+            125
+        );
+        // Contract fee claims (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ContractFeesAlreadyClaimedThisEpochError(
+                ContractFeesAlreadyClaimedThisEpochError::new(
+                    group_id,
+                    ContractFeePot::Moderators,
+                    7
+                )
+            )),
+            126
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractFeesNothingToClaimError(
+                ContractFeesNothingToClaimError::new(group_id, ContractFeePot::Owner)
+            )),
+            127
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractFeeClaimNotAllowedError(
+                ContractFeeClaimNotAllowedError::new(group_id, ContractFeePot::Owner, identity_id)
+            )),
+            128
+        );
+        // `refersTo: deletableDocument` (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeNotDeletableError(
+                ReferencedDocumentTypeNotDeletableError::new(
+                    group_id,
+                    "note".to_string(),
+                    "noteId".to_string()
+                )
+            )),
+            129
+        );
+        // Document deletion by moderators (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableByModeratorsError(
+                DocumentTypeNotDeletableByModeratorsError::new(group_id, "post".to_string())
+            )),
+            130
+        );
+        // Document action fee agreements (protocol version 14).
+        let declared_fee = DocumentActionFee {
+            owner: 1,
+            moderators: 2,
+        };
+        let agreed_fee_multiplier = AgreedFeeMultiplier {
+            known_permille: 1000,
+            increase_tolerance_percent: 20,
+        };
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeAgreementNotSetError(
+                DocumentActionFeeAgreementNotSetError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    ActionFeePricing::Fixed,
+                    declared_fee,
+                )
+            )),
+            131
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeAgreementMismatchError(
+                DocumentActionFeeAgreementMismatchError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    ActionFeePricing::Fixed,
+                    declared_fee,
+                    &DocumentActionFeeAgreement::for_declared_fee(
+                        ActionFeePricing::FeeMultiplier,
+                        declared_fee,
+                        agreed_fee_multiplier,
+                    ),
+                )
+            )),
+            132
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeMultiplierNotToleratedError(
+                DocumentActionFeeMultiplierNotToleratedError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    agreed_fee_multiplier,
+                    1500,
+                )
+            )),
+            133
+        );
+        // The moderators' deletion window (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentModerationWindowElapsedError(
+                DocumentModerationWindowElapsedError::new(group_id, identity_id, 1, 2, 3)
+            )),
+            134
         );
     }
 }

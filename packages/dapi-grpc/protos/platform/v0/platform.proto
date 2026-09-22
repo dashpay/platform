@@ -18,6 +18,8 @@ service Platform {
       returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest)
       returns (GetIdentityContractNonceResponse);
+  rpc getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest)
+      returns (GetIdentityKeysRemainingBudgetsResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
   rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
@@ -39,6 +41,20 @@ service Platform {
       returns (GetDataContractsResponse);
   rpc getDataContractsByRange(GetDataContractsByRangeRequest)
       returns (GetDataContractsResponse);
+  rpc getContractGroupInfo(GetContractGroupInfoRequest)
+      returns (GetContractGroupInfoResponse);
+  rpc getContractGroupMembers(GetContractGroupMembersRequest)
+      returns (GetContractGroupMembersResponse);
+  rpc getContractGroupsForContract(GetContractGroupsForContractRequest)
+      returns (GetContractGroupsForContractResponse);
+  rpc getContractModerationStatus(GetContractModerationStatusRequest)
+      returns (GetContractModerationStatusResponse);
+  rpc getContractModerationEntries(GetContractModerationEntriesRequest)
+      returns (GetContractModerationEntriesResponse);
+  rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest)
+      returns (GetContractDocumentRemovalsResponse);
+  rpc getContractFeePots(GetContractFeePotsRequest)
+      returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -265,6 +281,40 @@ message GetIdentityContractNonceResponse {
   }
 
   oneof version { GetIdentityContractNonceResponseV0 v0 = 1; }
+}
+
+// What is left of the budgets of keys of one identity. A key may carry a
+// total budget (protocol version 14); the key itself never changes, so what
+// remains of it is tracked next to it and read with this query.
+message GetIdentityKeysRemainingBudgetsRequest {
+  message GetIdentityKeysRemainingBudgetsRequestV0 {
+    bytes identity_id = 1;        // ID of the identity
+    repeated uint32 key_ids = 2;  // IDs of the keys to look up, at least one
+    bool prove = 3;               // Flag to request a proof as the response
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsRequestV0 v0 = 1; }
+}
+
+message GetIdentityKeysRemainingBudgetsResponse {
+  message GetIdentityKeysRemainingBudgetsResponseV0 {
+    message KeyRemainingBudgetEntry {
+      uint32 key_id = 1; // ID of the key
+      // Credits left of the key's total budget. Absent when the key has no
+      // budget (or does not exist). Zero means the key can no longer sign.
+      optional uint64 remaining_budget = 2 [ jstype = JS_STRING ];
+    }
+
+    message KeysRemainingBudgets {
+      repeated KeyRemainingBudgetEntry entries = 1; // One entry per requested key
+    }
+
+    oneof result {
+      KeysRemainingBudgets keys_remaining_budgets = 1; // The remaining budgets
+      Proof proof = 2; // Proof of the remaining budgets, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceResponse {
@@ -550,6 +600,342 @@ message GetDataContractsLatestVersionsResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetDataContractsLatestVersionsResponseV0 v0 = 1; }
+}
+
+// A document type that belongs to a contract group: the contract and the
+// document type name.
+message ContractGroupDocumentTypeMember {
+  bytes contract_id = 1;         // The contract the document type belongs to
+  string document_type_name = 2; // The document type name within the contract
+}
+
+// A token that belongs to a contract group: the contract and the token's
+// position within it.
+message ContractGroupTokenMember {
+  bytes contract_id = 1;      // The contract the token belongs to
+  uint32 token_position = 2;  // The token's position in the contract (u16)
+}
+
+message GetContractGroupInfoRequest {
+  message GetContractGroupInfoRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    bool prove = 2;              // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupInfoRequestV0 v0 = 1; }
+}
+
+message GetContractGroupInfoResponse {
+  message ContractGroupInfo {
+    bytes owner_id = 1; // The identity that registered the group and owns it
+    repeated bytes admin_ids =
+        2; // Identities that may add members besides the owner; empty for a
+           // single owner
+    optional string name = 3;        // The group's name, when it has one
+    optional string description = 4; // The group's description, when it has one
+  }
+
+  message GetContractGroupInfoResponseV0 {
+    oneof result {
+      ContractGroupInfo contract_group_info =
+          1; // The group's stored information; absent when no such group exists
+      Proof proof = 2; // Cryptographic proof of the information, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupInfoResponseV0 v0 = 1; }
+}
+
+message GetContractGroupMembersRequest {
+  // Contracts that belong to the group as a whole, in contract id order.
+  message ContractMembersQuery {
+    optional bytes start_after =
+        1; // 32-byte contract id; the page starts after it
+  }
+
+  // Document types that belong to the group, in contract id then document
+  // type name order.
+  message DocumentTypeMembersQuery {
+    optional ContractGroupDocumentTypeMember start_after =
+        1; // The page starts after this document type
+  }
+
+  // Tokens that belong to the group, in contract id then token position order.
+  message TokenMembersQuery {
+    optional ContractGroupTokenMember start_after =
+        1; // The page starts after this token
+  }
+
+  message GetContractGroupMembersRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    oneof members {
+      ContractMembersQuery contracts = 2;          // Read the member contracts
+      DocumentTypeMembersQuery document_types = 3; // Read the member document types
+      TokenMembersQuery tokens = 4;                // Read the member tokens
+    }
+    optional uint32 limit =
+        5; // Maximum number of members to return, 1..=100; absent means 100
+    bool prove = 6; // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupMembersRequestV0 v0 = 1; }
+}
+
+message GetContractGroupMembersResponse {
+  message ContractMembers {
+    repeated bytes contract_ids = 1; // Member contracts, in contract id order
+  }
+
+  message DocumentTypeMembers {
+    repeated ContractGroupDocumentTypeMember document_types =
+        1; // Member document types, in contract id then name order
+  }
+
+  message TokenMembers {
+    repeated ContractGroupTokenMember tokens =
+        1; // Member tokens, in contract id then position order
+  }
+
+  message GetContractGroupMembersResponseV0 {
+    oneof result {
+      ContractMembers contracts = 1;          // One page of member contracts
+      DocumentTypeMembers document_types = 2; // One page of member document types
+      TokenMembers tokens = 3;                // One page of member tokens
+      Proof proof = 4; // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 5; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupMembersResponseV0 v0 = 1; }
+}
+
+// One of the two moderation lists a moderated data contract may keep (protocol version 14).
+enum ContractModerationList {
+  CONTRACT_MODERATION_LIST_UNSPECIFIED = 0; // Not a list: a request that leaves the field out is refused
+  CONTRACT_MODERATION_LIST_BANLIST = 1;     // Identities barred until an unban
+  CONTRACT_MODERATION_LIST_SUSPENSIONS = 2; // Identities barred until a block time
+}
+
+// Why a moderator banned or suspended an identity. Nothing checks what a
+// moderator writes.
+message ContractModerationReason {
+  optional uint32 code =
+      1; // Reserved for the ban codes a contract may declare in a later
+         // protocol version; a u16, expected unset today, never checked
+  string text = 2; // Free text, at most 1024 bytes of UTF-8, may be empty
+}
+
+message GetContractModerationStatusRequest {
+  message GetContractModerationStatusRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    bytes identity_id = 2; // The 32-byte id of the identity
+    repeated ContractModerationList lists =
+        3; // The lists to read, which the contract's config must declare; at
+           // least one, no repeats
+    bool prove = 4; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationStatusRequestV0 v0 = 1; }
+}
+
+message GetContractModerationStatusResponse {
+  // The identity's status on the lists the request named, and on no other: a
+  // list that was not read says nothing, so its field is left unset.
+  message ContractModerationStatus {
+    optional bool banned =
+        1; // Set only when the banlist was read: the identity is on it
+    optional uint64 suspended_until =
+        2; // The block time, in milliseconds, until which the identity is
+           // suspended; a lapsed suspension stays until it is swept. Unset
+           // when the identity is not suspended or the list was not read
+    repeated ContractModerationList lists =
+        3; // The lists this status covers, as the request named them
+    optional ContractModerationReason ban_reason =
+        4; // Set when the identity is banned: why
+    optional ContractModerationReason suspension_reason =
+        5; // Set when the identity is suspended: why
+  }
+
+  message GetContractModerationStatusResponseV0 {
+    oneof result {
+      ContractModerationStatus status = 1; // The identity's status on the lists read
+      Proof proof = 2;                     // Cryptographic proof of the status, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationStatusResponseV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesRequest {
+  message GetContractModerationEntriesRequestV0 {
+    bytes contract_id = 1;           // The 32-byte id of the moderated contract
+    ContractModerationList list = 2; // The list to read, which the contract's config must declare
+    optional bytes start_after =
+        3; // 32-byte identity id; the page starts after it
+    optional uint32 limit =
+        4; // Maximum number of entries to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationEntriesRequestV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesResponse {
+  message ContractModerationEntry {
+    bytes identity_id = 1; // The barred identity
+    optional uint64 until =
+        2; // For a suspension list entry: the block time, in milliseconds, at
+           // which it lapses
+    ContractModerationReason reason = 3; // Why the identity is on the list
+  }
+
+  message ContractModerationEntries {
+    repeated ContractModerationEntry entries = 1; // The page, in identity id order
+  }
+
+  message GetContractModerationEntriesResponseV0 {
+    oneof result {
+      ContractModerationEntries entries = 1; // One page of the list
+      Proof proof = 2;                       // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationEntriesResponseV0 v0 = 1; }
+}
+
+// The records of the documents a contract's moderators deleted, within one
+// document type whose documents they may delete (`canBeDeletedByModerators`):
+// the ones of the document ids named, or one page in document id order.
+message GetContractDocumentRemovalsRequest {
+  message DocumentIds {
+    repeated bytes document_ids =
+        1; // 32-byte document ids, from 1 to the protocol's
+           // max_returned_elements (100), none twice; an id with no record is
+           // left out of the response, and proved absent when a proof is asked
+  }
+
+  message Page {
+    optional bytes start_after =
+        1; // 32-byte document id; the page starts after it
+    optional uint32 limit =
+        2; // Maximum number of records to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+  }
+
+  message GetContractDocumentRemovalsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    string document_type_name =
+        2; // The document type, which must let moderators delete its documents
+    oneof selection {
+      DocumentIds document_ids = 3; // The records of these documents
+      Page page = 4;                // One page of the type's records
+    }
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractDocumentRemovalsRequestV0 v0 = 1; }
+}
+
+message GetContractDocumentRemovalsResponse {
+  message ContractDocumentRemoval {
+    bytes document_id = 1;       // The id the removed document had
+    bytes document_owner_id = 2; // The identity that owned it
+    bytes moderator_id = 3; // The contract owner or moderator that removed it
+    uint64 removed_at =
+        4; // The time of the block that removed it, in milliseconds
+    ContractModerationReason reason = 5; // Why the moderator removed it
+  }
+
+  message ContractDocumentRemovals {
+    repeated ContractDocumentRemoval removals =
+        1; // The records, in document id order
+  }
+
+  message GetContractDocumentRemovalsResponseV0 {
+    oneof result {
+      ContractDocumentRemovals removals = 1; // The records read
+      Proof proof = 2; // Cryptographic proof of the records, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractDocumentRemovalsResponseV0 v0 = 1; }
+}
+
+message GetContractFeePotsRequest {
+  message GetContractFeePotsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the data contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractFeePotsRequestV0 v0 = 1; }
+}
+
+message GetContractFeePotsResponse {
+  // The last payout of a pot, which the claim that made it left in state
+  message ContractFeePotLastClaim {
+    uint32 epoch = 1; // The epoch (u16) the pot was paid out in; a pot is paid
+                      // out at most once per epoch
+    uint64 time_ms = 2
+        [ jstype = JS_STRING ]; // The time of the block that paid the pot out
+    bytes claimant_id = 3; // The identity that signed the claim: the contract
+                           // owner for the owner pot, the member of the
+                           // moderation team that claimed for the moderators pot
+  }
+
+  // One of the two pots a contract's document action fees collect in
+  message ContractFeePot {
+    uint64 credits = 1 [ jstype = JS_STRING ]; // What the pot holds
+    ContractFeePotLastClaim last_claim =
+        2; // Unset when the pot was never paid out
+  }
+
+  message ContractFeePots {
+    ContractFeePot owner = 1;      // The pot the contract owner claims
+    ContractFeePot moderators = 2; // The pot the moderation team shares
+  }
+
+  message GetContractFeePotsResponseV0 {
+    oneof result {
+      ContractFeePots pots = 1; // Both pots of the contract
+      Proof proof = 2;          // Cryptographic proof of the pots, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractFeePotsResponseV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractRequest {
+  message GetContractGroupsForContractRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupsForContractRequestV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractResponse {
+  message DocumentTypeMemberships {
+    string document_type_name = 1; // The document type within the contract
+    repeated bytes contract_group_ids =
+        2; // The groups the document type belongs to
+  }
+
+  message TokenMemberships {
+    uint32 token_position = 1; // The token's position in the contract (u16)
+    repeated bytes contract_group_ids = 2; // The groups the token belongs to
+  }
+
+  message ContractGroupMemberships {
+    repeated bytes contract_group_ids =
+        1; // The groups the whole contract belongs to
+    repeated DocumentTypeMemberships document_types =
+        2; // The groups each document type belongs to
+    repeated TokenMemberships tokens = 3; // The groups each token belongs to
+  }
+
+  message GetContractGroupsForContractResponseV0 {
+    oneof result {
+      ContractGroupMemberships contract_group_memberships =
+          1; // The memberships; every list is empty when the contract belongs
+             // to no group
+      Proof proof = 2; // Cryptographic proof of the memberships, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupsForContractResponseV0 v0 = 1; }
 }
 
 message GetDataContractsRequest {
@@ -1774,6 +2160,13 @@ message GetDocumentsResponse {
     message ChainedDocuments {
       repeated bytes inner_documents = 1;
       repeated bytes outer_documents = 2;
+      // The join values that have NO outer document, in first
+      // appearance order: referenced documents deleted after the
+      // inner document was written. Only a join property declaring
+      // `refersTo: deletableDocument` can report any; under
+      // `refersTo: permanentDocument` a missing document fails the
+      // query instead.
+      repeated bytes missing_outer_ids = 3;
     }
 
     // A composite query's page and per-sub-query results, documents
@@ -1791,6 +2184,11 @@ message GetDocumentsResponse {
           // value's index-key bytes.
           CountEntries counts = 2;
         }
+        // DOCUMENTS by-id join only: the derived ids that have NO
+        // document, in first appearance order (referenced documents
+        // deleted since). Only a source property declaring
+        // `refersTo: deletableDocument` can report any.
+        repeated bytes missing_ids = 3;
       }
       repeated SubQueryResult sub_results = 2;
     }

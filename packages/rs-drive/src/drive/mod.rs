@@ -31,6 +31,8 @@ pub mod credit_pools;
 /// Document module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod document;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 /// Identity module
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -49,7 +51,9 @@ pub mod system;
 #[cfg(feature = "server")]
 mod asset_lock;
 #[cfg(feature = "server")]
-mod platform_state;
+/// The saved platform state: its record, the small per-block record, and the
+/// collections kept as one aux entry per member.
+pub mod platform_state;
 
 /// Prefunded specialized balances module
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -59,6 +63,9 @@ pub mod prefunded_specialized_balances;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod votes;
 
+/// Contract groups: identity-owned sets of contracts, document types and tokens.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod contract_groups;
 /// Group module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod group;
@@ -181,8 +188,12 @@ pub struct Drive {
 //       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
-//                                     /                          /
-//                           Saved Block Transactions 36       ShieldedBalances 52
+//                                     /                          /                                                                                                                                         \
+//                           Saved Block Transactions 36       ShieldedBalances 52                                                                                                                     ContractGroups 124
+//
+// This is the shape of a fresh chain. `drive::structure` describes every level below the root as
+// code, and `packages/rs-drive/grovedb-structure.json` records this shape from a real GroveDB
+// (`layer_shapes.root`), so a test fails when the two drift apart.
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -228,6 +239,10 @@ pub enum RootTree {
     Votes = 112,
     /// Group actions
     GroupActions = 88,
+    /// Contract groups: identity-owned sets of contracts, contract document types and contract
+    /// tokens, with a backwards index from each member contract to its groups (protocol
+    /// version 14).
+    ContractGroups = 124,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -254,6 +269,7 @@ impl fmt::Display for RootTree {
             RootTree::Versions => "Versions",
             RootTree::Votes => "Votes",
             RootTree::GroupActions => "GroupActions",
+            RootTree::ContractGroups => "ContractGroups",
         };
         write!(f, "{}", variant_name)
     }
@@ -299,6 +315,8 @@ impl TryFrom<u8> for RootTree {
             16 => Ok(RootTree::Tokens),
             120 => Ok(RootTree::Versions),
             112 => Ok(RootTree::Votes),
+            88 => Ok(RootTree::GroupActions),
+            124 => Ok(RootTree::ContractGroups),
             _ => Err(Error::Drive(DriveError::NotSupported(
                 "unknown root tree item",
             ))),
@@ -327,6 +345,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Versions => &[120],
             RootTree::Votes => &[112],
             RootTree::GroupActions => &[88],
+            RootTree::ContractGroups => &[124],
         }
     }
 }

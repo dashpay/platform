@@ -35,6 +35,7 @@ impl DocumentIndexOnlyDeleteTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_deletion_token_cost(),
+                |action_fees| action_fees.document_deletion_action_fee(),
                 "indexOnlyDelete",
             )?;
 

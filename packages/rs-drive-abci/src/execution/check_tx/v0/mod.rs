@@ -688,8 +688,10 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24002877830
+            // from protocol version 14 the contract's version item is stored in the contract's
+            // other tree (one more tree insert), the config is version 2 (one more byte), and
+            // the larger DashPay v2 schema adds byte-billed contract bytes
+            24003037140
         );
 
         let check_result = platform
@@ -1353,8 +1355,10 @@ mod tests {
         // Plus we have 24_000_000_000 in base costs
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24005755660
+            // from protocol version 14 the contract's version item is stored in the contract's
+            // other tree (one more tree insert), the config is version 2 (one more byte), and
+            // the larger DashPay v2 schema adds byte-billed contract bytes
+            24006074280
         );
 
         let check_result = platform
@@ -1829,8 +1833,10 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24002877830
+            // from protocol version 14 the contract's version item is stored in the contract's
+            // other tree (one more tree insert), the config is version 2 (one more byte), and
+            // the larger DashPay v2 schema adds byte-billed contract bytes
+            24003037140
         );
 
         platform
@@ -1917,8 +1923,11 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            27002932650
+            // from protocol version 14 the contract's version item is stored in the contract's
+            // other tree (an update reads what key `2` holds, billed, before writing under it),
+            // the config is version 2, and the larger DashPay v2 schema adds byte-billed
+            // contract bytes
+            27003119120
         );
 
         let check_result = platform
@@ -2506,8 +2515,10 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24002877830
+            // from protocol version 14 the contract's version item is stored in the contract's
+            // other tree (one more tree insert), the config is version 2 (one more byte), and
+            // the larger DashPay v2 schema adds byte-billed contract bytes
+            24003037140
         );
 
         platform
@@ -2778,6 +2789,9 @@ mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
