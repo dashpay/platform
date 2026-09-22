@@ -514,7 +514,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             // read as one subset of it.
                             let (root_hash, document) = query
                                 .verify_proof(
-                                    true,
+                                    platform_version.drive.methods.prove.prove_state_transition
+                                        >= 1,
                                     &response_proof.grovedb_proof,
                                     document_type,
                                     platform_version,
@@ -902,7 +903,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         false,
                         false,
                         // From prover version 1 the proof also carries the owner's balance.
-                        true,
+                        platform_version.drive.methods.prove.prove_state_transition >= 1,
                         platform_version,
                     )
                     .expect("expected to verify identity keys");
