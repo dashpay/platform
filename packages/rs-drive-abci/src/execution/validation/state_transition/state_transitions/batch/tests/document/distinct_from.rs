@@ -13,6 +13,7 @@ mod distinct_from_tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::codes::ErrorWithCode;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
