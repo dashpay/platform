@@ -16,6 +16,8 @@ use dpp::data_contract::document_type::{
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
+use dpp::document::transfer::Transferable;
+use dpp::nft::TradeMode;
 use dpp::document::DocumentV0Getters;
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
@@ -213,11 +215,26 @@ fn validate_document_type_references_v0(
             DocumentPropertyType::IdentifierWithReference(reference_target) => reference_target,
             // A key reference on the key id property itself: the value is the
             // key id and the declaration names whose key it is, so no other
-            // property of the document binds it, and a replace re-validates
-            // it exactly when the key id changed
+            // property of the document binds it. The identity is the writer,
+            // transition metadata that never appears among the changed
+            // fields: where documents of the type can change hands (they are
+            // transferable or tradeable) the owner may not be the one who
+            // wrote the key id, so the reference is re-validated on EVERY
+            // replace, as a writer gate is, and a transfer itself is not
+            // checked, so the reference governs writing, not holding. Where
+            // the owner is fixed for the document's life an untouched key id
+            // is not refetched.
             DocumentPropertyType::KeyIdWithReference(identity_property) => {
-                if changed_fields.is_some_and(|changed| !is_changed_field(changed, path)) {
-                    continue;
+                if let Some(changed) = changed_fields {
+                    let owner_may_have_changed = match identity_property {
+                        KeyReferenceIdentityProperty::OwnerId => {
+                            document_type.documents_transferable() == Transferable::Always
+                                || document_type.trade_mode() != TradeMode::None
+                        }
+                    };
+                    if !owner_may_have_changed && !is_changed_field(changed, path) {
+                        continue;
+                    }
                 }
                 let result = validate_key_id_reference_v0(
                     path,

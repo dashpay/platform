@@ -3748,4 +3748,251 @@ mod replacement_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
+
+    const REFERENCE_VALIDATION_OWNER_KEY_TRANSFERABLE_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key-transferable.json";
+
+    /// The owner-key fixture with `transferable: 1`: the writer creates a
+    /// `message` naming its own master key (key 0, enabled), transfers it to
+    /// a receiver whose master key was disabled in state beforehand, and the
+    /// receiver replaces it shaped by `replace_mutator`. Returns the replace
+    /// execution result. The receiver's enabled critical key id is passed to
+    /// the mutator.
+    async fn run_owner_key_reference_create_transfer_then_replace<R>(
+        replace_mutator: R,
+    ) -> StateTransitionExecutionResult
+    where
+        R: FnOnce(&mut Document, KeyID),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(435);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+        let (receiver, receiver_signer, receiver_key) =
+            setup_identity(&mut platform, 451, dash_to_credits!(0.1));
+
+        // The receiver's master key is disabled, so a key id of 0 names an
+        // enabled key of the writer and a disabled key of the receiver
+        platform
+            .drive
+            .disable_identity_keys(
+                receiver.id().to_buffer(),
+                vec![0],
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to disable the receiver's master key");
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_OWNER_KEY_TRANSFERABLE_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+        document.set("senderKeyId", 0i64.into());
+
+        let create_transition = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            message,
+            entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create documents batch transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[create_transition
+                    .serialize_to_bytes()
+                    .expect("expected a serialized create transition")],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // The transfer is not a reference check: the document changes hands
+        // with its key id as written
+        document.set_revision(Some(2));
+        let transfer_transition = BatchTransition::new_document_transfer_transition_from_document(
+            document.clone(),
+            message,
+            receiver.id(),
+            &key,
+            3,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create documents batch transition for transfer");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[transfer_transition
+                    .serialize_to_bytes()
+                    .expect("expected a serialized transfer transition")],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        document.set_owner_id(receiver.id());
+        document.set_revision(Some(3));
+        replace_mutator(&mut document, receiver_key.id());
+
+        let replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                document,
+                message,
+                &receiver_key,
+                1,
+                0,
+                None,
+                &receiver_signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[replace_transition
+                    .serialize_to_bytes()
+                    .expect("expected a serialized replace transition")],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    /// On a transferable type the owner may have changed since the key id
+    /// was written, so a replace re-validates the reference against the
+    /// writer whether or not the key id changed: the stored key id names
+    /// the receiver's disabled master key, and a replace of another
+    /// property is refused.
+    #[tokio::test]
+    async fn should_document_replace_fail_after_transfer_when_untouched_owner_key_id_is_not_the_new_owners_key(
+    ) {
+        let result = run_owner_key_reference_create_transfer_then_replace(|document, _| {
+            document.set("note", "changed by the receiver".into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_succeed_after_transfer_when_owner_key_id_is_repointed_at_the_new_owners_key(
+    ) {
+        let result =
+            run_owner_key_reference_create_transfer_then_replace(|document, receiver_key_id| {
+                document.set("senderKeyId", (receiver_key_id as i64).into());
+            })
+            .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
 }

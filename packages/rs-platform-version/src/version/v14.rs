@@ -571,9 +571,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     already proved, so the key fetch is the only read; a key that does not
 ///     exist refuses the write, paid, with `ReferencedIdentityKeyNotFoundError`
 ///     (40123) and a disabled one with `ReferencedIdentityKeyDisabledError`
-///     (40124), as for the identifier form. A replace re-validates it exactly
-///     when the key id changed. Adding, removing or changing it is an
-///     incompatible schema change on update, like the rest of a `refersTo`.
+///     (40124), as for the identifier form. A replace re-validates it when
+///     the key id changed, and on every replace of a transferable or
+///     tradeable type, whose owner may not be the one who wrote the key id
+///     (a transfer itself is not checked: the reference governs writing, not
+///     holding). Adding, removing or changing it is an incompatible schema
+///     change on update, like the rest of a `refersTo`.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
