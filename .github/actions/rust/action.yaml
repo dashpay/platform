@@ -21,6 +21,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Read shared runner tool requirements
+      shell: bash
+      run: python3 .github/scripts/runner-image.py env
+
     - name: Verify persistent Linux runner image contract
       if: runner.os == 'Linux' && runner.environment == 'self-hosted'
       shell: bash
@@ -29,6 +33,7 @@ runs:
           echo '::error::This runner needs the versioned dashpay/dash-selfhosted-image (contract 1); see .github/SELF_HOSTED_RUNNER.md.'
           exit 1
         fi
+        python3 .github/scripts/runner-image.py verify
         command -v rustup
 
     - name: Resolve HOME path for caching
@@ -76,47 +81,47 @@ runs:
             ;;
         esac
 
-    - name: Restore cached protoc (v32.0)
+    - name: Restore cached repository-pinned protoc
       if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       id: cache-protoc
       uses: actions/cache@v5
       with:
         path: |
-          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
-          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/include
-        key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-${{ env.CI_PROTOC_VERSION }}/bin
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-${{ env.CI_PROTOC_VERSION }}/include
+        key: protoc/${{ env.CI_PROTOC_VERSION }}/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
-    - name: Install protoc (cached v32.0)
+    - name: Install repository-pinned protoc
       if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       id: deps-protoc
       shell: bash
       run: |
         set -euxo pipefail
-        PROTOC_DIR="${HOME}/.local/protoc-32.0"
+        PROTOC_DIR="${HOME}/.local/protoc-${{ env.CI_PROTOC_VERSION }}"
         if [ ! -x "${PROTOC_DIR}/bin/protoc" ]; then
           mkdir -p "${PROTOC_DIR}"
           curl -fsSL -o /tmp/protoc.zip \
-            "https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${CI_PROTOC_VERSION}/protoc-${{ env.CI_PROTOC_VERSION }}-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
           unzip -o /tmp/protoc.zip -d "${PROTOC_DIR}"
         fi
         echo "${PROTOC_DIR}/bin" >> "$GITHUB_PATH"
         echo "PROTOC=${PROTOC_DIR}/bin/protoc" >> "$GITHUB_ENV"
 
-    - name: Save cached protoc (v32.0)
+    - name: Save cached repository-pinned protoc
       if: runner.os == 'Linux' && runner.environment == 'github-hosted' && steps.cache-protoc.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
         path: |
-          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
-          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/include
-        key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-${{ env.CI_PROTOC_VERSION }}/bin
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-${{ env.CI_PROTOC_VERSION }}/include
+        key: protoc/${{ env.CI_PROTOC_VERSION }}/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
-    - name: Verify prebaked protoc (v32.0)
+    - name: Verify prebaked repository-pinned protoc
       if: runner.os == 'Linux' && runner.environment == 'self-hosted'
       shell: bash
       run: |
         set -euo pipefail
-        protoc --version | grep -qx 'libprotoc 32.0'
+        protoc --version | grep -Fx "libprotoc $CI_PROTOC_VERSION"
         echo "PROTOC=$(command -v protoc)" >> "$GITHUB_ENV"
 
     - name: Set HOME variable to github context

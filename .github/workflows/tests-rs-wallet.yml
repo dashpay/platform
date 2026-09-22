@@ -130,7 +130,7 @@ jobs:
 
       - name: Find unused dependencies
         run: |
-          cargo machete --version | grep -Eq '^(cargo-machete )?0[.]9[.]2$'
+          test "$(cargo machete --version | awk '{print $NF}')" = "$CI_CARGO_MACHETE_VERSION"
           cargo machete
 
       - name: Detect immutable structure changes

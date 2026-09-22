@@ -25,6 +25,8 @@ on:
       - '.github/workflows/kotlin-sdk-build.yml'
       - '.github/scripts/kotlin-instrumented-tests.sh'
       - '.github/actions/rust/**'
+      - '.github/runner-requirements.json'
+      - '.github/scripts/runner-image.py'
 
 permissions:
   contents: read
@@ -34,9 +36,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  select-runner:
+    name: Select compatible runner image
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+      actions: read
+    outputs:
+      labels: ${{ steps.select.outputs.labels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select provisioned pool or wait for the exact PR candidate
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/runner-image.py select --kind kotlin
+
   kotlin-sdk-build:
     name: Kotlin SDK build + tests (x86_64 emulator)
-    runs-on: [self-hosted, kotlin-ci]
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.labels) }}
     # Fork PRs must not execute on a persistent runner. Keep this guard in sync
     # with tests-rs-workspace.yml.
     if: >-
@@ -56,6 +84,9 @@ jobs:
       # dependency installation out of the job: it required sudo and made a
       # CI job capable of mutating its container. Rebuild the runner image when
       # one of these requirements changes instead.
+      - name: Verify exact runner requirements and load versions
+        run: python3 .github/scripts/runner-image.py verify
+
       - name: Verify runner image dependencies
         run: |
           set -euo pipefail
@@ -78,12 +109,12 @@ jobs:
           python3 scripts/check_sdk_parity_manifest.py
           python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
-      - name: Verify JDK 17
+      - name: Verify repository-pinned JDK
         run: |
           JAVA_HOME_RESOLVED=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
           JAVA_VERSION_OUTPUT=$("$JAVA_HOME_RESOLVED/bin/java" -version 2>&1)
           printf '%s\n' "$JAVA_VERSION_OUTPUT"
-          printf '%s\n' "$JAVA_VERSION_OUTPUT" | grep -Eq 'version "17([.]|\")'
+          printf '%s\n' "$JAVA_VERSION_OUTPUT" | grep -E "version \"${CI_JAVA_MAJOR}([.]|\")"
           echo "JAVA_HOME=$JAVA_HOME_RESOLVED" >> "$GITHUB_ENV"
           echo "$JAVA_HOME_RESOLVED/bin" >> "$GITHUB_PATH"
 
@@ -91,10 +122,10 @@ jobs:
         run: |
           set -euo pipefail
           test "${ANDROID_HOME:-}" = /opt/android-sdk
-          test -x "$ANDROID_HOME/ndk/28.1.13356709/ndk-build"
-          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
-          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
-          test -f "$ANDROID_HOME/system-images/android-35/default/x86_64/system.img"
+          test -x "$ANDROID_HOME/ndk/$CI_ANDROID_NDK/ndk-build"
+          test -x "$ANDROID_HOME/build-tools/$CI_ANDROID_BUILD_TOOLS/aapt2"
+          test -f "$ANDROID_HOME/platforms/android-$CI_ANDROID_API/android.jar"
+          test -f "$ANDROID_HOME/system-images/android-$CI_ANDROID_API/default/x86_64/system.img"
           command -v ci-android-emulator
           command -v adb
           # Do not run setup-android/sdkmanager: the SDK is pinned and root-owned.
@@ -107,19 +138,19 @@ jobs:
 
       # Pinned: this runner is persistent, so cargo-ndk is provisioned in the
       # image and checked here before the NDK build can start.
-      - name: Verify cargo-ndk v4.1.2
+      - name: Verify repository-pinned cargo-ndk
         run: |
           set -euo pipefail
           cargo ndk --version
-          cargo ndk --version | grep -qx 'cargo-ndk 4.1.2'
+          cargo ndk --version | grep -Fx "cargo-ndk $CI_CARGO_NDK_VERSION"
 
-      - name: Verify protoc v32.0 (repo-standard; apt's 3.21 breaks tenderdash-proto)
+      - name: Verify repository-pinned protoc
         run: |
           set -euo pipefail
           protoc --version
           # protoc is part of the runner image. Installing it into /usr/local
           # from a job required sudo and made the CI container mutable.
-          protoc --version | grep -qx 'libprotoc 32.0'
+          protoc --version | grep -Fx "libprotoc $CI_PROTOC_VERSION"
 
       # KVM is the only host device this job needs. The container receives it
       # through the kvm group; no Docker socket or host package-management
@@ -150,7 +181,7 @@ jobs:
         working-directory: packages/kotlin-sdk
         run: ./gradlew :sdk:compileDebugAndroidTestKotlin --stacktrace
 
-      - name: Run instrumented FFI smoke test (prebaked API 35 emulator)
+      - name: Run instrumented FFI smoke test (prebaked emulator)
         working-directory: packages/kotlin-sdk
         run: ci-android-emulator bash ../../.github/scripts/kotlin-instrumented-tests.sh
 

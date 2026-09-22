@@ -1,0 +1,206 @@
+{
+  "schema": 1,
+  "recipe_revision": "baf8849b900555d66714e0e1fcffdff669b9e404",
+  "requirements": {
+    "schema": 2,
+    "contract_version": "1",
+    "platform": "linux/amd64",
+    "ubuntu_image": "ubuntu:24.04@sha256:496754492fb28b4d3049432f2ca787449331e23fb14f0dd3fffea86bf5a93eb4",
+    "apt_snapshot": "20260920T000000Z",
+    "rust_version": "1.98.1",
+    "rust_manifest_sha256": "a7c8774a5fd8441c997d94c029776cbc5eb111e9d72ab5d256fa69866644347e",
+    "artifacts": [
+      {
+        "name": "runner",
+        "url": "https://github.com/actions/runner/releases/download/v2.337.0/actions-runner-linux-x64-2.337.0.tar.gz",
+        "sha256": "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613",
+        "format": "tar",
+        "destination": "/opt/actions-runner"
+      },
+      {
+        "name": "cargo-llvm-cov",
+        "url": "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a",
+        "format": "tar",
+        "destination": "/opt/ci/bin/cargo-llvm-cov",
+        "binary": "cargo-llvm-cov"
+      },
+      {
+        "name": "cargo-nextest",
+        "url": "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.144/cargo-nextest-0.9.144-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "8a4f726272b0a1c499bd87ca3978bfbb1a8c20bb08ccf075b9996e2081bd1e1e",
+        "format": "tar",
+        "destination": "/opt/ci/bin/cargo-nextest",
+        "binary": "cargo-nextest"
+      },
+      {
+        "name": "cargo-machete",
+        "url": "https://github.com/bnjbvr/cargo-machete/releases/download/v0.9.2/cargo-machete-v0.9.2-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "48200087f54c55aabcd4db4af1e25742b49846c02a1b1bfa134711945b35b2e9",
+        "format": "tar",
+        "destination": "/opt/ci/bin/cargo-machete",
+        "binary": "cargo-machete"
+      },
+      {
+        "name": "cargo-ndk",
+        "url": "https://github.com/bbqsrc/cargo-ndk/releases/download/v4.1.2/cargo-ndk-x86_64-unknown-linux-gnu-v4.1.2.tgz",
+        "sha256": "9451622c4567e8abb2c8005001855e32901c0b716ccdd3a173a4375fd03426e1",
+        "format": "tar",
+        "destination": "/opt/ci/bin/cargo-ndk",
+        "binary": "cargo-ndk"
+      },
+      {
+        "name": "protoc",
+        "url": "https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip",
+        "sha256": "7ca037bfe5e5cabd4255ccd21dd265f79eb82d3c010117994f5dc81d2140ee88",
+        "format": "zip",
+        "destination": "/opt/protoc"
+      },
+      {
+        "name": "rustup-init",
+        "url": "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init",
+        "sha256": "20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c",
+        "format": "file",
+        "destination": "/opt/ci/rustup-init",
+        "build_only": true
+      },
+      {
+        "name": "platforms;android-35",
+        "url": "https://dl.google.com/android/repository/platform-35_r02.zip",
+        "upstream_sha1": "0bb560a90a7a2cbd0dd8348224d518b638fe7949",
+        "format": "zip",
+        "destination": "/opt/android-sdk/platforms/android-35",
+        "archive_root": "android-35",
+        "package_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><localrepo:repository xmlns:localrepo=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk=\"http://schemas.android.com/sdk/android/repo/repository2/03\" xmlns:common=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk-common=\"http://schemas.android.com/sdk/android/repo/common/03\" xmlns:generic=\"http://schemas.android.com/repository/android/generic/02\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><localPackage xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" path=\"platforms;android-35\">\n    <type-details xsi:type=\"sdk:platformDetailsType\">\n      <api-level>35</api-level>\n      <extension-level>13</extension-level>\n      <base-extension>true</base-extension>\n      <layoutlib api=\"15\" />\n    </type-details>\n    <revision>\n      <major>2</major>\n    </revision>\n    <display-name>Android SDK Platform 35</display-name>\n    </localPackage>\n  </localrepo:repository>",
+        "sha256": "0988cacad01b38a18a47bac14a0695f246bc76c1b06c0eeb8eb0dc825ab0c8e0"
+      },
+      {
+        "name": "ndk;28.1.13356709",
+        "url": "https://dl.google.com/android/repository/android-ndk-r28b-linux.zip",
+        "upstream_sha1": "f574d3165405bd59ffc5edaadac02689075a729f",
+        "format": "zip",
+        "destination": "/opt/android-sdk/ndk/28.1.13356709",
+        "archive_root": "android-ndk-r28b",
+        "package_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><localrepo:repository xmlns:localrepo=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk=\"http://schemas.android.com/sdk/android/repo/repository2/03\" xmlns:common=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk-common=\"http://schemas.android.com/sdk/android/repo/common/03\" xmlns:generic=\"http://schemas.android.com/repository/android/generic/02\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><localPackage xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" path=\"ndk;28.1.13356709\">\n    <type-details xsi:type=\"generic:genericDetailsType\" />\n    <revision>\n      <major>28</major>\n      <minor>1</minor>\n      <micro>13356709</micro>\n    </revision>\n    <display-name>NDK (Side by side) 28.1.13356709</display-name>\n    </localPackage>\n  </localrepo:repository>",
+        "sha256": "e9f2759862cecfd48c20bbb7d8cfedbb020f4d91b5f78d9a2fc106f7db3c27ed"
+      },
+      {
+        "name": "build-tools;35.0.0",
+        "url": "https://dl.google.com/android/repository/build-tools_r35_linux.zip",
+        "upstream_sha1": "2cfaa0bbb2336e9ec18ed3ecea84fa2e2af607bc",
+        "format": "zip",
+        "destination": "/opt/android-sdk/build-tools/35.0.0",
+        "archive_root": "android-15",
+        "package_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><localrepo:repository xmlns:localrepo=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk=\"http://schemas.android.com/sdk/android/repo/repository2/03\" xmlns:common=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk-common=\"http://schemas.android.com/sdk/android/repo/common/03\" xmlns:generic=\"http://schemas.android.com/repository/android/generic/02\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><localPackage xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" path=\"build-tools;35.0.0\">\n    <type-details xsi:type=\"generic:genericDetailsType\" />\n    <revision>\n      <major>35</major>\n      <minor>0</minor>\n      <micro>0</micro>\n    </revision>\n    <display-name>Android SDK Build-Tools 35</display-name>\n    </localPackage>\n  </localrepo:repository>",
+        "sha256": "bd3a4966912eb8b30ed0d00b0cda6b6543b949d5ffe00bea54c04c81e1561d88"
+      },
+      {
+        "name": "cmdline-tools;19.0",
+        "url": "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip",
+        "upstream_sha1": "5fdcc763663eefb86a5b8879697aa6088b041e70",
+        "format": "zip",
+        "destination": "/opt/android-sdk/cmdline-tools/19.0",
+        "archive_root": "cmdline-tools",
+        "package_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><localrepo:repository xmlns:localrepo=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk=\"http://schemas.android.com/sdk/android/repo/repository2/03\" xmlns:common=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk-common=\"http://schemas.android.com/sdk/android/repo/common/03\" xmlns:generic=\"http://schemas.android.com/repository/android/generic/02\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><localPackage xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" path=\"cmdline-tools;19.0\">\n    <type-details xsi:type=\"generic:genericDetailsType\" />\n    <revision>\n      <major>19</major>\n      <minor>0</minor>\n    </revision>\n    <display-name>Android SDK Command-line Tools</display-name>\n    </localPackage>\n  </localrepo:repository>",
+        "sha256": "7ec965280a073311c339e571cd5de778b9975026cfcbe79f2b1cdcb1e15317ee"
+      },
+      {
+        "name": "platform-tools",
+        "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip",
+        "upstream_sha1": "477254aa5f903c15cf51001717bdf347fb6b53e0",
+        "format": "zip",
+        "destination": "/opt/android-sdk/platform-tools",
+        "archive_root": "platform-tools",
+        "package_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><localrepo:repository xmlns:localrepo=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk=\"http://schemas.android.com/sdk/android/repo/repository2/03\" xmlns:common=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk-common=\"http://schemas.android.com/sdk/android/repo/common/03\" xmlns:generic=\"http://schemas.android.com/repository/android/generic/02\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><localPackage xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" path=\"platform-tools\">\n    <type-details xsi:type=\"generic:genericDetailsType\" />\n    <revision>\n      <major>37</major>\n      <minor>0</minor>\n      <micro>1</micro>\n    </revision>\n    <display-name>Android SDK Platform-Tools</display-name>\n    </localPackage>\n  </localrepo:repository>",
+        "sha256": "d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1"
+      },
+      {
+        "name": "emulator",
+        "url": "https://dl.google.com/android/repository/emulator-linux_x64-15917651.zip",
+        "upstream_sha1": "1b1f78891abf8ec268264356e1365c25519e8379",
+        "format": "zip",
+        "destination": "/opt/android-sdk/emulator",
+        "archive_root": "emulator",
+        "package_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><localrepo:repository xmlns:localrepo=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk=\"http://schemas.android.com/sdk/android/repo/repository2/03\" xmlns:common=\"http://schemas.android.com/repository/android/common/02\" xmlns:sdk-common=\"http://schemas.android.com/sdk/android/repo/common/03\" xmlns:generic=\"http://schemas.android.com/repository/android/generic/02\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><localPackage xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" path=\"emulator\">\n    <type-details xsi:type=\"generic:genericDetailsType\" />\n    <revision>\n      <major>37</major>\n      <minor>1</minor>\n      <micro>11</micro>\n    </revision>\n    <display-name>Android Emulator</display-name>\n    </localPackage>\n  </localrepo:repository>",
+        "sha256": "95771e0ae431897b2a4bd2d97fa095f29a8b0624a7b216baf529f9306161c266"
+      },
+      {
+        "name": "system-images;android-35;default;x86_64",
+        "url": "https://dl.google.com/android/repository/sys-img/android/x86_64-35_r02.zip",
+        "upstream_sha1": "2d857d170c0d1b827149565da34b3383e5306f7f",
+        "format": "zip",
+        "destination": "/opt/android-sdk/system-images/android-35/default/x86_64",
+        "archive_root": "x86_64",
+        "package_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><localrepo:repository xmlns:localrepo=\"http://schemas.android.com/repository/android/common/02\" xmlns:sys-img=\"http://schemas.android.com/sdk/android/repo/sys-img2/03\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><localPackage xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" path=\"system-images;android-35;default;x86_64\">\n    <type-details xsi:type=\"sys-img:sysImgDetailsType\">\n      <api-level>35</api-level>\n      <extension-level>13</extension-level>\n      <base-extension>true</base-extension>\n      <tag>\n        <id>default</id>\n        <display>Default Android System Image</display>\n      </tag>\n      <abi>x86_64</abi>\n    </type-details>\n    <revision>\n      <major>2</major>\n    </revision>\n    <display-name>Intel x86_64 Atom System Image</display-name>\n    <dependencies>\n      <dependency path=\"emulator\">\n        <min-revision>\n          <major>29</major>\n          <minor>1</minor>\n          <micro>11</micro>\n        </min-revision>\n      </dependency>\n    </dependencies>\n    </localPackage>\n  </localrepo:repository>",
+        "sha256": "6dd7de33e63ef105cf2fabea6badda1dbe7665c96d8908e5f6e1407e63ff4556"
+      }
+    ],
+    "bootstrap_ca": {
+      "url": "https://snapshot.ubuntu.com/ubuntu/20260920T000000Z/pool/main/c/ca-certificates/ca-certificates_20240203_all.deb",
+      "sha256": "641de77d8f142cfd62a1a6f964ba67b20754d3337c480efb529d086075a06c9a",
+      "version": "20240203"
+    },
+    "apt_packages": [
+      "ca-certificates",
+      "curl",
+      "git",
+      "gh",
+      "jq",
+      "python3",
+      "unzip",
+      "zip",
+      "xz-utils",
+      "bzip2",
+      "gnupg",
+      "build-essential",
+      "clang",
+      "llvm",
+      "libsnappy-dev",
+      "cmake",
+      "libgmp-dev",
+      "libssl-dev",
+      "pkg-config",
+      "openjdk-17-jdk-headless",
+      "libicu74",
+      "libkrb5-3",
+      "zlib1g",
+      "libgcc-s1",
+      "libstdc++6",
+      "libcurl4t64",
+      "liblttng-ust1t64",
+      "libunwind8",
+      "libpulse0",
+      "libx11-xcb1",
+      "libnss3",
+      "libxcomposite1",
+      "libxcursor1",
+      "libxi6",
+      "libxrandr2",
+      "libxtst6",
+      "libasound2t64",
+      "libgl1",
+      "libegl1",
+      "libdbus-1-3",
+      "libxdamage1",
+      "libxfixes3"
+    ],
+    "java_major": 17,
+    "versions": {
+      "runner": "2.337.0",
+      "llvm_cov": "0.9.1",
+      "nextest": "0.9.144",
+      "machete": "0.9.2",
+      "cargo_ndk": "4.1.2",
+      "protoc": "32.0",
+      "rustup": "1.28.2"
+    },
+    "android": {
+      "api": 35,
+      "build_tools": "35.0.0",
+      "ndk": "28.1.13356709",
+      "cmdline_tools": "19.0",
+      "system_image": "system-images;android-35;default;x86_64",
+      "abi": "x86_64"
+    }
+  }
+}

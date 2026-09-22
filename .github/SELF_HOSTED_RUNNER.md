@@ -8,6 +8,13 @@ Use its `linux/amd64` contract-1 image for persistent Linux `kotlin-ci` / `rust-
 runners. The shared Rust action requires `/opt/ci/contract-version` to be `1` on
 self-hosted Linux and fails early if an old/native runner picks up the job.
 
+Platform's desired versions and checksums now live in
+[.github/runner-requirements.json](runner-requirements.json). This includes an immutable image-recipe
+commit. Persistent Linux jobs verify **both** the installed lock and recipe
+revision; a contract-1 marker by itself is not sufficient. The earlier published
+bootstrap image must be replaced by a matching candidate before these changes
+can be merged.
+
 The image locks Ubuntu 24.04 by digest, apt to a signed archive snapshot, and
 downloaded toolchains to exact URLs and SHA-256 hashes. It includes:
 
@@ -43,6 +50,10 @@ that privilege is not passed into the resulting persistent runner.
 
 ## Publish, prove, then roll out
 
+For Platform requirements changes, use the PR-first lifecycle below. The
+standalone image publishing workflow remains useful for recipe development,
+but its default lock is not a separate source of Platform requirements.
+
 1. Use a successful [image publishing run](https://github.com/dashpay/dash-selfhosted-image/actions/workflows/image.yml).
    Publication requires non-root compiler/confinement checks, `KVM_CREATE_VM`, and
    a real API 35 emulator boot. Retrieve `image-reference.txt` from the run.
@@ -61,6 +72,41 @@ Deploy and prove the contract-1 image **before merging the consuming workflows**
 Record the selected digest and real-job evidence with the deployment; do not infer
 runtime health from YAML validation or the image tag alone. Rebuild/repin when
 dependencies change, including runner updates required by GitHub's update policy.
+
+## Requirements changes: candidate before merge, promotion after
+
+1. Change .github/runner-requirements.json in the Platform PR, including exact download URLs,
+   checksums and package metadata. A change to this file is the automatic build
+   flag; no separate label is required. Change the pinned recipe commit only
+   when recipe/image code changes. Ordinary user-local Rust toolchain updates
+   still follow rust-toolchain.toml.
+2. The trusted base-branch publisher builds and smoke-tests a candidate on a
+   disposable VM. A separate VM publishes it without executing PR image/code
+   with Docker Hub credentials.
+3. The normal Rust and Kotlin workflows wait for the candidate, then request
+   temporary runners labelled for **this PR head, exact digest and job kind**.
+   A host-side controller creates one-job non-root containers, with KVM only
+   for Kotlin. Real application jobs must pass; skipped fork jobs do not count.
+4. After merge, the publisher verifies the merged/current requirements and both
+   real candidate jobs, then promotes **the same tested digest**, without a
+   rebuild. Each base branch gets a platform-<branch> channel; main advances only
+   for Platform's actual GitHub default branch.
+5. Promotion does not restart production runners. The operator drains and
+   switches ordinary runner capacity to the reviewed digest using the rollout
+   procedure above. Requirements checks fail explicitly until capacity matches.
+
+The trusted caller must land separately before a PR can use this flow.
+See the image repository's
+[bootstrap, GitHub App and candidate-controller setup](https://github.com/dashpay/dash-selfhosted-image/blob/feat/platform-pr-images/docs/platform-pr-images.md).
+No App key, Docker socket, registry credential or host workspace enters a job.
+The existing trusted-fork restrictions are unchanged; the controller's
+exact-head approvals do not override workflow-side guards.
+
+Run the routing checks with:
+
+~~~sh
+python3 -m unittest discover -s .github/scripts/tests -v
+~~~
 
 ## Hosted Linux and native macOS remain distinct
 
