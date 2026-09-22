@@ -104,17 +104,20 @@ final class DashReleasedSchemaTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        var checksums = Set<String>()
-        for type in DashMigrationPlan.schemas {
-            let version = type.versionIdentifier
-            let url = directory.appendingPathComponent(DashSchemaFixtureSupport.version(version) + ".store")
-            let schema = Schema(versionedSchema: type)
-            _ = try ModelContainer(for: schema, configurations: [
-                ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
-            ])
-            let metadata = try DashSchemaFixtureSupport.describeStore(at: url, version: version)
-            XCTAssertTrue(checksums.insert(metadata.model_checksum).inserted,
-                          "A snapshot with unchanged shape must not become an additional runtime migration stage")
+        let plans: [any SchemaMigrationPlan.Type] = [DashMigrationPlan.self, DashAcceptedV1MigrationPlan.self]
+        for (planIndex, plan) in plans.enumerated() {
+            var checksums = Set<String>()
+            for type in plan.schemas {
+                let version = type.versionIdentifier
+                let url = directory.appendingPathComponent("\(planIndex)-" + DashSchemaFixtureSupport.version(version) + ".store")
+                let schema = Schema(versionedSchema: type)
+                _ = try ModelContainer(for: schema, configurations: [
+                    ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+                ])
+                let metadata = try DashSchemaFixtureSupport.describeStore(at: url, version: version)
+                XCTAssertTrue(checksums.insert(metadata.model_checksum).inserted,
+                              "A snapshot with unchanged shape must not become an additional runtime migration stage")
+            }
         }
     }
 }

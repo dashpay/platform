@@ -11,15 +11,15 @@ private final class BridgeFutureMarker {
     var value: String = "future"
     init() {}
 }
-private enum BridgeFutureV3: VersionedSchema {
-    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
-    static var models: [any PersistentModel.Type] { DashSchemaV2.models + [BridgeFutureMarker.self] }
+private enum BridgeFutureV4: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
+    static var models: [any PersistentModel.Type] { DashSchemaV3.models + [BridgeFutureMarker.self] }
 }
 private enum BridgeFuturePlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV2.self, BridgeFutureV3.self] }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, BridgeFutureV4.self] }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
-         .custom(fromVersion: DashSchemaV2.self, toVersion: BridgeFutureV3.self,
+        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
+         .custom(fromVersion: DashSchemaV3.self, toVersion: BridgeFutureV4.self,
                  willMigrate: { context in
                      for wallet in try context.fetch(FetchDescriptor<PersistentWallet>()) {
                          wallet.name = "explicit future transformation"
@@ -27,6 +27,17 @@ private enum BridgeFuturePlan: SchemaMigrationPlan {
                      try context.save()
                  }, didMigrate: nil)]
     }
+}
+
+// The candidate immediately before restoring historical V2 used today's
+// complete graph with a V2 version label. This is one exact supported alias.
+private enum PreviousLiveV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+    static var models: [any PersistentModel.Type] { DashSchemaV3.models }
+}
+private enum UnsupportedBetaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+    static var models: [any PersistentModel.Type] { DashSchemaV3.models + [BridgeFutureMarker.self] }
 }
 
 @MainActor
@@ -107,7 +118,7 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
             defer { Darwin.close(descriptor) }
             XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
             try autoreleasepool { _ = try open(url) } // Known V1.
-            let current = try open(url) // Current V2.
+            let current = try open(url) // Current V3.
             XCTAssertEqual(try current.mainContext.fetchCount(FetchDescriptor<PersistentWallet>()), 1)
         }
         for interrupted in [false, true] {
@@ -709,21 +720,21 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
-    func testSkippingV2UsesFixedBridgeThenRegisteredCustomFutureStage() throws {
+    func testSkippingV3UsesFixedBridgeThenRegisteredCustomFutureStage() throws {
         try withStore { url in
-            let schema = Schema(versionedSchema: BridgeFutureV3.self)
-            var checkedV2 = false
+            let schema = Schema(versionedSchema: BridgeFutureV4.self)
+            var checkedV3 = false
             let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
             XCTAssertThrowsError(try DashLegacySchemaBridge.open(
                 configuration: configuration, schema: schema, plan: BridgeFuturePlan.self,
                 hooks: .init(visit: { phase, candidate in
                     if phase == .afterMigration {
-                        _ = try DashSchemaFixtureSupport.describeStore(at: candidate, version: Schema.Version(2, 0, 0))
-                        checkedV2 = true
+                        _ = try DashSchemaFixtureSupport.describeStore(at: candidate, version: Schema.Version(3, 0, 0))
+                        checkedV3 = true
                     }
                     if phase == .afterCommit { throw Injected.stop }
                 })))
-            XCTAssertTrue(checkedV2)
+            XCTAssertTrue(checkedV3)
             let recovered = try DashLegacySchemaBridge.open(
                 configuration: configuration, schema: schema, plan: BridgeFuturePlan.self)
             try verifyRows(recovered.mainContext, walletName: "explicit future transformation")
@@ -819,5 +830,85 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         add(attachment)
         let reopened = try await DashModelContainer.createAsync(url: url)
         XCTAssertEqual(try reopened.mainContext.fetchCount(FetchDescriptor<PersistentTransaction>()), 10_000)
+    }
+
+    func testExactPreviousLiveV2RemainsWritableWithoutReinterpretingHistoricalV2() throws {
+        try withStore { url in
+            try autoreleasepool {
+                let schema = Schema(versionedSchema: PreviousLiveV2.self)
+                let container = try ModelContainer(for: schema, configurations: [
+                    ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+                ])
+                try verifyRows(container.mainContext)
+            }
+            XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["2.0.0"])
+            let container = try open(url, hooks: .init(visit: { _, _ in
+                XCTFail("An exact previous current shape needs no legacy inferred migration")
+            }))
+            try verifyRows(container.mainContext)
+            let wallet = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentWallet>()).first)
+            wallet.name = "previous capture remains writable"
+            try container.mainContext.save()
+        }
+    }
+
+    func testUnsupportedBetaV2FailsWithoutMutation() throws {
+        try withStore { url in
+            try autoreleasepool {
+                let schema = Schema(versionedSchema: UnsupportedBetaV2.self)
+                _ = try ModelContainer(for: schema, configurations: [
+                    ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+                ])
+            }
+            try DashLegacyStoreSQLite.checkpoint(url)
+            let before = try DashLegacyStoreSQLite.rawDigest(url)
+            XCTAssertThrowsError(try open(url)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("does not match"))
+            }
+            XCTAssertEqual(try DashLegacyStoreSQLite.rawDigest(url), before)
+            XCTAssertTrue(try operationDirectories(url).isEmpty)
+        }
+    }
+
+    func testPreviousLiveV2JournalRecoversBeforeChoosingMigrationRoute() throws {
+        struct OldJournal: Encodable {
+            let formatVersion: Int
+            let operation: UUID
+            let source: DashLegacySchemaBridge.Identity
+            let destination: DashLegacySchemaBridge.Identity
+            let destinationData: DashLegacyStoreSQLite.StoreEvidence?
+        }
+        for format in [1, 2] {
+            for installed in [false, true] {
+                try withStore { url in
+                    let operation = UUID()
+                    let root = DashLegacySchemaBridge.backupDirectory(for: url)
+                    let directory = root.appendingPathComponent(operation.uuidString)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    let backup = directory.appendingPathComponent("original.store")
+                    let candidate = directory.appendingPathComponent("candidate.store")
+                    try DashLegacyStoreSQLite.copy(from: url, to: backup)
+                    try DashLegacyStoreSQLite.copy(from: url, to: candidate)
+                    let source = try DashLegacySchemaBridge.identity(at: url)
+                    try autoreleasepool {
+                        let schema = Schema(versionedSchema: PreviousLiveV2.self)
+                        _ = try ModelContainer(for: schema, configurations: [
+                            ModelConfiguration(schema: schema, url: candidate, cloudKitDatabase: .none)
+                        ])
+                    }
+                    try DashLegacyStoreSQLite.checkpoint(candidate)
+                    try DashLegacyStoreSQLite.validatePreservation(from: backup, to: candidate)
+                    let journal = OldJournal(formatVersion: format, operation: operation, source: source,
+                        destination: try DashLegacySchemaBridge.identity(at: candidate),
+                        destinationData: format == 2 ? try DashLegacyStoreSQLite.evidence(at: candidate) : nil)
+                    if installed { try DashLegacyStoreSQLite.copy(from: candidate, to: url) }
+                    let marker = root.appendingPathComponent("active.json")
+                    try JSONEncoder().encode(journal).write(to: marker)
+                    let container = try open(url)
+                    try verifyRows(container.mainContext)
+                    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+                }
+            }
+        }
     }
 }

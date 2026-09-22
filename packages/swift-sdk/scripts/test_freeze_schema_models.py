@@ -51,7 +51,7 @@ class CheckTests(unittest.TestCase):
         shutil.copyfile(os.path.join(ROOT, gen.TEST_REGISTRY_FILE), target)
 
     def test_should_find_the_committed_files_are_the_generators_output(self):
-        self.assertEqual(len(gen.render_baseline(ROOT)), 35)
+        self.assertEqual(len(gen.render_baseline(ROOT)), 71)
         self.assertIn(gen.TEST_REGISTRY_FILE, self.files)
         self.assertEqual(gen.check_problems(ROOT, self.files), [])
 
@@ -229,6 +229,44 @@ class ReleaseTests(unittest.TestCase):
 
         self.addCleanup(mock.patch.stopall)
         mock.patch.object(gen, "git", side_effect=git).start()
+
+    def historical_registry(self):
+        path = "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/Fixtures/SchemaStores/historical-v2.store"
+        target = Path(self.root, path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(self.fixture.read_bytes())
+        registry = gen.read_registry(self.root)
+        registry["historical_schemas"] = {"2.0.0": {
+            "schema": dict(self.schema), "fixture_path": path,
+            "fixture_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "source_sha": gen.HISTORICAL_V2_SOURCE, "provenance": "reconstructed-model-match"}}
+        Path(self.root, gen.REGISTRY_FILE).write_text(json.dumps(registry))
+        return registry
+
+    def test_should_reserve_historical_v2_without_writing_snapshot(self):
+        self.historical_registry()
+        before = Path(self.root, gen.REGISTRY_FILE).read_bytes()
+        with self.assertRaisesRegex(SystemExit, "Historical schema version is reserved"):
+            gen.add_release(self.root, self.manifest, self.fixture)
+        self.assertEqual(Path(self.root, gen.REGISTRY_FILE).read_bytes(), before)
+        self.assertFalse(Path(self.root, gen.FIXTURE_DIR).exists())
+
+    def test_should_reject_modified_historical_fixture(self):
+        registry = self.historical_registry()
+        Path(self.root, registry["historical_schemas"]["2.0.0"]["fixture_path"]).write_bytes(b"changed")
+        with self.assertRaisesRegex(SystemExit, "immutable historical fixture"):
+            gen.validate_historical_schemas(self.root, registry)
+
+    def test_should_reject_changed_historical_schema_or_reconstruction_source(self):
+        for field in ("source_sha", "schema"):
+            registry = self.historical_registry()
+            entry = registry["historical_schemas"]["2.0.0"]
+            if field == "source_sha":
+                entry[field] = "f" * 40
+            else:
+                entry[field]["model_checksum"] = "changed"
+            with self.subTest(field=field), self.assertRaises(SystemExit):
+                gen.validate_historical_schemas(self.root, registry)
 
     def test_should_copy_exact_captured_commit_and_preserve_release_metadata(self):
         registry = gen.add_release(self.root, self.manifest, self.fixture)

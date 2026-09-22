@@ -373,7 +373,7 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
             raise ReleaseError("Attempted to replace an existing snapshot or fixture")
         registry = json_object((clone / REGISTRY).read_bytes(), "snapshot registry")
         # The generator may append a schema, but existing snapshots are immutable.
-        for key in ("schemas", "releases"):
+        for key in ("schemas", "releases", "historical_schemas"):
             for identifier, value in before_registry.get(key, {}).items():
                 if registry.get(key, {}).get(identifier) != value:
                     raise ReleaseError(f"Attempted to rewrite existing {key} entry: {identifier}")

@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import Dispatch
 import SwiftData
@@ -99,7 +100,7 @@ public enum DashModelContainer {
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV2.self)
+        Schema(versionedSchema: DashSchemaV3.self)
     }
 
     /// Create a persistent model container for storing data.
@@ -170,15 +171,92 @@ public enum DashModelContainer {
         configuration: ModelConfiguration,
         bridgeLegacyStore: Bool = true
     ) throws -> ModelContainer {
-        if bridgeLegacyStore {
-            return try DashLegacySchemaBridge.open(
-                configuration: configuration, schema: schema, plan: DashMigrationPlan.self)
+        SDKLogger.event("store_open_started", category: .persistence,
+                        fields: ["target_version": .publicText("3.0.0")])
+        do {
+            let container: ModelContainer
+            if bridgeLegacyStore {
+                container = try DashLegacySchemaBridge.open(
+                    configuration: configuration, schema: schema, plan: DashMigrationPlan.self)
+            } else {
+                container = try ModelContainer(
+                    for: schema,
+                    migrationPlan: try migrationPlan(at: configuration.url, defaultPlan: DashMigrationPlan.self),
+                    configurations: [configuration])
+            }
+            SDKLogger.event("store_open_succeeded", category: .persistence,
+                            fields: ["target_version": .publicText("3.0.0")])
+            return container
+        } catch {
+            logMigrationFailure(error)
+            throw error
         }
-        return try ModelContainer(
-            for: schema,
-            migrationPlan: DashMigrationPlan.self,
-            configurations: [configuration]
-        )
+    }
+
+    /// Error descriptions/userInfo can include rows, URLs and other private
+    /// values. Record only a known system domain (or the error's type) and code.
+    private static func logMigrationFailure(_ error: Error) {
+        let nsError = error as NSError
+        let systemDomains: Set<String> = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSOSStatusErrorDomain, "NSSQLiteErrorDomain"]
+        let domain = systemDomains.contains(nsError.domain) ? nsError.domain : String(reflecting: type(of: error))
+        SDKLogger.event("store_open_failed", category: .persistence, severity: .error,
+                        fields: ["error_domain": .publicText(domain), "error_code": .integer(Int64(nsError.code)),
+                                 "target_version": .publicText("3.0.0")])
+    }
+
+    /// Select by the complete stored model identity, after journal recovery.
+    /// Accepted V1 contains fields absent from the real historical V2; sending
+    /// it through V2 would delete those values before V3 adds the fields again.
+    static func migrationPlan(at url: URL, defaultPlan: any SchemaMigrationPlan.Type) throws
+        -> any SchemaMigrationPlan.Type {
+        guard ObjectIdentifier(defaultPlan) == ObjectIdentifier(DashMigrationPlan.self) else { return defaultPlan }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            SDKLogger.event("store_migration_route", category: .persistence, fields: [
+                "route": .publicText("new-store"), "target_version": .publicText("3.0.0")])
+            return defaultPlan
+        }
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
+        let versions = metadata[NSStoreModelVersionIdentifiersKey] as? [String]
+        let hashes = metadata[NSStoreModelVersionHashesKey] as? [String: Data]
+        let checksum = metadata["NSStoreModelVersionChecksumKey"] as? String
+        // Only validated schema metadata is public diagnostic material. Never
+        // log arbitrary strings from malformed store metadata or any store path.
+        let safeVersions = versions.flatMap { values -> String? in
+            guard !values.isEmpty, values.count <= 4,
+                  values.allSatisfy({ $0.count <= 32 && $0.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil }) else { return nil }
+            return values.joined(separator: ",")
+        } ?? "unavailable"
+        let safeChecksum = checksum.flatMap { Data(base64Encoded: $0)?.count == 32 ? $0 : nil } ?? "unavailable"
+        func logRoute(_ route: String) {
+            SDKLogger.event("store_migration_route", category: .persistence, fields: [
+                "source_version": .publicText(safeVersions), "source_checksum": .publicText(safeChecksum),
+                "route": .publicText(route), "target_version": .publicText("3.0.0")])
+        }
+        func matches(_ type: any VersionedSchema.Type) throws -> Bool {
+            let expected = try DashLegacySchemaBridge.identity(for: type)
+            return hashes == expected.hashes && (checksum == nil || checksum == expected.checksum)
+        }
+        if versions == ["1.0.0"], try matches(DashSchemaV1.self) {
+            logRoute("accepted-v1-to-v3")
+            return DashAcceptedV1MigrationPlan.self
+        }
+        if versions == ["2.0.0"] {
+            // The immediately preceding candidate used the current graph with
+            // a V2 label. Accept its exact shape, never arbitrary beta V2 data.
+            let historical = try matches(DashSchemaV2.self)
+            let previousCurrent = try !historical && matches(DashSchemaV3.self)
+            guard historical || previousCurrent else {
+                logRoute("unsupported-v2")
+                throw DashLegacyStoreSQLite.Failure.unsupported(
+                    "The database identifies itself as schema 2.0.0 but its model does not match the supported historical or current schema. The original database has not been replaced. Contact support; do not delete the app.")
+            }
+            logRoute(historical ? "historical-v2-to-v3" : "previous-live-v2-current-shape")
+        } else if versions == ["3.0.0"], try matches(DashSchemaV3.self) {
+            logRoute("already-current-v3")
+        } else {
+            logRoute("ordinary-current-plan")
+        }
+        return defaultPlan
     }
 
     /// Create an in-memory model container for testing
@@ -195,13 +273,22 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self]
+        [DashSchemaV2.self, DashSchemaV3.self]
     }
 
     public static var stages: [MigrationStage] {
         [
-            .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self)
+            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self)
         ]
+    }
+}
+
+/// Separate compatibility route: V1 has fields missing from historical V2.
+/// Never insert V2 between this baseline and the current schema.
+enum DashAcceptedV1MigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self)]
     }
 }
 
@@ -213,7 +300,7 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 /// the current live schema. They do not reconstruct or verify the database
 /// written by the original App Store binary. Other historical development
 /// layouts are accepted only by the local legacy bridge when every existing
-/// value and relationship survives migration to fixed V2. Other layouts fail;
+/// value and relationship survives migration to fixed V3. Other layouts fail;
 /// the container never erases or recreates a user's database.
 public enum DashSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
@@ -225,21 +312,55 @@ public enum DashSchemaV1: VersionedSchema {
     }
 }
 
-/// Unreleased V2 combines the tracked-masternode, asset-lock recipient, sweep,
-/// public-key usage limits, contract-bound variants, and balance freshness metadata.
-/// V1 is the accepted
-/// historical baseline. Intermediate beta layouts are not supported release schemas.
-///
-/// After App Store publication a separate DashSchemaSnapshotV2 preserves the
-/// complete graph. Keep this version on the live models while they match that
-/// snapshot. The next shape change must move this version onto the snapshot,
-/// introduce a new live version and explicitly test its migration.
+/// Historical V2 reconstructed from commit 52e8d4ec68. Its complete frozen
+/// graph matches the database observed on the released application. Other
+/// development layouts that reused the V2 number are not historical V2.
 public enum DashSchemaV2: VersionedSchema {
-    public static var versionIdentifier: Schema.Version {
-        Schema.Version(2, 0, 0)
-    }
-
+    public static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
     public static var models: [any PersistentModel.Type] {
-        DashModelContainer.modelTypes
+        [
+            DashSchemaV2.PersistentIdentity.self,
+            DashSchemaV2.PersistentDPNSName.self,
+            DashSchemaV2.PersistentDashpayProfile.self,
+            DashSchemaV2.PersistentDashpayContactProfile.self,
+            DashSchemaV2.PersistentDashpayContactRequest.self,
+            DashSchemaV2.PersistentDashpayPayment.self,
+            DashSchemaV2.PersistentDashpayIgnoredSender.self,
+            DashSchemaV2.PersistentDocument.self,
+            DashSchemaV2.PersistentDataContract.self,
+            DashSchemaV2.PersistentPublicKey.self,
+            DashSchemaV2.PersistentTokenBalance.self,
+            DashSchemaV2.PersistentKeyword.self,
+            DashSchemaV2.PersistentToken.self,
+            DashSchemaV2.PersistentDocumentType.self,
+            DashSchemaV2.PersistentIndex.self,
+            DashSchemaV2.PersistentProperty.self,
+            DashSchemaV2.PersistentTokenHistoryEvent.self,
+            DashSchemaV2.PersistentPlatformAddress.self,
+            DashSchemaV2.PersistentPlatformAddressesSyncState.self,
+            DashSchemaV2.PersistentWallet.self,
+            DashSchemaV2.PersistentAccount.self,
+            DashSchemaV2.PersistentCoreAddress.self,
+            DashSchemaV2.PersistentTransaction.self,
+            DashSchemaV2.PersistentTxo.self,
+            DashSchemaV2.PersistentPendingInput.self,
+            DashSchemaV2.PersistentWalletManagerMetadata.self,
+            DashSchemaV2.PersistentShieldedNote.self,
+            DashSchemaV2.PersistentShieldedOutgoingNote.self,
+            DashSchemaV2.PersistentShieldedSyncState.self,
+            DashSchemaV2.PersistentShieldedActivity.self,
+            DashSchemaV2.PersistentShieldedViewingKey.self,
+            DashSchemaV2.PersistentAssetLock.self,
+            DashSchemaV2.PersistentInvitation.self,
+            DashSchemaV2.PersistentMasternode.self,
+            DashSchemaV2.PersistentTrackedMasternode.self
+        ]
     }
+}
+
+/// Current working schema. A later shape change must preserve this graph as
+/// the fixed legacy-bridge target before introducing another live version.
+public enum DashSchemaV3: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
 }

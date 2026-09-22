@@ -31,6 +31,8 @@ final class DashModelMigrationTests: XCTestCase {
         Fixture(
             name: "dash-v1", version: DashSchemaV1.self,
             hasTrackedMasternode: false, assetLockRecipientIsExternal: nil),
+        Fixture(name: "historical-v2", version: DashSchemaV2.self,
+                hasTrackedMasternode: true, assetLockRecipientIsExternal: nil),
     ]
 
     private static var acceptedBaselineVersions: [Schema.Version] { [Schema.Version(1, 0, 0)] }
@@ -54,6 +56,47 @@ final class DashModelMigrationTests: XCTestCase {
         let copy = directory.appendingPathComponent("\(fixture.name).store")
         try FileManager.default.copyItem(at: source, to: copy)
         return (directory, copy)
+    }
+
+    @MainActor
+    func testMigrationDiagnosticsReachExportFileWithoutVerboseLogging() throws {
+        let fixture = try XCTUnwrap(Self.fixtures.first { $0.name == "historical-v2" })
+        let (directory, url) = try copyFixture(fixture)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let session = directory.appendingPathComponent("logs", isDirectory: true)
+        // This is the same file sink setting installed by the default low preset.
+        XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
+        let sourceChecksum = try Self.storeHashes(at: url).0
+
+        try autoreleasepool { _ = try DashModelContainer.create(url: url) }
+        try autoreleasepool { _ = try DashModelContainer.create(url: url) }
+        SDKLogger.flush()
+        let log = try String(contentsOf: session.appendingPathComponent("swift/run.log"), encoding: .utf8)
+        XCTAssertTrue(log.contains("event=store_open_started"))
+        XCTAssertTrue(log.contains("route=\"historical-v2-to-v3\""))
+        XCTAssertTrue(log.contains("source_version=\"2.0.0\""))
+        XCTAssertTrue(log.contains("source_checksum=\"\(sourceChecksum)\""))
+        XCTAssertTrue(log.contains("target_version=\"3.0.0\""))
+        XCTAssertTrue(log.contains("route=\"already-current-v3\""))
+        XCTAssertEqual(log.components(separatedBy: "event=store_open_succeeded").count - 1, 2)
+        XCTAssertFalse(log.contains("event=store_open_failed"))
+        XCTAssertFalse(log.contains(directory.path))
+        XCTAssertFalse(log.contains("fixture wallet"))
+
+        let freshURL = directory.appendingPathComponent("fresh.store")
+        try autoreleasepool { _ = try DashModelContainer.create(url: freshURL) }
+        // A malformed store must produce a safe error diagnostic, without its contents.
+        let invalidURL = directory.appendingPathComponent("invalid.store")
+        try Data("private-invalid-store-content".utf8).write(to: invalidURL)
+        XCTAssertThrowsError(try DashModelContainer.create(url: invalidURL))
+        SDKLogger.flush()
+        let updatedLog = try String(contentsOf: session.appendingPathComponent("swift/run.log"), encoding: .utf8)
+        XCTAssertTrue(updatedLog.contains("route=\"new-store\""))
+        let failure = try XCTUnwrap(updatedLog.split(separator: "\n").first { $0.contains("event=store_open_failed") })
+        XCTAssertTrue(failure.contains("target_version=\"3.0.0\""))
+        XCTAssertTrue(failure.contains("error_code="))
+        XCTAssertFalse(updatedLog.contains(directory.path))
+        XCTAssertFalse(updatedLog.contains("private-invalid-store-content"))
     }
 
     private static func storeHashes(at url: URL) throws -> (String, [String: Data]) {
@@ -170,7 +213,7 @@ final class DashModelMigrationTests: XCTestCase {
     func testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped() throws {
         XCTAssertEqual(
             Self.fixtures.map { $0.version.versionIdentifier },
-            Self.acceptedBaselineVersions,
+            Self.acceptedBaselineVersions + [Schema.Version(2, 0, 0)],
             "the accepted baseline must retain its existing fixture")
 
         for fixture in Self.fixtures {
@@ -207,24 +250,27 @@ final class DashModelMigrationTests: XCTestCase {
             $0.version.versionIdentifier
         }
         let expected = Set(
-            Self.acceptedBaselineVersions + publishedVersions + [DashModelContainer.schema.version]
+            [Schema.Version(2, 0, 0)] + publishedVersions + [DashModelContainer.schema.version]
         ).sorted()
         XCTAssertEqual(
             DashMigrationPlan.schemas.map { $0.versionIdentifier }, expected,
-            "The plan must retain the accepted baseline and every published version, followed by the live version")
+            "The primary plan retains historical V2 and published versions; accepted V1 has a separate non-destructive route")
     }
 
     func testMigrationStagesConnectAdjacentRegisteredSchemas() {
-        let schemas = DashMigrationPlan.schemas
-        let stages = DashMigrationPlan.stages
-        XCTAssertEqual(stages.count, schemas.count - 1)
-        for (stage, adjacent) in zip(stages, zip(schemas, schemas.dropFirst())) {
-            switch stage {
-            case .lightweight(let from, let to), .custom(let from, let to, _, _):
-                XCTAssertEqual(ObjectIdentifier(from), ObjectIdentifier(adjacent.0))
-                XCTAssertEqual(ObjectIdentifier(to), ObjectIdentifier(adjacent.1))
-            @unknown default:
-                XCTFail("Unsupported migration stage")
+        let plans: [any SchemaMigrationPlan.Type] = [DashMigrationPlan.self, DashAcceptedV1MigrationPlan.self]
+        for plan in plans {
+            let schemas = plan.schemas
+            let stages = plan.stages
+            XCTAssertEqual(stages.count, schemas.count - 1)
+            for (stage, adjacent) in zip(stages, zip(schemas, schemas.dropFirst())) {
+                switch stage {
+                case .lightweight(let from, let to), .custom(let from, let to, _, _):
+                    XCTAssertEqual(ObjectIdentifier(from), ObjectIdentifier(adjacent.0))
+                    XCTAssertEqual(ObjectIdentifier(to), ObjectIdentifier(adjacent.1))
+                @unknown default:
+                    XCTFail("Unsupported migration stage")
+                }
             }
         }
     }
@@ -341,15 +387,15 @@ final class DashModelMigrationTests: XCTestCase {
         }
     }
 
-    func testV2AddsTrackedMasternodesAndBalanceMetadataToTheBaselineEntitySet() {
+    func testV3AddsTrackedMasternodesAndBalanceMetadataToTheBaselineEntitySet() {
         XCTAssertEqual(
-            Set(Schema(versionedSchema: DashSchemaV2.self).entities.map(\.name))
+            Set(Schema(versionedSchema: DashSchemaV3.self).entities.map(\.name))
                 .subtracting(Schema(versionedSchema: DashSchemaV1.self).entities.map(\.name)),
             ["PersistentTrackedMasternode", "PersistentIdentityBalanceMetadata"])
     }
 
     @MainActor
-    func testV1BalanceGetsNoWatermarkUntilOneIsPersistedInLiveV2() throws {
+    func testV1BalanceGetsNoWatermarkUntilOneIsPersistedInLiveV3() throws {
         let (directory, url) = try copyFixture(Self.fixtures[0])
         defer { try? FileManager.default.removeItem(at: directory) }
         try autoreleasepool {
@@ -375,9 +421,9 @@ final class DashModelMigrationTests: XCTestCase {
     }
 
     /// The accepted V1 graph predates key limits. Its keys must arrive in
-    /// live V2 unlimited, then accept limits through the public accessors.
+    /// live V3 unlimited, then accept limits through the public accessors.
     @MainActor
-    func testV1StoreMigratesToV2AndBackfillsTheKeyLimitColumns() throws {
+    func testV1StoreMigratesToV3AndBackfillsTheKeyLimitColumns() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
@@ -407,7 +453,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV2.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV3.self)
         let v2Configuration = ModelConfiguration(
             "DashKeyLimitsMigrationTest",
             schema: v2Schema,
@@ -416,7 +462,7 @@ final class DashModelMigrationTests: XCTestCase {
             cloudKitDatabase: .none)
         let migrated = try ModelContainer(
             for: v2Schema,
-            migrationPlan: DashMigrationPlan.self,
+            migrationPlan: DashAcceptedV1MigrationPlan.self,
             configurations: [v2Configuration])
 
         let keys = try migrated.mainContext.fetch(FetchDescriptor<PersistentPublicKey>())
@@ -441,10 +487,10 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertTrue(reread.hasLimits)
     }
 
-    /// Legacy contract bounds keep their inferred variant after V1 -> V2,
+    /// Legacy contract bounds keep their inferred variant after V1 -> V3,
     /// and the new discriminator can then represent contract groups.
     @MainActor
-    func testV1StoreMigratesToV2AndBackfillsTheContractBoundsKind() throws {
+    func testV1StoreMigratesToV3AndBackfillsTheContractBoundsKind() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
@@ -484,7 +530,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV2.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV3.self)
         let v2Configuration = ModelConfiguration(
             "DashContractBoundsKindMigrationTest",
             schema: v2Schema,
@@ -493,7 +539,7 @@ final class DashModelMigrationTests: XCTestCase {
             cloudKitDatabase: .none)
         let migrated = try ModelContainer(
             for: v2Schema,
-            migrationPlan: DashMigrationPlan.self,
+            migrationPlan: DashAcceptedV1MigrationPlan.self,
             configurations: [v2Configuration])
 
         let rows = try migrated.mainContext.fetch(
@@ -518,14 +564,232 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertEqual(reread[1].effectiveContractBoundsKind, 3)
     }
 
-    func testV2AddsKeyColumnsWithoutChangingTheFrozenBaseline() throws {
+    func testV3AddsKeyColumnsWithoutChangingTheFrozenBaseline() throws {
         let baseline = Schema(versionedSchema: DashSchemaV1.self)
-        let live = Schema(versionedSchema: DashSchemaV2.self)
+        let live = Schema(versionedSchema: DashSchemaV3.self)
         let oldKey = try XCTUnwrap(baseline.entities.first { $0.name == "PersistentPublicKey" })
         let newKey = try XCTUnwrap(live.entities.first { $0.name == "PersistentPublicKey" })
         for column in ["totalBudget", "expiresAt", "contractBoundsKind"] {
             XCTAssertNil(oldKey.attributesByName[column])
             XCTAssertNotNil(newKey.attributesByName[column])
         }
+    }
+
+    /// Synthetic historical evidence generated from the reconstructed source;
+    /// this test never accesses a device database or keychain.
+    @MainActor
+    func testCaptureHistoricalV2Fixture() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("historical-v2.store")
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: DashSchemaV2.self)
+            let container = try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+            ])
+            let context = container.mainContext
+            let wallet = DashSchemaV2.PersistentWallet(
+                walletId: Data(repeating: 0x31, count: 32), network: .testnet, name: "fixture wallet",
+                syncedHeight: 120)
+            context.insert(wallet)
+            let account = DashSchemaV2.PersistentAccount(
+                wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "standard")
+            context.insert(account)
+            let address = DashSchemaV2.PersistentCoreAddress(
+                address: "yFixtureAddress", poolTypeTag: 0, addressIndex: 0, derivationPath: "m/0")
+            address.account = account
+            context.insert(address)
+            let funding = DashSchemaV2.PersistentTransaction(
+                txid: Data(repeating: 0x34, count: 32), transactionData: Data([3, 0]), context: 2,
+                blockHeight: 100)
+            let spend = DashSchemaV2.PersistentTransaction(
+                txid: Data(repeating: 0x32, count: 32), transactionData: Data([3, 0]), context: 2,
+                blockHeight: 110)
+            context.insert(funding)
+            context.insert(spend)
+            account.involvedTransactions = [funding, spend]
+            let txo = DashSchemaV2.PersistentTxo(
+                transaction: funding, vout: 0, amount: 1_000, address: "yFixtureAddress",
+                height: 100)
+            txo.walletId = Data(repeating: 0x31, count: 32)
+            txo.isSpent = true
+            txo.spendingTransaction = spend
+            txo.coreAddress = address
+            txo.account = account
+            context.insert(txo)
+            context.insert(DashSchemaV2.PersistentPendingInput(
+                outpoint: Data(repeating: 0x11, count: 36), inputIndex: 0,
+                spendingTxid: Data(repeating: 0x32, count: 32), spendingTransaction: spend,
+                walletId: Data(repeating: 0x31, count: 32)))
+            let identity = DashSchemaV2.PersistentIdentity(
+                identityId: Data(repeating: 0x35, count: 32), balance: 5, network: .testnet)
+            identity.wallet = wallet
+            context.insert(identity)
+            let key = DashSchemaV2.PersistentPublicKey(
+                keyId: 3, purpose: .authentication, securityLevel: .high,
+                keyType: .ecdsaSecp256k1, publicKeyData: Data(repeating: 0x02, count: 33),
+                identityId: identity.identityIdString)
+            key.identity = identity
+            context.insert(key)
+            context.insert(DashSchemaV2.PersistentKeyword(keyword: "preserved", contractId: "contract"))
+            let lock = DashSchemaV2.PersistentAssetLock(
+                outPointHex: String(repeating: "ab", count: 32) + ":0",
+                walletId: Data(repeating: 0x31, count: 32), transactionBytes: Data([1, 2, 3]),
+                fundingTypeRaw: 4, identityIndexRaw: -1, amountDuffs: 100_000, statusRaw: 4)
+            context.insert(lock)
+            context.insert(DashSchemaV2.PersistentTrackedMasternode(
+                networkRaw: Network.testnet.rawValue, proTxHash: Data(repeating: 7, count: 32),
+                label: "fixture", addedAt: 1, snapshotJSON: "{}"))
+            try context.save()
+        }
+        try DashLegacyStoreSQLite.checkpoint(url)
+        let metadata = try DashSchemaFixtureSupport.describeStore(at: url, version: Schema.Version(2, 0, 0))
+        XCTAssertEqual(metadata.entity_hashes.count, 35)
+        XCTAssertEqual(metadata.model_checksum, "RrRj/iNbS9izgLQvNb2APed4iwaR7pftEE2+4tea7K8=")
+        let attachment = XCTAttachment(contentsOfFile: url)
+        attachment.name = "historical-v2.store"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testAcceptedV1PreservesAllThirteenFieldsMissingFromHistoricalV2() throws {
+        let (directory, url) = try copyFixture(Self.fixtures[0])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: DashSchemaV1.self)
+            let container = try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+            ])
+            let context = container.mainContext
+            let type = DashSchemaV1.PersistentDocumentType(
+                contractId: Data([41]), name: "retained", schemaJSON: Data(), propertiesJSON: Data())
+            type.indexOnly = true
+            let index = DashSchemaV1.PersistentIndex(
+                contractId: Data([41]), documentTypeName: "retained", name: "retained", properties: ["name"])
+            index.documentType = type
+            index.countable = "countableAllowingOffset"
+            index.summable = "amount"
+            index.averageable = "amount"
+            index.terminal = "$ownerId"
+            index.timeRangeJSON = Data("{\"on\":\"createdAt\"}".utf8)
+            index.rangeCountable = true
+            index.rangeSummable = true
+            index.rangeAverageable = true
+            index.rankedCountable = true
+            index.rankedSummable = true
+            index.rankedAverageable = true
+            index.preallocated = true
+            context.insert(type)
+            context.insert(index)
+            try context.save()
+        }
+        let before = directory.appendingPathComponent("before.store")
+        try DashLegacyStoreSQLite.copy(from: url, to: before)
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let context = container.mainContext
+            let type = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentDocumentType>()).first)
+            let index = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIndex>()).first)
+            XCTAssertTrue(type.indexOnly)
+            XCTAssertEqual(index.countable, "countableAllowingOffset")
+            XCTAssertEqual(index.summable, "amount")
+            XCTAssertEqual(index.averageable, "amount")
+            XCTAssertEqual(index.terminal, "$ownerId")
+            XCTAssertEqual(index.timeRangeJSON, Data("{\"on\":\"createdAt\"}".utf8))
+            XCTAssertEqual([index.rangeCountable, index.rangeSummable, index.rangeAverageable,
+                index.rankedCountable, index.rankedSummable, index.rankedAverageable, index.preallocated],
+                Array(repeating: true, count: 7))
+            XCTAssertEqual(index.documentType?.persistentModelID, type.persistentModelID)
+            index.name = "writable"
+            try context.save()
+            index.name = "retained"
+            try context.save()
+        }
+        try DashLegacyStoreSQLite.validatePreservation(from: before, to: url)
+    }
+
+    /// Local diagnostic only. The input never enters test resources, attachments
+    /// or logs, and all migration/writes happen on a disposable copy.
+    @MainActor
+    func testPrivateHistoricalStoreMigrationWhenExplicitlyProvided() throws {
+        let path = ProcessInfo.processInfo.environment["DASH_PRIVATE_MIGRATION_STORE"]
+        try XCTSkipIf(path == nil, "No private migration diagnostic input was explicitly provided")
+        let source = URL(fileURLWithPath: try XCTUnwrap(path))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let before = directory.appendingPathComponent("before.store")
+        let migrated = directory.appendingPathComponent("migrated.store")
+        try DashLegacyStoreSQLite.copy(from: source, to: before)
+        try DashLegacyStoreSQLite.copy(from: before, to: migrated)
+        try autoreleasepool { _ = try DashModelContainer.create(url: migrated) }
+        try DashLegacyStoreSQLite.validatePreservation(from: before, to: migrated)
+        let walletId: Data = try autoreleasepool {
+            let container = try DashModelContainer.create(url: migrated)
+            let context = container.mainContext
+            let wallet = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentWallet>()).first)
+            wallet.name = "temporary migration write verification"
+            try context.save()
+            return wallet.walletId
+        }
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: migrated)
+            let wallets = try container.mainContext.fetch(FetchDescriptor<PersistentWallet>())
+            XCTAssertTrue(wallets.contains {
+                $0.walletId == walletId && $0.name == "temporary migration write verification"
+            }, "A write to the diagnostic copy must survive reopening")
+        }
+    }
+
+    @MainActor
+    func testHistoricalV2AddsDefaultsAndPreservesDocumentRelationships() throws {
+        let (directory, url) = try copyFixture(Self.fixtures[1])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: DashSchemaV2.self)
+            let container = try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+            ])
+            let type = DashSchemaV2.PersistentDocumentType(
+                contractId: Data([42]), name: "historical", schemaJSON: Data([123, 125]), propertiesJSON: Data([123, 125]))
+            let index = DashSchemaV2.PersistentIndex(
+                contractId: Data([42]), documentTypeName: "historical", name: "original", properties: ["name"])
+            index.documentType = type
+            container.mainContext.insert(type)
+            container.mainContext.insert(index)
+            try container.mainContext.save()
+        }
+        let before = directory.appendingPathComponent("before.store")
+        try DashLegacyStoreSQLite.copy(from: url, to: before)
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let context = container.mainContext
+            let type = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentDocumentType>()).first)
+            let index = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIndex>()).first)
+            XCTAssertFalse(type.indexOnly)
+            XCTAssertNil(index.countable)
+            XCTAssertNil(index.summable)
+            XCTAssertNil(index.averageable)
+            XCTAssertNil(index.terminal)
+            XCTAssertNil(index.timeRangeJSON)
+            XCTAssertEqual([index.rangeCountable, index.rangeSummable, index.rangeAverageable,
+                index.rankedCountable, index.rankedSummable, index.rankedAverageable, index.preallocated],
+                Array(repeating: false, count: 7))
+            XCTAssertEqual(index.documentType?.persistentModelID, type.persistentModelID)
+            XCTAssertEqual(type.indices?.count, 1)
+            XCTAssertEqual(index.properties, ["name"])
+        }
+        try DashLegacyStoreSQLite.validatePreservation(from: before, to: url)
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let index = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentIndex>()).first)
+            index.preallocated = true
+            try container.mainContext.save()
+        }
+        let reopened = try DashModelContainer.create(url: url)
+        XCTAssertTrue(try XCTUnwrap(reopened.mainContext.fetch(FetchDescriptor<PersistentIndex>()).first).preallocated)
     }
 }

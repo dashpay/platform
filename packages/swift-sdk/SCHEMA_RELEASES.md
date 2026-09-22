@@ -2,12 +2,25 @@
 
 SwiftData schemas become supported history when a build reaches App Store
 distribution. TestFlight uploads capture provenance and a synthetic SQLite
-fixture, but do not by themselves register a released schema. V1 is the agreed
-existing baseline. Intermediate pre-release V2–V5 schemas have been collapsed
-into the working V2, including the public-key usage-limit columns. A separate
-compatibility bridge handles older, unregistered `1.0.0` database layouts when
-they can migrate without losing existing data. Other intermediate development
-databases are unsupported.
+fixture, but do not by themselves register a released schema. The accepted frozen V1 remains unchanged. Historical V2 is now reconstructed
+from `52e8d4ec68f0c772313fa1bbef223fb1eabbf1cc`; all 35 entity hashes and the
+model checksum match the observed App Store 9.0.2 database. Active models are
+V3. Other intermediate development shapes remain unsupported.
+
+The old V2 fixture was generated from September 8 sources containing 13
+properties added on August 28, after the August 27 App Store release. The
+reconstructed V2 instead predates those additions. Its synthetic fixture and
+source provenance live in `schema-releases.json` under `historical_schemas`,
+separate from archive-captured releases. This identifies a matching model
+source, not the confirmed build commit of Apple's binary. V2 is reserved:
+automated release capture must not register another shape under that number.
+
+The main migration plan is historical V2 → V3. Accepted V1 has a separate
+V1 → V3 plan: V1 already contains the 13 properties missing from historical
+V2, so a V1 → V2 → V3 chain could discard values. Routing uses model metadata
+and runs after recovery; a version label alone never selects an unknown beta
+schema. The former live V2 is accepted only when its complete graph matches
+current V3.
 
 ## Legacy stores before the release registry
 
@@ -19,7 +32,7 @@ the explicit migration plan; those databases still report version `1.0.0`.
 The shared `DashModelContainer` factory recognizes registered schema
 fingerprints before opening an existing store. Unknown legacy `1.0.0` stores
 may use the compatibility bridge: take a consistent backup including committed
-WAL data, migrate an isolated copy automatically to `DashSchemaV2`, verify that
+WAL data, migrate an isolated copy automatically to `DashSchemaV3`, verify that
 existing stored values and relationship rows survived, and reopen it through
 the ordinary migration plan before installing it. The backup is retained for
 recovery. Corruption, removed fields/entities, changed stored data, and newer
@@ -109,9 +122,9 @@ The run failed before upload, so this provenance establishes a tested source
 layout rather than proof of publication. Regression tests exercise the public
 factory, data/default preservation, writes, reopen, and failure recovery.
 
-Keep the bridge for installations that skip the V2 app release. When advancing
-to V3, bind `DashSchemaV2` to its released snapshot and retain the legacy-to-V2
-step before the normal V2-to-current plan. The bridge must never automatically
+Keep the bridge for installations that skip the V3 app release. When advancing
+to V4, bind `DashSchemaV3` to its released snapshot and retain the legacy-to-V3
+step before the normal V3-to-current plan. The bridge must never automatically
 follow the latest live model graph. The release observer's one-time `bootstrap`
 only records its observation baseline; it neither runs this migration nor
 proves V1's App Store provenance.
@@ -181,8 +194,9 @@ all required releases, not merely a commit from before the snapshot merge.
    access, and uses the PAT so its PR events trigger CI. Apple credentials stay
    in the iOS repository. Do not put tokens in command arguments or manifests.
 3. Initialize the iOS release baseline before the first newly tracked release,
-   then run its monitor manually in dry-run mode. The baseline accepts V1 as
-   agreed and does not claim to reconstruct an earlier binary.
+   then run its monitor manually in dry-run mode. The baseline must reference
+   the verified historical V2 binding for 9.0.2. Correct the old V1 association
+   without moving the publication cutoff; see the iOS runbook.
 4. After publication, use the iOS manual monitor for the normal operator flow.
    For a worker retry, select the recorded Apple version ID and a full commit
    on `schema-release-data`. Select `dry_run` to validate and generate the patch
@@ -213,7 +227,7 @@ standard Swift/Foundation names are assumed not to be shadowed by application
 types. It does not prove custom encoding or helper-method behavior, so native
 captured-store hash/index checks and code review remain required.
 
-A released snapshot has its own namespace, for example `DashSchemaSnapshotV2`.
+A released snapshot has its own namespace, for example `DashSchemaSnapshotV3`.
 It is not automatically registered alongside identical current models. When
 changing the structure after a release, explicitly register the historical
 snapshot as the old schema, introduce the next active version and its migration,
@@ -266,3 +280,16 @@ python3 packages/swift-sdk/scripts/historical_schema_fixture.py --check
 
 Swift SDK CI additionally checks the generated schemas against the released
 fixtures, including entity hashes, indexes and migration behavior.
+
+## Local verification with a private database copy
+
+`DashModelMigrationTests.testPrivateHistoricalStoreMigrationWhenExplicitlyProvided`
+accepts a local standalone SQLite input through `DASH_PRIVATE_MIGRATION_STORE`.
+For an Xcode simulator test run, forward it using the
+`TEST_RUNNER_DASH_PRIVATE_MIGRATION_STORE` environment variable. The test copies
+that input to a disposable directory, verifies preservation of every supported
+SQLite table/relationship, writes through current models and reopens the copy.
+Without the explicit input it skips; normal CI uses only synthetic fixtures.
+Do not add a real wallet database to resources, XCTest attachments, commits or
+CI artifacts. If capturing another input, preserve committed WAL contents with
+a consistent SQLite backup rather than copying an active main file alone.
