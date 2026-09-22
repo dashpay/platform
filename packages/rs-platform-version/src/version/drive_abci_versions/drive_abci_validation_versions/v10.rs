@@ -17,13 +17,13 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // the `document_reference_validation` feature version. Also bump
 // `delete_withdrawal_data_trigger` to 2 so owners can delete withdrawals in the
 // terminal FAILED status the withdrawals contract v2 admits.
-// Document replace structure validation moves to 1, and document create
-// structure validation 1 gains the same check: a `distinctFrom` identifier
-// property whose value equals the named sibling property or the writer's
-// `$ownerId` is refused (DocumentPropertyNotDistinctError, 10419). Document
-// transfer and purchase structure validation stay at 0: their v0 judges the
-// stored document's `$ownerId` declarations against the new owner in place,
-// which is inert before this version, where no property carries the keyword.
+// Document create structure validation 1 also refuses a `distinctFrom`
+// identifier property whose value equals the named sibling property or the
+// writer's `$ownerId` (DocumentPropertyNotDistinctError, 10419). Document
+// replace, transfer and purchase structure validation stay at 0: their v0
+// gained the same judgement in place (replace on the transition's data,
+// transfer and purchase on the stored document and its new owner), which is
+// inert before this version, where no property carries the keyword.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -231,7 +231,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
-                document_replace_transition_structure_validation: 1, // changed: v1 also refuses a `distinctFrom` identifier property equal to the value it must differ from (DocumentPropertyNotDistinctError, 10419)
+                document_replace_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom` refusal in place, inert before this version
                 document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_update_price_transition_structure_validation: 0,

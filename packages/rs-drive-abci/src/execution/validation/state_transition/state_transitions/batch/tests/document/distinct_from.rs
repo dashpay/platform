@@ -475,9 +475,10 @@ mod distinct_from_tests {
         assert_eq!(ConsensusError::from(error).code(), 10419);
     }
 
-    /// The replace structure dispatcher on both sides of the gate: protocol
-    /// version 13 routes to structure generation 0, which knows nothing of
-    /// `distinctFrom`, and 14 to generation 1, which refuses the equal pair.
+    /// The replace structure dispatcher on both sides of the gate: structure
+    /// generation 0 gained the `distinctFrom` judgement in place, so at protocol
+    /// version 13 it must still accept the action (no property parsed there
+    /// carries the keyword and the dpp gate is `None`), and at 14 refuse it.
     /// The action is built by hand the way the transformer would build it,
     /// against the contract as Drive hands it back.
     #[test]
@@ -531,7 +532,7 @@ mod distinct_from_tests {
         });
 
         let before = action
-            .validate_structure_with_owner(
+            .validate_structure(
                 owner_id,
                 PlatformVersion::get(13).expect("platform version 13 should exist"),
             )
@@ -543,7 +544,7 @@ mod distinct_from_tests {
         );
 
         let at = action
-            .validate_structure_with_owner(owner_id, platform_version)
+            .validate_structure(owner_id, platform_version)
             .expect("structure validation should run");
         assert_matches!(
             at.errors.as_slice(),
