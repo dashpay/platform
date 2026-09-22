@@ -1598,8 +1598,8 @@ impl WasmSdk {
                     ("SUCCESS".to_string(), None, None)
                 }
                 // A wait that asked for the owner's balance without a proof
-                Some(V0Result::UnprovedWithOwnerBalance(unproved)) => {
-                    ("SUCCESS".to_string(), None, Some(unproved.owner_balance))
+                Some(V0Result::SuccessWithOwnerBalance(success)) => {
+                    ("SUCCESS".to_string(), None, Some(success.owner_balance))
                 }
                 // A wait without a proof answers success with no result
                 None if !self.prove() => ("SUCCESS".to_string(), None, None),

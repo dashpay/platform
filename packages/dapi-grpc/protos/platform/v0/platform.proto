@@ -2353,8 +2353,8 @@ message WaitForStateTransitionResultRequest {
 }
 
 message WaitForStateTransitionResultResponse {
-  // The result of a wait that asked for the owner's balance and for no proof
-  message UnprovedResultWithOwnerBalance {
+  // The result of a successful wait that asked for the owner's balance and for no proof
+  message SuccessWithOwnerBalance {
     // The credit balance of the identity that owns the transition after it
     // executed, read from a Drive state at or past the block that executed it
     uint64 owner_balance = 1 [ jstype = JS_STRING ];
@@ -2365,9 +2365,9 @@ message WaitForStateTransitionResultResponse {
           1; // Any error that occurred during the state transition broadcast
       Proof proof =
           2; // Cryptographic proof for the state transition, if requested
-      // The owner's balance, unproved, when the request asked for it and
-      // for no proof
-      UnprovedResultWithOwnerBalance unproved_with_owner_balance = 4;
+      // Success with the owner's balance, unproved, when the request asked
+      // for it and for no proof
+      SuccessWithOwnerBalance success_with_owner_balance = 4;
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }

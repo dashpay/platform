@@ -50793,24 +50793,24 @@ $root.org = (function() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance = (function() {
+                        WaitForStateTransitionResultResponse.SuccessWithOwnerBalance = (function() {
 
                             /**
-                             * Properties of an UnprovedResultWithOwnerBalance.
+                             * Properties of a SuccessWithOwnerBalance.
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
-                             * @interface IUnprovedResultWithOwnerBalance
-                             * @property {number|Long|null} [ownerBalance] UnprovedResultWithOwnerBalance ownerBalance
+                             * @interface ISuccessWithOwnerBalance
+                             * @property {number|Long|null} [ownerBalance] SuccessWithOwnerBalance ownerBalance
                              */
 
                             /**
-                             * Constructs a new UnprovedResultWithOwnerBalance.
+                             * Constructs a new SuccessWithOwnerBalance.
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
-                             * @classdesc Represents an UnprovedResultWithOwnerBalance.
-                             * @implements IUnprovedResultWithOwnerBalance
+                             * @classdesc Represents a SuccessWithOwnerBalance.
+                             * @implements ISuccessWithOwnerBalance
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IUnprovedResultWithOwnerBalance=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance=} [properties] Properties to set
                              */
-                            function UnprovedResultWithOwnerBalance(properties) {
+                            function SuccessWithOwnerBalance(properties) {
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -50818,35 +50818,35 @@ $root.org = (function() {
                             }
 
                             /**
-                             * UnprovedResultWithOwnerBalance ownerBalance.
+                             * SuccessWithOwnerBalance ownerBalance.
                              * @member {number|Long} ownerBalance
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @instance
                              */
-                            UnprovedResultWithOwnerBalance.prototype.ownerBalance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+                            SuccessWithOwnerBalance.prototype.ownerBalance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
-                             * Creates a new UnprovedResultWithOwnerBalance instance using the specified properties.
+                             * Creates a new SuccessWithOwnerBalance instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
-                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IUnprovedResultWithOwnerBalance=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance} UnprovedResultWithOwnerBalance instance
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance instance
                              */
-                            UnprovedResultWithOwnerBalance.create = function create(properties) {
-                                return new UnprovedResultWithOwnerBalance(properties);
+                            SuccessWithOwnerBalance.create = function create(properties) {
+                                return new SuccessWithOwnerBalance(properties);
                             };
 
                             /**
-                             * Encodes the specified UnprovedResultWithOwnerBalance message. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.verify|verify} messages.
+                             * Encodes the specified SuccessWithOwnerBalance message. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
-                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IUnprovedResultWithOwnerBalance} message UnprovedResultWithOwnerBalance message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance} message SuccessWithOwnerBalance message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            UnprovedResultWithOwnerBalance.encode = function encode(message, writer) {
+                            SuccessWithOwnerBalance.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
                                 if (message.ownerBalance != null && Object.hasOwnProperty.call(message, "ownerBalance"))
@@ -50855,33 +50855,33 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified UnprovedResultWithOwnerBalance message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.verify|verify} messages.
+                             * Encodes the specified SuccessWithOwnerBalance message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
-                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IUnprovedResultWithOwnerBalance} message UnprovedResultWithOwnerBalance message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance} message SuccessWithOwnerBalance message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            UnprovedResultWithOwnerBalance.encodeDelimited = function encodeDelimited(message, writer) {
+                            SuccessWithOwnerBalance.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes an UnprovedResultWithOwnerBalance message from the specified reader or buffer.
+                             * Decodes a SuccessWithOwnerBalance message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance} UnprovedResultWithOwnerBalance
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            UnprovedResultWithOwnerBalance.decode = function decode(reader, length) {
+                            SuccessWithOwnerBalance.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -50897,30 +50897,30 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes an UnprovedResultWithOwnerBalance message from the specified reader or buffer, length delimited.
+                             * Decodes a SuccessWithOwnerBalance message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance} UnprovedResultWithOwnerBalance
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            UnprovedResultWithOwnerBalance.decodeDelimited = function decodeDelimited(reader) {
+                            SuccessWithOwnerBalance.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies an UnprovedResultWithOwnerBalance message.
+                             * Verifies a SuccessWithOwnerBalance message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            UnprovedResultWithOwnerBalance.verify = function verify(message) {
+                            SuccessWithOwnerBalance.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
                                 if (message.ownerBalance != null && message.hasOwnProperty("ownerBalance"))
@@ -50930,17 +50930,17 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates an UnprovedResultWithOwnerBalance message from a plain object. Also converts values to their respective internal types.
+                             * Creates a SuccessWithOwnerBalance message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance} UnprovedResultWithOwnerBalance
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance
                              */
-                            UnprovedResultWithOwnerBalance.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance)
+                            SuccessWithOwnerBalance.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance();
+                                var message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance();
                                 if (object.ownerBalance != null)
                                     if ($util.Long)
                                         (message.ownerBalance = $util.Long.fromValue(object.ownerBalance)).unsigned = true;
@@ -50954,15 +50954,15 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a plain object from an UnprovedResultWithOwnerBalance message. Also converts values to other types if specified.
+                             * Creates a plain object from a SuccessWithOwnerBalance message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @static
-                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance} message UnprovedResultWithOwnerBalance
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} message SuccessWithOwnerBalance
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            UnprovedResultWithOwnerBalance.toObject = function toObject(message, options) {
+                            SuccessWithOwnerBalance.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
@@ -50981,17 +50981,17 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Converts this UnprovedResultWithOwnerBalance to JSON.
+                             * Converts this SuccessWithOwnerBalance to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            UnprovedResultWithOwnerBalance.prototype.toJSON = function toJSON() {
+                            SuccessWithOwnerBalance.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return UnprovedResultWithOwnerBalance;
+                            return SuccessWithOwnerBalance;
                         })();
 
                         WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0 = (function() {
@@ -51002,7 +51002,7 @@ $root.org = (function() {
                              * @interface IWaitForStateTransitionResultResponseV0
                              * @property {org.dash.platform.dapi.v0.IStateTransitionBroadcastError|null} [error] WaitForStateTransitionResultResponseV0 error
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] WaitForStateTransitionResultResponseV0 proof
-                             * @property {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IUnprovedResultWithOwnerBalance|null} [unprovedWithOwnerBalance] WaitForStateTransitionResultResponseV0 unprovedWithOwnerBalance
+                             * @property {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance|null} [successWithOwnerBalance] WaitForStateTransitionResultResponseV0 successWithOwnerBalance
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] WaitForStateTransitionResultResponseV0 metadata
                              */
 
@@ -51038,12 +51038,12 @@ $root.org = (function() {
                             WaitForStateTransitionResultResponseV0.prototype.proof = null;
 
                             /**
-                             * WaitForStateTransitionResultResponseV0 unprovedWithOwnerBalance.
-                             * @member {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.IUnprovedResultWithOwnerBalance|null|undefined} unprovedWithOwnerBalance
+                             * WaitForStateTransitionResultResponseV0 successWithOwnerBalance.
+                             * @member {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance|null|undefined} successWithOwnerBalance
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
                              * @instance
                              */
-                            WaitForStateTransitionResultResponseV0.prototype.unprovedWithOwnerBalance = null;
+                            WaitForStateTransitionResultResponseV0.prototype.successWithOwnerBalance = null;
 
                             /**
                              * WaitForStateTransitionResultResponseV0 metadata.
@@ -51058,12 +51058,12 @@ $root.org = (function() {
 
                             /**
                              * WaitForStateTransitionResultResponseV0 result.
-                             * @member {"error"|"proof"|"unprovedWithOwnerBalance"|undefined} result
+                             * @member {"error"|"proof"|"successWithOwnerBalance"|undefined} result
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
                              * @instance
                              */
                             Object.defineProperty(WaitForStateTransitionResultResponseV0.prototype, "result", {
-                                get: $util.oneOfGetter($oneOfFields = ["error", "proof", "unprovedWithOwnerBalance"]),
+                                get: $util.oneOfGetter($oneOfFields = ["error", "proof", "successWithOwnerBalance"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
@@ -51097,8 +51097,8 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                if (message.unprovedWithOwnerBalance != null && Object.hasOwnProperty.call(message, "unprovedWithOwnerBalance"))
-                                    $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.encode(message.unprovedWithOwnerBalance, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.successWithOwnerBalance != null && Object.hasOwnProperty.call(message, "successWithOwnerBalance"))
+                                    $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.encode(message.successWithOwnerBalance, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 return writer;
                             };
 
@@ -51140,7 +51140,7 @@ $root.org = (function() {
                                         message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
                                         break;
                                     case 4:
-                                        message.unprovedWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.decode(reader, reader.uint32());
+                                        message.successWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.decode(reader, reader.uint32());
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
@@ -51199,14 +51199,14 @@ $root.org = (function() {
                                             return "proof." + error;
                                     }
                                 }
-                                if (message.unprovedWithOwnerBalance != null && message.hasOwnProperty("unprovedWithOwnerBalance")) {
+                                if (message.successWithOwnerBalance != null && message.hasOwnProperty("successWithOwnerBalance")) {
                                     if (properties.result === 1)
                                         return "result: multiple values";
                                     properties.result = 1;
                                     {
-                                        var error = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.verify(message.unprovedWithOwnerBalance);
+                                        var error = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.verify(message.successWithOwnerBalance);
                                         if (error)
-                                            return "unprovedWithOwnerBalance." + error;
+                                            return "successWithOwnerBalance." + error;
                                     }
                                 }
                                 if (message.metadata != null && message.hasOwnProperty("metadata")) {
@@ -51239,10 +51239,10 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.proof: object expected");
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
                                 }
-                                if (object.unprovedWithOwnerBalance != null) {
-                                    if (typeof object.unprovedWithOwnerBalance !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.unprovedWithOwnerBalance: object expected");
-                                    message.unprovedWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.fromObject(object.unprovedWithOwnerBalance);
+                                if (object.successWithOwnerBalance != null) {
+                                    if (typeof object.successWithOwnerBalance !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.successWithOwnerBalance: object expected");
+                                    message.successWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.fromObject(object.successWithOwnerBalance);
                                 }
                                 if (object.metadata != null) {
                                     if (typeof object.metadata !== "object")
@@ -51279,10 +51279,10 @@ $root.org = (function() {
                                 }
                                 if (message.metadata != null && message.hasOwnProperty("metadata"))
                                     object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
-                                if (message.unprovedWithOwnerBalance != null && message.hasOwnProperty("unprovedWithOwnerBalance")) {
-                                    object.unprovedWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance.toObject(message.unprovedWithOwnerBalance, options);
+                                if (message.successWithOwnerBalance != null && message.hasOwnProperty("successWithOwnerBalance")) {
+                                    object.successWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.toObject(message.successWithOwnerBalance, options);
                                     if (options.oneofs)
-                                        object.result = "unprovedWithOwnerBalance";
+                                        object.result = "successWithOwnerBalance";
                                 }
                                 return object;
                             };

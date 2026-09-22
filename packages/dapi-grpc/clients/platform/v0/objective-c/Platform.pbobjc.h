@@ -359,7 +359,7 @@ CF_EXTERN_C_BEGIN
 @class SpecificKeys;
 @class StateTransitionBroadcastError;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
-@class WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance;
+@class WaitForStateTransitionResultResponse_SuccessWithOwnerBalance;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -6816,16 +6816,16 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse : GPBMessage
  **/
 void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTransitionResultResponse *message);
 
-#pragma mark - WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance
+#pragma mark - WaitForStateTransitionResultResponse_SuccessWithOwnerBalance
 
-typedef GPB_ENUM(WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance_FieldNumber) {
-  WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance_FieldNumber_OwnerBalance = 1,
+typedef GPB_ENUM(WaitForStateTransitionResultResponse_SuccessWithOwnerBalance_FieldNumber) {
+  WaitForStateTransitionResultResponse_SuccessWithOwnerBalance_FieldNumber_OwnerBalance = 1,
 };
 
 /**
- * The result of a wait that asked for the owner's balance and for no proof
+ * The result of a successful wait that asked for the owner's balance and for no proof
  **/
-GPB_FINAL @interface WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance : GPBMessage
+GPB_FINAL @interface WaitForStateTransitionResultResponse_SuccessWithOwnerBalance : GPBMessage
 
 /**
  * The credit balance of the identity that owns the transition after it
@@ -6841,14 +6841,14 @@ typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResu
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof = 2,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 3,
-  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_UnprovedWithOwnerBalance = 4,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_SuccessWithOwnerBalance = 4,
 };
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase) {
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Proof = 2,
-  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_UnprovedWithOwnerBalance = 4,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_SuccessWithOwnerBalance = 4,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 : GPBMessage
@@ -6862,10 +6862,10 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /**
- * The owner's balance, unproved, when the request asked for it and
- * for no proof
+ * Success with the owner's balance, unproved, when the request asked
+ * for it and for no proof
  **/
-@property(nonatomic, readwrite, strong, null_resettable) WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance *unprovedWithOwnerBalance;
+@property(nonatomic, readwrite, strong, null_resettable) WaitForStateTransitionResultResponse_SuccessWithOwnerBalance *successWithOwnerBalance;
 
 /** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;

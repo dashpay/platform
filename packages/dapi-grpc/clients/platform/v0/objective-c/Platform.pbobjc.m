@@ -495,7 +495,7 @@ GPBObjCClassDeclaration(StateTransitionBroadcastError);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse);
-GPBObjCClassDeclaration(WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance);
+GPBObjCClassDeclaration(WaitForStateTransitionResultResponse_SuccessWithOwnerBalance);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0);
 
 #pragma mark - PlatformRoot
@@ -13856,16 +13856,16 @@ void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTran
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance
+#pragma mark - WaitForStateTransitionResultResponse_SuccessWithOwnerBalance
 
-@implementation WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance
+@implementation WaitForStateTransitionResultResponse_SuccessWithOwnerBalance
 
 @dynamic ownerBalance;
 
-typedef struct WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance__storage_ {
+typedef struct WaitForStateTransitionResultResponse_SuccessWithOwnerBalance__storage_ {
   uint32_t _has_storage_[1];
   uint64_t ownerBalance;
-} WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance__storage_;
+} WaitForStateTransitionResultResponse_SuccessWithOwnerBalance__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -13876,20 +13876,20 @@ typedef struct WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalan
       {
         .name = "ownerBalance",
         .dataTypeSpecific.clazz = Nil,
-        .number = WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance_FieldNumber_OwnerBalance,
+        .number = WaitForStateTransitionResultResponse_SuccessWithOwnerBalance_FieldNumber_OwnerBalance,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance__storage_, ownerBalance),
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_SuccessWithOwnerBalance__storage_, ownerBalance),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance class]
+        [GPBDescriptor allocDescriptorForClass:[WaitForStateTransitionResultResponse_SuccessWithOwnerBalance class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance__storage_)
+                                   storageSize:sizeof(WaitForStateTransitionResultResponse_SuccessWithOwnerBalance__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(WaitForStateTransitionResultResponse)];
     #if defined(DEBUG) && DEBUG
@@ -13909,7 +13909,7 @@ typedef struct WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalan
 @dynamic resultOneOfCase;
 @dynamic error;
 @dynamic proof;
-@dynamic unprovedWithOwnerBalance;
+@dynamic successWithOwnerBalance;
 @dynamic hasMetadata, metadata;
 
 typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_ {
@@ -13917,7 +13917,7 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
   StateTransitionBroadcastError *error;
   Proof *proof;
   ResponseMetadata *metadata;
-  WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance *unprovedWithOwnerBalance;
+  WaitForStateTransitionResultResponse_SuccessWithOwnerBalance *successWithOwnerBalance;
 } WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -13954,11 +13954,11 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
         .dataType = GPBDataTypeMessage,
       },
       {
-        .name = "unprovedWithOwnerBalance",
-        .dataTypeSpecific.clazz = GPBObjCClass(WaitForStateTransitionResultResponse_UnprovedResultWithOwnerBalance),
-        .number = WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_UnprovedWithOwnerBalance,
+        .name = "successWithOwnerBalance",
+        .dataTypeSpecific.clazz = GPBObjCClass(WaitForStateTransitionResultResponse_SuccessWithOwnerBalance),
+        .number = WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_SuccessWithOwnerBalance,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, unprovedWithOwnerBalance),
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, successWithOwnerBalance),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },

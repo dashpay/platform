@@ -66,9 +66,9 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
       ? new Metadata(proto.getV0().getMetadata().toObject()) : null;
 
     let ownerBalance;
-    const unprovedWithOwnerBalance = proto.getV0().getUnprovedWithOwnerBalance();
-    if (unprovedWithOwnerBalance) {
-      ownerBalance = BigInt(unprovedWithOwnerBalance.getOwnerBalance());
+    const successWithOwnerBalance = proto.getV0().getSuccessWithOwnerBalance();
+    if (successWithOwnerBalance) {
+      ownerBalance = BigInt(successWithOwnerBalance.getOwnerBalance());
     }
 
     return new WaitForStateTransitionResultResponse(

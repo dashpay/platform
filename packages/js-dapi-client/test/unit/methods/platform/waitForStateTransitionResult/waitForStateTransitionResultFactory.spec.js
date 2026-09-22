@@ -89,8 +89,8 @@ describe('waitForStateTransitionResultFactory', () => {
   it('should return the owner balance a wait without a proof reports', async () => {
     options.prove = false;
     options.requestUserBalance = true;
-    response.getV0().setUnprovedWithOwnerBalance(
-      new WaitForStateTransitionResultResponse.UnprovedResultWithOwnerBalance()
+    response.getV0().setSuccessWithOwnerBalance(
+      new WaitForStateTransitionResultResponse.SuccessWithOwnerBalance()
         .setOwnerBalance('123456789012345678'),
     );
 

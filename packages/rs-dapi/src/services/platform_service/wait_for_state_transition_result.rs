@@ -4,7 +4,7 @@ use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
-use dapi_grpc::platform::v0::wait_for_state_transition_result_response::UnprovedResultWithOwnerBalance;
+use dapi_grpc::platform::v0::wait_for_state_transition_result_response::SuccessWithOwnerBalance;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::{
     GetIdentityBalanceRequest, Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
@@ -302,8 +302,8 @@ impl PlatformServiceImpl {
                 return;
             }
             response_v0.result = Some(
-                wait_for_state_transition_result_response_v0::Result::UnprovedWithOwnerBalance(
-                    UnprovedResultWithOwnerBalance { owner_balance },
+                wait_for_state_transition_result_response_v0::Result::SuccessWithOwnerBalance(
+                    SuccessWithOwnerBalance { owner_balance },
                 ),
             );
             response_v0.metadata = Some(metadata);

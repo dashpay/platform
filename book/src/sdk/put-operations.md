@@ -264,7 +264,7 @@ made at an earlier version); `wait_for_document_and_owner_balance` and
 balance is a snapshot at the proof's block: it may already include later
 transitions of the same identity. A wait that asks for no proof but sets
 `request_user_balance` gets the owner's balance back unverified, as the
-response's `unproved_with_owner_balance` result, read from a Drive state at or
+response's `success_with_owner_balance` result, read from a Drive state at or
 past the block that executed the write; that works for any transition with an
 owner.
 
