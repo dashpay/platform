@@ -367,10 +367,6 @@ fn try_from_schema_generation_3(
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
-    // After the core parse: every property is in the flattened map, so a
-    // `distinctFrom` target can be resolved against its siblings.
-    super::validate_distinct_from_targets(&v2.flattened_properties, name)
-        .map_err(consensus_or_protocol_data_contract_error)?;
     v2.action_fees = action_fees;
     v2.entry_payload = entry_payload;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;

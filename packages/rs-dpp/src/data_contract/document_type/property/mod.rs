@@ -68,11 +68,13 @@ pub struct DocumentProperty {
 /// consensus compares the property's value with the named one when the document is created
 /// or replaced, and refuses an equal pair with `DocumentPropertyNotDistinctError` (10419).
 /// When the named property is absent from the document there is nothing to differ from,
-/// so the rule passes. The target is checked at contract registration and update: it must
+/// so the rule passes. Transfers and purchases carry no property data and are not judged, so
+/// a change of owner to the identity an `$ownerId` declaration names is not refused. The
+/// target is checked at contract registration and update: it must
 /// be `$ownerId` or an existing identifier property of the same document type other than
 /// the declaring one.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+#[serde(into = "String")]
 pub enum DistinctFrom {
     /// The document's `$ownerId`, which the write transition carries.
     OwnerId,
@@ -151,20 +153,6 @@ impl DistinctFrom {
                 self.as_str().to_string(),
             )
         })
-    }
-}
-
-impl std::fmt::Display for DistinctFrom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl TryFrom<String> for DistinctFrom {
-    type Error = DataContractError;
-
-    fn try_from(name: String) -> Result<Self, Self::Error> {
-        DistinctFrom::from_wire_name(&name)
     }
 }
 

@@ -20,7 +20,16 @@ mod state_v0;
 mod state_v1;
 
 pub trait DocumentReplaceTransitionActionValidation {
+    /// The structure validation the batch advanced-structure generation 0 calls: it predates
+    /// the owner-taking checks, so only structure generation 0 is reachable through it.
     fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+
+    /// The structure validation with the writer's owner id, which structure generation 1
+    /// (the `distinctFrom` check) reads; the batch advanced-structure generation 1 calls it.
+    fn validate_structure_with_owner(
         &self,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -40,6 +49,28 @@ pub trait DocumentReplaceTransitionActionValidation {
 impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionAction {
     fn validate_structure(
         &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .document_replace_transition_structure_validation
+        {
+            0 => self.validate_structure_v0(platform_version),
+            // Structure generation 1 needs the owner id, which only the batch
+            // advanced-structure generation that calls `validate_structure_with_owner` has
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "DocumentReplaceTransitionAction::validate_structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    fn validate_structure_with_owner(
+        &self,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -55,7 +86,8 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
             // named sibling property or to the writer's `$ownerId` is refused
             1 => self.validate_structure_v1(owner_id, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "DocumentReplaceTransitionAction::validate_structure".to_string(),
+                method: "DocumentReplaceTransitionAction::validate_structure_with_owner"
+                    .to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             })),

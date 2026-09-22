@@ -12,13 +12,18 @@ mod distinct_from_tests {
     use super::*;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::codes::ErrorWithCode;
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
+    use std::collections::{BTreeMap, BTreeSet};
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::platform_value;
-    use dpp::prelude::{DataContract, IdentityNonce};
+    use dpp::prelude::{DataContract, Identifier, IdentityNonce};
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::util::storage_flags::StorageFlags;
@@ -313,6 +318,83 @@ mod distinct_from_tests {
         assert_eq!(error.property(), expected_property);
         assert_eq!(error.distinct_from(), expected_distinct_from);
         assert_eq!(ConsensusError::from(error).code(), 10419);
+    }
+
+    /// The replace structure dispatcher on both sides of the gate: protocol
+    /// version 13 routes to structure generation 0, which knows nothing of
+    /// `distinctFrom`, and 14 to generation 1, which refuses the equal pair.
+    /// The action is built by hand the way the transformer would build it,
+    /// against the contract as Drive hands it back.
+    #[test]
+    fn should_not_judge_distinct_from_on_replace_before_protocol_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let fixture = DelegationFixture::new();
+        let owner_id = fixture.identity.id();
+
+        let (_, contract_fetch_info) = fixture
+            .platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                fixture.contract.id().to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract");
+        let contract_fetch_info = contract_fetch_info.expect("the contract is in state");
+
+        let action = DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
+            base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+                id: Identifier::from([0xAA; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: "delegation".to_string(),
+                data_contract: contract_fetch_info,
+                token_cost: None,
+                gas_fees_paid_by: GasFeesPaidBy::default(),
+                contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                declared_action_fee: None,
+            }),
+            revision: 2,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            data: BTreeMap::from([
+                ("note".to_string(), "draft".into()),
+                ("delegateId".to_string(), fixture.owner_id()),
+            ]),
+            changed_data_fields: BTreeSet::new(),
+            added_data_fields: BTreeSet::new(),
+            removed_identifier_fields: BTreeMap::new(),
+            creator_id: None,
+        });
+
+        let before = action
+            .validate_structure_with_owner(
+                owner_id,
+                PlatformVersion::get(13).expect("platform version 13 should exist"),
+            )
+            .expect("structure validation should run");
+        assert!(
+            before.is_valid(),
+            "structure generation 0 must not judge distinctFrom: {:?}",
+            before.errors
+        );
+
+        let at = action
+            .validate_structure_with_owner(owner_id, platform_version)
+            .expect("structure validation should run");
+        assert_matches!(
+            at.errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::DocumentPropertyNotDistinctError(e))]
+                if e.property() == "delegateId" && e.distinct_from() == "$ownerId"
+        );
     }
 
     #[tokio::test]

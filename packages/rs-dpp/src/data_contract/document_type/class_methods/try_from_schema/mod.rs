@@ -395,7 +395,30 @@ fn apply_distinct_from_v0(
 /// document type, and the write-time check reads the target through the
 /// same flattened map, so a target that does not resolve here could never
 /// be judged there.
+///
+/// Versioned on `apply_distinct_from`, the version that parsed the
+/// declarations: `None` predates the keyword, so there is nothing to check.
 fn validate_distinct_from_targets(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+    document_type_name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_distinct_from
+    {
+        None => Ok(()),
+        Some(0) => validate_distinct_from_targets_v0(flattened_properties, document_type_name),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "validate_distinct_from_targets version {version} is not supported"
+        ))),
+    }
+}
+
+fn validate_distinct_from_targets_v0(
     flattened_properties: &IndexMap<String, DocumentProperty>,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
@@ -410,6 +433,19 @@ fn validate_distinct_from_targets(
             )));
         }
         let Some(target_property) = flattened_properties.get(target) else {
+            // Objects are not in the flattened map, only their members are
+            let names_an_object = flattened_properties.keys().any(|key| {
+                key.len() > target.len()
+                    && key.starts_with(target)
+                    && key.as_bytes()[target.len()] == b'.'
+            });
+            if names_an_object {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "document type \"{document_type_name}\" property \"{path}\" declares distinctFrom \
+                     \"{target}\", which is an object, not an identifier property: name one of \
+                     its identifier members"
+                )));
+            }
             return Err(DataContractError::InvalidContractStructure(format!(
                 "document type \"{document_type_name}\" property \"{path}\" declares distinctFrom \
                  \"{target}\", but the document type has no property at that path"
@@ -745,9 +781,17 @@ fn parse_contract_reference_true(field: &str, value: &Value) -> Result<bool, Dat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
     use crate::data_contract::document_type::validate_required_since_within_contract_version;
+    use crate::data_contract::DataContract;
+    use crate::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+        PlatformSerializableWithPlatformVersion,
+    };
     use platform_value::string_encoding::Encoding;
     use serde_json::json;
 
@@ -2041,9 +2085,15 @@ mod tests {
             "got {err}"
         );
 
-        // With it the meta-schema's dependent schema refuses it first
-        try_document_type_from_schema_full_validation(schema)
+        // With it the meta-schema's dependent schema refuses it first, before
+        // the parser gets to run, so the parser's message must not be the one
+        let err = try_document_type_from_schema_full_validation(schema)
             .expect_err("the meta-schema should refuse it");
+        assert!(
+            !err.to_string()
+                .contains("distinctFrom is only allowed on identifier properties"),
+            "the meta-schema, not the parser, must refuse it: {err}"
+        );
     }
 
     #[test]
@@ -2066,7 +2116,7 @@ mod tests {
                 .expect_err("should be refused");
             // An object is not in the flattened map at all; its members are
             let expected = if target == "meta" {
-                "has no property at that path".to_string()
+                "which is an object, not an identifier property".to_string()
             } else {
                 format!("declares distinctFrom \"{target}\", which is not an identifier property")
             };
@@ -2167,16 +2217,77 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_distinct_from_next_to_refers_to_and_judge_the_referencing_property() {
+        let mut schema = distinct_from_schema(Some("toUserId"));
+        schema["properties"]["delegateId"]["refersTo"] = json!({ "type": "identity" });
+        let document_type =
+            try_document_type_from_schema_full_validation(schema).expect("should parse");
+
+        let property = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("delegateId")
+            .expect("property should be present")
+            .clone();
+        assert_eq!(
+            property.property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity
+            )
+        );
+        assert_eq!(
+            property.distinct_from,
+            Some(DistinctFrom::Property("toUserId".to_string()))
+        );
+
+        let data = BTreeMap::from([
+            ("delegateId".to_string(), Value::Identifier([1; 32])),
+            ("toUserId".to_string(), Value::Identifier([1; 32])),
+        ]);
+        let result = document_type
+            .as_ref()
+            .validate_distinct_from_properties(
+                &data,
+                Identifier::from([2; 32]),
+                PlatformVersion::latest(),
+            )
+            .expect("the check should run");
+        assert!(
+            !result.is_valid(),
+            "a referencing property is judged like any other identifier"
+        );
+    }
+
+    #[test]
+    fn should_not_judge_distinct_from_before_protocol_version_14() {
+        // A document type parsed at 14 carries the declaration; judged through
+        // the dispatcher at 13, whose table has no `validate_distinct_from`,
+        // nothing is checked, as no property parsed there could declare it.
+        let document_type = try_document_type_from_schema(distinct_from_schema(Some("$ownerId")))
+            .expect("should parse");
+        let owner_id = Identifier::from([1; 32]);
+        let data = BTreeMap::from([("delegateId".to_string(), Value::Identifier([1; 32]))]);
+
+        let before = document_type
+            .as_ref()
+            .validate_distinct_from_properties(
+                &data,
+                owner_id,
+                PlatformVersion::get(13).expect("platform version 13 should exist"),
+            )
+            .expect("the check should run");
+        assert!(before.is_valid(), "{:?}", before.errors);
+
+        let at = document_type
+            .as_ref()
+            .validate_distinct_from_properties(&data, owner_id, PlatformVersion::latest())
+            .expect("the check should run");
+        assert!(!at.is_valid());
+    }
+
+    #[test]
     fn should_round_trip_a_contract_through_platform_serialization_with_and_without_distinct_from()
     {
-        use crate::data_contract::accessors::v0::DataContractV0Getters;
-        use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-        use crate::data_contract::DataContract;
-        use crate::serialization::{
-            PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
-            PlatformSerializableWithPlatformVersion,
-        };
-
         let platform_version = PlatformVersion::latest();
 
         for distinct_from in [None, Some("$ownerId"), Some("toUserId")] {
