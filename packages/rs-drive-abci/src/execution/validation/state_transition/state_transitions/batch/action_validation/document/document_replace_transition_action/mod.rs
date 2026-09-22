@@ -11,15 +11,18 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v0::DocumentReplaceTransitionActionStateValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v1::DocumentReplaceTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::advanced_structure_v0::DocumentReplaceTransitionActionStructureValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::advanced_structure_v1::DocumentReplaceTransitionActionStructureValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
+mod advanced_structure_v1;
 mod state_v0;
 mod state_v1;
 
 pub trait DocumentReplaceTransitionActionValidation {
     fn validate_structure(
         &self,
+        owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
@@ -37,6 +40,7 @@ pub trait DocumentReplaceTransitionActionValidation {
 impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionAction {
     fn validate_structure(
         &self,
+        owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -47,9 +51,12 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
             .document_replace_transition_structure_validation
         {
             0 => self.validate_structure_v0(platform_version),
+            // V1 introduces the `distinctFrom` check: an identifier property equal to the
+            // named sibling property or to the writer's `$ownerId` is refused
+            1 => self.validate_structure_v1(owner_id, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentReplaceTransitionAction::validate_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -199,6 +199,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   reference checks, re-validates a `refersTo: deletableDocument`
 ///   reference on every replace (a dead one must be repointed or cleared),
 ///   and lets an `immutable` one be cleared once its target is deleted.
+///   Document replace structure validation 1 and create structure
+///   validation 1 refuse a `distinctFrom` identifier property equal to the
+///   value it must differ from (`DocumentPropertyNotDistinctError`, 10419).
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
@@ -546,6 +549,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     further read, and refuses the first unmet requirement with
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
+///
+/// 25. **Distinct identifier properties**: the `distinctFrom` property
+///     keyword (meta-schema v3, `apply_distinct_from` 0, `DistinctFrom` on
+///     `DocumentProperty`) requires an identifier property's value to differ
+///     from the value of a named property of the same document, or from the
+///     document's `$ownerId`. A pure structure rule: document create
+///     structure validation 1 and replace structure validation 1 call
+///     `validate_distinct_from_properties` (`validate_distinct_from` 0) on the
+///     transition's data and owner id after the schema validation, and refuse
+///     an equal pair with `DocumentPropertyNotDistinctError` (10419); an
+///     absent named property passes. The parser checks the target at contract
+///     registration and update (it must exist, be an identifier and not be
+///     the declaring property), and a changed `distinctFrom` is an
+///     incompatible schema change on update.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

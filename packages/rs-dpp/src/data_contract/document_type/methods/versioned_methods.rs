@@ -17,6 +17,7 @@ use crate::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION}
 use crate::fee::Credits;
 use crate::identity::TimestampMillis;
 use crate::prelude::{BlockHeight, CoreBlockHeight};
+use crate::validation::SimpleConsensusValidationResult;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
@@ -773,6 +774,32 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 property.property_type.decode_value_for_tree_keys(value)
             }
         }
+    }
+
+    /// `validate_distinct_from_properties` version 0: every property of the document type
+    /// that declares `distinctFrom` and has a value in `data` is compared with what it
+    /// must differ from, the writer's `owner_id` or the named property, and the first
+    /// equal pair is reported. Each value is judged by `DistinctFrom::violation`, so an
+    /// array item can be judged by the same rule with the item's value.
+    fn validate_distinct_from_properties_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
+    ) -> SimpleConsensusValidationResult {
+        for (path, property) in self.flattened_properties() {
+            let Some(distinct_from) = &property.distinct_from else {
+                continue;
+            };
+            // A lookup error (an intermediate that is not an object) is refused by the
+            // schema validation that precedes this check, so it reads as absent here.
+            let Ok(Some(value)) = data.get_optional_at_path(path) else {
+                continue;
+            };
+            if let Some(error) = distinct_from.violation(self.name(), path, value, data, owner_id) {
+                return SimpleConsensusValidationResult::new_with_error(error.into());
+            }
+        }
+        SimpleConsensusValidationResult::default()
     }
 }
 

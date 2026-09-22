@@ -296,6 +296,12 @@
           "type": "integer",
           "minimum": 0
         },
+        "distinctFrom": {
+          "description": "Only on identifier properties: the value must differ from the value of the named property of the same document (a dotted path for a nested one) or, as \"$ownerId\", from the document's owner. Checked on document create and replace against the transition alone; an equal pair is refused (DocumentPropertyNotDistinctError, 10419). When the named property is absent from the document there is nothing to differ from, so the rule passes. The named property must exist on the document type, be an identifier, and not be the declaring property itself. Available from protocol version 14.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
         "requiredSince": {
           "type": "integer",
           "minimum": 1,
@@ -350,6 +356,33 @@
           },
           "required": [
             "maxLength"
+          ]
+        },
+        "distinctFrom": {
+          "description": "distinctFrom is only allowed on identifier properties",
+          "properties": {
+            "type": {
+              "const": "array"
+            },
+            "byteArray": {
+              "const": true
+            },
+            "contentMediaType": {
+              "const": "application/x.dash.dpp.identifier"
+            },
+            "minItems": {
+              "const": 32
+            },
+            "maxItems": {
+              "const": 32
+            }
+          },
+          "required": [
+            "type",
+            "byteArray",
+            "contentMediaType",
+            "minItems",
+            "maxItems"
           ]
         },
         "refersTo": {

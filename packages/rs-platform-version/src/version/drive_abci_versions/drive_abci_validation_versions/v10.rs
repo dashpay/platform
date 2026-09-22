@@ -17,6 +17,10 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // the `document_reference_validation` feature version. Also bump
 // `delete_withdrawal_data_trigger` to 2 so owners can delete withdrawals in the
 // terminal FAILED status the withdrawals contract v2 admits.
+// Document replace structure validation moves to 1, and document create
+// structure validation 1 gains the same check: a `distinctFrom` identifier
+// property whose value equals the named sibling property or the writer's
+// `$ownerId` is refused (DocumentPropertyNotDistinctError, 10419).
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -219,12 +223,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
                 identity_minimum_balance_pre_check: 1,
-                document_create_transition_structure_validation: 1,
+                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index and refuses a `distinctFrom` identifier property equal to the value it must differ from
                 // Reject deletes on legacy keep-history types as paid consensus errors.
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
-                document_replace_transition_structure_validation: 0,
+                document_replace_transition_structure_validation: 1, // changed: v1 also refuses a `distinctFrom` identifier property equal to the value it must differ from (DocumentPropertyNotDistinctError, 10419)
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
                 document_update_price_transition_structure_validation: 0,

@@ -1,3 +1,7 @@
+use crate::data_contract::document_type_distinct_from::{
+    DocumentPropertyDistinctFromArrayJs, DocumentPropertyDistinctFromMapJs,
+    distinct_from_for_document_type,
+};
 use crate::data_contract::document_type_immutability::{
     DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
     immutable_properties_for_document_type,
@@ -730,6 +734,56 @@ impl DataContractWasm {
             let references = references_for_document_type(document_type.as_ref(), self.0.id())?;
             if references.length() > 0 {
                 map.set(&JsValue::from_str(name), &references.into());
+            }
+        }
+
+        Ok(JsValue::from(map).into())
+    }
+
+    /// The `distinctFrom` declarations of one document type, in schema
+    /// property order: each `{ path, distinctFrom }` names an identifier
+    /// property and what its value must differ from, `"$ownerId"` or the
+    /// dotted path of another identifier property of the same type.
+    ///
+    /// Empty when the document type declares none (the normal case). Throws
+    /// when the contract has no document type by that name, so "no such
+    /// type" and "nothing declared" stay distinguishable.
+    ///
+    /// The keyword is only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version reports an
+    /// empty list, which is exactly what consensus enforced at that version,
+    /// while `toJSON()` still shows the raw keyword either way.
+    #[wasm_bindgen(js_name = "documentTypeDistinctFrom")]
+    pub fn document_type_distinct_from(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentPropertyDistinctFromArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let declarations = distinct_from_for_document_type(document_type)?;
+        Ok(JsValue::from(declarations).into())
+    }
+
+    /// Every document type that declares at least one `distinctFrom`, keyed
+    /// by document type name.
+    ///
+    /// Document types with no declarations are omitted, so an empty `Map`
+    /// means "this contract declares no distinctFrom at all".
+    #[wasm_bindgen(getter = "documentDistinctFrom")]
+    pub fn document_distinct_from(&self) -> WasmDppResult<DocumentPropertyDistinctFromMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let declarations = distinct_from_for_document_type(document_type.as_ref())?;
+            if declarations.length() > 0 {
+                map.set(&JsValue::from_str(name), &declarations.into());
             }
         }
 

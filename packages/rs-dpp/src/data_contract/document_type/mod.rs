@@ -103,6 +103,7 @@ pub(crate) mod property_names {
     pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
     pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
     pub const REFERS_TO: &str = "refersTo";
+    pub const DISTINCT_FROM: &str = "distinctFrom";
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";

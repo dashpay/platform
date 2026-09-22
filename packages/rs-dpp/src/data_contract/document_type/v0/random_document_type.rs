@@ -198,6 +198,7 @@ impl DocumentTypeV0 {
                 required,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             }
         };
 
@@ -528,6 +529,7 @@ impl DocumentTypeV0 {
                 required,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             }
         };
 

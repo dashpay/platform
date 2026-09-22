@@ -109,6 +109,39 @@ impl DocumentImmutabilityErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by the `distinctFrom` check on document
+/// creates and replaces (protocol version 14+).
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentDistinctFromErrorCode.DocumentPropertyNotDistinct) {
+///     // an identifier property equals the value it must differ from
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentDistinctFromErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentDistinctFromErrorCodeWasm {
+    /// A `distinctFrom` identifier property of the written document equals
+    /// the value it must differ from: the document's `$ownerId`, or the named
+    /// property of the same document.
+    DocumentPropertyNotDistinct = 10419,
+}
+
+impl DocumentDistinctFromErrorCodeWasm {
+    /// The distinctFrom error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10419 => Some(Self::DocumentPropertyNotDistinct),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -148,6 +181,13 @@ impl ConsensusErrorWasm {
     #[wasm_bindgen(getter = "documentImmutabilityErrorCode")]
     pub fn document_immutability_error_code(&self) -> Option<DocumentImmutabilityErrorCodeWasm> {
         DocumentImmutabilityErrorCodeWasm::from_code(self.0.code())
+    }
+
+    /// The distinctFrom error this is, or `undefined` when it is not code
+    /// 10419.
+    #[wasm_bindgen(getter = "documentDistinctFromErrorCode")]
+    pub fn document_distinct_from_error_code(&self) -> Option<DocumentDistinctFromErrorCodeWasm> {
+        DocumentDistinctFromErrorCodeWasm::from_code(self.0.code())
     }
 }
 
@@ -201,6 +241,36 @@ mod tests {
         );
         // A neighbouring code is not claimed.
         assert_eq!(DocumentImmutabilityErrorCodeWasm::from_code(40127), None);
+    }
+
+    /// Built from the real DPP error, for the same reason as the test above.
+    #[test]
+    fn distinct_from_error_code_mirrors_the_dpp_error() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::DocumentPropertyNotDistinctError;
+
+        let error: ConsensusError =
+            BasicError::DocumentPropertyNotDistinctError(DocumentPropertyNotDistinctError::new(
+                "delegation".to_string(),
+                "delegateId".to_string(),
+                "$ownerId".to_string(),
+            ))
+            .into();
+
+        assert_eq!(
+            DocumentDistinctFromErrorCodeWasm::from_code(error.code()),
+            Some(DocumentDistinctFromErrorCodeWasm::DocumentPropertyNotDistinct)
+        );
+        assert_eq!(
+            DocumentDistinctFromErrorCodeWasm::DocumentPropertyNotDistinct as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_distinct_from_error_code(),
+            Some(DocumentDistinctFromErrorCodeWasm::DocumentPropertyNotDistinct)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentDistinctFromErrorCodeWasm::from_code(10418), None);
     }
 
     /// The six reference-validation errors, paired with the JS enum variant

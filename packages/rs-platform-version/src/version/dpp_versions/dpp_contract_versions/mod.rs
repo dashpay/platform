@@ -75,6 +75,10 @@ pub struct DocumentTypeMethodVersions {
     pub max_size: FeatureVersion,
     pub serialize_value_for_key: FeatureVersion,
     pub deserialize_value_for_key: FeatureVersion,
+    /// `validate_distinct_from_properties`: refuses a document whose `distinctFrom`
+    /// property equals the value it must differ from. `None` on versions that
+    /// predate the keyword, where no parsed property carries it.
+    pub validate_distinct_from: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -92,6 +96,12 @@ pub struct DocumentTypeSchemaVersions {
     /// keyword: they ignore it entirely, exactly as they parsed before it
     /// existed.
     pub apply_required_since: OptionalFeatureVersion,
+    /// Parses the `distinctFrom` property keyword (an identifier property whose
+    /// value must differ from a named property of the same document, or from
+    /// the document's `$ownerId`) onto the property. `None` on versions that
+    /// predate the keyword: they ignore it entirely, exactly as they parsed
+    /// before it existed.
+    pub apply_distinct_from: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

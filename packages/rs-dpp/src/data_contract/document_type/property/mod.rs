@@ -10,6 +10,7 @@ use platform_serialization_derive::{
 };
 
 use crate::consensus::basic::decode::DecodingError;
+use crate::consensus::basic::document::DocumentPropertyNotDistinctError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
@@ -25,7 +26,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
 use itertools::Itertools;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
@@ -51,6 +52,125 @@ pub struct DocumentProperty {
     /// for optional properties. Only ever `Some` when `required` is true.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub required_since: Option<u32>,
+    /// What this identifier property's value must differ from (`distinctFrom`):
+    /// the document's `$ownerId` or another identifier property of the same
+    /// document type. `None` for every property that declares nothing, which
+    /// is every property parsed before protocol version 14.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distinct_from: Option<DistinctFrom>,
+}
+
+/// What a `distinctFrom` identifier property must differ from.
+///
+/// Declared as `"distinctFrom": "$ownerId"` or `"distinctFrom": "<dotted property path>"`
+/// on an identifier property (meta-schema v3, protocol version 14). A pure structure rule:
+/// consensus compares the property's value with the named one when the document is created
+/// or replaced, and refuses an equal pair with `DocumentPropertyNotDistinctError` (10419).
+/// When the named property is absent from the document there is nothing to differ from,
+/// so the rule passes. The target is checked at contract registration and update: it must
+/// be `$ownerId` or an existing identifier property of the same document type other than
+/// the declaring one.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum DistinctFrom {
+    /// The document's `$ownerId`, which the write transition carries.
+    OwnerId,
+    /// The dotted path of another identifier property of the same document type.
+    Property(String),
+}
+
+impl DistinctFrom {
+    /// The declaration a wire name spells: `$ownerId` or a property path. Any other
+    /// `$`-prefixed name is refused, since no other system property is an identifier the
+    /// rule could compare against.
+    pub fn from_wire_name(name: &str) -> Result<Self, DataContractError> {
+        if name == OWNER_ID {
+            return Ok(DistinctFrom::OwnerId);
+        }
+        if name.starts_with('$') {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "distinctFrom must name \"{OWNER_ID}\" or a property of the same document type, \
+                 not system property \"{name}\""
+            )));
+        }
+        if name.is_empty() || name.len() > 256 {
+            return Err(DataContractError::InvalidContractStructure(
+                "distinctFrom property paths must be between 1 and 256 characters".to_string(),
+            ));
+        }
+        Ok(DistinctFrom::Property(name.to_string()))
+    }
+
+    /// The wire name, as the schema spells it.
+    pub fn as_str(&self) -> &str {
+        match self {
+            DistinctFrom::OwnerId => OWNER_ID,
+            DistinctFrom::Property(path) => path.as_str(),
+        }
+    }
+
+    /// The collision this declaration finds for one value: the error to refuse the write
+    /// with when `value`, the declaring property's own value, equals what it must differ
+    /// from, and `None` when the two differ or when the named property is absent from
+    /// `data` (there is nothing to differ from). `value` is passed on its own rather than
+    /// read from `data` so that an array item can be judged by the same rule with the
+    /// item's value; `path` is the declaring property's dotted path, for the error.
+    ///
+    /// A value on either side that is not a 32-byte identifier cannot collide: the schema
+    /// validation that precedes this check refuses such a document on its own.
+    pub fn violation(
+        &self,
+        document_type_name: &str,
+        path: &str,
+        value: &Value,
+        data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
+    ) -> Option<DocumentPropertyNotDistinctError> {
+        let Ok(value) = value.to_identifier() else {
+            return None;
+        };
+        let other = match self {
+            DistinctFrom::OwnerId => owner_id,
+            DistinctFrom::Property(target) => {
+                // A lookup error (an intermediate that is not an object) is the same as
+                // absence here: the schema forbids the shape, so nothing to compare against.
+                let Ok(Some(other)) = data.get_optional_at_path(target) else {
+                    return None;
+                };
+                let Ok(other) = other.to_identifier() else {
+                    return None;
+                };
+                other
+            }
+        };
+        (value == other).then(|| {
+            DocumentPropertyNotDistinctError::new(
+                document_type_name.to_string(),
+                path.to_string(),
+                self.as_str().to_string(),
+            )
+        })
+    }
+}
+
+impl std::fmt::Display for DistinctFrom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl TryFrom<String> for DistinctFrom {
+    type Error = DataContractError;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        DistinctFrom::from_wire_name(&name)
+    }
+}
+
+impl From<DistinctFrom> for String {
+    fn from(distinct_from: DistinctFrom) -> Self {
+        distinct_from.as_str().to_string()
+    }
 }
 
 impl DocumentProperty {
@@ -3300,6 +3420,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         sub_fields.insert(
@@ -3309,6 +3430,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5663,6 +5785,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         inner_fields.insert(
@@ -5672,6 +5795,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5723,6 +5847,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5743,6 +5868,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         inner_fields.insert(
@@ -5752,6 +5878,7 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6185,6 +6312,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6220,6 +6348,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         sub_fields.insert(
@@ -6229,6 +6358,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -6247,6 +6377,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         sub_fields.insert(
@@ -6256,6 +6387,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -6548,6 +6680,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         sub_fields.insert(
@@ -6557,6 +6690,7 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6617,6 +6751,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         sub_fields.insert(
@@ -6626,6 +6761,7 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6712,6 +6848,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         sub_fields.insert(
@@ -6721,6 +6858,7 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6987,6 +7125,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7016,6 +7155,7 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         // Second field is required
@@ -7026,6 +7166,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7142,6 +7283,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7160,6 +7302,7 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7466,6 +7609,7 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7729,6 +7873,7 @@ mod tests {
             required: false,
             transient: false,
             required_since: None,
+            distinct_from: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");

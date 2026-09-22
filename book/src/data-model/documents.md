@@ -305,6 +305,35 @@ Enforcement lives in the replace action's state validation (generation 1). The a
 
 In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`. Earlier document type generations return empty sets.
 
+## Distinct Identifier Properties
+
+Protocol version 14 adds the property-level `distinctFrom` keyword, a pure structure rule on identifier properties: the property's value must differ from the value of a named property of the same document, or from the document's `$ownerId`. It sits next to the reference keywords (`refersTo` and its `propertyAgreement`, which bind a property to another document's values) but reads nothing beyond the transition being written.
+
+```json
+"delegateId": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "distinctFrom": "$ownerId",
+  "position": 0
+},
+"backupId": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "distinctFrom": "delegateId",
+  "position": 1
+}
+```
+
+The value is `"$ownerId"` or the dotted path of another property of the document type (`"meta.reviewerId"` for a nested one). The parser (generation 3, meta-schema v3) checks the declaration when a contract enters the chain, on registration and on update:
+
+- The keyword is only allowed on identifier properties, enforced by the same dependent schema shape that restricts `refersTo`.
+- A named property must exist on the document type, must itself be an identifier (the only kind the value can be compared with), and must not be the declaring property. `$ownerId` needs no check; no other system property is accepted.
+- On contract update a changed, added or removed `distinctFrom` is an incompatible schema change, like a changed `refersTo`.
+
+Enforcement lives in the structure validation of the document create and replace actions (create structure generation 1 and replace structure generation 1, both protocol version 14), after the schema validation of the document's properties, so every value compared is already a 32-byte identifier. The check reads the transition's data and the owner id it carries and never touches Drive. An equal pair fails the write with `DocumentPropertyNotDistinctError` (basic code 10419), which names the document type, the property and what it collided with. When the named property is absent from the document there is nothing to differ from, so the rule passes. Transfers, price updates and purchases carry no property data and are unaffected.
+
+In Rust the declaration is `DocumentProperty::distinct_from` (`Option<DistinctFrom>`, absent on every property parsed before protocol version 14), the document check is `DocumentTypeV0Methods::validate_distinct_from_properties`, and `DistinctFrom::violation` judges one value on its own so that a typed array item can be judged by the same rule with the item's value.
+
 ## Rules and Guidelines
 
 **Do:**

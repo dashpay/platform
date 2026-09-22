@@ -4,8 +4,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    property_names, ContractReferenceModeration, ContractReferenceRequirements, DocumentProperty,
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType,
+    property_names, ContractReferenceModeration, ContractReferenceRequirements, DistinctFrom,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -182,6 +182,8 @@ fn insert_values(
             property_type => {
                 let property_type =
                     apply_property_reference(&inner_properties, property_type, platform_version)?;
+                let distinct_from =
+                    apply_distinct_from(&inner_properties, &property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -189,6 +191,7 @@ fn insert_values(
                         required: is_required,
                         transient: is_transient,
                         required_since,
+                        distinct_from,
                     },
                 );
             }
@@ -306,6 +309,7 @@ fn insert_values_nested(
 
     let property_type =
         apply_property_reference(&inner_properties, property_type, platform_version)?;
+    let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -314,9 +318,112 @@ fn insert_values_nested(
             required: is_required,
             transient: is_transient,
             required_since,
+            distinct_from,
         },
     );
 
+    Ok(())
+}
+
+/// Reads a `distinctFrom` declaration off an identifier property: what its
+/// value must differ from, the document's `$ownerId` or another property of
+/// the same document type. Non-identifier properties cannot carry it.
+///
+/// Versioned on `apply_distinct_from` in the platform version's document type
+/// schema versions. `None` selects the behavior of the versions that predate
+/// the keyword: it is ignored entirely, so their parses stay byte-for-byte
+/// identical to what they always produced.
+///
+/// The named property is checked against the rest of the document type once
+/// every property is parsed, by [`validate_distinct_from_targets`].
+fn apply_distinct_from(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<Option<DistinctFrom>, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_distinct_from
+    {
+        None => Ok(None),
+        Some(0) => apply_distinct_from_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_distinct_from version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_distinct_from_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+) -> Result<Option<DistinctFrom>, DataContractError> {
+    let Some(distinct_from_value) = inner_properties.get(property_names::DISTINCT_FROM) else {
+        return Ok(None);
+    };
+
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
+        return Err(DataContractError::InvalidContractStructure(
+            "distinctFrom is only allowed on identifier properties".to_string(),
+        ));
+    }
+
+    let name = distinct_from_value.as_text().ok_or_else(|| {
+        DataContractError::InvalidContractStructure(
+            "distinctFrom must be a string naming $ownerId or a property of the same document \
+             type"
+                .to_string(),
+        )
+    })?;
+
+    DistinctFrom::from_wire_name(name).map(Some)
+}
+
+/// Checks every `distinctFrom` declaration of a document type against the
+/// rest of its properties, once they are all parsed: a named property must
+/// exist, must be an identifier (the only kind the value can be compared
+/// with), and must not be the declaring property itself. `$ownerId` needs no
+/// check, every document has one.
+///
+/// Runs on every parse, validating or not: the rule is a property of the
+/// document type, and the write-time check reads the target through the
+/// same flattened map, so a target that does not resolve here could never
+/// be judged there.
+fn validate_distinct_from_targets(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    for (path, property) in flattened_properties {
+        let Some(DistinctFrom::Property(target)) = &property.distinct_from else {
+            continue;
+        };
+        if target == path {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" declares distinctFrom \
+                 itself: name $ownerId or another identifier property of the document type"
+            )));
+        }
+        let Some(target_property) = flattened_properties.get(target) else {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" declares distinctFrom \
+                 \"{target}\", but the document type has no property at that path"
+            )));
+        };
+        if !matches!(
+            target_property.property_type,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        ) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" declares distinctFrom \
+                 \"{target}\", which is not an identifier property"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -1596,6 +1703,304 @@ mod tests {
             platform_version,
         )
         .expect("a parse predating refersTo should ignore the keyword entirely");
+    }
+
+    // ================================================================
+    //  distinctFrom
+    // ================================================================
+
+    /// An identifier property schema, with `distinct_from` as its `distinctFrom`
+    /// when given.
+    fn identifier_property(position: u32, distinct_from: Option<&str>) -> serde_json::Value {
+        let mut property = json!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "position": position
+        });
+        if let Some(distinct_from) = distinct_from {
+            property["distinctFrom"] = json!(distinct_from);
+        }
+        property
+    }
+
+    /// A document type with `delegateId` declaring `distinct_from`, next to the
+    /// identifier `toUserId`, the string `note` and the nested object `meta`
+    /// holding the identifier `meta.reviewerId` and the string `meta.tag`.
+    fn distinct_from_schema(distinct_from: Option<&str>) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "delegateId": identifier_property(0, distinct_from),
+                "toUserId": identifier_property(1, None),
+                "note": {"type": "string", "maxLength": 32, "position": 2},
+                "meta": {
+                    "type": "object",
+                    "position": 3,
+                    "properties": {
+                        "reviewerId": identifier_property(0, None),
+                        "tag": {"type": "string", "maxLength": 32, "position": 1}
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    fn distinct_from_of(document_type: &DocumentType, path: &str) -> Option<DistinctFrom> {
+        document_type
+            .as_ref()
+            .flattened_properties()
+            .get(path)
+            .expect("property should be present")
+            .distinct_from
+            .clone()
+    }
+
+    #[test]
+    fn should_parse_distinct_from_owner_id() {
+        for full_validation in [true, false] {
+            let document_type = if full_validation {
+                try_document_type_from_schema_full_validation(distinct_from_schema(Some(
+                    "$ownerId",
+                )))
+            } else {
+                try_document_type_from_schema(distinct_from_schema(Some("$ownerId")))
+            }
+            .expect("should parse");
+
+            assert_eq!(
+                distinct_from_of(&document_type, "delegateId"),
+                Some(DistinctFrom::OwnerId),
+                "full_validation: {full_validation}"
+            );
+            assert_eq!(distinct_from_of(&document_type, "toUserId"), None);
+        }
+    }
+
+    #[test]
+    fn should_parse_distinct_from_property_path_on_top_level_and_nested_properties() {
+        let document_type = try_document_type_from_schema_full_validation(json!({
+            "type": "object",
+            "properties": {
+                "delegateId": identifier_property(0, Some("meta.reviewerId")),
+                "meta": {
+                    "type": "object",
+                    "position": 1,
+                    "properties": {
+                        "reviewerId": identifier_property(0, Some("delegateId")),
+                        "tag": {"type": "string", "maxLength": 32, "position": 1}
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        assert_eq!(
+            distinct_from_of(&document_type, "delegateId"),
+            Some(DistinctFrom::Property("meta.reviewerId".to_string()))
+        );
+        assert_eq!(
+            distinct_from_of(&document_type, "meta.reviewerId"),
+            Some(DistinctFrom::Property("delegateId".to_string()))
+        );
+    }
+
+    #[test]
+    fn should_reject_distinct_from_on_a_non_identifier_property() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "note": {"type": "string", "maxLength": 32, "position": 0, "distinctFrom": "$ownerId"},
+                "toUserId": identifier_property(1, None)
+            },
+            "required": [],
+            "additionalProperties": false
+        });
+
+        // Without the meta-schema the parser refuses it itself
+        let err = try_document_type_from_schema(schema.clone()).expect_err("should be refused");
+        assert!(
+            err.to_string()
+                .contains("distinctFrom is only allowed on identifier properties"),
+            "got {err}"
+        );
+
+        // With it the meta-schema's dependent schema refuses it first
+        try_document_type_from_schema_full_validation(schema)
+            .expect_err("the meta-schema should refuse it");
+    }
+
+    #[test]
+    fn should_reject_distinct_from_naming_a_property_that_does_not_exist() {
+        for target in ["missing", "meta.missing", "note.deeper"] {
+            let err = try_document_type_from_schema(distinct_from_schema(Some(target)))
+                .expect_err("should be refused");
+            assert!(
+                err.to_string()
+                    .contains(&format!("declares distinctFrom \"{target}\", but the document type has no property at that path")),
+                "{target}: got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_distinct_from_naming_a_non_identifier_property() {
+        for target in ["note", "meta.tag", "meta"] {
+            let err = try_document_type_from_schema(distinct_from_schema(Some(target)))
+                .expect_err("should be refused");
+            // An object is not in the flattened map at all; its members are
+            let expected = if target == "meta" {
+                "has no property at that path".to_string()
+            } else {
+                format!("declares distinctFrom \"{target}\", which is not an identifier property")
+            };
+            assert!(err.to_string().contains(&expected), "{target}: got {err}");
+        }
+    }
+
+    #[test]
+    fn should_reject_distinct_from_naming_itself() {
+        let err = try_document_type_from_schema(distinct_from_schema(Some("delegateId")))
+            .expect_err("should be refused");
+        assert!(
+            err.to_string().contains("declares distinctFrom itself"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn should_reject_distinct_from_naming_a_system_property_other_than_owner_id() {
+        for (target, fragment) in [
+            ("$id", "not system property \"$id\""),
+            ("$creatorId", "not system property \"$creatorId\""),
+            ("", "between 1 and 256 characters"),
+        ] {
+            let err = try_document_type_from_schema(distinct_from_schema(Some(target)))
+                .expect_err("should be refused");
+            assert!(err.to_string().contains(fragment), "{target:?}: got {err}");
+        }
+    }
+
+    #[test]
+    fn should_reject_distinct_from_that_is_not_a_string() {
+        let mut schema = distinct_from_schema(None);
+        schema["properties"]["delegateId"]["distinctFrom"] = json!(["$ownerId"]);
+        let err = try_document_type_from_schema(schema).expect_err("should be refused");
+        assert!(
+            err.to_string().contains("distinctFrom must be a string"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_distinct_from_below_protocol_version_14_under_full_validation() {
+        // Meta-schema v2 (protocol version 13) knows no such keyword, so a
+        // registering parse refuses it.
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+        let value = platform_value::to_value(distinct_from_schema(Some("$ownerId")))
+            .expect("schema should convert");
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect_err("protocol version 13 should refuse the keyword");
+    }
+
+    #[test]
+    fn should_ignore_distinct_from_below_protocol_version_14_without_full_validation() {
+        // Platform versions whose tables carry `apply_distinct_from: None`
+        // predate the keyword: without the meta-schema they must ignore it and
+        // keep producing the plain property they always produced.
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+        let document_type = try_document_type_from_schema_on_version(
+            distinct_from_schema(Some("$ownerId")),
+            platform_version,
+        )
+        .expect("should parse");
+
+        assert_eq!(distinct_from_of(&document_type, "delegateId"), None);
+    }
+
+    #[test]
+    fn should_accept_distinct_from_at_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("platform version 14 should exist");
+
+        let document_type = try_document_type_from_schema_on_version(
+            distinct_from_schema(Some("toUserId")),
+            platform_version,
+        )
+        .expect("should parse");
+
+        assert_eq!(
+            distinct_from_of(&document_type, "delegateId"),
+            Some(DistinctFrom::Property("toUserId".to_string()))
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_contract_through_platform_serialization_with_and_without_distinct_from()
+    {
+        use crate::data_contract::accessors::v0::DataContractV0Getters;
+        use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use crate::data_contract::DataContract;
+        use crate::serialization::{
+            PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+            PlatformSerializableWithPlatformVersion,
+        };
+
+        let platform_version = PlatformVersion::latest();
+
+        for distinct_from in [None, Some("$ownerId"), Some("toUserId")] {
+            let contract_value = platform_value::to_value(json!({
+                "$formatVersion": "1",
+                "id": Identifier::from([7u8; 32]).to_string(Encoding::Base58),
+                "ownerId": Identifier::from([8u8; 32]).to_string(Encoding::Base58),
+                "version": 1,
+                "documentSchemas": {
+                    "message": distinct_from_schema(distinct_from)
+                }
+            }))
+            .expect("contract should convert");
+            let contract = DataContract::from_value(contract_value, true, platform_version)
+                .expect("the contract should parse");
+
+            let bytes = contract
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("the contract should serialize");
+            let recovered =
+                DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
+                    .expect("the contract should deserialize");
+
+            assert_eq!(contract, recovered, "distinctFrom {distinct_from:?}");
+            let expected = distinct_from
+                .map(|name| DistinctFrom::from_wire_name(name).expect("a valid declaration"));
+            let message_type = recovered
+                .document_type_for_name("message")
+                .expect("the message type")
+                .to_owned_document_type();
+            assert_eq!(distinct_from_of(&message_type, "delegateId"), expected);
+        }
     }
 
     // ================================================================
