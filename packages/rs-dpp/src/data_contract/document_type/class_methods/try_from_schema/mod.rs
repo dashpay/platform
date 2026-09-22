@@ -8,7 +8,7 @@ use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentType,
+    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -156,9 +156,11 @@ fn insert_values(
             platform_version,
         )?;
 
-        let property_type = match parse_typed_array(&inner_properties, platform_version)? {
+        let options: DocumentPropertyTypeParsingOptions = config.into();
+        let property_type = match parse_typed_array(&inner_properties, &options, platform_version)?
+        {
             Some(typed_array) => typed_array,
-            None => DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())?,
+            None => DocumentPropertyType::try_from_value_map(&inner_properties, &options)?,
         };
 
         match property_type {
@@ -241,9 +243,10 @@ fn insert_values_nested(
         platform_version,
     )?;
 
-    let property_type = match parse_typed_array(&inner_properties, platform_version)? {
+    let options: DocumentPropertyTypeParsingOptions = config.into();
+    let property_type = match parse_typed_array(&inner_properties, &options, platform_version)? {
         Some(typed_array) => typed_array,
-        None => DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())?,
+        None => DocumentPropertyType::try_from_value_map(&inner_properties, &options)?,
     };
 
     let property_type = match property_type {

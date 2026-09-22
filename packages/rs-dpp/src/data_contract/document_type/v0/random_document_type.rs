@@ -381,21 +381,42 @@ impl DocumentTypeV0 {
                         }
                         schema
                     }
-                    let items_schema = match &typed_array.item_type {
-                        ArrayItemType::String(min, max) => with_bounds(json!({"type": "string"}), [("minLength", *min), ("maxLength", *max)]),
-                        ArrayItemType::Integer => json!({"type": "integer"}),
-                        ArrayItemType::Number => json!({"type": "number"}),
-                        ArrayItemType::ByteArray(min, max) => with_bounds(json!({"type": "array", "byteArray": true}), [("minItems", *min), ("maxItems", *max)]),
-                        ArrayItemType::Identifier => json!({
+                    // The element schema that parses back to the element type
+                    let integer = |minimum: Option<i128>, maximum: Option<i128>| {
+                        let mut schema = json!({"type": "integer"});
+                        if let serde_json::Value::Object(ref mut map) = schema {
+                            if let Some(minimum) = minimum {
+                                map.insert("minimum".to_string(), json!(minimum as i64));
+                            }
+                            if let Some(maximum) = maximum {
+                                map.insert("maximum".to_string(), json!(maximum as i64));
+                            }
+                        }
+                        schema
+                    };
+                    let bound = |size: Option<u16>| size.map(usize::from);
+                    let items_schema = match typed_array.item_type.as_ref() {
+                        DocumentPropertyType::U8 => integer(Some(0), Some(u8::MAX.into())),
+                        DocumentPropertyType::I8 => integer(Some(i8::MIN.into()), Some(i8::MAX.into())),
+                        DocumentPropertyType::U16 => integer(Some(0), Some(u16::MAX.into())),
+                        DocumentPropertyType::I16 => integer(Some(i16::MIN.into()), Some(i16::MAX.into())),
+                        DocumentPropertyType::U32 => integer(Some(0), Some(u32::MAX.into())),
+                        DocumentPropertyType::I32 => integer(Some(i32::MIN.into()), Some(i32::MAX.into())),
+                        DocumentPropertyType::U64 => integer(Some(0), None),
+                        DocumentPropertyType::I64 | DocumentPropertyType::U128 | DocumentPropertyType::I128 => integer(None, None),
+                        DocumentPropertyType::F64 | DocumentPropertyType::Date => json!({"type": "number"}),
+                        DocumentPropertyType::String(sizes) => with_bounds(json!({"type": "string"}), [("minLength", bound(sizes.min_length)), ("maxLength", bound(sizes.max_length))]),
+                        DocumentPropertyType::ByteArray(sizes) => with_bounds(json!({"type": "array", "byteArray": true}), [("minItems", bound(sizes.min_size)), ("maxItems", bound(sizes.max_size))]),
+                        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => json!({
                             "type": "array",
                             "byteArray": true,
                             "minItems": 32,
                             "maxItems": 32,
                             "contentMediaType": "application/x.dash.dpp.identifier",
                         }),
-                        ArrayItemType::Boolean => json!({"type": "boolean"}),
-                        // No element schema parses to a date
-                        ArrayItemType::Date => json!({"type": "number"}),
+                        DocumentPropertyType::Boolean => json!({"type": "boolean"}),
+                        // The parser admits no other element type
+                        _ => json!({}),
                     };
 
                     with_bounds(
