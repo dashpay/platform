@@ -1722,8 +1722,8 @@ mod tests {
 
     mod validate_schema {
         use super::*;
-        use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
         use crate::consensus::basic::BasicError;
+        use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
         use std::collections::BTreeMap;
 
         #[test]
