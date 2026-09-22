@@ -61,6 +61,11 @@ jobs:
       - name: Verify self-hosted Swift runner policy
         run: python3 .github/scripts/check-swift-self-hosted-runner.py
 
+      - name: Verify candidate-image routing and manifest inputs
+        run: |
+          python3 .github/scripts/runner-image.py env
+          python3 -m unittest discover -s .github/scripts/tests -v
+
       - uses: dorny/paths-filter@v4
         id: filter-js
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -89,6 +94,9 @@ jobs:
               - .github/workflows/tests-rs-wallet.yml
               - .github/workflows/tests.yml
               - .github/scripts/check-wallet-closure.py
+              - .github/runner-requirements.json
+              - .github/scripts/runner-image.py
+              - .github/actions/rust/**
 
       - uses: dorny/paths-filter@v4
         id: filter-e2e
@@ -271,7 +279,7 @@ jobs:
             exit 0
           fi
 
-          if echo "$CHANGED" | grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain\.toml$|^\.github/actions/rust/|^\.github/workflows/tests\.yml$|^\.github/workflows/tests-rs-workspace\.yml$'; then
+          if echo "$CHANGED" | grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain\.toml$|^\.github/runner-requirements\.json$|^\.github/scripts/runner-image\.py$|^\.github/actions/rust/|^\.github/workflows/tests\.yml$|^\.github/workflows/tests-rs-workspace\.yml$'; then
             echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
             echo "Build configuration changed — shielded tests will run"
             exit 0

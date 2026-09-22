@@ -18,6 +18,32 @@ on:
         default: true
 
 jobs:
+  select-runner:
+    name: Select compatible runner image
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+    runs-on: ubuntu-24.04
+    # Allow the separate 90-minute build and publication/queue window to finish.
+    timeout-minutes: 135
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+      actions: read
+    outputs:
+      labels: ${{ steps.select.outputs.labels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select provisioned pool or wait for the exact PR candidate
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/runner-image.py select --kind rust
+
   test:
     name: Tests
     # Scheduled onto whichever self-hosted runner is free — the macOS boxes or
@@ -25,7 +51,8 @@ jobs:
     # runners; pairing it with `self-hosted` keeps the job off GitHub-hosted
     # runners entirely, so untrusted code never reaches a hosted Linux VM by
     # way of a label collision.
-    runs-on: [self-hosted, rust-ci]
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.labels) }}
     # Fork PRs must not execute on any persistent runner, macOS or Linux.
     if: >-
       github.event_name != 'pull_request'
@@ -115,43 +142,29 @@ jobs:
           done
           exit "$missing"
 
-      # clang, llvm and libsnappy are installed by ./.github/actions/rust on
-      # Linux; this covers what the rest of the job needs and what a bare
-      # self-hosted image doesn't ship. Every branch is a no-op once the
-      # persistent runner has been provisioned by the first run.
-      - name: Install build dependencies (Linux)
+      # The persistent runner image is the versioned CI environment. Runtime
+      # apt/sudo would let a job mutate the runner and is unnecessary once the
+      # image contract is provisioned.
+      - name: Verify build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
 
-          MISSING=()
-          for pkg in build-essential cmake libgmp-dev libssl-dev pkg-config jq zip; do
-            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          missing=()
+          for tool in clang cmake gh jq llvm-config rustup zip; do
+            command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
           done
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "Installing: ${MISSING[*]}"
-            sudo apt-get update -qq
-            sudo apt-get install -qq --yes "${MISSING[@]}"
+          for pkg in build-essential clang libgmp-dev libsnappy-dev libssl-dev llvm pkg-config; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Self-hosted runner image is missing: ${missing[*]}"
+            echo "::error::Provision these in the pinned runner image; CI jobs must not install host packages."
+            exit 1
           fi
 
-          # Needed by the immutable-structure check below.
-          if ! command -v gh >/dev/null 2>&1; then
-            sudo apt-get install -qq --yes gh || {
-              curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-                | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-                | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-              sudo apt-get update -qq
-              sudo apt-get install -qq --yes gh
-            }
-          fi
-
-          # dtolnay/rust-toolchain drives rustup; it must already exist.
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --no-modify-path --default-toolchain none
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          fi
+          # rustup is prebaked; Setup Rust may install the repository-selected
+          # toolchain under the runner user's home, without root.
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -159,25 +172,15 @@ jobs:
           cache: false
           components: llvm-tools, rustfmt, clippy
 
-      # Both tools are required by the test steps below. Install only when
-      # missing, and fail HERE, loudly, if the tool still doesn't work
-      # afterwards — the previous `cargo install ... 2>/dev/null || true`
-      # silently swallowed a failed nextest install on a freshly provisioned
-      # runner, and the job then died 10 minutes later in the test step with
-      # "no such command: nextest".
-      - name: Install cargo-llvm-cov
-        run: |
-          if ! cargo llvm-cov --version >/dev/null 2>&1; then
-            cargo install cargo-llvm-cov --locked
-          fi
-          cargo llvm-cov --version
+      # These helpers are part of the pinned runner image. Version checks make
+      # image drift fail before the test phase instead of installing tools from
+      # a job or silently swallowing a failed installation.
+      - name: Verify repository-pinned cargo-llvm-cov
+        run: cargo llvm-cov --version | grep -Fx "cargo-llvm-cov $CI_CARGO_LLVM_COV_VERSION"
 
-      - name: Install cargo-nextest
-        run: |
-          if ! cargo nextest --version >/dev/null 2>&1; then
-            cargo install cargo-nextest --locked
-          fi
-          cargo nextest --version
+      - name: Verify repository-pinned cargo-nextest
+        # Release binaries include commit/host metadata after the version.
+        run: test "$(cargo nextest --version | awk 'NR == 1 {print $2}')" = "$CI_CARGO_NEXTEST_VERSION"
 
       - name: Check formatting
         run: cargo fmt --check --all
@@ -203,7 +206,7 @@ jobs:
 
       - name: Find unused dependencies
         run: |
-          cargo install cargo-machete 2>/dev/null || true
+          test "$(cargo machete --version | awk '{print $NF}')" = "$CI_CARGO_MACHETE_VERSION"
           cargo machete
 
       # The transport-free cuts are how embedders with their own networking
