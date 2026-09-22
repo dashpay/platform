@@ -74,7 +74,7 @@ enforced by the protocol itself.
 | **License** | MIT | Various (GPL, Apache, MIT) | Apache 2.0 | GPL 3.0 | Apache 2.0 / MIT | Apache 2.0 | BSD 3-Clause | MIT |
 | **Open source** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | **Core language** | C++ | Go, Rust | Rust | Rust | Rust | Go | Go | Rust |
-| **Client SDKs** | `+` Multiple (community) | `+++` web3.js, ethers.js, viem | `++` @solana/web3.js | `+` Polkadot.js | `+` near-api-js | `+` CosmJS | `++` ethers.js (C-Chain) | `++` Rust, JavaScript, Swift (iOS), Android (coming) |
+| **Client SDKs** | `+` Multiple (community) | `+++` web3.js, ethers.js, viem | `++` @solana/web3.js | `+` Polkadot.js | `+` near-api-js | `+` CosmJS | `++` ethers.js (C-Chain) | `++` Rust, JavaScript, Swift (iOS), Kotlin (Android) |
 | **Launched** | 2009 | 2015 | 2020 | 2020 | 2020 | 2019 (SDK) | 2020 | 2024 (v1.0 mainnet) |
 | **Ecosystem maturity** | `+++` Largest, most established | `+++` Largest smart contract ecosystem | `++` Fast-growing DeFi ecosystem | `+` Growing parachain ecosystem | `+` Growing dApp ecosystem | `++` Many sovereign chains | `++` Growing subnet ecosystem | `+` Early stage, growing |
 | **Identity system** | `-` Addresses only | `+` ENS (contract-based) | `-` No native identity | `-` No native identity | `+` Named accounts | `-` No native identity | `-` No native identity | `+++` Protocol-native identities with hierarchical keys and DPNS usernames |
