@@ -7118,7 +7118,7 @@ mod creation_tests {
 
     #[tokio::test]
     async fn should_document_creation_fail_when_referenced_key_has_the_wrong_purpose() {
-        for (key_id, actual) in [
+        let cases: [(fn(&IdentityKeyRequirementTargets) -> KeyID, &str); 2] = [
             (
                 |t: &IdentityKeyRequirementTargets| t.encryption_key_bound_to_inbox_id,
                 "encryption",
@@ -7127,7 +7127,8 @@ mod creation_tests {
                 |t: &IdentityKeyRequirementTargets| t.authentication_key_id,
                 "authentication",
             ),
-        ] {
+        ];
+        for (key_id, actual) in cases {
             let result = run_identity_key_requirement_creation(|document, targets| {
                 document.set("recipientId", targets.identity_id.into());
                 document.set("recipientKeyId", (key_id(targets) as i64).into());
