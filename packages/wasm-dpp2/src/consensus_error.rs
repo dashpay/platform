@@ -54,7 +54,9 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// The referenced contract exists but does not meet what the reference's
     /// `contractRequirements` require of it: elected moderation, a minimum age
     /// or a minimum time since its last update at the block time of the write,
-    /// or an owner relation to the writer of the referring document.
+    /// an owner relation to the writer of the referring document, or a config
+    /// flag (read-only, keeping history, the owner protection of its elected
+    /// moderation declaration).
     ReferencedContractRequirementNotMet = 40135,
 }
 

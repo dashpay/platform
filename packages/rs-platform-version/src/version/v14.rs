@@ -527,17 +527,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     latest; DPNS contests ending from this version on follow the new rule.
 ///
 /// 24. **Contract references may require elected moderation, a minimum age, a
-///     minimum time since the last update or an owner relation to the
-///     writer**: a `contract` `refersTo` declaration may carry
-///     `contractRequirements`, what the referenced contract must declare
-///     beyond existing, with `moderation: "elected"`, `minimumAgeSeconds` (the
-///     contract's recorded creation time must be at least that many seconds
-///     before the block time of the write), `minimumSecondsSinceUpdate` (the
-///     same of the later of its creation and last update times; a contract
-///     without a recorded creation time never meets either) and `owner`
-///     (`"self"`: the contract is owned by the `$ownerId` of the referring
-///     document, `"other"`: by anyone else) as the requirements (meta-schema
-///     v3, `apply_property_reference` 0, `ContractReferenceRequirements` on
+///     minimum time since the last update, an owner relation to the writer or
+///     config flags of the referenced contract**: a `contract` `refersTo`
+///     declaration may carry `contractRequirements`, what the referenced
+///     contract must declare beyond existing, with `moderation: "elected"`,
+///     `minimumAgeSeconds` (the contract's recorded creation time must be at
+///     least that many seconds before the block time of the write),
+///     `minimumSecondsSinceUpdate` (the same of the later of its creation and
+///     last update times; a contract without a recorded creation time never
+///     meets either), `owner` (`"self"`: the contract is owned by the
+///     `$ownerId` of the referring document, `"other"`: by anyone else),
+///     `readonly: true` (its config is read-only, so it can never be updated
+///     again), `keepsHistory: true` (its config keeps history) and
+///     `ownerProtected` (its elected moderation declaration protects the owner
+///     from the team, or does not, as the value says; a contract without
+///     elected moderation meets neither value) as the requirements
+///     (meta-schema v3, `apply_property_reference` 0,
+///     `ContractReferenceRequirements` on
 ///     `DocumentPropertyReferenceTarget::Contract`). The document reference
 ///     validation checks them against the contract it fetched for the
 ///     existence check and the write itself (its owner and block time), so

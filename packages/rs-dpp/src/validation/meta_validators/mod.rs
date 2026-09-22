@@ -350,6 +350,11 @@ mod tests {
             json!({ "owner": "self" }),
             json!({ "owner": "other" }),
             json!({ "moderation": "elected", "owner": "other" }),
+            json!({ "readonly": true }),
+            json!({ "keepsHistory": true }),
+            json!({ "ownerProtected": true }),
+            json!({ "ownerProtected": false }),
+            json!({ "moderation": "elected", "owner": "other", "readonly": true, "keepsHistory": true, "ownerProtected": false }),
         ] {
             let schema = document_schema_with_refers_to(json!({
                 "type": "contract",
@@ -379,6 +384,15 @@ mod tests {
             json!({ "type": "contract", "contractRequirements": { "owner": true } }),
             json!({ "type": "identity", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
             json!({ "type": "identity", "contractRequirements": { "owner": "self" } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": false } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": 1 } }),
+            json!({ "type": "contract", "contractRequirements": { "keepsHistory": false } }),
+            json!({ "type": "contract", "contractRequirements": { "keepsHistory": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": 1 } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": null } }),
+            json!({ "type": "identity", "contractRequirements": { "readonly": true } }),
         ] {
             let schema = document_schema_with_refers_to(refers_to.clone());
 

@@ -16,6 +16,8 @@ mod creation_tests {
     use dpp::fee::fee_result::refunds::FeeRefunds;
     use dpp::fee::fee_result::FeeResult;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
     use dpp::document::Document;
@@ -5329,6 +5331,24 @@ mod creation_tests {
     /// identity that is not the writer, so a reference to it is met.
     const REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_ID: &str =
         "EPHoATa8ifeWoviLaxTQRWfsJUHAQUCro6dEkwgjwog7";
+    const REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-readonly-contract-ref.json";
+    /// The `id` of the read-only-contract-reference fixture (`readonly: true`): not read-only
+    /// itself, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_ID: &str =
+        "2FkduiNwoBct7PdxmCRYgLxckj4s8dhx7tXLUUpq74Qk";
+    const REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-keeps-history-contract-ref.json";
+    /// The `id` of the history-keeping-contract-reference fixture (`keepsHistory: true`): not
+    /// keeping history itself, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_ID: &str =
+        "7gQQ8BdF9gem9YxBNLd3QW7AmiGYNTTuVLerkiJZ3JCx";
+    const REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-protected-contract-ref.json";
+    /// The `id` of the owner-protected-contract-reference fixture (`ownerProtected: true`):
+    /// declaring no moderation at all, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_ID: &str =
+        "6BL67iVAJ5eiVne4qXJGNRGpVqB2b2TKiF1odQ7y2qjn";
     const REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-token-ref.json";
     const REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH: &str =
@@ -5635,50 +5655,67 @@ mod creation_tests {
         );
     }
 
-    /// A contract with an elected moderation team, for a reference that requires one. It is
-    /// written to state directly, the way the fixtures are, so the moderated type needs no
-    /// list behind it.
+    /// A contract with an elected moderation team, protecting its owner from the team or not,
+    /// for a reference that requires one. It is written to state directly, the way the
+    /// fixtures are, so the moderated type needs no list behind it.
     fn insert_elected_contract(
-        platform: &mut TempPlatform<MockCoreRPCLike>,
-        _targets: &ReferenceTargets,
-        _platform_version: &PlatformVersion,
-    ) -> Identifier {
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        owner_protected: bool,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
         use dpp::data_contract::config::moderation::{
             ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
             ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
         };
         use std::collections::{BTreeMap, BTreeSet};
 
-        let contract = setup_contract(
-            &platform.drive,
-            REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
-            Some([0xE1; 32]),
-            None,
-            Some(|contract: &mut DataContract| {
-                contract.set_config(contract.config().clone().with_moderation(Some(
-                    ContractModerationConfig {
-                        banlist: true,
-                        suspensions: true,
-                        warnings: false,
-                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
-                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                            challenge_cool_down: 1_209_600,
-                            moderated_document_types: BTreeMap::from([(
-                                "message".to_string(),
-                                BTreeSet::from([ModerationAbility::Ban]),
-                            )]),
-                            interim: InterimModerators::ContractOwner,
-                            owner_protected: false,
-                        })),
-                    },
-                )));
-            }),
-            None,
-            None,
-        );
-        contract.id()
+        insert_contract_configured([0xE1; 32], move |config| {
+            *config = config
+                .clone()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: true,
+                    suspensions: true,
+                    warnings: false,
+                    moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                        join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                        vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                        challenge_cool_down: 1_209_600,
+                        moderated_document_types: BTreeMap::from([(
+                            "message".to_string(),
+                            BTreeSet::from([ModerationAbility::Ban]),
+                        )]),
+                        interim: InterimModerators::ContractOwner,
+                        owner_protected,
+                    })),
+                }));
+        })
+    }
+
+    /// A contract with the id `contract_id` whose config `configure` adjusts, for a reference
+    /// that requires something of the config. Written to state directly, the way the fixtures
+    /// are.
+    fn insert_contract_configured(
+        contract_id: [u8; 32],
+        configure: impl FnOnce(&mut DataContractConfig),
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        move |platform, _targets, _platform_version| {
+            use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+            let contract = setup_contract(
+                &platform.drive,
+                REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+                Some(contract_id),
+                None,
+                Some(|contract: &mut DataContract| {
+                    let mut config = contract.config().clone();
+                    configure(&mut config);
+                    contract.set_config(config);
+                }),
+                None,
+                None,
+            );
+            contract.id()
+        }
     }
 
     #[tokio::test]
@@ -5735,7 +5772,7 @@ mod creation_tests {
         let result = run_reference_validation_creation_with_setup_and_mutator(
             REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
             BlockInfo::default(),
-            insert_elected_contract,
+            insert_elected_contract(false),
             |document, _, elected_contract_id| {
                 document.set("refContractId", elected_contract_id.into());
             },
@@ -6056,6 +6093,175 @@ mod creation_tests {
             } if e.contract_id() == &Identifier::from([0xB1; 32])
                 && e.field() == "owner"
                 && e.required() == "other"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_readonly_contract_is_readonly() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_configured([0xC1; 32], |config| config.set_readonly(true)),
+            |document, _, readonly_contract_id| {
+                document.set("refContractId", readonly_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_readonly_contract_is_updatable() {
+        // The fixture contract itself exists in state and is not read-only
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "readonly"
+                && e.required() == "true"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_history_keeping_contract_keeps_history()
+    {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_configured([0xC2; 32], |config| config.set_keeps_history(true)),
+            |document, _, history_contract_id| {
+                document.set("refContractId", history_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_history_keeping_contract_keeps_none() {
+        // The fixture contract itself exists in state and keeps no history
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "keepsHistory"
+                && e.required() == "true"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_owner_protection_is_declared() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_elected_contract(true),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_owner_protection_is_not_declared() {
+        // Elected moderation whose declaration leaves the owner unprotected
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_elected_contract(false),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xE1; 32])
+                && e.field() == "ownerProtected"
+                && e.required() == "true"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_owner_protection_has_no_elected_moderation(
+    ) {
+        // The fixture contract itself exists in state and declares no moderation at all, so
+        // there is no owner protection flag to meet either value
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "ownerProtected"
+                && e.required() == "true"
                 && e.path() == "refContractId"
         );
     }

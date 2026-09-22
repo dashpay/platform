@@ -2026,6 +2026,21 @@ mod tests {
                     platform_value!({ "type": "contract", "contractRequirements": { "owner": "other" } }),
                     "/properties/toUserId/refersTo/contractRequirements/owner",
                 ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": false } }),
+                    "/properties/toUserId/refersTo/contractRequirements/ownerProtected",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "readonly": true } }),
+                    "/properties/toUserId/refersTo/contractRequirements/readonly",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "keepsHistory": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/keepsHistory",
+                ),
             ] {
                 let old_document_type =
                     identifier_document_type(Some(old_fields), platform_version);
