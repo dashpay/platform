@@ -6636,4 +6636,203 @@ mod creation_tests {
             }
         );
     }
+
+    const REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key.json";
+
+    /// Registers the owner-key fixture contract (`message.senderKeyId` is a
+    /// `u32` with `refersTo: identityPublicKey, identityProperty: $ownerId`),
+    /// disables the test identity's master key in state, then creates a
+    /// `message` document mutated by the test and returns the execution
+    /// result. The identity of the reference is the writer by construction,
+    /// so the tests only choose a key id.
+    async fn run_owner_key_reference_creation<F>(mutator: F) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, &IdentityKeyReferenceTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(434);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+
+        // Key 0 is the master key; documents are signed with the critical key,
+        // so disabling it leaves the transition below valid
+        platform
+            .drive
+            .disable_identity_keys(
+                identity.id().to_buffer(),
+                vec![0],
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to disable the master key");
+
+        let targets = IdentityKeyReferenceTargets {
+            identity_id: identity.id(),
+            enabled_key_id: key.id(),
+            disabled_key_id: 0,
+        };
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                // The key id property is optional; each test sets what it
+                // exercises
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+
+        mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_owner_key_reference_names_an_existing_key() {
+        let result = run_owner_key_reference_creation(|document, targets| {
+            document.set("senderKeyId", (targets.enabled_key_id as i64).into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// The reference names a key of the writer's own identity, so a key id
+    /// the owner does not have is a missing key, whatever other identity may
+    /// hold a key under that id: there is no property naming another
+    /// identity, so "another identity's key" is not expressible and needs no
+    /// test of its own. Refused paid, the identity exists.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_owner_key_reference_names_a_missing_key() {
+        let result = run_owner_key_reference_creation(|document, _| {
+            document.set("senderKeyId", 99i64.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99 && e.path() == "senderKeyId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_owner_key_reference_names_a_disabled_key() {
+        let result = run_owner_key_reference_creation(|document, targets| {
+            document.set("senderKeyId", (targets.disabled_key_id as i64).into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    /// An unset key id is not a reference to validate; whether the property
+    /// may be absent is the document type's required list (it is optional
+    /// in the fixture).
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_owner_key_reference_is_not_set() {
+        let result = run_owner_key_reference_creation(|document, _| {
+            document.set("note", "no key named".into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
 }

@@ -282,7 +282,7 @@ impl DocumentTypeV0 {
                     }
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::U128 | DocumentPropertyType::U64 | DocumentPropertyType::U32 | DocumentPropertyType::U16 | DocumentPropertyType::U8 |
+                DocumentPropertyType::U128 | DocumentPropertyType::U64 | DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) | DocumentPropertyType::U16 | DocumentPropertyType::U8 |
                     DocumentPropertyType::I128 | DocumentPropertyType::I64 | DocumentPropertyType::I32 | DocumentPropertyType::I16 | DocumentPropertyType::I8   => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("integer".to_owned()));

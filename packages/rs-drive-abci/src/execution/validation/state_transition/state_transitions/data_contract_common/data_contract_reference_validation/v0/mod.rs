@@ -30,12 +30,15 @@ use crate::execution::types::state_transition_execution_context::{
 
 /// Whether two property types hold the same KIND of value for agreement
 /// purposes: sizes and other constraints may differ (both sides validated
-/// their own documents already), and an identifier is one kind whether or
-/// not it carries its own reference annotation.
+/// their own documents already), and an identifier, or a `u32` key id, is one
+/// kind whether or not it carries its own reference annotation.
 fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
     let normalized_kind = |property_type: &DocumentPropertyType| match property_type {
         DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
             std::mem::discriminant(&DocumentPropertyType::Identifier)
+        }
+        DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+            std::mem::discriminant(&DocumentPropertyType::U32)
         }
         other => std::mem::discriminant(other),
     };

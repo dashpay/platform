@@ -12,7 +12,7 @@ use dpp::data_contract::document_type::accessors::{
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentTypeRef,
+    DocumentPropertyType, DocumentTypeRef, KeyReferenceIdentityProperty,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -209,10 +209,32 @@ fn validate_document_type_references_v0(
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     for (path, property) in document_type.flattened_properties() {
-        let DocumentPropertyType::IdentifierWithReference(reference_target) =
-            &property.property_type
-        else {
-            continue;
+        let reference_target = match &property.property_type {
+            DocumentPropertyType::IdentifierWithReference(reference_target) => reference_target,
+            // A key reference on the key id property itself: the value is the
+            // key id and the declaration names whose key it is, so no other
+            // property of the document binds it, and a replace re-validates
+            // it exactly when the key id changed
+            DocumentPropertyType::KeyIdWithReference(identity_property) => {
+                if changed_fields.is_some_and(|changed| !is_changed_field(changed, path)) {
+                    continue;
+                }
+                let result = validate_key_id_reference_v0(
+                    path,
+                    *identity_property,
+                    document_data,
+                    owner_id,
+                    platform,
+                    transaction,
+                    execution_context,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+                continue;
+            }
+            _ => continue,
         };
 
         if let Some(changed) = changed_fields {
@@ -591,41 +613,17 @@ fn validate_document_type_references_v0(
                         }
                     };
 
-                execution_context.add_operation(ValidationOperation::RetrieveIdentity(
-                    RetrieveIdentityInfo::one_key(),
-                ));
-
-                // A missing identity and a missing key resolve to the same
-                // failure: the referenced key could not be found
-                let Some(key) = platform
-                    .drive
-                    .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
-                        IdentityKeysRequest::new_specific_key_query(&referenced_id, key_id),
-                        transaction,
-                        platform_version,
-                    )?
-                else {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ReferencedIdentityKeyNotFoundError::new(
-                            Identifier::from(referenced_id),
-                            key_id,
-                            path.to_string(),
-                        )
-                        .into(),
-                    ));
-                };
-
-                // Keys can never be removed, so an existing reference can not
-                // dangle; a disabled key is still rejected for fresh writes
-                if key.is_disabled() {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ReferencedIdentityKeyDisabledError::new(
-                            Identifier::from(referenced_id),
-                            key_id,
-                            path.to_string(),
-                        )
-                        .into(),
-                    ));
+                let result = validate_referenced_identity_key_v0(
+                    Identifier::from(referenced_id),
+                    key_id,
+                    path,
+                    platform,
+                    transaction,
+                    execution_context,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    return Ok(result);
                 }
 
                 true
@@ -646,6 +644,95 @@ fn validate_document_type_references_v0(
                 )),
             ));
         }
+    }
+
+    Ok(SimpleConsensusValidationResult::new())
+}
+
+/// A key reference declared on the key id property at `path`
+/// (`DocumentPropertyType::KeyIdWithReference`): the value is the key id, and
+/// `identity_property` names whose key it is. For `$ownerId` that is the
+/// writer, `owner_id`, whose existence the transition already proved, so the
+/// key fetch is the only read. An unset property is not validated; whether it
+/// may be absent is the document type's required list.
+#[allow(clippy::too_many_arguments)]
+fn validate_key_id_reference_v0(
+    path: &str,
+    identity_property: KeyReferenceIdentityProperty,
+    document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
+    platform: &PlatformStateRef,
+    transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let key_id: KeyID = match document_data.get_optional_integer_at_path(path) {
+        Ok(Some(key_id)) => key_id,
+        Ok(None) => return Ok(SimpleConsensusValidationResult::new()),
+        // The declaring property is the key id property itself
+        Err(err) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ReferencedKeyIdPropertyInvalidError::new(
+                    path.to_string(),
+                    path.to_string(),
+                    err.to_string(),
+                )
+                .into(),
+            ))
+        }
+    };
+
+    let identity_id = match identity_property {
+        KeyReferenceIdentityProperty::OwnerId => owner_id,
+    };
+
+    validate_referenced_identity_key_v0(
+        identity_id,
+        key_id,
+        path,
+        platform,
+        transaction,
+        execution_context,
+        platform_version,
+    )
+}
+
+/// The state check both `identityPublicKey` forms share: key `key_id` of
+/// `identity_id`, referenced from `path`, must exist and not be disabled. A
+/// missing identity and a missing key resolve to the same failure, the
+/// referenced key could not be found. Keys can never be removed, so an
+/// existing reference can not dangle; a disabled key is still rejected for
+/// fresh writes.
+fn validate_referenced_identity_key_v0(
+    identity_id: Identifier,
+    key_id: KeyID,
+    path: &str,
+    platform: &PlatformStateRef,
+    transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+        RetrieveIdentityInfo::one_key(),
+    ));
+
+    let Some(key) = platform
+        .drive
+        .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
+            IdentityKeysRequest::new_specific_key_query(&identity_id.to_buffer(), key_id),
+            transaction,
+            platform_version,
+        )?
+    else {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedIdentityKeyNotFoundError::new(identity_id, key_id, path.to_string()).into(),
+        ));
+    };
+
+    if key.is_disabled() {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedIdentityKeyDisabledError::new(identity_id, key_id, path.to_string()).into(),
+        ));
     }
 
     Ok(SimpleConsensusValidationResult::new())

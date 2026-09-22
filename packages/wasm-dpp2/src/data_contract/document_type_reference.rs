@@ -1,10 +1,12 @@
 //! `refersTo` declarations — the document-reference metadata a contract
 //! carries from protocol version 14 onward.
 //!
-//! `refersTo` annotates an identifier property with what it points at, and
-//! consensus enforces that the target exists whenever a document carrying
-//! it is written. It is a **write-time constraint only**: nothing anywhere
-//! in the stack resolves a reference for a reader. What this module adds is
+//! `refersTo` annotates an identifier property with what it points at (or,
+//! for an `identityPublicKey` reference with `identityProperty`, a key id
+//! property with whose key it names), and consensus enforces that the target
+//! exists whenever a document carrying it is written. It is a **write-time
+//! constraint only**: nothing anywhere in the stack resolves a reference for
+//! a reader. What this module adds is
 //! the ability to *discover* the declarations — "which properties of this
 //! document type are references, and to what?" — without hand-parsing the
 //! contract's raw JSON schema.
@@ -14,6 +16,7 @@ use crate::identifier::IdentifierWasm;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    KeyReferenceIdentityProperty,
 };
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
@@ -96,6 +99,20 @@ export type DocumentPropertyReferenceTarget =
        * identity id. A dotted path when the property is nested.
        */
       keyIdProperty: string;
+      identityProperty?: never;
+    }
+  | {
+      /**
+       * The inverse form, declared on the key id property itself: the
+       * declaring property (an integer from 0 to 4294967295) carries the
+       * key id, and `identityProperty` names whose key it is. `'$ownerId'`
+       * is the writer, the document's owner, so consensus fetches only the
+       * key (codes 40123 when it does not exist, 40124 when it is
+       * disabled).
+       */
+      type: 'identityPublicKey';
+      identityProperty: '$ownerId';
+      keyIdProperty?: never;
     }
   | {
       /**
@@ -158,6 +175,30 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
         ))
     })?;
     Ok(())
+}
+
+/// The flat, internally-tagged JS object for an `identityPublicKey`
+/// declaration on the key id property: `identityProperty` names whose key
+/// the property's value is.
+fn key_id_reference_to_js(
+    path: &str,
+    identity_property: KeyReferenceIdentityProperty,
+) -> WasmDppResult<JsValue> {
+    let object = Object::new();
+    set_field(&object, "path", &JsValue::from_str(path), path)?;
+    set_field(
+        &object,
+        "type",
+        &JsValue::from_str("identityPublicKey"),
+        path,
+    )?;
+    set_field(
+        &object,
+        "identityProperty",
+        &JsValue::from_str(identity_property.as_str()),
+        path,
+    )?;
+    Ok(object.into())
 }
 
 /// Build the flat, internally-tagged JS object for one declaration.
@@ -283,8 +324,14 @@ pub(crate) fn references_for_document_type(
     let references = Array::new();
 
     for (path, property) in document_type.flattened_properties() {
-        if let DocumentPropertyType::IdentifierWithReference(target) = &property.property_type {
-            references.push(&reference_to_js(path, target, declaring_contract_id)?);
+        match &property.property_type {
+            DocumentPropertyType::IdentifierWithReference(target) => {
+                references.push(&reference_to_js(path, target, declaring_contract_id)?);
+            }
+            DocumentPropertyType::KeyIdWithReference(identity_property) => {
+                references.push(&key_id_reference_to_js(path, *identity_property)?);
+            }
+            _ => {}
         }
     }
 

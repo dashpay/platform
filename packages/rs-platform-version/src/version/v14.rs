@@ -547,6 +547,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
+/// 25. **Key references on the writer's own identity**: an `identityPublicKey`
+///     `refersTo` declaration may sit on the key id property itself, an
+///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
+///     `u32`), naming through `identityProperty` whose key the value is;
+///     `"$ownerId"`, the writer, is the one value for now (an enum, so a later
+///     version can admit a property path without a new reference type). The
+///     declaration takes no `keyIdProperty`; the identifier form is unchanged
+///     and every other `refersTo` form stays identifier-only (meta-schema v3,
+///     `apply_property_reference` 0, `DocumentPropertyType::KeyIdWithReference`
+///     over `KeyReferenceIdentityProperty`). At document create and replace the
+///     reference validation reads the key id from the property and fetches
+///     that key of the transition's owner, whose existence the transition
+///     already proved, so the key fetch is the only read; a key that does not
+///     exist refuses the write, paid, with `ReferencedIdentityKeyNotFoundError`
+///     (40123) and a disabled one with `ReferencedIdentityKeyDisabledError`
+///     (40124), as for the identifier form. A replace re-validates it exactly
+///     when the key id changed. Adding, removing or changing it is an
+///     incompatible schema change on update, like the rest of a `refersTo`.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

@@ -106,6 +106,10 @@ pub(crate) mod property_names {
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";
+    /// `identityPublicKey` reference on the key id property itself: whose key
+    /// the value names (`"$ownerId"`, the writer). Takes the place of
+    /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.
+    pub const IDENTITY_PROPERTY: &str = "identityProperty";
     pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";

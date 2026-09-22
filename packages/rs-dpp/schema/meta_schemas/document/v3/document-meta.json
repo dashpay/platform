@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -157,11 +157,17 @@
               "additionalProperties": false
             },
             "keyIdProperty": {
-              "description": "The property of the same document type whose value carries the referenced key id; the reference property's value carries the identity id",
+              "description": "identityPublicKey references on an identifier property: the property of the same document type whose value carries the referenced key id; the reference property's value carries the identity id. Takes the place of identityProperty",
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
               "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+            },
+            "identityProperty": {
+              "description": "identityPublicKey references on the key id property itself, the inverse form: the declaring property is an integer from 0 to 4294967295 (a key id) whose value must be the id of a key of the named identity that exists and is not disabled when the document is written (ReferencedIdentityKeyNotFoundError, 40123; ReferencedIdentityKeyDisabledError, 40124). \"$ownerId\" names the writer, the document's owner, whose existence the transition already proved, so only the key is fetched. Takes the place of keyIdProperty",
+              "enum": [
+                "$ownerId"
+              ]
             },
             "propertyAgreement": {
               "description": "permanentDocument and deletableDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
@@ -224,11 +230,25 @@
                 "required": ["type"]
               },
               "then": {
-                "required": ["type", "keyIdProperty"]
+                "oneOf": [
+                  {
+                    "required": ["type", "keyIdProperty"],
+                    "properties": {
+                      "identityProperty": false
+                    }
+                  },
+                  {
+                    "required": ["type", "identityProperty"],
+                    "properties": {
+                      "keyIdProperty": false
+                    }
+                  }
+                ]
               },
               "else": {
                 "properties": {
-                  "keyIdProperty": false
+                  "keyIdProperty": false,
+                  "identityProperty": false
                 }
               }
             },
@@ -353,31 +373,58 @@
           ]
         },
         "refersTo": {
-          "description": "refersTo is only allowed on identifier properties",
-          "properties": {
-            "type": {
-              "const": "array"
-            },
-            "byteArray": {
-              "const": true
-            },
-            "contentMediaType": {
-              "const": "application/x.dash.dpp.identifier"
-            },
-            "minItems": {
-              "const": 32
-            },
-            "maxItems": {
-              "const": 32
+          "description": "refersTo is only allowed on identifier properties, except an identityPublicKey reference with identityProperty, which sits on the key id property: an integer with minimum 0 and maximum 4294967295, the range of a key id",
+          "if": {
+            "properties": {
+              "refersTo": {
+                "required": ["identityProperty"]
+              }
             }
           },
-          "required": [
-            "type",
-            "byteArray",
-            "contentMediaType",
-            "minItems",
-            "maxItems"
-          ]
+          "then": {
+            "properties": {
+              "type": {
+                "const": "integer"
+              },
+              "minimum": {
+                "const": 0
+              },
+              "maximum": {
+                "const": 4294967295
+              }
+            },
+            "required": [
+              "type",
+              "minimum",
+              "maximum"
+            ]
+          },
+          "else": {
+            "properties": {
+              "type": {
+                "const": "array"
+              },
+              "byteArray": {
+                "const": true
+              },
+              "contentMediaType": {
+                "const": "application/x.dash.dpp.identifier"
+              },
+              "minItems": {
+                "const": 32
+              },
+              "maxItems": {
+                "const": 32
+              }
+            },
+            "required": [
+              "type",
+              "byteArray",
+              "contentMediaType",
+              "minItems",
+              "maxItems"
+            ]
+          }
         },
         "format": {
           "description": "prevent slow format validation of large strings",

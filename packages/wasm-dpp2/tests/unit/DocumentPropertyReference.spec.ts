@@ -24,7 +24,9 @@ const foreignContractId = '4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6';
 
 /**
  * `refersTo` is only allowed on properties with exactly this shape — a
- * 32-byte identifier. The meta-schema rejects it anywhere else.
+ * 32-byte identifier. The one exception is the `identityPublicKey` form
+ * declared on the key id property itself (`senderKeyId` below). The
+ * meta-schema rejects it anywhere else.
  */
 function identifierProperty(position: number, refersTo: object): object {
   return {
@@ -78,6 +80,16 @@ const schemas = {
         },
         additionalProperties: false,
       },
+      // The inverse key reference: the property carries the key id and the
+      // declaration names whose key it is (the writer's), so it sits on a
+      // u32 integer rather than an identifier.
+      senderKeyId: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 4294967295,
+        position: 8,
+        refersTo: { type: 'identityPublicKey', identityProperty: '$ownerId' },
+      },
     },
     additionalProperties: false,
   },
@@ -107,6 +119,7 @@ type Reference = {
   contractId?: { toBase58(): string };
   documentType?: string;
   keyIdProperty?: string;
+  identityProperty?: string;
   propertyAgreement?: Record<string, string>;
 };
 
@@ -124,6 +137,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
         'otherDoc',
         'signerKey',
         'meta.ownerRef',
+        'senderKeyId',
       ]);
     });
 
@@ -139,6 +153,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(byPath.get('otherDoc')!.type).to.equal('permanentDocument');
       expect(byPath.get('signerKey')!.type).to.equal('identityPublicKey');
       expect(byPath.get('meta.ownerRef')!.type).to.equal('identity');
+      expect(byPath.get('senderKeyId')!.type).to.equal('identityPublicKey');
     });
 
     it('should carry no target fields for the bare kinds', () => {
@@ -200,6 +215,16 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const signerKey = references.find((reference) => reference.path === 'signerKey')!;
 
       expect(signerKey.keyIdProperty).to.equal('signerKeyId');
+      expect(signerKey.identityProperty).to.equal(undefined);
+    });
+
+    it('should carry identityProperty for an identityPublicKey reference on the key id property', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const senderKeyId = references.find((reference) => reference.path === 'senderKeyId')!;
+
+      expect(senderKeyId.identityProperty).to.equal('$ownerId');
+      expect(senderKeyId.keyIdProperty).to.equal(undefined);
     });
 
     it('should return an empty array for a document type declaring none', () => {
