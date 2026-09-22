@@ -1200,6 +1200,48 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
             },
         ),
         (
+            // How a byte array property's ciphertext was produced: documents written
+            // under one recipe could not be read under another, so nothing about it
+            // may change.
+            "encryptedFor",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "encryptedFor": { "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/encryptedFor".to_string(),
+                            value: json!({ "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" }),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "encryptedFor": { "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/encryptedFor".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "encryptedFor": { "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        json!({ "encryptedFor": { "recipient": "$ownerId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/encryptedFor/recipient".to_string(),
+                            value: json!("$ownerId"),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        (
             "byteArray",
             CompatibilityRules {
                 allow_addition: false,

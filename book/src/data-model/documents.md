@@ -383,6 +383,45 @@ A transfer or purchase changes `$ownerId` without touching the data, so the tran
 
 In Rust the declaration is `DocumentProperty::distinct_from` (`Option<DistinctFrom>`, absent on every property parsed before protocol version 14), the document check is `DocumentTypeV0Methods::validate_distinct_from_properties`, and `DistinctFrom::violation` judges one value on its own, which is how the elements of a typed array are judged one by one.
 
+## Encrypted Properties (`encryptedFor`)
+
+A byte array property may hold ciphertext that only one identity can read. Before protocol version 14 the contract said nothing about it, so every wallet had to learn the recipe (whose keys, which scheme, where the IV sits) from documentation or a side channel. From protocol version 14 the property declares it with the `encryptedFor` keyword, and wallets and SDKs read the recipe from the contract.
+
+```json
+"encryptedMessage": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 1040,
+  "encryptedFor": {
+    "recipient": "recipientId",
+    "recipientKey": "recipientKeyId",
+    "senderKey": "senderKeyId",
+    "scheme": "ecdh-secp256k1-aes256-cbc"
+  },
+  "position": 4
+}
+```
+
+All four keys are required. `recipient` is the dotted path of an identifier property of the same document type whose value is the recipient identity's id, or `$ownerId` for a message the writer encrypts to themself. `recipientKey` and `senderKey` are dotted paths of integer properties of the same document type carrying the recipient's and the sender's identity key ids; each must declare `minimum` at least 0 and `maximum` at most 4294967295, read from the schema itself, so the rule holds whatever `sizedIntegerTypes` the contract sets. `scheme` is a closed set with one member today.
+
+The parser (generation 3, meta-schema v3) admits the keyword on byte array properties only, never on an identifier (`contentMediaType` set) or any other type, and checks at contract registration that the three named properties exist with those types, that none of them is `transient` (a transient property is stripped before storage, which would leave the stored ciphertext without its recipe), and that the byte array's own `maxItems` can hold the scheme's shortest ciphertext. A contract update that adds, removes or changes an `encryptedFor` declaration is an incompatible schema change (`IncompatibleDocumentTypeSchemaError`, 10246): documents already written under the old recipe could not be read under the new one. Contracts parsed before protocol version 14 ignore the keyword entirely.
+
+### The `ecdh-secp256k1-aes256-cbc` layout
+
+This is the scheme the dashpay contact request already uses for `encryptedPublicKey` and `encryptedAccountLabel` (DIP-15), implemented in `packages/rs-platform-encryption`:
+
+1. The shared key is the libsecp256k1 ECDH of the sender's private key and the recipient's public key: `SHA256(parity || x)` of the product point, where `parity` is `0x02` for an even `y` and `0x03` for an odd one. The sender's key is the identity key with the id the `senderKey` property carries, on the document's `$ownerId` identity; the recipient's key is the one with the id the `recipientKey` property carries, on the identity the `recipient` property names (the owner itself for `$ownerId`). Either side derives the same 32 bytes from its own private key and the other's public key.
+2. The writer draws a random 16-byte IV.
+3. The value is the IV followed by the plaintext encrypted with AES-256-CBC under the shared key and that IV, with PKCS7 padding.
+
+So a ciphertext is `16 + 16 * ceil((len(plaintext) + 1) / 16)` bytes: at least 32, always a multiple of 16. The reader splits the first 16 bytes off as the IV, derives the shared key from its own private key and the sender's public key, and decrypts the rest.
+
+### What consensus checks, and what it cannot
+
+Consensus sees bytes, not keys. On every document create and replace, after the JSON schema validation of the document's properties, the structure validation (create structure generation 1, introduced at protocol version 14, and replace structure generation 0, extended in place: the call is inert before 14, where no property can carry the keyword) walks the document type's declared properties and, for each one the transition supplies, checks that its length is at least the scheme's IV plus one block and a multiple of the block length. A value that is not refuses the transition with `InvalidEncryptedPropertyShapeError` (basic code 10420), which names the property path, the scheme and the lengths involved. No state is read; the check runs in the mempool as well as in the block. The JSON schema's own `minItems` and `maxItems` are checked first, so a value outside them (a lone 16-byte IV against `minItems: 32`, say) is refused with the schema's error rather than 10420; the shape check only sees values the bounds already admit.
+
+Nothing else is verifiable on chain: not that the bytes decrypt, not that they decrypt under the keys the document names, not that the named key ids exist on the identities or have an encryption purpose, and not that the plaintext is what the document type means it to be. A writer can store any 32 bytes. Whether the keys exist and are of the right kind is what the reference keywords are for: a `refersTo` of type `identityPublicKey` with `keyIdProperty` on the recipient property makes consensus check that the recipient's key exists, and `encryptedFor` neither duplicates nor requires it. Readers must treat a value that fails to decrypt as a bad message, not as a protocol violation.
+
+In Rust the declaration is `DocumentProperty::encrypted_for` (`Option<EncryptedFor>`), listed per document type by `DocumentTypeV0Getters::encrypted_properties()`, and the shape check is `DocumentTypeBasicMethods::validate_encrypted_property_shapes()`, versioned on the `validate_encrypted_property_shapes` method slot (`None` before protocol version 14, which is what keeps the in-place replace call inert). In JavaScript, `contract.documentTypeEncryptedProperties(name)` and `contract.documentEncryptedProperties` expose the same declarations, and the shape error reaches an app as `DocumentEncryptionErrorCode.InvalidEncryptedPropertyShape`.
+
 ## Rules and Guidelines
 
 **Do:**

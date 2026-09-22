@@ -57,7 +57,7 @@ use crate::consensus::basic::document::{
     DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
     InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -808,6 +808,10 @@ pub enum BasicError {
 
     #[error(transparent)]
     DocumentPropertyNotDistinctError(DocumentPropertyNotDistinctError),
+
+    // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
+    #[error(transparent)]
+    InvalidEncryptedPropertyShapeError(InvalidEncryptedPropertyShapeError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -893,7 +897,7 @@ mod tests {
             193
         );
         // A `distinctFrom` identifier property equal to what it must differ from (protocol
-        // version 14): the tail of the enum.
+        // version 14).
         assert_eq!(
             discriminant_of(BasicError::DocumentPropertyNotDistinctError(
                 DocumentPropertyNotDistinctError::new(
@@ -903,6 +907,20 @@ mod tests {
                 )
             )),
             194
+        );
+        // The shape of an `encryptedFor` property's ciphertext (protocol version 14): the
+        // tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::InvalidEncryptedPropertyShapeError(
+                InvalidEncryptedPropertyShapeError::new(
+                    "encryptedMessage".to_string(),
+                    "ecdh-secp256k1-aes256-cbc".to_string(),
+                    47,
+                    32,
+                    16
+                )
+            )),
+            195
         );
     }
 }

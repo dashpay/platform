@@ -241,6 +241,42 @@ const stateTransition = batch.toStateTransition();
 
 From protocol version 14 the id of a new document commits to the identity contract nonce of its create transition. `new DocumentCreateTransition(...)` derives that id from the document's entropy and `identityContractNonce`, puts it on the transition and writes it back onto `document`, so `document.id` is final once the transition exists and equals `transition.base.id`. Before that the `Document` carries a placeholder. To know the id earlier, `document.setIdForCreation(nonce)` or `Document.generateId(type, owner, contract, entropy, nonce)`, or pass `identityContractNonce` to the `Document` constructor. Pass `platformVersion` (defaults to latest) to any of them for a network on an earlier protocol version. No app needs to reimplement the hash.
 
+## Encrypted properties (`encryptedFor`)
+
+From protocol version 14 a byte array property can declare how its ciphertext was produced, so a wallet reads the recipe from the contract instead of a side channel: the recipient (an identifier property of the same document type, or `$ownerId` for a message the writer encrypts to themself), the integer properties carrying the recipient's and the sender's key ids, and the scheme. The one scheme today, `ecdh-secp256k1-aes256-cbc`, is the dashpay contact request's: a random 16-byte IV followed by AES-256-CBC with PKCS7 padding under the libsecp256k1 ECDH shared key of the two identities' keys. A fetched contract can be asked what it declares:
+
+```ts
+const contract = await sdk.contracts.fetch(contractId);
+
+contract.documentTypeEncryptedProperties('joinRequest');
+// [{
+//   path: 'encryptedMessage',
+//   recipient: 'recipientId',
+//   recipientKey: 'recipientKeyId',
+//   senderKey: 'senderKeyId',
+//   scheme: 'ecdh-secp256k1-aes256-cbc',
+// }]
+
+// Every document type that declares at least one encrypted property.
+contract.documentEncryptedProperties;
+```
+
+The keyword is only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports none even when its raw schema carries it. Consensus checks only the shape of the bytes on every create and replace (at least 32 bytes and a multiple of 16 for AES-CBC) and nothing about who can decrypt them. A value of the wrong shape is rejected, and the code reaches JS as `error.code`:
+
+```ts
+import { DocumentEncryptionErrorCode } from '@dashevo/evo-sdk';
+
+try {
+  await sdk.documents.create({ document, identityKey, signer });
+} catch (e) {
+  if (e.code === DocumentEncryptionErrorCode.InvalidEncryptedPropertyShape) {
+    // the bytes are not a ciphertext of the declared scheme (code 10420)
+  }
+}
+```
+
+Encrypt and decrypt helpers keyed off the declaration are not part of the SDK yet; the Rust `platform-encryption` crate has the primitives.
+
 ## Immutable properties (`immutable`)
 
 From protocol version 14 a mutable document type can freeze some of its top-level properties at creation with the doctype-level `immutable` list, while the rest of the document stays replaceable. A second list, `immutableAllowSetting`, names the frozen properties a replace may still set while the stored document has no value for them; once present they are frozen too. Both are consensus-enforced on every replace, and a fetched contract can be asked what it declares:

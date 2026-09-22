@@ -2291,6 +2291,137 @@ mod tests {
         }
     }
 
+    mod encrypted_for {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::data_contract::config::DataContractConfig;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        /// A document type with a recipient, two key ids and an
+        /// `encryptedMessage` carrying `encrypted_for` when given.
+        fn encrypted_document_type(
+            encrypted_for: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut encrypted_message = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 1040,
+                "position": 3
+            });
+            if let Some(encrypted_for) = encrypted_for {
+                encrypted_message
+                    .insert("encryptedFor".to_string(), encrypted_for)
+                    .expect("should insert encryptedFor");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "recipientId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "recipientKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 1 },
+                    "senderKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 2 },
+                    "encryptedMessage": encrypted_message
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn declaration(recipient: &str) -> platform_value::Value {
+            platform_value!({
+                "recipient": recipient,
+                "recipientKey": "recipientKeyId",
+                "senderKey": "senderKeyId",
+                "scheme": "ecdh-secp256k1-aes256-cbc"
+            })
+        }
+
+        /// Documents written under one recipe could not be read under another,
+        /// so adding, removing or changing the declaration is incompatible.
+        #[test]
+        fn should_return_invalid_result_when_encrypted_for_is_added_removed_or_changed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_declaration, new_declaration, changed_path) in [
+                (
+                    None,
+                    Some(declaration("recipientId")),
+                    "/properties/encryptedMessage/encryptedFor",
+                ),
+                (
+                    Some(declaration("recipientId")),
+                    None,
+                    "/properties/encryptedMessage/encryptedFor",
+                ),
+                (
+                    Some(declaration("recipientId")),
+                    Some(declaration("$ownerId")),
+                    "/properties/encryptedMessage/encryptedFor/recipient",
+                ),
+            ] {
+                let old_document_type = encrypted_document_type(old_declaration, platform_version);
+                let new_document_type = encrypted_document_type(new_declaration, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_encrypted_for_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type =
+                encrypted_document_type(Some(declaration("recipientId")), platform_version);
+            let new_document_type =
+                encrypted_document_type(Some(declaration("recipientId")), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+    }
+
     mod validate_byte_array_encoding {
         use super::*;
         use std::collections::BTreeMap;
