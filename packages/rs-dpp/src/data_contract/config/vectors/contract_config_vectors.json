@@ -683,7 +683,8 @@
             "suspensions": true,
             "moderators": {
               "$type": "contractOwner"
-            }
+            },
+            "warnings": true
           }
         },
         "version": 1,
@@ -731,7 +732,8 @@
             "suspensions": true,
             "moderators": {
               "$type": "contractOwner"
-            }
+            },
+            "warnings": true
           }
         },
         "version": 1,
@@ -776,7 +778,172 @@
           "suspensions": true,
           "moderators": {
             "$type": "contractOwner"
+          },
+          "warnings": true
+        }
+      }
+    },
+    {
+      "name": "v2_elected",
+      "platformVersion": 14,
+      "contract": {
+        "$formatVersion": "1",
+        "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
+        "config": {
+          "$formatVersion": "2",
+          "canBeDeleted": false,
+          "readonly": false,
+          "keepsHistory": false,
+          "documentsKeepHistoryContractDefault": false,
+          "documentsMutableContractDefault": true,
+          "documentsCanBeDeletedContractDefault": true,
+          "requiresIdentityEncryptionBoundedKey": null,
+          "requiresIdentityDecryptionBoundedKey": null,
+          "sizedIntegerTypes": true,
+          "moderation": {
+            "banlist": true,
+            "suspensions": false,
+            "moderators": {
+              "$type": "elected",
+              "joinWindow": 86400,
+              "voteWindow": 172800,
+              "challengeCoolDown": 1209600,
+              "electionDelay": 3600,
+              "moderatedDocumentTypes": {
+                "note": [
+                  "ban",
+                  "warn"
+                ]
+              },
+              "interim": {
+                "$type": "notYetUsable"
+              },
+              "ownerProtected": true
+            },
+            "warnings": true
           }
+        },
+        "version": 1,
+        "ownerId": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+        "schemaDefs": null,
+        "documentSchemas": {
+          "note": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "position": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "createdAt": null,
+        "updatedAt": null,
+        "createdAtBlockHeight": null,
+        "updatedAtBlockHeight": null,
+        "createdAtEpoch": null,
+        "updatedAtEpoch": null,
+        "groups": {},
+        "tokens": {},
+        "keywords": [],
+        "description": null
+      },
+      "canonical": {
+        "$formatVersion": "1",
+        "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
+        "config": {
+          "$formatVersion": "2",
+          "canBeDeleted": false,
+          "readonly": false,
+          "keepsHistory": false,
+          "documentsKeepHistoryContractDefault": false,
+          "documentsMutableContractDefault": true,
+          "documentsCanBeDeletedContractDefault": true,
+          "requiresIdentityEncryptionBoundedKey": null,
+          "requiresIdentityDecryptionBoundedKey": null,
+          "sizedIntegerTypes": true,
+          "moderation": {
+            "banlist": true,
+            "suspensions": false,
+            "moderators": {
+              "$type": "elected",
+              "joinWindow": 86400,
+              "voteWindow": 172800,
+              "challengeCoolDown": 1209600,
+              "electionDelay": 3600,
+              "moderatedDocumentTypes": {
+                "note": [
+                  "ban",
+                  "warn"
+                ]
+              },
+              "interim": {
+                "$type": "notYetUsable"
+              },
+              "ownerProtected": true
+            },
+            "warnings": true
+          }
+        },
+        "version": 1,
+        "ownerId": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+        "schemaDefs": null,
+        "documentSchemas": {
+          "note": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "position": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "createdAt": null,
+        "updatedAt": null,
+        "createdAtBlockHeight": null,
+        "updatedAtBlockHeight": null,
+        "createdAtEpoch": null,
+        "updatedAtEpoch": null,
+        "groups": {},
+        "tokens": {},
+        "keywords": [],
+        "description": null
+      },
+      "expect": {
+        "$formatVersion": "2",
+        "canBeDeleted": false,
+        "readonly": false,
+        "keepsHistory": false,
+        "documentsKeepHistoryContractDefault": false,
+        "documentsMutableContractDefault": true,
+        "documentsCanBeDeletedContractDefault": true,
+        "requiresIdentityEncryptionBoundedKey": null,
+        "requiresIdentityDecryptionBoundedKey": null,
+        "sizedIntegerTypes": true,
+        "moderation": {
+          "banlist": true,
+          "suspensions": false,
+          "moderators": {
+            "$type": "elected",
+            "joinWindow": 86400,
+            "voteWindow": 172800,
+            "challengeCoolDown": 1209600,
+            "electionDelay": 3600,
+            "moderatedDocumentTypes": {
+              "note": [
+                "ban",
+                "warn"
+              ]
+            },
+            "interim": {
+              "$type": "notYetUsable"
+            },
+            "ownerProtected": true
+          },
+          "warnings": true
         }
       }
     }

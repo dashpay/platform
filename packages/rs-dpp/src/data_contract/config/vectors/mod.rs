@@ -23,7 +23,10 @@
 //! it: the mobile CI jobs replay this file.
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+use crate::data_contract::config::moderation::{
+    ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+    ModerationAbility,
+};
 use crate::data_contract::config::v0::{DataContractConfigGettersV0, DataContractConfigV0};
 use crate::data_contract::config::v1::{DataContractConfigGettersV1, DataContractConfigV1};
 use crate::data_contract::config::v2::{DataContractConfigGettersV2, DataContractConfigV2};
@@ -135,18 +138,46 @@ fn v1_all_set() -> DataContractConfigV1 {
     }
 }
 
-/// A V2 configuration declaring moderation: both lists kept by the owner
-/// alone. The moderators are the owner (no appointed identities) so the
-/// case carries no identifier, which every mirror renders differently in
-/// object form and in JSON form.
+/// A V2 configuration declaring moderation: all three lists kept by the
+/// owner alone. The moderators are the owner (no appointed identities) so
+/// the case carries no identifier, which every mirror renders differently
+/// in object form and in JSON form.
 fn v2_moderated() -> DataContractConfigV2 {
     DataContractConfigV2 {
         moderation: Some(ContractModerationConfig {
             banlist: true,
             suspensions: true,
+            warnings: true,
             moderators: ContractModerators::ContractOwner,
         }),
         ..v1_all_set().into()
+    }
+}
+
+/// A V2 configuration whose moderators are an elected team: every key of
+/// the declaration set, the interim moderators a kind without identities,
+/// and the one document type of the corpus contract moderated with the
+/// abilities the kept lists back. The largest moderation wire shape.
+fn v2_elected() -> DataContractConfigV2 {
+    DataContractConfigV2 {
+        moderation: Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            warnings: true,
+            moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                join_window: 86_400,
+                vote_window: 172_800,
+                challenge_cool_down: 1_209_600,
+                election_delay: Some(3_600),
+                moderated_document_types: BTreeMap::from([(
+                    "note".to_string(),
+                    BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Warn]),
+                )]),
+                interim: InterimModerators::NotYetUsable,
+                owner_protected: true,
+            })),
+        }),
+        ..DataContractConfigV2::default()
     }
 }
 
@@ -203,6 +234,12 @@ fn specs() -> Vec<CaseSpec> {
             name: "v2_moderated",
             platform_version: V2_CONFIG_PROTOCOL_VERSION,
             config: v2_moderated().into(),
+            unknown_config_keys: vec![],
+        },
+        CaseSpec {
+            name: "v2_elected",
+            platform_version: V2_CONFIG_PROTOCOL_VERSION,
+            config: v2_elected().into(),
             unknown_config_keys: vec![],
         },
     ]
@@ -605,11 +642,52 @@ fn should_pin_the_v0_v1_and_v2_config_key_sets() {
     );
     assert_eq!(
         keys(&v2_moderated_wire["moderation"]),
-        ["banlist", "suspensions", "moderators"]
+        ["banlist", "suspensions", "warnings", "moderators"]
             .into_iter()
             .map(str::to_string)
             .collect::<BTreeSet<String>>(),
         "{}",
         mirror_notice("the moderation declaration keys changed")
+    );
+
+    // The moderators kinds are tagged maps; the elected declaration carries
+    // every key of its kind (the election delay only when declared).
+    let owner_wire =
+        serde_json::to_value(ContractModerators::ContractOwner).expect("the owner kind serializes");
+    assert_eq!(owner_wire, json!({ "$type": "contractOwner" }));
+    let appointed_wire =
+        serde_json::to_value(ContractModerators::AppointedModerators(BTreeSet::from([
+            Identifier::new(OWNER_ID),
+        ])))
+        .expect("the appointed kind serializes");
+    assert_eq!(
+        keys(&appointed_wire),
+        ["$type", "identities"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<BTreeSet<String>>()
+    );
+    assert_eq!(appointed_wire["$type"], "appointedModerators");
+    let elected_wire = serde_json::to_value(DataContractConfig::V2(v2_elected()))
+        .expect("an elected configuration serializes")["moderation"]["moderators"]
+        .clone();
+    assert_eq!(elected_wire["$type"], "elected");
+    assert_eq!(
+        keys(&elected_wire),
+        [
+            "$type",
+            "joinWindow",
+            "voteWindow",
+            "challengeCoolDown",
+            "electionDelay",
+            "moderatedDocumentTypes",
+            "interim",
+            "ownerProtected",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<BTreeSet<String>>(),
+        "{}",
+        mirror_notice("the elected moderators declaration keys changed")
     );
 }

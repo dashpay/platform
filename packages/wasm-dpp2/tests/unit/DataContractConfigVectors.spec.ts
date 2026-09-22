@@ -40,6 +40,7 @@ describe('DataContract configuration vectors', () => {
       'v1_unknown_field_is_ignored',
       'v2_defaults',
       'v2_moderated',
+      'v2_elected',
     ]);
   });
 

@@ -5,6 +5,8 @@
 import type {
   ContractModerationConfig,
   ContractModerators,
+  InterimModerators,
+  ModerationAbility,
   DataContract,
   DataContractConfig,
   DataContractConfigLike,
@@ -34,8 +36,8 @@ type CorpusKeys = Exclude<keyof CorpusExpect, '$formatVersion'>;
 // JSON-form types the corpus carries, `null` included.
 type Shape<T> = { [K in keyof T]-?: Exclude<T[K], undefined> };
 type CorpusShape = Shape<Pick<CorpusExpect, CorpusKeys>>;
-// The moderation declaration is compared by key set below: the corpus
-// carries one concrete `$type`, the declaration the union of both.
+// The moderation declaration is compared by key set below: each corpus case
+// carries one concrete moderators `$type`, the declaration the union of all.
 type Flat<T> = Omit<T, '$formatVersion' | 'moderation'>;
 type V2Shape = Shape<Flat<DataContractConfigV2>>;
 type V1Shape = Shape<Flat<DataContractConfigV1>>;
@@ -58,8 +60,28 @@ export type ModerationOptionalOnSetterInput = Check<undefined extends DataContra
 export type ModerationNotOnV1 = Check<'moderation' extends keyof DataContractConfigV1 ? false : true>;
 export type ModerationNotOnV0 = Check<'moderation' extends keyof DataContractConfigV0 ? false : true>;
 export type ModerationMirrorsCorpus = Check<Equal<keyof ContractModerationConfig, keyof CorpusModeration>>;
-export type ModerationListsAreFlags = Check<Equal<Pick<ContractModerationConfig, 'banlist' | 'suspensions'>, Pick<CorpusModeration, 'banlist' | 'suspensions'>>>;
-export type ModeratorsMirrorCorpus = Check<Equal<keyof ContractModerators, keyof CorpusModeration['moderators']>>;
+export type ModerationListsAreFlags = Check<Equal<
+  Pick<ContractModerationConfig, 'banlist' | 'suspensions' | 'warnings'>,
+  Pick<CorpusModeration, 'banlist' | 'suspensions' | 'warnings'>
+>>;
+// The corpus carries the owner kind and the elected kind, and its `$type`
+// discriminators are widened to plain strings by the JSON import, so the
+// kinds are compared by key set: every key the corpus moderators carry is
+// declared, and every declared key but the appointed set's `identities`
+// (whose kind the corpus does not carry, an identifier rendering differently
+// in object form and in JSON form) is carried by the corpus.
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+export type ModeratorsMirrorCorpus = Check<Equal<Exclude<KeysOfUnion<ContractModerators>, 'identities'>, KeysOfUnion<CorpusModeration['moderators']>>>;
+type CorpusElected = Extract<CorpusModeration['moderators'], { interim: unknown }>;
+type DeclaredElected = Extract<ContractModerators, { $type: 'elected' }>;
+export type ElectedMirrorsCorpus = Check<Equal<keyof Shape<DeclaredElected>, keyof CorpusElected>>;
+export type ElectedWindowsAreSeconds = Check<Equal<
+  Pick<Shape<DeclaredElected>, 'joinWindow' | 'voteWindow' | 'challengeCoolDown' | 'electionDelay' | 'ownerProtected'>,
+  Pick<CorpusElected, 'joinWindow' | 'voteWindow' | 'challengeCoolDown' | 'electionDelay' | 'ownerProtected'>
+>>;
+export type InterimMirrorsCorpus = Check<Equal<Exclude<KeysOfUnion<InterimModerators>, 'identities'>, keyof CorpusElected['interim']>>;
+export type AbilitiesAreNames = Check<CorpusElected['moderatedDocumentTypes'][keyof CorpusElected['moderatedDocumentTypes']][number] extends string ? true : false>;
+export type DeclaredAbilitiesAreNames = Check<ModerationAbility extends string ? true : false>;
 
 function expectAssignable<T>(value: T): T {
   return value;
@@ -109,6 +131,7 @@ if (config.$formatVersion === '0') {
 const moderation: ContractModerationConfig = {
   banlist: true,
   suspensions: false,
+  warnings: false,
   moderators: { $type: 'contractOwner' },
 };
 dataContract.setConfig({ ...flags, moderation }, 14);
@@ -119,6 +142,31 @@ dataContract.setConfig({
 }, 14);
 // @ts-expect-error appointed moderators name their identities
 dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { $type: 'appointedModerators' } } }, 14);
+// @ts-expect-error every list flag is declared
+dataContract.setConfig({ ...flags, moderation: { banlist: true, suspensions: false, moderators: { $type: 'contractOwner' } } }, 14);
+
+// An elected declaration: the cool-down, the moderated types and the interim
+// moderators are required, the windows, the delay and the flag optional.
+const elected: ContractModerators = {
+  $type: 'elected',
+  challengeCoolDown: 1209600,
+  moderatedDocumentTypes: { note: ['ban', 'warn'] },
+  interim: { $type: 'notYetUsable' },
+};
+dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: elected } }, 14);
+dataContract.setConfig({
+  ...flags,
+  moderation: {
+    ...moderation,
+    moderators: {
+      ...elected, joinWindow: 86400, voteWindow: 172800, electionDelay: 3600, ownerProtected: true,
+    },
+  },
+}, 14);
+// @ts-expect-error the cool-down has no default
+dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { $type: 'elected', moderatedDocumentTypes: {}, interim: { $type: 'noModeration' } } } }, 14);
+// @ts-expect-error an ability is one of the four
+dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { ...elected, moderatedDocumentTypes: { note: ['delete'] } } } }, 14);
 
 // A tag read back from JSON is a plain string; `setConfig` still accepts it.
 const fromJson: { $formatVersion: string } & typeof flags = { $formatVersion: '1', ...flags };
