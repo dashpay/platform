@@ -84,12 +84,15 @@ await sdk.documents.create({
 });
 ```
 
-### Replace, delete, transfer
+### Replace, delete, transfer, erase
 
 The `sdk.documents` facade also provides `replace()`, `delete()`,
-`transfer()`, `purchase()`, and `setPrice()` methods. See the
+`transfer()`, `purchase()`, `setPrice()` and, from protocol version 15,
+`erase()` for purging the retained revisions of a deleted keep-history
+document, with `history()` to read what is left. See the
 [API reference](https://dashpay.github.io/evo-sdk-website/docs.html) for
-parameters.
+parameters and the [Keep-History Documents](../drive/keep-history-documents.md)
+chapter for the lifecycle those calls drive.
 
 ## Token operations
 
