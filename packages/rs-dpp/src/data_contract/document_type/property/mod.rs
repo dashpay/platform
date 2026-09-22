@@ -596,7 +596,10 @@ mod purpose_wire_name {
     ) -> Result<Option<Purpose>, D::Error> {
         let name: Option<String> = Option::deserialize(deserializer)?;
         name.map(|name| {
+            // The purposes a user's key can carry, every one but SYSTEM, as the schema
+            // parser admits them
             Purpose::from_wire_name(&name)
+                .filter(|purpose| Purpose::full_range().contains(purpose))
                 .ok_or_else(|| D::Error::custom(format!("unknown key purpose {name:?}")))
         })
         .transpose()
@@ -9312,10 +9315,15 @@ mod tests {
             serde_json::to_value(IdentityKeyReferenceRequirements::default()).expect("serializes"),
             serde_json::json!({})
         );
-        assert!(serde_json::from_value::<IdentityKeyReferenceRequirements>(
-            serde_json::json!({ "purpose": "signing" })
-        )
-        .is_err());
+        for name in ["signing", "system", "DECRYPTION"] {
+            assert!(
+                serde_json::from_value::<IdentityKeyReferenceRequirements>(
+                    serde_json::json!({ "purpose": name })
+                )
+                .is_err(),
+                "{name} should not deserialize as a key purpose requirement"
+            );
+        }
         assert_eq!(
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: "recipientKeyId".to_string(),
