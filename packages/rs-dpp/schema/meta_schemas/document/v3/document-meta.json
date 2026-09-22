@@ -525,7 +525,7 @@
       ]
     },
     "documentArrayItem": {
-      "$comment": "The element schema of a typed array: one scalar, an integer, a number, a string, a boolean, or a byte array (byteArray: true), which with the identifier contentMediaType is an identifier. Objects and arrays of arrays are refused. An element carries no position, requiredSince, refersTo, uniqueItems, const or examples of its own (a one-value enum does what const would, and an update can widen it; examples annotate nothing an element needs)",
+      "$comment": "The element schema of a typed array: one scalar, an integer, a number, a string, a boolean, or a byte array (byteArray: true), which with the identifier contentMediaType is an identifier. Objects and arrays of arrays are refused. An element carries no position, requiredSince, refersTo, uniqueItems, const or examples of its own (a one-value enum does what const would, and an update can widen it; examples annotate nothing an element needs). An enum's members are values of the element type (a byte array or identifier element takes none), and an integer element's minimum and maximum are integers; the parser reads them so random documents stay inside them",
       "type": "object",
       "properties": {
         "$comment": {
@@ -659,7 +659,7 @@
       },
       "allOf": [
         {
-          "$comment": "an array element is a byte array: a typed array cannot hold another typed array",
+          "$comment": "an array element is a byte array: a typed array cannot hold another typed array. A byte array or identifier element takes no enum",
           "if": {
             "properties": {
               "type": {
@@ -671,9 +671,109 @@
             ]
           },
           "then": {
+            "properties": {
+              "enum": false
+            },
             "required": [
               "byteArray"
             ]
+          }
+        },
+        {
+          "$comment": "a string element's enum members are strings",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "an integer element's enum members, minimum and maximum are integers",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "integer"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "minimum": {
+                "type": "integer"
+              },
+              "maximum": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "a number element's enum members are numbers",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "number"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "a boolean element's enum members are booleans",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "boolean"
+                }
+              }
+            }
           }
         }
       ]

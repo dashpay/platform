@@ -40,7 +40,9 @@ pub(crate) fn parse_typed_array(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::array::{ArrayItemType, TypedArrayProperty};
+    use crate::data_contract::document_type::array::{
+        ArrayItemConstraints, ArrayItemType, TypedArrayProperty,
+    };
     use platform_value::platform_value;
 
     #[test]
@@ -60,6 +62,7 @@ mod tests {
             parse_typed_array(&map, PlatformVersion::latest()).expect("parses"),
             Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
                 item_type: ArrayItemType::String(None, Some(16)),
+                item_constraints: ArrayItemConstraints::default(),
                 min_items: Some(1),
                 max_items: 8,
                 unique_items: true,

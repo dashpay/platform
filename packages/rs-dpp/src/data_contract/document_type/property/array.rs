@@ -37,10 +37,14 @@ pub enum ArrayItemType {
 /// element count followed by each element in its [`ArrayItemType`] encoding
 /// (the encoding [`DocumentPropertyType::Array`] always had). Nothing is
 /// indexed per element, so a typed array cannot be an index property.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct TypedArrayProperty {
     /// The type of every element, parsed from `items`.
     pub item_type: ArrayItemType,
+    /// What the `items` schema bounds beyond the type: read by random
+    /// document generation, enforced on every document by the JSON schema
+    /// validator.
+    pub item_constraints: ArrayItemConstraints,
     /// `minItems`: the fewest elements a document may hold, never above
     /// `max_items`.
     pub min_items: Option<u16>,
@@ -50,6 +54,35 @@ pub struct TypedArrayProperty {
     pub max_items: u16,
     /// `uniqueItems`: whether a document is refused for repeating an element.
     pub unique_items: bool,
+}
+
+/// The bounds an `items` schema declares beyond its element type. The JSON
+/// schema validator enforces them on every document; they are parsed so
+/// random document generation stays inside them (an `exclusiveMinimum`,
+/// `exclusiveMaximum`, `multipleOf`, `pattern` or `format` on an element is
+/// not read here, exactly as it is not for a scalar property).
+#[derive(Debug, PartialEq, Clone, Default, Serialize)]
+pub struct ArrayItemConstraints {
+    /// `enum`: the values every element must be one of, in declared order.
+    /// Every member is of the element type; a byte array or identifier
+    /// element takes none.
+    pub allowed_values: Option<Vec<Value>>,
+    /// `minimum` of an integer or number element, inclusive.
+    pub minimum: Option<Value>,
+    /// `maximum` of an integer or number element, inclusive, never below
+    /// `minimum`.
+    pub maximum: Option<Value>,
+}
+
+/// Which size a random element is drawn at.
+#[derive(Clone, Copy)]
+enum RandomFill {
+    /// Any size the bounds allow.
+    Any,
+    /// The smallest value the bounds allow.
+    Smallest,
+    /// The largest value the bounds allow.
+    Largest,
 }
 
 impl TypedArrayProperty {
@@ -89,52 +122,134 @@ impl TypedArrayProperty {
     pub(super) fn random_value(&self, rng: &mut StdRng) -> Value {
         let (min_items, max_items) = self.random_items_range();
         let count = rng.gen_range(min_items..=max_items);
-        self.random_items(count, rng, |element_type, rng| {
-            element_type.random_value(rng)
-        })
+        self.random_items(count, rng, RandomFill::Any)
     }
 
     /// A random value holding `minItems` elements, each of its smallest size.
     pub(super) fn random_sub_filled_value(&self, rng: &mut StdRng) -> Value {
         let (min_items, _) = self.random_items_range();
-        self.random_items(min_items, rng, |element_type, rng| {
-            element_type.random_sub_filled_value(rng)
-        })
+        self.random_items(min_items, rng, RandomFill::Smallest)
     }
 
     /// A random value holding `maxItems` elements, each of its largest size.
     pub(super) fn random_filled_value(&self, rng: &mut StdRng) -> Value {
         let (_, max_items) = self.random_items_range();
-        self.random_items(max_items, rng, |element_type, rng| {
-            element_type.random_filled_value(rng)
-        })
+        self.random_items(max_items, rng, RandomFill::Largest)
     }
 
-    /// `count` elements from `random_element`. Under `uniqueItems` a repeat is
+    /// `count` elements drawn at `fill`. Under `uniqueItems` a repeat is
     /// drawn again, a bounded number of times, so an element type with fewer
-    /// distinct values than `count` (a boolean) yields fewer elements rather
-    /// than looping forever.
-    fn random_items(
-        &self,
-        count: usize,
-        rng: &mut StdRng,
-        random_element: impl Fn(&DocumentPropertyType, &mut StdRng) -> Value,
-    ) -> Value {
+    /// distinct values than `count` (a boolean, a short `enum`) yields fewer
+    /// elements rather than looping forever.
+    fn random_items(&self, count: usize, rng: &mut StdRng, fill: RandomFill) -> Value {
         let element_type = self.item_type.scalar_property_type();
         let mut items: Vec<Value> = Vec::with_capacity(count);
         let mut draws_left = count.saturating_mul(8).saturating_add(16);
         while items.len() < count && draws_left > 0 {
             draws_left -= 1;
-            let item = match random_element(&element_type, rng) {
-                Value::Bytes(bytes) => self.item_type.byte_array_value(bytes),
-                item => item,
-            };
+            let item = self.random_item(&element_type, rng, fill);
             if self.unique_items && items.contains(&item) {
                 continue;
             }
             items.push(item);
         }
         Value::Array(items)
+    }
+
+    /// One element within the item constraints: a member of the `enum`
+    /// when there is one (the shortest, the longest or any), a number within
+    /// `minimum` / `maximum`, and otherwise the element type's own random
+    /// value at `fill`.
+    fn random_item(
+        &self,
+        element_type: &DocumentPropertyType,
+        rng: &mut StdRng,
+        fill: RandomFill,
+    ) -> Value {
+        if let Some(allowed_values) = &self.item_constraints.allowed_values {
+            let encoded_len = |value: &Value| {
+                self.item_type
+                    .encode_value_ref_with_size(value)
+                    .map(|bytes| bytes.len())
+                    .unwrap_or(0)
+            };
+            let member = match fill {
+                RandomFill::Any => {
+                    allowed_values.get(rng.gen_range(0..allowed_values.len().max(1)))
+                }
+                RandomFill::Smallest => {
+                    allowed_values.iter().min_by_key(|value| encoded_len(value))
+                }
+                RandomFill::Largest => allowed_values.iter().max_by_key(|value| encoded_len(value)),
+            };
+            if let Some(member) = member {
+                return member.clone();
+            }
+        }
+        if let Some(bounded) = self.random_bounded_number(rng, fill) {
+            return bounded;
+        }
+        let item = match fill {
+            RandomFill::Any => element_type.random_value(rng),
+            RandomFill::Smallest => element_type.random_sub_filled_value(rng),
+            RandomFill::Largest => element_type.random_filled_value(rng),
+        };
+        match item {
+            Value::Bytes(bytes) => self.item_type.byte_array_value(bytes),
+            item => item,
+        }
+    }
+
+    /// A random integer or number element within the declared `minimum` /
+    /// `maximum`, or `None` when the element declares neither or is not a
+    /// number. A bound the parser could not read as the element's type is
+    /// ignored, so generation never panics on a stored contract.
+    fn random_bounded_number(&self, rng: &mut StdRng, fill: RandomFill) -> Option<Value> {
+        let constraints = &self.item_constraints;
+        if constraints.minimum.is_none() && constraints.maximum.is_none() {
+            return None;
+        }
+        match self.item_type {
+            ArrayItemType::Integer => {
+                let min = constraints
+                    .minimum
+                    .as_ref()
+                    .and_then(|value| value.to_integer::<i64>().ok())
+                    .unwrap_or(i64::MIN);
+                let max = constraints
+                    .maximum
+                    .as_ref()
+                    .and_then(|value| value.to_integer::<i64>().ok())
+                    .unwrap_or(i64::MAX)
+                    .max(min);
+                Some(Value::I64(match fill {
+                    RandomFill::Any => rng.gen_range(min..=max),
+                    RandomFill::Smallest => min,
+                    RandomFill::Largest => max,
+                }))
+            }
+            ArrayItemType::Number => {
+                let min = constraints
+                    .minimum
+                    .as_ref()
+                    .and_then(|value| value.to_float().ok())
+                    .filter(|value| value.is_finite())
+                    .unwrap_or(-1.0e9);
+                let max = constraints
+                    .maximum
+                    .as_ref()
+                    .and_then(|value| value.to_float().ok())
+                    .filter(|value| value.is_finite())
+                    .unwrap_or(1.0e9)
+                    .max(min);
+                Some(Value::Float(match fill {
+                    RandomFill::Any => rng.gen_range(min..=max),
+                    RandomFill::Smallest => min,
+                    RandomFill::Largest => max,
+                }))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -513,6 +628,20 @@ impl ArrayItemType {
             other => Err(DataContractError::InvalidContractStructure(format!(
                 "unsupported typed array element type: {other}"
             ))),
+        }
+    }
+
+    /// The schema type name of the element, as the parent property types
+    /// name themselves.
+    pub fn name(&self) -> &'static str {
+        match self {
+            ArrayItemType::Integer => "integer",
+            ArrayItemType::Number => "number",
+            ArrayItemType::String(_, _) => "string",
+            ArrayItemType::ByteArray(_, _) => "byteArray",
+            ArrayItemType::Identifier => "identifier",
+            ArrayItemType::Boolean => "boolean",
+            ArrayItemType::Date => "date",
         }
     }
 

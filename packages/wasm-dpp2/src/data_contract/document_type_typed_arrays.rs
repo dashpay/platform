@@ -11,8 +11,11 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::array::{ArrayItemType, TypedArrayProperty};
+use dpp::data_contract::document_type::array::{
+    ArrayItemConstraints, ArrayItemType, TypedArrayProperty,
+};
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use dpp::platform_value::Value;
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -26,14 +29,16 @@ const DOCUMENT_TYPED_ARRAY_PROPERTY_TS: &'static str = r#"
  * `items` schema with `byteArray: true`, and `identifier` one that also
  * carries the identifier `contentMediaType`. The bound names are the schema
  * keywords' own: `minLength` / `maxLength` count a string element's
- * characters, `minItems` / `maxItems` a byte array element's bytes. A bound
- * is absent when the schema omits it.
+ * characters, `minItems` / `maxItems` a byte array element's bytes,
+ * `minimum` / `maximum` an integer or number element's range, and `enum`
+ * the values an element must be one of, in declared order. A bound is
+ * absent when the schema omits it.
  */
 export type DocumentTypedArrayItem =
-  | { type: 'integer' }
-  | { type: 'number' }
-  | { type: 'boolean' }
-  | { type: 'string'; minLength?: number; maxLength?: number }
+  | { type: 'integer'; minimum?: number; maximum?: number; enum?: number[] }
+  | { type: 'number'; minimum?: number; maximum?: number; enum?: number[] }
+  | { type: 'boolean'; enum?: boolean[] }
+  | { type: 'string'; minLength?: number; maxLength?: number; enum?: string[] }
   | { type: 'byteArray'; minItems?: number; maxItems?: number }
   | { type: 'identifier' };
 
@@ -96,8 +101,24 @@ fn set_bound<T: Into<f64>>(
     }
 }
 
+/// A scalar element constraint as a JS value: strings, numbers and
+/// booleans, which are the only member kinds the parser admits.
+fn scalar_to_js(value: &Value) -> Option<JsValue> {
+    if let Some(text) = value.as_text() {
+        return Some(JsValue::from_str(text));
+    }
+    if let Some(flag) = value.as_bool() {
+        return Some(JsValue::from_bool(flag));
+    }
+    value.to_float().ok().map(JsValue::from_f64)
+}
+
 /// Build the flat, internally-tagged JS object for one element type.
-fn item_to_js(item_type: &ArrayItemType, path: &str) -> WasmDppResult<JsValue> {
+fn item_to_js(
+    item_type: &ArrayItemType,
+    constraints: &ArrayItemConstraints,
+    path: &str,
+) -> WasmDppResult<JsValue> {
     let object = Object::new();
     let kind = match item_type {
         ArrayItemType::Integer => "integer",
@@ -130,6 +151,21 @@ fn item_to_js(item_type: &ArrayItemType, path: &str) -> WasmDppResult<JsValue> {
         | ArrayItemType::Date => {}
     }
 
+    // The element constraints the parser reads, absent when undeclared
+    if let Some(minimum) = constraints.minimum.as_ref().and_then(scalar_to_js) {
+        set_field(&object, "minimum", &minimum, path)?;
+    }
+    if let Some(maximum) = constraints.maximum.as_ref().and_then(scalar_to_js) {
+        set_field(&object, "maximum", &maximum, path)?;
+    }
+    if let Some(allowed_values) = &constraints.allowed_values {
+        let members = Array::new();
+        for member in allowed_values.iter().filter_map(scalar_to_js) {
+            members.push(&member);
+        }
+        set_field(&object, "enum", &members, path)?;
+    }
+
     Ok(object.into())
 }
 
@@ -140,7 +176,7 @@ fn typed_array_to_js(path: &str, typed_array: &TypedArrayProperty) -> WasmDppRes
     set_field(
         &object,
         "items",
-        &item_to_js(&typed_array.item_type, path)?,
+        &item_to_js(&typed_array.item_type, &typed_array.item_constraints, path)?,
         path,
     )?;
     set_bound(&object, "minItems", typed_array.min_items, path)?;

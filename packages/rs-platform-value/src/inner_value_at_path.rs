@@ -16,8 +16,14 @@ pub(crate) fn is_array_path(text: &str) -> Result<Option<(&str, Option<usize>)>,
     // 3. Extract the portion before the '[' as the field name.
     let field_name = &text[..open_bracket_pos];
 
-    // 4. Ensure the field name consists only of word characters
-    if field_name.is_empty() || !field_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    // 4. Ensure the field name consists only of the characters a document
+    //    property name may carry: word characters and `-`
+    //    (`^[a-zA-Z0-9-_]{1,64}$` in the document meta-schema)
+    if field_name.is_empty()
+        || !field_name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
         return Ok(None);
     }
 
@@ -457,9 +463,21 @@ mod tests {
 
         #[test]
         fn test_non_alphanumeric_field() {
-            let result = is_array_path("arr-test[123]");
+            let result = is_array_path("arr test[123]");
             assert!(result.is_ok());
             assert!(result.unwrap().is_none());
+        }
+
+        #[test]
+        fn should_accept_a_hyphen_in_the_field_name_as_a_property_name_does() {
+            assert_eq!(
+                is_array_path("arr-test[123]").unwrap(),
+                Some(("arr-test", Some(123)))
+            );
+            assert_eq!(
+                is_array_path("member-ids[]").unwrap(),
+                Some(("member-ids", None))
+            );
         }
 
         #[test]

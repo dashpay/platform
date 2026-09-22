@@ -564,8 +564,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     and arrays of arrays are refused. On the array `minItems` and
 ///     `maxItems` count elements, `maxItems` is required (with `minItems`
 ///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
-///     (1024), and `uniqueItems` refuses a document repeating an element.
-///     The array is stored inline, a varint element count followed by the
+///     (1024), and `uniqueItems` refuses a document repeating an element. An
+///     element's `enum` has members of the element type only (none on a byte
+///     array or identifier element), and an integer element's `minimum` and
+///     `maximum` are integers; the parser reads them so random documents stay
+///     inside them. The array is stored inline, a varint element count followed by the
 ///     elements, and cannot be an index property or one side of a
 ///     `propertyAgreement`. Its identifier and byte array elements are
 ///     conversion paths (`find_identifier_and_binary_paths` 1). A byte array
