@@ -144,7 +144,7 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125.
+    /// not one of codes 40120-40125, 40131, 40135 and 40136.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
