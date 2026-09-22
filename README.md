@@ -46,8 +46,10 @@ Schema-based specifications that describe the structure and validation rules for
 their application data. The network stores, indexes, and enforces these schemas
 directly. Applications interact with the platform through structured data reads
 and writes (called **state transitions**) rather than arbitrary code execution.
-Smart contract support is planned for Platform v4.0 (targeted for mainnet in
-2027).
+Smart-contract execution (DashVM: Rust contracts compiled to WebAssembly and
+run on Wasmtime) is in development for Platform 5.0. The plan and the design
+decisions are tracked in
+[dashpay/platform#4626](https://github.com/dashpay/platform/issues/4626).
 
 ### How Dash Platform compares
 
@@ -60,7 +62,7 @@ Smart contract support is planned for Platform v4.0 (targeted for mainnet in
 | **State proofs** | Merkle-Patricia proofs | No native proofs | **GroveDB Merkle proofs for every query** |
 | **Light client trust** | Needs sync committee | Trusts RPC provider | **Cryptographic proof per response -- same security as a full node** |
 | **Data model** | Account / key-value | Account / key-value | **Structured documents with secondary indexes** |
-| **Smart contracts** | **Yes (Solidity / Vyper on EVM)** | **Yes (Rust / C on SVM)** | Coming in v4.0 |
+| **Smart contracts** | **Yes (Solidity / Vyper on EVM)** | **Yes (Rust / C on SVM)** | In development for 5.0 (Rust on WebAssembly) |
 
 The standout difference is light client verification. Most chains either offer
 no state proofs (Solana) or give proofs that are expensive to verify
