@@ -111,6 +111,10 @@ pub(crate) mod property_names {
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
     pub const MINIMUM_SECONDS_SINCE_UPDATE: &str = "minimumSecondsSinceUpdate";
+    pub const OWNER: &str = "owner";
+    pub const READONLY: &str = "readonly";
+    pub const KEEPS_HISTORY: &str = "keepsHistory";
+    pub const OWNER_PROTECTED: &str = "ownerProtected";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";
