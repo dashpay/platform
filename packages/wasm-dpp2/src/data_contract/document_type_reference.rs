@@ -44,13 +44,23 @@ export type DocumentPropertyReferenceTarget =
        * `minimumAgeSeconds` requires the contract's recorded creation time
        * to be at least that many seconds before the block time of the write,
        * and `minimumSecondsSinceUpdate` the same of the later of its creation
-       * and last update times (code 40135 when any is unmet). Absent when
-       * the declaration carries no requirement.
+       * and last update times, and `owner: 'self'` requires the contract to
+       * be owned by the writer of the referring document (its `$ownerId`),
+       * `'other'` by anyone else; `readonly: true` requires a read-only
+       * contract (one that can never be updated again), `keepsHistory: true`
+       * one keeping its history, and `ownerProtected` an elected moderation
+       * declaration whose owner protection flag has that value (code 40135
+       * when any is unmet). Absent when the declaration carries no
+       * requirement.
        */
       contractRequirements?: {
         moderation?: 'elected' | 'electionOpen';
         minimumAgeSeconds?: number;
         minimumSecondsSinceUpdate?: number;
+        owner?: 'self' | 'other';
+        readonly?: true;
+        keepsHistory?: true;
+        ownerProtected?: boolean;
       };
     }
   | { type: 'token' }
@@ -216,6 +226,18 @@ fn reference_to_js(
                         &JsValue::from_f64(f64::from(seconds)),
                         path,
                     )?;
+                }
+                if let Some(owner) = contract_requirements.owner {
+                    set_field(&fields, "owner", &JsValue::from_str(owner.as_str()), path)?;
+                }
+                for (name, flag) in [
+                    ("readonly", contract_requirements.readonly),
+                    ("keepsHistory", contract_requirements.keeps_history),
+                    ("ownerProtected", contract_requirements.owner_protected),
+                ] {
+                    if let Some(flag) = flag {
+                        set_field(&fields, name, &JsValue::from_bool(flag), path)?;
+                    }
                 }
                 set_field(&object, "contractRequirements", &fields, path)?;
             }

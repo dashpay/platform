@@ -4,8 +4,9 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    property_names, ContractReferenceModeration, ContractReferenceRequirements, DistinctFrom,
-    DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType,
+    property_names, ContractReferenceModeration, ContractReferenceOwner,
+    ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -633,8 +634,8 @@ fn apply_property_reference_v0(
 }
 
 /// The `contractRequirements` of a `contract` reference: each key an aspect of the referenced
-/// contract with a closed set of values (`moderation`), or a bound on it (`minimumAgeSeconds`),
-/// at least one when the object is given at all.
+/// contract with a closed set of values (`moderation`, `owner`, the config flags), or a bound
+/// on it (`minimumAgeSeconds`), at least one when the object is given at all.
 fn parse_contract_reference_requirements(
     refers_to_map: &BTreeMap<String, &Value>,
 ) -> Result<ContractReferenceRequirements, DataContractError> {
@@ -672,6 +673,27 @@ fn parse_contract_reference_requirements(
                 fields.minimum_seconds_since_update =
                     Some(parse_contract_reference_seconds(&field, value)?);
             }
+            property_names::OWNER => {
+                let name = value.as_text().ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(
+                        "contract refersTo contractRequirements owner must be a string".to_string(),
+                    )
+                })?;
+                fields.owner = Some(ContractReferenceOwner::from_wire_name(name).ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(format!(
+                        "contract refersTo contractRequirements owner {name:?} is unknown, expected \"self\" or \"other\""
+                    ))
+                })?);
+            }
+            property_names::READONLY => {
+                fields.readonly = Some(parse_contract_reference_true(&field, value)?);
+            }
+            property_names::KEEPS_HISTORY => {
+                fields.keeps_history = Some(parse_contract_reference_true(&field, value)?);
+            }
+            property_names::OWNER_PROTECTED => {
+                fields.owner_protected = Some(parse_contract_reference_bool(&field, value)?);
+            }
             other => {
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "contract refersTo contractRequirements {other:?} is unknown"
@@ -696,6 +718,28 @@ fn parse_contract_reference_seconds(field: &str, value: &Value) -> Result<u32, D
         )));
     }
     Ok(seconds)
+}
+
+/// A boolean requirement of a `contract` reference (`ownerProtected`): `true` or `false`.
+fn parse_contract_reference_bool(field: &str, value: &Value) -> Result<bool, DataContractError> {
+    value.as_bool().ok_or_else(|| {
+        DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be a boolean"
+        ))
+    })
+}
+
+/// A flag requirement of a `contract` reference (`readonly`, `keepsHistory`): only `true`
+/// requires anything, so `false` is refused rather than declared as a requirement that
+/// requires nothing.
+fn parse_contract_reference_true(field: &str, value: &Value) -> Result<bool, DataContractError> {
+    if parse_contract_reference_bool(field, value)? {
+        Ok(true)
+    } else {
+        Err(DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be true"
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -1226,6 +1270,10 @@ mod tests {
                         moderation: Some(ContractReferenceModeration::Elected),
                         minimum_age_seconds: None,
                         minimum_seconds_since_update: None,
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
                     },
                 }
             )
@@ -1245,6 +1293,10 @@ mod tests {
                         moderation: Some(ContractReferenceModeration::ElectionOpen),
                         minimum_age_seconds: None,
                         minimum_seconds_since_update: None,
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
                     },
                 }
             )
@@ -1264,6 +1316,10 @@ mod tests {
                         moderation: None,
                         minimum_age_seconds: Some(604_800),
                         minimum_seconds_since_update: None,
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
                     },
                 }
             )
@@ -1279,6 +1335,10 @@ mod tests {
                         moderation: None,
                         minimum_age_seconds: None,
                         minimum_seconds_since_update: Some(86_400),
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
                     },
                 }
             )
@@ -1298,10 +1358,150 @@ mod tests {
                         moderation: Some(ContractReferenceModeration::Elected),
                         minimum_age_seconds: Some(u32::MAX),
                         minimum_seconds_since_update: Some(1),
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
                     },
                 }
             )
         );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_an_owner_relation() {
+        for (name, owner) in [
+            ("self", ContractReferenceOwner::Writer),
+            ("other", ContractReferenceOwner::Other),
+        ] {
+            assert_eq!(
+                contract_reference_target(json!({
+                    "type": "contract",
+                    "contractRequirements": { "owner": name }
+                })),
+                DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::Contract {
+                        contract_requirements: ContractReferenceRequirements {
+                            owner: Some(owner),
+                            ..Default::default()
+                        },
+                    }
+                )
+            );
+        }
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "moderation": "elected", "owner": "other" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::Elected),
+                        owner: Some(ContractReferenceOwner::Other),
+                        ..Default::default()
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_config_flags() {
+        for (requirements, expected) in [
+            (
+                json!({ "readonly": true }),
+                ContractReferenceRequirements {
+                    readonly: Some(true),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "keepsHistory": true }),
+                ContractReferenceRequirements {
+                    keeps_history: Some(true),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "ownerProtected": true }),
+                ContractReferenceRequirements {
+                    owner_protected: Some(true),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "ownerProtected": false }),
+                ContractReferenceRequirements {
+                    owner_protected: Some(false),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "moderation": "elected", "readonly": true, "keepsHistory": true, "ownerProtected": false }),
+                ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    readonly: Some(true),
+                    keeps_history: Some(true),
+                    owner_protected: Some(false),
+                    ..Default::default()
+                },
+            ),
+        ] {
+            assert_eq!(
+                contract_reference_target(json!({
+                    "type": "contract",
+                    "contractRequirements": requirements
+                })),
+                DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::Contract {
+                        contract_requirements: expected,
+                    }
+                ),
+                "{requirements}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_a_config_flag_requirement_that_is_not_a_boolean_or_requires_nothing() {
+        for (field, value, fragment) in [
+            ("readonly", json!(false), "readonly must be true"),
+            ("readonly", json!("true"), "readonly must be a boolean"),
+            ("readonly", json!(1), "readonly must be a boolean"),
+            ("keepsHistory", json!(false), "keepsHistory must be true"),
+            (
+                "keepsHistory",
+                json!("true"),
+                "keepsHistory must be a boolean",
+            ),
+            (
+                "ownerProtected",
+                json!("true"),
+                "ownerProtected must be a boolean",
+            ),
+            (
+                "ownerProtected",
+                json!(0),
+                "ownerProtected must be a boolean",
+            ),
+            (
+                "ownerProtected",
+                json!(null),
+                "ownerProtected must be a boolean",
+            ),
+        ] {
+            let refers_to = json!({
+                "type": "contract",
+                "contractRequirements": { field: value }
+            });
+            let err = try_document_type_from_schema(contract_reference_schema(refers_to.clone()))
+                .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(fragment),
+                "{refers_to}: expected {fragment:?}, got {err}"
+            );
+        }
     }
 
     #[test]
@@ -1347,6 +1547,14 @@ mod tests {
             (
                 json!({ "type": "contract", "contractRequirements": { "tokens": "any" } }),
                 "is unknown",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "owner": "anyone" } }),
+                "owner \"anyone\" is unknown, expected \"self\" or \"other\"",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "owner": true } }),
+                "owner must be a string",
             ),
             (
                 json!({ "type": "identity", "contractRequirements": { "moderation": "elected" } }),
