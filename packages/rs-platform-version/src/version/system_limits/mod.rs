@@ -11,6 +11,13 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions that predate this limit.
     pub max_document_value_depth: Option<u16>,
+    /// Maximum `maxItems` a typed array document property (`type: "array"` with an `items`
+    /// element schema) may declare, enforced when a contract is registered or updated: full
+    /// validation requires every typed array to declare `maxItems` and refuses one above
+    /// this. The bound keeps an array's worst-case encoded size, which fee estimation charges
+    /// by, finite. Read by document type parser generation 3 (protocol version 14), the only
+    /// generation that parses typed arrays, and never reached before.
+    pub max_document_array_items: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config

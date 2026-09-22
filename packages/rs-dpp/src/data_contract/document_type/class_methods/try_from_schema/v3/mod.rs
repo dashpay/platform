@@ -145,6 +145,13 @@ fn validate_ranked_index_property_key_length(
         return Ok(());
     };
 
+    // A typed array is no index key at all, and its byte bound measures the
+    // whole list: the property-type check right after this one rejects it
+    // with the error that explains the problem.
+    if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
+        return Ok(());
+    }
+
     // `None` is only produced by the array and object types, which the
     // property-type check right after this one rejects outright with the
     // error that actually explains the problem.
@@ -413,7 +420,50 @@ fn try_from_schema_generation_3(
         ));
     }
 
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_typed_array_max_items(&v2, name, platform_version)?;
+    }
+
     Ok(v2)
+}
+
+/// Every typed array property must declare `maxItems`, at most
+/// `SystemLimits::max_document_array_items`, so its worst-case encoded size
+/// stays finite. Read off the flattened properties, which reach a typed array
+/// nested in an object too.
+///
+/// Full validation only, like the other registration limits: a stored
+/// contract was checked when it was registered, and a later protocol version
+/// lowering the cap must not make it unreadable.
+#[cfg(feature = "validation")]
+fn validate_typed_array_max_items(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_document_array_items;
+    for (path, property) in document_type.flattened_properties() {
+        let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
+            continue;
+        };
+        match typed_array.max_items {
+            Some(max_items) if max_items <= limit => {}
+            max_items => {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "typed array property \"{}\" of document type \"{}\" must declare \
+                         maxItems of at most {}, found {}",
+                        path,
+                        name,
+                        limit,
+                        max_items.map_or_else(|| "none".to_string(), |max| max.to_string()),
+                    )),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 impl DocumentType {
@@ -460,6 +510,8 @@ mod keep_history_tests;
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]
 mod moderators_delete_tests;
+#[cfg(all(test, feature = "validation", feature = "random-documents"))]
+mod typed_array_tests;
 
 #[cfg(test)]
 mod tests {

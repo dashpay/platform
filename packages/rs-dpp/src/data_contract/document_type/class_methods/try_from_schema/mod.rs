@@ -1,5 +1,6 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
+use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
@@ -154,7 +155,12 @@ fn insert_values(
             platform_version,
         )?;
 
-        match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
+        let property_type = match parse_typed_array(&inner_properties, platform_version)? {
+            Some(typed_array) => typed_array,
+            None => DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())?,
+        };
+
+        match property_type {
             DocumentPropertyType::Object(_) => {
                 if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
                 {
@@ -231,79 +237,82 @@ fn insert_values_nested(
         platform_version,
     )?;
 
-    let property_type =
-        match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
-            DocumentPropertyType::Object(_) => {
-                let mut nested_properties = IndexMap::new();
-                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
-                {
-                    let properties =
-                        properties_as_value
-                            .as_map()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "properties must be a map".to_string(),
-                            ))?;
+    let property_type = match parse_typed_array(&inner_properties, platform_version)? {
+        Some(typed_array) => typed_array,
+        None => DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())?,
+    };
 
-                    // Nested properties are emitted below in source-map order (the
-                    // `properties.iter()` loop), and that `IndexMap` insertion order is
-                    // consensus-observable: historical contracts were committed in source-map
-                    // order, so re-sorting nested properties by `position` would soft-fork any
-                    // contract whose source order differs from its position order. A previous
-                    // `position`-based `sort_by` here was dead code (its sorted result was never
-                    // read) and read `position` with `.expect()`, which could panic on adversarial
-                    // schema input during block execution. Removed (ordering unchanged). Do NOT
-                    // reintroduce a nested-property sort — even a correct one — nor a panicking
-                    // `position` read here.
+    let property_type = match property_type {
+        DocumentPropertyType::Object(_) => {
+            let mut nested_properties = IndexMap::new();
+            if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
+                let properties =
+                    properties_as_value
+                        .as_map()
+                        .ok_or(DataContractError::ValueWrongType(
+                            "properties must be a map".to_string(),
+                        ))?;
 
-                    // Create a new set with the prefix removed from the keys
-                    let stripped_required: BTreeSet<String> = known_required
-                        .iter()
-                        .filter_map(|key| {
-                            if key.starts_with(&property_key) && key.len() > property_key.len() {
-                                Some(key[property_key.len() + 1..].to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
+                // Nested properties are emitted below in source-map order (the
+                // `properties.iter()` loop), and that `IndexMap` insertion order is
+                // consensus-observable: historical contracts were committed in source-map
+                // order, so re-sorting nested properties by `position` would soft-fork any
+                // contract whose source order differs from its position order. A previous
+                // `position`-based `sort_by` here was dead code (its sorted result was never
+                // read) and read `position` with `.expect()`, which could panic on adversarial
+                // schema input during block execution. Removed (ordering unchanged). Do NOT
+                // reintroduce a nested-property sort — even a correct one — nor a panicking
+                // `position` read here.
 
-                    let stripped_transient: BTreeSet<String> = known_transient
-                        .iter()
-                        .filter_map(|key| {
-                            if key.starts_with(&property_key) && key.len() > property_key.len() {
-                                Some(key[property_key.len() + 1..].to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
+                // Create a new set with the prefix removed from the keys
+                let stripped_required: BTreeSet<String> = known_required
+                    .iter()
+                    .filter_map(|key| {
+                        if key.starts_with(&property_key) && key.len() > property_key.len() {
+                            Some(key[property_key.len() + 1..].to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
-                    for (object_property_key, object_property_value) in properties.iter() {
-                        let object_property_string = object_property_key
-                            .as_text()
-                            .ok_or(DataContractError::KeyWrongType(
-                                "property key must be a string".to_string(),
-                            ))?
-                            .to_string();
+                let stripped_transient: BTreeSet<String> = known_transient
+                    .iter()
+                    .filter_map(|key| {
+                        if key.starts_with(&property_key) && key.len() > property_key.len() {
+                            Some(key[property_key.len() + 1..].to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
-                        insert_values_nested(
-                            &mut nested_properties,
-                            &stripped_required,
-                            &stripped_transient,
-                            false,
-                            object_property_string,
-                            object_property_value,
-                            root_schema,
-                            config,
-                            platform_version,
-                        )?;
-                    }
+                for (object_property_key, object_property_value) in properties.iter() {
+                    let object_property_string = object_property_key
+                        .as_text()
+                        .ok_or(DataContractError::KeyWrongType(
+                            "property key must be a string".to_string(),
+                        ))?
+                        .to_string();
+
+                    insert_values_nested(
+                        &mut nested_properties,
+                        &stripped_required,
+                        &stripped_transient,
+                        false,
+                        object_property_string,
+                        object_property_value,
+                        root_schema,
+                        config,
+                        platform_version,
+                    )?;
                 }
-
-                DocumentPropertyType::Object(nested_properties)
             }
-            property_type => property_type,
-        };
+
+            DocumentPropertyType::Object(nested_properties)
+        }
+        property_type => property_type,
+    };
 
     let property_type =
         apply_property_reference(&inner_properties, property_type, platform_version)?;

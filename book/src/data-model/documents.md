@@ -305,6 +305,33 @@ Enforcement lives in the replace action's state validation (generation 1). The a
 
 In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`. Earlier document type generations return empty sets.
 
+## Typed Arrays
+
+Up to protocol version 13 a `type: "array"` property had to be a byte array (`byteArray: true`). Protocol version 14 adds typed arrays: a list whose `items` schema says what every element is.
+
+```json
+"reasons": {
+  "type": "array",
+  "minItems": 0,
+  "maxItems": 64,
+  "uniqueItems": true,
+  "items": {
+    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+    "contentMediaType": "application/x.dash.dpp.identifier"
+  },
+  "position": 2
+}
+```
+
+- An element is a scalar: an integer, a number, a string (with `minLength` / `maxLength`), a boolean, a byte array (`byteArray: true`, whose `minItems` / `maxItems` count bytes) or an identifier. Objects and arrays of arrays are refused, and so is `refersTo` on an element for now.
+- On the array itself `minItems` and `maxItems` count elements, not bytes. `maxItems` is required and at most `SystemLimits::max_document_array_items` (1024), so a typed array's worst-case size, which fee estimation charges by, stays finite. `uniqueItems: true` refuses a document that repeats an element.
+- A byte array keeps its form exactly: it takes neither `items` nor `uniqueItems`.
+- The document is validated against the JSON schema as always, so a list that is too long, too short, repeats an element under `uniqueItems` or holds a wrong-typed element fails with the usual `JsonSchemaError`.
+
+The array is stored inline in the document, like any other property: a varint element count followed by each element in its own encoding (8 bytes for an integer or a number, 1 for a boolean, a varint length and the bytes for a string, a byte array or an identifier). Nothing is written per element, so a typed array cannot be an index property (`InvalidIndexPropertyTypeError`), an indexOnly terminal or entry payload property, or one side of a `propertyAgreement`.
+
+In Rust a typed array parses to `DocumentPropertyType::TypedArray(TypedArrayProperty)`, with the element type as an `ArrayItemType`. The parse is the versioned `parse_typed_array` (`None` before protocol version 14, where an array that is not a byte array is refused as it always was). The older `DocumentPropertyType::Array` variant has the same encoding without the count bounds, and the parser never produces it.
+
 ## Rules and Guidelines
 
 **Do:**
