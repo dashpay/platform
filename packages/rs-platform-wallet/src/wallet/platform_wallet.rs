@@ -35,6 +35,7 @@ use crate::error::PlatformWalletError;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
