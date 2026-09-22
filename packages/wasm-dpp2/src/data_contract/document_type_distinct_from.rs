@@ -30,9 +30,10 @@ const DOCUMENT_PROPERTY_DISTINCT_FROM_TS: &'static str = r#"
  */
 export type DocumentPropertyDistinctFrom = {
   /**
-   * Dotted path of the declaring identifier property within the document
-   * type, for example `"delegateId"`, or `"meta.reviewerId"` for a nested
-   * one. This is the same string consensus reports in the `property` field
+   * Dotted path of the declaring property within the document type, for
+   * example `"delegateId"`, or `"meta.reviewerId"` for a nested one. An
+   * identifier property, or a typed array of identifiers whose `items`
+   * carry the declaration, in which case every element is bound. This is the same string consensus reports in the `property` field
    * of `DocumentPropertyNotDistinctError` (code 10419).
    */
   path: string;

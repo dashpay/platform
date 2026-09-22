@@ -582,7 +582,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     keyword (meta-schema v3, `apply_distinct_from` 0, `DistinctFrom` on
 ///     `DocumentProperty`) requires an identifier property's value to differ
 ///     from the value of a named property of the same document, or from the
-///     document's `$ownerId`. A pure structure rule: document create
+///     document's `$ownerId`; on the `items` of a typed array of identifiers
+///     it binds every element. A pure structure rule: document create
 ///     structure validation 1 and replace structure validation 1 call
 ///     `validate_distinct_from_properties` (`validate_distinct_from` 0) on the
 ///     transition's data and owner id after the schema validation, transfer

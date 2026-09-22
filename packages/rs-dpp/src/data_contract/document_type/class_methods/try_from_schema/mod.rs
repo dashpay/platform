@@ -1,4 +1,5 @@
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -335,8 +336,9 @@ fn insert_values_nested(
     Ok(())
 }
 
-/// Reads a `distinctFrom` declaration off an identifier property: what its
-/// value must differ from, the document's `$ownerId` or another property of
+/// Reads a `distinctFrom` declaration off an identifier property, or off the
+/// `items` of a typed array of identifiers: what its value (every element's
+/// value) must differ from, the document's `$ownerId` or another property of
 /// the same document type. Non-identifier properties cannot carry it.
 ///
 /// Versioned on `apply_distinct_from` in the platform version's document type
@@ -370,6 +372,38 @@ fn apply_distinct_from_v0(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
 ) -> Result<Option<DistinctFrom>, DataContractError> {
+    // A typed array carries the declaration on its `items`: every element must
+    // differ from the named value, so the elements must be identifiers
+    if let DocumentPropertyType::TypedArray(typed_array) = property_type {
+        if inner_properties.contains_key(property_names::DISTINCT_FROM) {
+            return Err(DataContractError::InvalidContractStructure(
+                "distinctFrom on a typed array belongs on its items, where it applies to every \
+                 element"
+                    .to_string(),
+            ));
+        }
+        let items_map = match inner_properties.get(property_names::ITEMS) {
+            Some(items) => items.to_btree_ref_string_map()?,
+            None => return Ok(None),
+        };
+        let Some(distinct_from_value) = items_map.get(property_names::DISTINCT_FROM) else {
+            return Ok(None);
+        };
+        if typed_array.item_type != ArrayItemType::Identifier {
+            return Err(DataContractError::InvalidContractStructure(
+                "distinctFrom is only allowed on identifier elements of a typed array".to_string(),
+            ));
+        }
+        let name = distinct_from_value.as_text().ok_or_else(|| {
+            DataContractError::InvalidContractStructure(
+                "distinctFrom must be a string naming $ownerId or a property of the same \
+                 document type"
+                    .to_string(),
+            )
+        })?;
+        return DistinctFrom::from_wire_name(name).map(Some);
+    }
+
     let Some(distinct_from_value) = inner_properties.get(property_names::DISTINCT_FROM) else {
         return Ok(None);
     };
@@ -790,6 +824,8 @@ fn parse_contract_reference_true(field: &str, value: &Value) -> Result<bool, Dat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -801,6 +837,7 @@ mod tests {
         PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
         PlatformSerializableWithPlatformVersion,
     };
+    use assert_matches::assert_matches;
     use platform_value::string_encoding::Encoding;
     use serde_json::json;
 
@@ -2292,6 +2329,82 @@ mod tests {
             .validate_distinct_from_properties(&data, owner_id, PlatformVersion::latest())
             .expect("the check should run");
         assert!(!at.is_valid());
+    }
+
+    /// A typed array of identifiers whose items declare `distinct_from`.
+    fn identifier_array_property(position: u32, distinct_from: Option<&str>) -> serde_json::Value {
+        let mut items = json!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier"
+        });
+        if let Some(distinct_from) = distinct_from {
+            items["distinctFrom"] = json!(distinct_from);
+        }
+        json!({ "type": "array", "maxItems": 8, "items": items, "position": position })
+    }
+
+    #[test]
+    fn should_parse_distinct_from_on_the_items_of_an_identifier_array_and_judge_every_element() {
+        let mut schema = distinct_from_schema(None);
+        schema["properties"]["members"] = identifier_array_property(4, Some("$ownerId"));
+        let document_type =
+            try_document_type_from_schema_full_validation(schema).expect("should parse");
+
+        assert_eq!(
+            distinct_from_of(&document_type, "members"),
+            Some(DistinctFrom::OwnerId)
+        );
+
+        let owner_id = Identifier::from([1; 32]);
+        let judge = |members: Vec<Value>| {
+            let data = BTreeMap::from([("members".to_string(), Value::Array(members))]);
+            document_type
+                .as_ref()
+                .validate_distinct_from_properties(&data, owner_id, PlatformVersion::latest())
+                .expect("the check should run")
+        };
+
+        assert!(judge(vec![]).is_valid());
+        assert!(judge(vec![Value::Identifier([2; 32]), Value::Identifier([3; 32])]).is_valid());
+        let refused = judge(vec![Value::Identifier([2; 32]), Value::Identifier([1; 32])]);
+        assert_matches!(
+            refused.errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::DocumentPropertyNotDistinctError(e))]
+                if e.property() == "members" && e.distinct_from() == "$ownerId"
+        );
+    }
+
+    #[test]
+    fn should_reject_distinct_from_on_the_array_itself_or_on_non_identifier_items() {
+        for (property, fragment) in [
+            (
+                json!({
+                    "type": "array", "maxItems": 8, "position": 4, "distinctFrom": "$ownerId",
+                    "items": {
+                        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier"
+                    }
+                }),
+                "belongs on its items",
+            ),
+            (
+                json!({
+                    "type": "array", "maxItems": 8, "position": 4,
+                    "items": { "type": "integer", "distinctFrom": "$ownerId" }
+                }),
+                "only allowed on identifier elements",
+            ),
+        ] {
+            let mut schema = distinct_from_schema(None);
+            schema["properties"]["members"] = property;
+            let err = try_document_type_from_schema(schema.clone()).expect_err("should be refused");
+            assert!(err.to_string().contains(fragment), "got {err}");
+            try_document_type_from_schema_full_validation(schema)
+                .expect_err("the meta-schema should refuse it too");
+        }
     }
 
     #[test]

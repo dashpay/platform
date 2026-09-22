@@ -64,7 +64,8 @@ pub struct DocumentProperty {
 /// What a `distinctFrom` identifier property must differ from.
 ///
 /// Declared as `"distinctFrom": "$ownerId"` or `"distinctFrom": "<dotted property path>"`
-/// on an identifier property (meta-schema v3, protocol version 14). A pure structure rule:
+/// on an identifier property, or on the `items` of a typed array of identifiers, where it
+/// binds every element (meta-schema v3, protocol version 14). A pure structure rule:
 /// consensus compares the property's value with the named one when the document is created
 /// or replaced, and refuses an equal pair with `DocumentPropertyNotDistinctError` (10419).
 /// When the named property is absent from the document there is nothing to differ from,

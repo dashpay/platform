@@ -794,11 +794,10 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         Self: DocumentTypeV2Getters,
     {
         for path in self.distinct_from_fields() {
-            let Some(distinct_from) = self
-                .flattened_properties()
-                .get(path)
-                .and_then(|property| property.distinct_from.as_ref())
-            else {
+            let Some(property) = self.flattened_properties().get(path) else {
+                continue;
+            };
+            let Some(distinct_from) = property.distinct_from.as_ref() else {
                 continue;
             };
             // A lookup error (an intermediate that is not an object) is refused by the
@@ -806,8 +805,18 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             let Ok(Some(value)) = data.get_optional_at_path(path) else {
                 continue;
             };
-            if let Some(error) = distinct_from.violation(self.name(), path, value, data, owner_id) {
-                return SimpleConsensusValidationResult::new_with_error(error.into());
+            // A typed array declares on its items: every element is judged on its own
+            let values: &[Value] = match (&property.property_type, value) {
+                (DocumentPropertyType::TypedArray(_), Value::Array(elements)) => elements,
+                (DocumentPropertyType::TypedArray(_), _) => continue,
+                _ => std::slice::from_ref(value),
+            };
+            for value in values {
+                if let Some(error) =
+                    distinct_from.violation(self.name(), path, value, data, owner_id)
+                {
+                    return SimpleConsensusValidationResult::new_with_error(error.into());
+                }
             }
         }
         SimpleConsensusValidationResult::default()

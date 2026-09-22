@@ -49,9 +49,10 @@ mod distinct_from_tests {
     }
 
     /// A mutable, transferable and purchasable `delegation` type: `delegateId`
-    /// must differ from the owner, `backupId` from `delegateId`, and the nested
-    /// `meta.reviewerId` from its sibling `meta.approverId`. Only the string
-    /// `note` is required, so any identifier may be left out of a document.
+    /// must differ from the owner, `backupId` from `delegateId`, the nested
+    /// `meta.reviewerId` from its sibling `meta.approverId`, and every element
+    /// of the `members` identifier array from the owner. Only the string `note`
+    /// is required, so any identifier may be left out of a document.
     fn delegation_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -70,6 +71,19 @@ mod distinct_from_tests {
                         "approverId": identifier_property(1, None)
                     },
                     "additionalProperties": false
+                },
+                "members": {
+                    "type": "array",
+                    "maxItems": 8_u32,
+                    "position": 4,
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32_u32,
+                        "maxItems": 32_u32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "distinctFrom": "$ownerId"
+                    }
                 }
             },
             "required": ["note"],
@@ -682,6 +696,37 @@ mod distinct_from_tests {
         assert_eq!(
             fixture.stored_delegations()[0].get("delegateId"),
             Some(&id(1))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_reject_a_create_whose_array_element_equals_the_owner_id() {
+        let mut fixture = DelegationFixture::new();
+        let owner_id = fixture.owner_id();
+
+        let result = fixture
+            .create(|document| document.set("members", Value::Array(vec![id(1), owner_id])))
+            .await;
+
+        expect_not_distinct_error(result, "members", "$ownerId");
+        assert!(fixture.stored_delegations().is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_accept_a_create_whose_array_elements_all_differ_from_the_owner_id() {
+        let mut fixture = DelegationFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("members", Value::Array(vec![id(1), id(2)])))
+            .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            fixture.stored_delegations()[0].get("members"),
+            Some(&Value::Array(vec![id(1), id(2)]))
         );
     }
 

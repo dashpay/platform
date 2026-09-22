@@ -356,12 +356,13 @@ The value is `"$ownerId"` or the dotted path of another property of the document
 - The keyword is only allowed on identifier properties, enforced by the same dependent schema shape that restricts `refersTo`.
 - A named property must exist on the document type, must itself be an identifier (the only kind the value can be compared with), and must not be the declaring property. `$ownerId` needs no check; no other system property is accepted.
 - On contract update a changed, added or removed `distinctFrom` is an incompatible schema change, like a changed `refersTo`.
+- A typed array of identifiers declares it on its `items`, and every element must then differ from the named value; the declaration is refused on the array itself and on elements of any other type.
 
 Enforcement lives in the structure validation of the document create and replace actions (create structure generation 1 and replace structure generation 1, both protocol version 14), after the schema validation of the document's properties, so every value compared is already a 32-byte identifier. The check reads the transition's data and the owner id it carries and never touches Drive; the declaring properties come from a list the parser built (`distinct_from_fields`), so a type without declarations costs nothing. An equal pair fails the write with `DocumentPropertyNotDistinctError` (basic code 10419), which names the document type, the property and what it collided with. When the named property is absent from the document there is nothing to differ from, so the rule passes.
 
 A transfer or purchase changes `$ownerId` without touching the data, so the transfer and purchase structure validations (both generation 1, protocol version 14) judge the stored document against its new owner: a transfer to, or a purchase by, the identity a `$ownerId`-distinct property names is refused with the same error. Price updates change neither owner nor data and are not judged.
 
-In Rust the declaration is `DocumentProperty::distinct_from` (`Option<DistinctFrom>`, absent on every property parsed before protocol version 14), the document check is `DocumentTypeV0Methods::validate_distinct_from_properties`, and `DistinctFrom::violation` judges one value on its own so that a typed array item can be judged by the same rule with the item's value.
+In Rust the declaration is `DocumentProperty::distinct_from` (`Option<DistinctFrom>`, absent on every property parsed before protocol version 14), the document check is `DocumentTypeV0Methods::validate_distinct_from_properties`, and `DistinctFrom::violation` judges one value on its own, which is how the elements of a typed array are judged one by one.
 
 ## Rules and Guidelines
 
