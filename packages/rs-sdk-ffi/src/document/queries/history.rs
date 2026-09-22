@@ -134,6 +134,8 @@ fn document_history_to_json(history: DocumentHistory) -> Result<String, FFIError
 /// `{"entries":[{"time_ms":…,"revision":…,"document":{…}}],"lifecycle":{"state":"ACTIVE"|"DELETED"|"ERASING"|"ABSENT","remaining_revisions":…,"deleted_at_ms":…,"erasing_started_at_ms":…,"erasing_from_time_ms":…,"erasing_from_revision":…}}`.
 /// The lifecycle times are zero unless the state they describe has been
 /// reached. An absent document yields no entries and the `ABSENT` state.
+/// The read needs the history layout of protocol version 15: a page served
+/// from the earlier layout carries no lifecycle block and is refused.
 ///
 /// # Safety
 /// - `sdk_handle`, `contract_id`, `document_type`, and `document_id` must be valid, non-null pointers.

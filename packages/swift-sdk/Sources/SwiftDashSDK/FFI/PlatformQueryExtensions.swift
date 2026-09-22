@@ -655,7 +655,9 @@ extension SDK {
     /// `revision` and the canonical `document`) and `lifecycle` (see
     /// `DocumentHistoryLifecycle`). Pass the last entry's `time_ms` and
     /// `revision` back as `.startAfter` for the next page. At most ten
-    /// entries per page; `limit` nil takes the default.
+    /// entries per page; `limit` nil takes the default. Needs the protocol-15
+    /// history layout: a page served from the earlier layout has no lifecycle
+    /// block and the FFI refuses it.
     public func documentGetHistory(
         dataContractId: String,
         documentType: String,
