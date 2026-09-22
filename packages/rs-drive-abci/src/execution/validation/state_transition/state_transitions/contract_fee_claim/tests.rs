@@ -38,8 +38,7 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
+use dpp::state_transition::proof_result::{StateTransitionProofResult,
 };
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
@@ -682,15 +681,19 @@ async fn should_prove_the_pot_and_the_balances_of_everyone_it_paid() {
     )
     .expect("expected the proof to verify");
 
-    let StateTransitionProofOutcome::AffectedState(
-        StateTransitionProofResult::VerifiedContractFeeClaim(
-            contract_id,
-            pot,
-            last_claim,
-            remaining,
-            balances,
-        ),
-    ) = outcome
+    assert!(
+        !outcome.is_execution_proved(),
+        "expected AffectedState, got {:?}",
+        outcome
+    );
+
+    let StateTransitionProofResult::VerifiedContractFeeClaim(
+        contract_id,
+        pot,
+        last_claim,
+        remaining,
+        balances,
+    ) = outcome.into_result()
     else {
         panic!("expected a contract fee claim result, got {outcome:?}");
     };

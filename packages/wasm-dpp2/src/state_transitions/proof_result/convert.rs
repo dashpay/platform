@@ -161,7 +161,7 @@ pub fn convert_proof_result(
             .into()
         }
 
-        StateTransitionProofResult::VerifiedDocuments(docs, owner_balance) => {
+        StateTransitionProofResult::VerifiedDocuments(docs) => {
             let map = Map::from_entries(docs.into_iter().map(|(id, maybe_doc)| {
                 let key: JsValue = IdentifierWasm::from(id).to_base58().into();
                 let val: JsValue = match maybe_doc {
@@ -170,11 +170,7 @@ pub fn convert_proof_result(
                 };
                 (key, val)
             }));
-            VerifiedDocumentsWasm {
-                documents: map,
-                owner_balance,
-            }
-            .into()
+            VerifiedDocumentsWasm { documents: map }.into()
         }
 
         StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {

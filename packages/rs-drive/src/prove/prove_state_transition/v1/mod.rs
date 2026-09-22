@@ -6,9 +6,11 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Version 1: a document batch's proof carries the credit balance of the
-    /// batch's owner next to the document, in one merged query. Every other
-    /// transition proves as in version 0.
+    /// Version 1: the proof of an owned, fee-paying transition (document and
+    /// token batches, contract creates and updates, identity updates and key
+    /// limit updates, contract moderation) carries the owner's credit balance
+    /// next to its result, in one merged query. Every other transition proves
+    /// as in version 0.
     pub(super) fn prove_state_transition_v1(
         &self,
         state_transition: &StateTransition,

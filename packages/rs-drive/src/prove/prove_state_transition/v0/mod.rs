@@ -80,13 +80,14 @@ impl Drive {
     }
 
     /// The proof of a state transition's execution, shared by every version of
-    /// `prove_state_transition`. With `document_batch_carries_owner_balance` (from
-    /// version 1) a document batch's proof also carries the owner's credit balance.
+    /// `prove_state_transition`. With `carries_owner_balance` (from version 1) the
+    /// proof of an owned, fee-paying transition also carries the owner's credit
+    /// balance.
     pub(in crate::prove::prove_state_transition) fn prove_state_transition_internal(
         &self,
         state_transition: &StateTransition,
         transaction: TransactionArg,
-        document_batch_carries_owner_balance: bool,
+        carries_owner_balance: bool,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
         let path_query = match state_transition {
@@ -223,7 +224,7 @@ impl Drive {
                             }
                         };
 
-                        if document_batch_carries_owner_balance {
+                        if carries_owner_balance {
                             // The owner's credit balance after the transition
                             // rides in the same proof as the document, so a
                             // wallet learns what the write left it with without
@@ -280,10 +281,26 @@ impl Drive {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 Drive::identity_balance_query(&st.identity_id().to_buffer())
             }
-            StateTransition::IdentityUpdate(st) => Drive::identity_all_keys_query(
-                &st.identity_id().to_buffer(),
-                &platform_version.drive.grove_version,
-            )?,
+            StateTransition::IdentityUpdate(st) => {
+                if carries_owner_balance {
+                    // The keys, the balance and the revision, composed as the
+                    // verifier composes them.
+                    let identity_id = st.identity_id().to_buffer();
+                    let keys_query = IdentityKeysRequest::new_all_keys_query(&identity_id, None)
+                        .into_path_query();
+                    let balance_query = Drive::balance_for_identity_id_query(identity_id);
+                    let revision_query = Drive::identity_revision_query(&identity_id);
+                    PathQuery::merge(
+                        vec![&keys_query, &balance_query, &revision_query],
+                        &platform_version.drive.grove_version,
+                    )?
+                } else {
+                    Drive::identity_all_keys_query(
+                        &st.identity_id().to_buffer(),
+                        &platform_version.drive.grove_version,
+                    )?
+                }
+            }
             // The lists the moderation touched: a ban also removes a suspension, so it proves
             // every list the contract keeps (the banlist entry present, the suspension absent);
             // an unban, a suspend and an unsuspend prove the one entry they edit.
@@ -424,11 +441,22 @@ impl Drive {
             }
             // Only the rewritten key: the verifier compares that one key.
             StateTransition::IdentityKeyLimitsUpdate(st) => {
-                IdentityKeysRequest::new_specific_key_query_without_limit(
-                    &st.identity_id().to_buffer(),
+                let identity_id = st.identity_id().to_buffer();
+                let key_query = IdentityKeysRequest::new_specific_key_query_without_limit(
+                    &identity_id,
                     st.key_id(),
                 )
-                .into_path_query()
+                .into_path_query();
+                if carries_owner_balance {
+                    // The key and the balance, composed as the verifier composes them.
+                    let balance_query = Drive::balance_for_identity_id_query(identity_id);
+                    PathQuery::merge(
+                        vec![&key_query, &balance_query],
+                        &platform_version.drive.grove_version,
+                    )?
+                } else {
+                    key_query
+                }
             }
             StateTransition::IdentityCreditTransfer(st) => {
                 let sender_query = Drive::identity_balance_query(&st.identity_id().into_buffer());
@@ -728,6 +756,29 @@ impl Drive {
             }
         };
 
+        // From version 1 the proof of the other owned, fee-paying transitions
+        // carries the owner's credit balance next to its result; the verifier
+        // reads the result and the balance as subsets of the merged proof.
+        // (A document batch merged it above; an identity update composed it
+        // the way the identity keys verifier does.)
+        let path_query =
+            if carries_owner_balance && Self::proof_merges_owner_balance_after(state_transition) {
+                let owner_id = state_transition.owner_id().ok_or(Error::Proof(
+                    ProofError::InvalidTransition(
+                        "an owned transition names its owner".to_string(),
+                    ),
+                ))?;
+                let mut path_query = path_query;
+                path_query.query.limit = None;
+                let owner_balance_query = Drive::identity_balance_query(&owner_id.to_buffer());
+                PathQuery::merge(
+                    vec![&path_query, &owner_balance_query],
+                    &platform_version.drive.grove_version,
+                )?
+            } else {
+                path_query
+            };
+
         let proof = self.grove_get_proved_path_query(
             &path_query,
             transaction,
@@ -736,5 +787,23 @@ impl Drive {
         )?;
 
         Ok(ProofCreationResult::new_with_data(proof))
+    }
+
+    /// The transitions whose version 1 proof gains the owner's balance by a merge
+    /// after their own path query is built: contract creates and updates, contract
+    /// moderation and token batches.
+    fn proof_merges_owner_balance_after(state_transition: &StateTransition) -> bool {
+        match state_transition {
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::ContractUserModeration(_) => true,
+            StateTransition::Batch(batch) => {
+                matches!(
+                    batch.first_transition(),
+                    Some(BatchedTransitionRef::Token(_))
+                )
+            }
+            _ => false,
+        }
     }
 }

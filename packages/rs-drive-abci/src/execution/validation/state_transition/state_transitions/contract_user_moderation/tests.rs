@@ -51,9 +51,7 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
-};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract;
@@ -489,14 +487,17 @@ impl Setup {
             platform_version,
         )
         .expect("expected the proof to verify");
-        match outcome {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedContractDocumentRemoval(
-                    contract_id,
-                    document_type_name,
-                    _,
-                    removal,
-                ),
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            outcome
+        );
+        match outcome.into_result() {
+            StateTransitionProofResult::VerifiedContractDocumentRemoval(
+                contract_id,
+                document_type_name,
+                _,
+                removal,
             ) => {
                 assert_eq!(contract_id, self.contract.id());
                 assert_eq!(document_type_name, POST);
@@ -642,10 +643,15 @@ impl Setup {
             platform_version,
         )
         .expect("expected the proof to verify");
-        match outcome {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedContractModerationListStatuses(_, _, status),
-            ) => status,
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            outcome
+        );
+        match outcome.into_result() {
+            StateTransitionProofResult::VerifiedContractModerationListStatuses(_, _, status) => {
+                status
+            }
             other => panic!("expected a moderation status, got {other:?}"),
         }
     }

@@ -101,17 +101,21 @@ impl Drive {
 
     /// The verification shared by every version of
     /// `verify_state_transition_was_executed_with_proof`. With
-    /// `document_batch_carries_owner_balance` (from version 1) a document batch's
-    /// proof is the prover's merged query of the document and the owner's credit
-    /// balance, verified strictly as one, and the result carries the balance.
+    /// `carries_owner_balance` (from version 1) the proof of an owned, fee-paying
+    /// transition also carries the owner's credit balance: a document batch's
+    /// proof is verified strictly as one merged query, an identity update's
+    /// through the identity keys verifier's own composition, and the others as
+    /// subsets of the merged proof; the outcome carries the balance.
     pub(in crate::verify::state_transition::verify_state_transition_was_executed_with_proof) fn verify_state_transition_was_executed_with_proof_internal(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
         proof: &[u8],
         known_contracts_provider_fn: &ContractLookupFn,
-        document_batch_carries_owner_balance: bool,
+        carries_owner_balance: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        // The balance a document batch's proof carried, set by its arm.
+        let mut document_owner_balance: Option<Credits> = None;
         let (root_hash, result) = match state_transition {
             StateTransition::DataContractCreate(data_contract_create) => {
                 // we expect to get a contract that matches the state transition
@@ -122,7 +126,7 @@ impl Drive {
                 let (root_hash, contract) = Drive::verify_contract(
                     proof,
                     Some(keeps_history),
-                    false,
+                    carries_owner_balance,
                     true,
                     data_contract_create.data_contract().id().into_buffer(),
                     platform_version,
@@ -149,7 +153,7 @@ impl Drive {
                 let (root_hash, contract) = Drive::verify_contract(
                     proof,
                     Some(keeps_history),
-                    false,
+                    carries_owner_balance,
                     true,
                     data_contract_update.data_contract().id().into_buffer(),
                     platform_version,
@@ -233,7 +237,7 @@ impl Drive {
                                     platform_version,
                                 )?;
                                 let (root_hash, entry_element, owner_balance) =
-                                    if document_batch_carries_owner_balance {
+                                    if carries_owner_balance {
                                         // One strict verification of the prover's
                                         // merged query: the entry and the owner's
                                         // balance, and nothing else.
@@ -402,16 +406,17 @@ impl Drive {
                                 // that was already absent — the proof attests
                                 // the resulting STATE (`AffectedState`), not
                                 // the execution.
-                                let result = VerifiedDocuments(documents, owner_balance);
+                                let result = VerifiedDocuments(documents);
 
                                 let outcome = if Self::state_transition_proof_binds_execution(
                                     state_transition,
                                     known_contracts_provider_fn,
                                 )? {
-                                    StateTransitionProofOutcome::ExecutionProved(result)
+                                    StateTransitionProofOutcome::execution_proved(result)
                                 } else {
-                                    StateTransitionProofOutcome::AffectedState(result)
-                                };
+                                    StateTransitionProofOutcome::affected_state(result)
+                                }
+                                .with_owner_balance(owner_balance);
                                 return Ok((root_hash, outcome));
                             }
                         }
@@ -437,62 +442,61 @@ impl Drive {
                             block_time_ms: None, //None because we want latest
                             contested_status,
                         };
-                        let (root_hash, document, owner_balance) =
-                            if document_batch_carries_owner_balance {
-                                // One strict verification of the prover's merged query:
-                                // the document (present or proven absent) and the
-                                // owner's balance, and nothing else.
-                                let mut document_path_query =
-                                    query.construct_path_query(platform_version)?;
-                                document_path_query.query.limit = None;
-                                let owner_balance_query =
-                                    Drive::identity_balance_query(&owner_id.to_buffer());
-                                let mut merged_query = PathQuery::merge(
-                                    vec![&document_path_query, &owner_balance_query],
+                        let (root_hash, document, owner_balance) = if carries_owner_balance {
+                            // One strict verification of the prover's merged query:
+                            // the document (present or proven absent) and the
+                            // owner's balance, and nothing else.
+                            let mut document_path_query =
+                                query.construct_path_query(platform_version)?;
+                            document_path_query.query.limit = None;
+                            let owner_balance_query =
+                                Drive::identity_balance_query(&owner_id.to_buffer());
+                            let mut merged_query = PathQuery::merge(
+                                vec![&document_path_query, &owner_balance_query],
+                                &platform_version.drive.grove_version,
+                            )?;
+                            // An absence proof needs a bound: the document
+                            // (one element, a keeps-history type keeps its
+                            // latest revision under one key) and the balance.
+                            merged_query.query.limit = Some(2);
+                            let (root_hash, proved) =
+                                grovedb::GroveDb::verify_query_with_absence_proof(
+                                    proof,
+                                    &merged_query,
                                     &platform_version.drive.grove_version,
                                 )?;
-                                // An absence proof needs a bound: the document
-                                // (one element, a keeps-history type keeps its
-                                // latest revision under one key) and the balance.
-                                merged_query.query.limit = Some(2);
-                                let (root_hash, proved) =
-                                    grovedb::GroveDb::verify_query_with_absence_proof(
-                                        proof,
-                                        &merged_query,
-                                        &platform_version.drive.grove_version,
-                                    )?;
-                                let (mut entries, owner_balance) =
-                                    Self::split_document_batch_proof_entries(proved, owner_id)?;
-                                if entries.len() != 1 {
-                                    return Err(Error::Proof(ProofError::CorruptedProof(format!(
-                                        "we should always get back one document element, we got {}",
-                                        entries.len()
-                                    ))));
-                                }
-                                let document = entries
-                                    .remove(0)
-                                    .2
-                                    .map(|element| element.into_item_bytes().map_err(Error::from))
-                                    .transpose()?
-                                    .map(|serialized| {
-                                        Document::from_bytes(
-                                            serialized.as_slice(),
-                                            document_type,
-                                            platform_version,
-                                        )
-                                        .map_err(Error::from)
-                                    })
-                                    .transpose()?;
-                                (root_hash, document, Some(owner_balance))
-                            } else {
-                                let (root_hash, document) = query.verify_proof(
-                                    false,
-                                    proof,
-                                    document_type,
-                                    platform_version,
-                                )?;
-                                (root_hash, document, None)
-                            };
+                            let (mut entries, owner_balance) =
+                                Self::split_document_batch_proof_entries(proved, owner_id)?;
+                            if entries.len() != 1 {
+                                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                                    "we should always get back one document element, we got {}",
+                                    entries.len()
+                                ))));
+                            }
+                            let document = entries
+                                .remove(0)
+                                .2
+                                .map(|element| element.into_item_bytes().map_err(Error::from))
+                                .transpose()?
+                                .map(|serialized| {
+                                    Document::from_bytes(
+                                        serialized.as_slice(),
+                                        document_type,
+                                        platform_version,
+                                    )
+                                    .map_err(Error::from)
+                                })
+                                .transpose()?;
+                            (root_hash, document, Some(owner_balance))
+                        } else {
+                            let (root_hash, document) = query.verify_proof(
+                                false,
+                                proof,
+                                document_type,
+                                platform_version,
+                            )?;
+                            (root_hash, document, None)
+                        };
 
                         let (root_hash, documents) = match document_transition {
                             DocumentTransition::Create(create_transition) => {
@@ -603,7 +607,8 @@ impl Drive {
                                 )))
                             }
                         }?;
-                        Ok((root_hash, VerifiedDocuments(documents, owner_balance)))
+                        document_owner_balance = owner_balance;
+                        Ok((root_hash, VerifiedDocuments(documents)))
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();
@@ -785,7 +790,7 @@ impl Drive {
                                                 proof,
                                                 token_id.into_buffer(),
                                                 owner_id.into_buffer(),
-                                                false,
+                                                carries_owner_balance,
                                                 platform_version,
                                             )?
                                         else {
@@ -847,7 +852,7 @@ impl Drive {
                                                 proof,
                                                 token_id.into_buffer(),
                                                 recipient_id.into_buffer(),
-                                                false,
+                                                carries_owner_balance,
                                                 platform_version,
                                             )?
                                         else {
@@ -873,7 +878,7 @@ impl Drive {
                                             proof,
                                             token_id.into_buffer(),
                                             &identity_ids,
-                                            false,
+                                            carries_owner_balance,
                                             platform_version,
                                         )?;
 
@@ -938,7 +943,7 @@ impl Drive {
                                             token_freeze_transition
                                                 .frozen_identity_id()
                                                 .into_buffer(),
-                                            false,
+                                            carries_owner_balance,
                                             platform_version,
                                         )?
                                     else {
@@ -1006,7 +1011,7 @@ impl Drive {
                                             token_unfreeze_transition
                                                 .frozen_identity_id()
                                                 .into_buffer(),
-                                            false,
+                                            carries_owner_balance,
                                             platform_version,
                                         )?
                                     else {
@@ -1032,7 +1037,7 @@ impl Drive {
                                             proof,
                                             token_id.into_buffer(),
                                             owner_id.into_buffer(),
-                                            false,
+                                            carries_owner_balance,
                                             platform_version,
                                         )?
                                     else {
@@ -1087,7 +1092,7 @@ impl Drive {
                                         Drive::verify_token_direct_selling_price(
                                             proof,
                                             token_id.into_buffer(),
-                                            false,
+                                            carries_owner_balance,
                                             platform_version,
                                         )?;
                                     Ok((
@@ -1195,7 +1200,7 @@ impl Drive {
                         None,
                     ),
                     true,
-                    false,
+                    carries_owner_balance,
                     false,
                     platform_version,
                 )?;
@@ -1245,7 +1250,12 @@ impl Drive {
             StateTransition::ContractUserModeration(transition)
                 if transition.action().document().is_some() =>
             {
-                verify_contract_document_deletion_execution(proof, transition, platform_version)
+                verify_contract_document_deletion_execution(
+                    proof,
+                    transition,
+                    carries_owner_balance,
+                    platform_version,
+                )
             }
             StateTransition::ContractUserModeration(transition)
                 if transition.action().restored_document().is_some() =>
@@ -1254,6 +1264,7 @@ impl Drive {
                     proof,
                     transition,
                     known_contracts_provider_fn,
+                    carries_owner_balance,
                     platform_version,
                 )
             }
@@ -1306,6 +1317,7 @@ impl Drive {
                     contract_id,
                     identity_id,
                     &lists,
+                    carries_owner_balance,
                     platform_version,
                 )?;
                 let as_expected = match transition.action() {
@@ -1437,7 +1449,7 @@ impl Drive {
                         transition.key_id(),
                     ),
                     false,
-                    false,
+                    carries_owner_balance,
                     false,
                     platform_version,
                 )?;
@@ -2620,16 +2632,85 @@ impl Drive {
             }
         }?;
 
+        let owner_balance = if carries_owner_balance {
+            Self::owner_balance_of_verified_transition(
+                state_transition,
+                &result,
+                document_owner_balance,
+                proof,
+                root_hash,
+                platform_version,
+            )?
+        } else {
+            None
+        };
+
         let outcome = if Self::state_transition_proof_binds_execution(
             state_transition,
             known_contracts_provider_fn,
         )? {
-            StateTransitionProofOutcome::ExecutionProved(result)
+            StateTransitionProofOutcome::execution_proved(result)
         } else {
-            StateTransitionProofOutcome::AffectedState(result)
-        };
+            StateTransitionProofOutcome::affected_state(result)
+        }
+        .with_owner_balance(owner_balance);
 
         Ok((root_hash, outcome))
+    }
+
+    /// The owner's credit balance a version 1 proof carries for an owned,
+    /// fee-paying transition: a document batch's came out of its strict merged
+    /// verification, an identity update's or key limits update's out of the
+    /// identity keys verifier, and the others (contract creates and updates,
+    /// contract moderation, token batches) are read as a subset of the merged
+    /// proof and must come from the same state as the result. `None` for a
+    /// transition whose proof does not carry it.
+    fn owner_balance_of_verified_transition(
+        state_transition: &StateTransition,
+        result: &StateTransitionProofResult,
+        document_owner_balance: Option<Credits>,
+        proof: &[u8],
+        root_hash: RootHash,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Credits>, Error> {
+        let subset_owner = match state_transition {
+            StateTransition::Batch(batch) => match batch.first_transition() {
+                Some(BatchedTransitionRef::Document(_)) => return Ok(document_owner_balance),
+                Some(BatchedTransitionRef::Token(_)) => state_transition.owner_id(),
+                None => None,
+            },
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::ContractUserModeration(_) => state_transition.owner_id(),
+            StateTransition::IdentityUpdate(_) | StateTransition::IdentityKeyLimitsUpdate(_) => {
+                return Ok(match result {
+                    VerifiedPartialIdentity(identity) => identity.balance,
+                    _ => None,
+                });
+            }
+            _ => None,
+        };
+        let Some(owner_id) = subset_owner else {
+            return Ok(None);
+        };
+        let (balance_root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+            proof,
+            owner_id.into_buffer(),
+            true,
+            platform_version,
+        )?;
+        if balance_root_hash != root_hash {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "the result and the owner balance of a proof are read from different states"
+                    .to_string(),
+            )));
+        }
+        balance
+            .ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                "proof did not contain the balance of the transition owner {}",
+                owner_id
+            ))))
+            .map(Some)
     }
 
     /// Splits the entries one strict verification of a document batch's merged
@@ -2867,6 +2948,7 @@ impl Drive {
 fn verify_contract_document_deletion_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,
+    verify_subset_of_proof: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, StateTransitionProofResult), Error> {
     let contract_id = transition.data_contract_id();
@@ -2887,6 +2969,7 @@ fn verify_contract_document_deletion_execution(
             document_type_name: document_type_name.clone(),
             selection: ContractDocumentRemovalsSelection::DocumentIds(vec![*document_id]),
         },
+        verify_subset_of_proof,
         platform_version,
     )?;
     match (entries.pop(), entries.is_empty()) {
@@ -2923,6 +3006,7 @@ fn verify_contract_document_restore_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,
     known_contracts_provider_fn: &ContractLookupFn,
+    verify_subset_of_proof: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, StateTransitionProofResult), Error> {
     let contract_id = transition.data_contract_id();
@@ -2948,6 +3032,7 @@ fn verify_contract_document_restore_execution(
             document_type_name: document_type_name.to_string(),
             selection: ContractDocumentRemovalsSelection::DocumentIds(vec![document_id]),
         },
+        verify_subset_of_proof,
         platform_version,
     )?;
     match (entries.pop(), entries.is_empty()) {
@@ -3096,10 +3181,13 @@ mod tests {
         );
         let (root_hash, proof_result) = result.unwrap();
         assert_ne!(root_hash, [0u8; 32], "root hash should not be all zeros");
-        match proof_result {
-            StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedDataContract(verified_contract),
-            ) => {
+        assert!(
+            proof_result.is_execution_proved(),
+            "expected ExecutionProved, got {:?}",
+            proof_result
+        );
+        match proof_result.into_result() {
+            StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
                 assert_eq!(
                     verified_contract.id(),
                     contract.id(),
@@ -3161,10 +3249,13 @@ mod tests {
         // The proven contract body equaling the update's target does not
         // prove that THIS update executed (the version may predate the
         // request), so the outcome is a snapshot, not execution evidence.
-        match proof_result {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedDataContract(verified_contract),
-            ) => {
+        assert!(
+            !proof_result.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            proof_result
+        );
+        match proof_result.into_result() {
+            StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
                 assert_eq!(verified_contract.id(), contract.id());
             }
             other => panic!(
@@ -3214,10 +3305,13 @@ mod tests {
             result.err()
         );
         let (_root_hash, proof_result) = result.unwrap();
-        match proof_result {
-            StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedIdentity(verified_identity),
-            ) => {
+        assert!(
+            proof_result.is_execution_proved(),
+            "expected ExecutionProved, got {:?}",
+            proof_result
+        );
+        match proof_result.into_result() {
+            StateTransitionProofResult::VerifiedIdentity(verified_identity) => {
                 assert_eq!(verified_identity.id(), identity.id());
             }
             other => panic!("expected VerifiedIdentity, got {:?}", other),
@@ -3293,10 +3387,14 @@ mod tests {
         )
         .expect("expected verification to succeed");
 
-        match outcome {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
-            ) => {
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            outcome
+        );
+
+        match outcome.into_result() {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
                 assert_eq!(partial_identity.id, identity.id());
                 assert!(partial_identity.balance.is_some());
                 assert!(partial_identity.revision.is_some());
@@ -3343,10 +3441,14 @@ mod tests {
         )
         .expect("expected verification to succeed");
 
-        match outcome {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
-            ) => {
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            outcome
+        );
+
+        match outcome.into_result() {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
                 assert_eq!(partial_identity.id, identity.id());
                 assert!(partial_identity.balance.is_some());
             }
@@ -3409,10 +3511,13 @@ mod tests {
             result.err()
         );
         let (_root_hash, proof_result) = result.unwrap();
-        match proof_result {
-            StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
-            ) => {
+        assert!(
+            proof_result.is_execution_proved(),
+            "expected ExecutionProved, got {:?}",
+            proof_result
+        );
+        match proof_result.into_result() {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
                 assert_eq!(partial_identity.id, identity.id());
                 assert!(
                     !partial_identity.loaded_public_keys.is_empty(),
@@ -3574,10 +3679,14 @@ mod tests {
         )
         .expect("expected verification to accept a key disabled before the proof block");
 
-        match result {
-            StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
-            ) => {
+        assert!(
+            result.is_execution_proved(),
+            "expected ExecutionProved, got {:?}",
+            result
+        );
+
+        match result.into_result() {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
                 assert_eq!(partial_identity.id, identity.id());
             }
             other => panic!(
@@ -3653,12 +3762,16 @@ mod tests {
         )
         .expect("expected verification to succeed");
 
-        match outcome {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedBalanceTransfer(
-                    sender_identity,
-                    recipient_identity,
-                ),
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            outcome
+        );
+
+        match outcome.into_result() {
+            StateTransitionProofResult::VerifiedBalanceTransfer(
+                sender_identity,
+                recipient_identity,
             ) => {
                 assert_eq!(sender_identity.id, sender.id());
                 assert_eq!(recipient_identity.id, recipient.id());
@@ -3911,10 +4024,14 @@ mod tests {
             result.err()
         );
         let (_root_hash, proof_result) = result.unwrap();
-        match proof_result {
-            StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedDocuments(docs, owner_balance),
-            ) => {
+        assert!(
+            proof_result.is_execution_proved(),
+            "expected ExecutionProved, got {:?}",
+            proof_result
+        );
+        let owner_balance = proof_result.owner_balance();
+        match proof_result.into_result() {
+            StateTransitionProofResult::VerifiedDocuments(docs) => {
                 assert_eq!(docs.len(), 1, "expected exactly one document entry");
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
                 assert_eq!(returned_id, doc_id);
@@ -4053,9 +4170,10 @@ mod tests {
             platform_version,
         )
         .expect("the prover's proof verifies");
+        assert!(outcome.owner_balance().is_some());
         assert!(matches!(
             outcome.into_result(),
-            StateTransitionProofResult::VerifiedDocuments(_, Some(_))
+            StateTransitionProofResult::VerifiedDocuments(_)
         ));
     }
 
@@ -4156,10 +4274,14 @@ mod tests {
             result.err()
         );
         let (_root_hash, proof_result) = result.unwrap();
-        match proof_result {
-            StateTransitionProofOutcome::ExecutionProved(
-                StateTransitionProofResult::VerifiedDocuments(docs, owner_balance),
-            ) => {
+        assert!(
+            proof_result.is_execution_proved(),
+            "expected ExecutionProved, got {:?}",
+            proof_result
+        );
+        let owner_balance = proof_result.owner_balance();
+        match proof_result.into_result() {
+            StateTransitionProofResult::VerifiedDocuments(docs) => {
                 assert_eq!(docs.len(), 1, "expected exactly one document entry");
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
                 assert_eq!(returned_id, doc_id);

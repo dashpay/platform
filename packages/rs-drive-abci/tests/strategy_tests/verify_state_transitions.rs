@@ -9,7 +9,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
-use dpp::state_transition::proof_result::{StateTransitionProofOutcome, StateTransitionProofResult};
+use dpp::state_transition::proof_result::{StateTransitionProofResult};
 use dpp::state_transition::{StateTransition };
 use dpp::state_transition::StateTransitionType;
 use dpp::state_transition::StateTransitionWitnessSigned;
@@ -116,7 +116,7 @@ fn assert_transition_yields_affected_state_snapshot(
     // The post-state proof cannot be bound to this transition's execution,
     // so the outcome must stay tagged as an affected-state snapshot.
     assert!(
-        matches!(outcome, StateTransitionProofOutcome::AffectedState(_)),
+        !outcome.is_execution_proved(),
         "{operation}: post-state proof must not be treated as execution evidence, got {outcome:?}"
     );
 }
@@ -389,7 +389,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
                         Some(keeps_history),
-                        false,
+                        // From prover version 1 the proof also carries the owner's balance.
+                        platform_version.drive.methods.prove.prove_state_transition >= 1,
                         true,
                         data_contract_create.data_contract_ref().id().into_buffer(),
                         platform_version,
@@ -422,7 +423,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
                         Some(keeps_history),
-                        false,
+                        // From prover version 1 the proof also carries the owner's balance.
+                        platform_version.drive.methods.prove.prove_state_transition >= 1,
                         true,
                         data_contract_update.data_contract_ref().id().into_buffer(),
                         platform_version,
@@ -897,7 +899,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         ),
                         false,
                         false,
-                        false,
+                        // From prover version 1 the proof also carries the owner's balance.
+                        true,
                         platform_version,
                     )
                     .expect("expected to verify identity keys");
@@ -1030,12 +1033,16 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 platform.state.last_committed_block_info()
                             );
 
-                            let StateTransitionProofOutcome::ExecutionProved(
-                                StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
-                                    proved_identity,
-                                    proof_address_infos_map,
-                                ),
-                            ) = proof_result
+                            assert!(
+                                proof_result.is_execution_proved(),
+                                "expected ExecutionProved, got {:?}",
+                                proof_result
+                            );
+
+                            let StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
+                                proved_identity,
+                                proof_address_infos_map,
+                            ) = proof_result.into_result()
                             else {
                                 panic!("expected identity/address infos for identity create from addresses proof");
                             };
@@ -1129,12 +1136,16 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             )
                             .expect("IdentityTopUpFromAddressesAction proof should verify");
 
-                        let StateTransitionProofOutcome::AffectedState(
-                            StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-                                identity,
-                                proof_address_infos,
-                            ),
-                        ) = data
+                        assert!(
+                            !data.is_execution_proved(),
+                            "expected AffectedState, got {:?}",
+                            data
+                        );
+
+                        let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                            identity,
+                            proof_address_infos,
+                        ) = data.into_result()
                         else {
                             panic!("expected identity/address infos for top up from addresses proof, got {}",
                         std::any::type_name_of_val(&data));
@@ -1222,12 +1233,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
 
                         if *was_executed {
-                            let StateTransitionProofOutcome::AffectedState(
-                                StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-                                    proved_identity,
-                                    proof_address_infos_map,
-                                ),
-                            ) = proof_result
+                            assert!(
+                                !proof_result.is_execution_proved(),
+                                "expected AffectedState, got {:?}",
+                                proof_result
+                            );
+                            let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                                proved_identity,
+                                proof_address_infos_map,
+                            ) = proof_result.into_result()
                             else {
                                 panic!("expected identity/address infos for credit transfer proof");
                             };

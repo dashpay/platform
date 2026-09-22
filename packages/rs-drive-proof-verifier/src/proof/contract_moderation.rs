@@ -55,6 +55,7 @@ impl FromProof<GetContractModerationStatusRequest> for ContractModerationListSta
             contract_id,
             identity_id,
             &lists,
+            false,
             platform_version,
         )
         .map_drive_error(&proof, &metadata)?;
@@ -193,6 +194,7 @@ impl FromProof<GetContractDocumentRemovalsRequest> for ContractDocumentRemovals 
             supported_grovedb_proof_bytes(&proof, platform_version)?,
             contract_id,
             &query,
+            false,
             platform_version,
         )
         .map_drive_error(&proof, &metadata)?;

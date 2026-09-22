@@ -1525,13 +1525,12 @@ mod index_only_executed_proof_tests {
         // An indexOnly snapshot authenticates the resulting STATE (the
         // commitment-checked entry), never THIS transition's execution —
         // a second create with identical values shares the entry.
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
-        let StateTransitionProofResult::VerifiedDocuments(documents, owner_balance) =
-            outcome.into_result()
-        else {
+        let owner_balance = outcome.owner_balance();
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         // The owner's balance after the create rides in the same proof, read
@@ -1590,13 +1589,12 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
-        let StateTransitionProofResult::VerifiedDocuments(documents, owner_balance) =
-            outcome.into_result()
-        else {
+        let owner_balance = outcome.owner_balance();
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         assert_eq!(
@@ -1692,9 +1690,7 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed untagged create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, verified_like) = documents.into_iter().next().expect("one document");
@@ -1745,9 +1741,7 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed untagged delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, absent) = documents.into_iter().next().expect("one entry");
@@ -2186,9 +2180,7 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed bucketed create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         assert!(
@@ -2264,9 +2256,7 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed bucketed delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         assert!(
@@ -2400,9 +2390,7 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed summable create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, verified_tip) = documents.into_iter().next().expect("one document");
@@ -2492,9 +2480,7 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed summable delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, absent) = documents.into_iter().next().expect("one entry");
@@ -2608,13 +2594,11 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, verified) = documents.into_iter().next().expect("one document");
@@ -2675,13 +2659,11 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, absent) = documents.into_iter().next().expect("one entry");
@@ -2811,13 +2793,11 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, verified) = documents.into_iter().next().expect("one document");
@@ -2878,13 +2858,11 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
-        let StateTransitionProofResult::VerifiedDocuments(documents, _owner_balance) =
-            outcome.into_result()
-        else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
         let (_, absent) = documents.into_iter().next().expect("one entry");

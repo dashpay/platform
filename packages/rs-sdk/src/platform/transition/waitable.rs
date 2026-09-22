@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use super::broadcast::BroadcastStateTransition;
+use super::broadcast::{
+    convert_proof_result, require_execution_proved, BroadcastStateTransition, WaitForOutcome,
+};
 use super::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::Error;
@@ -62,10 +64,11 @@ impl Waitable for Document {
 
 /// Waits for the proof of a document batch and returns the document it left
 /// together with the credit balance of the batch's owner after it: from
-/// protocol version 14 the proof carries both, read from one state; a proof
-/// made at an earlier version carries only the document and the balance is
-/// `None`. The balance is a snapshot at the proof's block, so it may already
-/// include later transitions of the same identity.
+/// protocol version 14 the proof carries both, read from one state, and the
+/// verified outcome hands the balance out; a proof made at an earlier version
+/// carries only the document and the balance is `None`. The balance is a
+/// snapshot at the proof's block, so it may already include later transitions
+/// of the same identity.
 pub async fn wait_for_document_and_owner_balance(
     sdk: &Sdk,
     state_transition: StateTransition,
@@ -95,8 +98,12 @@ pub async fn wait_for_document_and_owner_balance(
         )));
     };
 
-    let (mut documents, owner_balance): (BTreeMap<Identifier, Option<Document>>, Option<Credits>) =
-        state_transition.wait_for_response(sdk, settings).await?;
+    let (outcome, _metadata) = state_transition
+        .wait_for_outcome_with_metadata(sdk, settings)
+        .await?;
+    let owner_balance = outcome.owner_balance();
+    let mut documents: BTreeMap<Identifier, Option<Document>> =
+        convert_proof_result(require_execution_proved(outcome)?)?;
 
     let document: Document = documents
         .remove(&doc_id)

@@ -8,10 +8,9 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Version 1: a document batch's proof is the prover's merged query of the
-    /// document and the owner's credit balance, verified strictly as one, and
-    /// `VerifiedDocuments` carries the balance. Every other transition verifies
-    /// as in version 0.
+    /// Version 1: the proof of an owned, fee-paying transition carries the
+    /// owner's credit balance next to its result, and the outcome carries it.
+    /// Every other transition verifies as in version 0.
     pub(super) fn verify_state_transition_was_executed_with_proof_v1(
         state_transition: &StateTransition,
         block_info: &BlockInfo,

@@ -16,9 +16,7 @@ use dpp::prelude::DataContract;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
 use dpp::state_transition::batch_transition::{BatchTransitionV0, DocumentCreateTransition};
-use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
-};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_double;
 use dpp::util::strings::convert_to_homograph_safe_chars;
@@ -116,11 +114,13 @@ fn prove_and_verify(
     )
     .expect("expected the batch proof to verify");
     assert_ne!(root_hash, [0u8; 32]);
-    let StateTransitionProofOutcome::ExecutionProved(
-        StateTransitionProofResult::VerifiedDocuments(documents, owner_balance),
-    ) = outcome
-    else {
-        panic!("expected an execution-proved documents result, got {outcome:?}");
+    assert!(
+        outcome.is_execution_proved(),
+        "expected an execution-proved result, got {outcome:?}"
+    );
+    let owner_balance = outcome.owner_balance();
+    let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+        panic!("expected a documents result");
     };
     let owner_balance = owner_balance.expect("a batch proof carries the owner's balance");
     let owner_id = transition
