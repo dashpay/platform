@@ -54,13 +54,13 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::IdentityKeyLimitsUpdateEmptyError;
@@ -805,6 +805,9 @@ pub enum BasicError {
     // Documents cited by a contract moderation reason (protocol version 14).
     #[error(transparent)]
     InvalidContractModerationReasonDocumentsError(InvalidContractModerationReasonDocumentsError),
+
+    #[error(transparent)]
+    DocumentPropertyNotDistinctError(DocumentPropertyNotDistinctError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -882,13 +885,24 @@ mod tests {
             )),
             192
         );
-        // Documents cited by a contract moderation reason (protocol version 14): the tail of
-        // the enum.
+        // Documents cited by a contract moderation reason (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidContractModerationReasonDocumentsError(
                 InvalidContractModerationReasonDocumentsError::new("x".to_string())
             )),
             193
+        );
+        // A `distinctFrom` identifier property equal to what it must differ from (protocol
+        // version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyNotDistinctError(
+                DocumentPropertyNotDistinctError::new(
+                    "post".to_string(),
+                    "delegateId".to_string(),
+                    "$ownerId".to_string(),
+                )
+            )),
+            194
         );
     }
 }

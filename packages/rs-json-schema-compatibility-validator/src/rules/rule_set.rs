@@ -1417,6 +1417,49 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                 ],
             },
         ),
+        // `distinctFrom` (what an identifier property's value must differ
+        // from: `$ownerId` or another property of the same document type) is
+        // frozen like `refersTo`: adding, removing or changing it changes
+        // which documents the type accepts.
+        (
+            "distinctFrom",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "distinctFrom": "$ownerId" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/distinctFrom".to_string(),
+                            value: json!("$ownerId"),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "distinctFrom": "$ownerId" }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/distinctFrom".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "distinctFrom": "$ownerId" }),
+                        json!({ "distinctFrom": "delegateId" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/distinctFrom".to_string(),
+                            value: json!("delegateId"),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
         (
             "$defs",
             CompatibilityRules {
