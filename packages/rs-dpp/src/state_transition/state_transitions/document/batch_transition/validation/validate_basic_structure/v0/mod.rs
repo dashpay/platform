@@ -4,7 +4,9 @@ use crate::consensus::basic::document::{
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::BasicError;
-use crate::state_transition::batch_transition::batched_transition::DocumentIndexOnlyDeleteTransition;
+use crate::state_transition::batch_transition::batched_transition::{
+    DocumentEraseTransition, DocumentIndexOnlyDeleteTransition,
+};
 
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -120,6 +122,43 @@ impl BatchTransition {
                         .dpp
                         .state_transition_serialization_versions
                         .document_index_only_delete_state_transition
+                    {
+                        None => {
+                            // The kind does not exist at this protocol
+                            // version; the empty supported range (min 1,
+                            // max 0) states exactly that.
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(feature_version, 1, 0),
+                            ));
+                        }
+                        Some(bounds) if !bounds.bounds.check_version(feature_version) => {
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(
+                                    feature_version,
+                                    bounds.bounds.min_version,
+                                    bounds.bounds.max_version,
+                                ),
+                            ));
+                        }
+                        Some(_) => {}
+                    }
+                }
+
+                // The erase kind joined the wire at protocol version 15. Old
+                // software cannot decode it at all, so no historical block can
+                // contain one; this check exists so that new software agrees
+                // with old software while an earlier protocol version is still
+                // active: without it, an erase submitted at protocol version 14
+                // would decode fine here while being undecodable on nodes that
+                // predate the kind.
+                if let DocumentTransition::Erase(erase) = transition {
+                    let feature_version = match erase {
+                        DocumentEraseTransition::V0(_) => 0,
+                    };
+                    match &platform_version
+                        .dpp
+                        .state_transition_serialization_versions
+                        .document_erase_state_transition
                     {
                         None => {
                             // The kind does not exist at this protocol
@@ -326,6 +365,104 @@ mod tests {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // erase kind wire gate
+    // -----------------------------------------------------------------------
+
+    fn make_erase(nonce: u64, id_byte: u8) -> DocumentTransition {
+        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
+
+        DocumentTransition::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::new([id_byte; 32]),
+                identity_contract_nonce: nonce,
+                document_type_name: "test_doc".to_string(),
+                data_contract_id: Identifier::new([0xAA; 32]),
+            }),
+        }))
+    }
+
+    /// Software that predates the erase kind cannot decode one at all, so no
+    /// historical block can contain one. The gate exists so that new software
+    /// agrees with old software while protocol version 14 is still active:
+    /// refused there, where the kind's table entry is `None`, and admitted at
+    /// the latest version, whose entry publishes the kind's bounds.
+    #[test]
+    fn validate_base_structure_v0_gates_erase_by_protocol_version() {
+        let batch = make_batch_v0(vec![make_erase(1, 1)]);
+
+        let released = PlatformVersion::get(14).expect("protocol version 14 exists");
+        assert!(
+            released
+                .dpp
+                .state_transition_serialization_versions
+                .document_erase_state_transition
+                .is_none(),
+            "the test needs a released version that publishes no erase bounds"
+        );
+        let result = batch
+            .validate_base_structure_v0(released)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "protocol version 14 must reject an erase as an unsupported version, got {:?}",
+            result.errors
+        );
+
+        let result = batch
+            .validate_base_structure_v0(PlatformVersion::latest())
+            .expect("no protocol err");
+        assert!(
+            result.is_valid(),
+            "the latest protocol version must admit an erase, got {:?}",
+            result.errors
+        );
+    }
+
+    /// A batch may name one document at most once, whatever the kinds: the
+    /// duplicate finder the structure check runs fingerprints an erase by its
+    /// document type and id like every other kind, so an erase of a document
+    /// that another transition in the batch names is reported with it.
+    #[test]
+    fn validate_base_structure_v0_treats_an_erase_of_a_named_document_as_a_duplicate() {
+        let erase = make_erase(1, 7);
+        let delete = make_delete(2, 7);
+        let other_document = make_create(3);
+
+        let transitions = vec![&erase, &delete, &other_document];
+        let duplicates = find_duplicates_by_id(&transitions, PlatformVersion::latest())
+            .expect("no protocol err");
+
+        assert_eq!(
+            duplicates.len(),
+            2,
+            "the erase and the delete name the same document, got {duplicates:?}"
+        );
+        assert!(duplicates
+            .iter()
+            .any(|t| matches!(t, DocumentTransition::Erase(_))));
+    }
+
+    /// An erase in a batch is bounded like every other transition.
+    #[test]
+    fn validate_base_structure_v0_bounds_the_nonce_of_an_erase() {
+        let result = make_batch_v0(vec![make_erase(u64::MAX, 1)])
+            .validate_base_structure_v0(PlatformVersion::latest())
+            .expect("no protocol err");
+
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(_))
+            )),
+            "expected NonceOutOfBoundsError, got {:?}",
+            result.errors
+        );
     }
 
     // -----------------------------------------------------------------------

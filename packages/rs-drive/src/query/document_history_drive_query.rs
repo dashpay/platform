@@ -1,7 +1,9 @@
 //! A page of a document's retained revisions with its lifecycle, read from
 //! whichever history layout the protocol version stores.
 
-use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
+use crate::drive::document::paths::{
+    contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY, DOCUMENT_LIFECYCLE_TREE_KEY,
+};
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -9,8 +11,10 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use dpp::document::lifecycle::DocumentLifecycleRecord;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
@@ -58,6 +62,24 @@ pub enum DocumentHistoryState {
     Active,
     /// Neither a current document nor a retained history exists.
     Absent,
+    /// The document has been deleted; its revisions are still retained.
+    Deleted,
+    /// An authorized erasure has started and has not finished.
+    Erasing,
+}
+
+/// Authenticated lifecycle timestamps independent of the requested page.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DocumentHistoryLifecycleTimes {
+    /// Block time the document was deleted at, zero while it is active.
+    pub deleted_at_ms: u64,
+    /// Block time an authorized erasure started at, zero while none has.
+    pub erasing_started_at_ms: u64,
+    /// Timestamp of the newest revision retained when the erasure started.
+    pub erasing_from_time_ms: u64,
+    /// History sequence of the newest revision retained when the erasure
+    /// started.
+    pub erasing_from_revision: u64,
 }
 
 /// Authenticated history metadata independent of the requested page.
@@ -67,6 +89,8 @@ pub struct DocumentHistoryLifecycle {
     pub state: DocumentHistoryState,
     /// Count authenticated by the per-document count-tree element.
     pub remaining_revisions: u64,
+    /// Times recorded by the lifecycle record, all zero unless one exists.
+    pub times: DocumentHistoryLifecycleTimes,
 }
 
 /// One retained edit, including its complete pagination cursor.
@@ -212,7 +236,7 @@ impl DocumentHistoryDriveQuery {
     /// Queries the pointer, lifecycle reservation, and raw history tree separately.
     pub fn metadata_path_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
         self.validate()?;
-        let queries = [0, 1, DOCUMENT_HISTORY_TREE_KEY].map(|branch| {
+        let queries = [0, DOCUMENT_LIFECYCLE_TREE_KEY, DOCUMENT_HISTORY_TREE_KEY].map(|branch| {
             let mut path =
                 contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
             path.push(vec![branch]);
@@ -238,9 +262,12 @@ impl DocumentHistoryDriveQuery {
         primary.push(vec![0]);
         let mut history = primary.clone();
         history[4] = vec![DOCUMENT_HISTORY_TREE_KEY];
+        let mut lifecycle = primary.clone();
+        lifecycle[4] = vec![DOCUMENT_LIFECYCLE_TREE_KEY];
         let mut active = false;
         let mut latest_revision = None;
         let mut count = None;
+        let mut record = None;
         for (path, key, element) in metadata {
             let Some(element) = element else {
                 continue;
@@ -248,7 +275,19 @@ impl DocumentHistoryDriveQuery {
             if key != self.document_id {
                 return Err(corrupt("history metadata key does not match the document"));
             }
-            if path == primary {
+            if path == lifecycle {
+                let Element::Item(bytes, _) = element else {
+                    return Err(corrupt("a lifecycle record is not an item"));
+                };
+                if record
+                    .replace(DocumentLifecycleRecord::deserialize_from_bytes_untrusted(
+                        &bytes,
+                    )?)
+                    .is_some()
+                {
+                    return Err(corrupt("duplicate lifecycle record"));
+                }
+            } else if path == primary {
                 let bytes = match element {
                     Element::Item(bytes, _) | Element::ItemWithSumItem(bytes, _, _) => bytes,
                     _ => {
@@ -281,27 +320,64 @@ impl DocumentHistoryDriveQuery {
                 ));
             }
         }
-        if active && count.unwrap_or_default() == 0 || !active && count.unwrap_or_default() > 0 {
+        if active && record.is_some() {
+            return Err(corrupt(
+                "a current document cannot also carry a lifecycle record",
+            ));
+        }
+        if count == Some(0) {
+            return Err(corrupt("an empty history tree must not remain in storage"));
+        }
+        if active && count.unwrap_or_default() == 0
+            || !active && record.is_none() && count.unwrap_or_default() > 0
+        {
             return Err(corrupt("current document and retained history disagree"));
         }
+        if record.is_some() && count.unwrap_or_default() == 0 {
+            return Err(corrupt("a lifecycle record survives its retained history"));
+        }
+        // A by-revision read maps the revision onto a position, which only
+        // holds while the retained revisions number one through the latest
+        // without a gap. A current document says so through its revision; a
+        // deleted one through what its record kept from the moment of
+        // deletion, since an erase only ever removes the newest revisions and
+        // so cannot open a gap afterwards.
         if matches!(
             self.filter,
             DocumentHistoryFilter::Revision(_) | DocumentHistoryFilter::StartAtRevision(_)
-        ) && active
-            && latest_revision != count
-        {
-            return Err(invalid(
-                "retained history contains a revision gap; use time pagination",
-            ));
+        ) {
+            let gapped = match (active, &record) {
+                (true, _) => latest_revision != count,
+                (false, Some(record)) => !record.revisions_are_contiguous(),
+                (false, None) => false,
+            };
+            if gapped {
+                return Err(invalid(
+                    "retained history contains a revision gap; use time pagination",
+                ));
+            }
         }
+        let state = match (active, &record) {
+            (true, _) => DocumentHistoryState::Active,
+            (false, Some(record)) if record.is_erasing() => DocumentHistoryState::Erasing,
+            (false, Some(_)) => DocumentHistoryState::Deleted,
+            // Retained history with no record and no pointer was rejected as
+            // inconsistent above, so nothing is left here but an unused id.
+            (false, None) => DocumentHistoryState::Absent,
+        };
+        let times = record
+            .map(|record| DocumentHistoryLifecycleTimes {
+                deleted_at_ms: record.deleted_at_ms(),
+                erasing_started_at_ms: record.erasing_started_at_ms(),
+                erasing_from_time_ms: record.erasing_from_time_ms(),
+                erasing_from_revision: record.erasing_from_revision(),
+            })
+            .unwrap_or_default();
         Ok((
             DocumentHistoryLifecycle {
-                state: if active {
-                    DocumentHistoryState::Active
-                } else {
-                    DocumentHistoryState::Absent
-                },
+                state,
                 remaining_revisions: count.unwrap_or_default(),
+                times,
             },
             count.is_some(),
         ))

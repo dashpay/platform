@@ -92,6 +92,77 @@ the method's number in the new protocol version's tables only. Duplication
 between generations is the accepted cost; it is cheaper than a drift-prone
 flag.
 
+### A new input changes the signature, not the method count
+
+When the new generation of a method needs something its callers do not pass
+yet (the block, the signer, a mode), add the parameter to the method and
+update the callers. Do not add a second method beside it (`*_with_lifecycle`,
+`*_with_block`), a second operation variant beside the existing one
+(`DeleteDocumentWithLifecycle` next to `DeleteDocument`), or a wrapper that
+fabricates the missing value on the way in. One method per directory means
+one signature, the one the current generation needs.
+
+The shipped generation keeps its own signature. The dispatcher hands it the
+part of the new input it always had and drops the rest:
+
+```rust
+pub fn delete_document_for_contract_operations(
+    &self,
+    document_id: Identifier,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    block_info: &BlockInfo,          // was `block_time_ms: u64`
+    deleter_id: Option<Identifier>,  // new: whom the lifecycle record credits
+    previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+    estimated_costs_only_with_layer_info: &mut Option<
+        HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    >,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<LowLevelDriveOperation>, Error> {
+    match platform_version.drive.methods.document.delete.delete_document_for_contract_operations {
+        // The shipped generation never knew a deleter; it reads the time off
+        // the block exactly as it read `block_time_ms` before.
+        0 => self.delete_document_for_contract_operations_v0(
+            document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            platform_version,
+        ),
+        1 => self.delete_document_for_contract_operations_v1(
+            document_id,
+            contract,
+            document_type,
+            block_info,
+            deleter_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        ),
+        version => Err(Error::Drive(DriveError::UnknownVersionMismatch { .. })),
+    }
+}
+```
+
+Why: a twin method is a second name for the same behaviour with the version
+decision split across two dispatchers, and callers that reach the old name
+silently get the old capability at the new protocol version, or a value
+somebody made up to satisfy the old signature. Changing the signature makes
+the compiler find every caller, and each one then states what it passes.
+
+How: change the dispatcher's signature, re-point the callers, and let
+generation 0 keep receiving what it received before. If a wrapper's new
+generation would only forward the new parameter to the method that has the
+behaviour, it is not a new generation: forward it from the wrapper's existing
+body and leave the wrapper's version slot alone. The one exception is a
+public client-facing API that must stay source-compatible across a release;
+there, the SDK's builder pattern absorbs the new input.
+
 ### Table versions follow protocol-version boundaries, not PRs
 
 Version-table constants (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`,

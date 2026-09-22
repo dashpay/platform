@@ -232,16 +232,36 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         .value
         .unwrap();
     query.filter = DocumentHistoryFilter::StartAtTime(0);
-    let (page, proof) = prove(&drive, &query, document_type, version);
-    assert!(
-        proof.entries_proof.is_some(),
-        "an empty but present tree still needs an entries proof"
-    );
-    let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
-    assert_eq!(page, verified);
-    let mut missing = proof;
-    missing.entries_proof = None;
-    assert!(verify(&query, &missing, document_type, version).is_err());
+    assert!(drive
+        .fetch_document_history(&query, document_type, None, version)
+        .is_err());
+    assert!(drive
+        .prove_document_history(&query, document_type, None, version)
+        .is_err());
+
+    // A hostile peer can still assemble the two individually valid GroveDB
+    // proofs, so the verifier must reject the corrupt empty-present tree too.
+    let proof = DocumentHistoryProof {
+        metadata_proof: drive
+            .grove_get_proved_path_query(
+                &query.metadata_path_query(version).unwrap(),
+                None,
+                &mut vec![],
+                &version.drive,
+            )
+            .unwrap(),
+        entries_proof: Some(
+            drive
+                .grove_get_proved_path_query(
+                    &query.construct_path_query(version).unwrap(),
+                    None,
+                    &mut vec![],
+                    &version.drive,
+                )
+                .unwrap(),
+        ),
+    };
+    assert!(verify(&query, &proof, document_type, version).is_err());
 }
 
 #[test]

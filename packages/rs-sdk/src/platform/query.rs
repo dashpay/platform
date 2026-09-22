@@ -1484,6 +1484,7 @@ mod history_query_tests {
             lifecycle: Some(DocumentHistoryLifecycle {
                 state: DocumentHistoryState::Active,
                 remaining_revisions: 2,
+                times: Default::default(),
             }),
         };
         sdk.mock()

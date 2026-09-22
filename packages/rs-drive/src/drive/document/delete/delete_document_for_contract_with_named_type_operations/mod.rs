@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
@@ -20,10 +20,13 @@ impl Drive {
     /// * `document_id`: The ID of the document to delete.
     /// * `contract`: The contract that contains the document.
     /// * `document_type_name`: The name of the document type.
+    /// * `block_info`: The block this delete belongs to.
+    /// * `deleter_id`: The identity credited with the lifecycle record a
+    ///   keep-history delete writes; `None` credits nobody.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
-    /// * `drive_version`: The drive version to select the correct function version to run.
+    /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns
     /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
@@ -34,11 +37,12 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -53,9 +57,10 @@ impl Drive {
                 document_id,
                 contract,
                 document_type_name,
+                block_info,
+                deleter_id,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
-                block_time_ms,
                 transaction,
                 platform_version,
             ),

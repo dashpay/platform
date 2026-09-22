@@ -52,6 +52,10 @@ lazy_static! {
         "../../../schema/meta_schemas/document/v3/document-meta.json"
     ))
     .expect("v3 document meta-schema JSON must be valid");
+    static ref DOCUMENT_META_JSON_V4: Value = serde_json::from_str::<Value>(include_str!(
+        "../../../schema/meta_schemas/document/v4/document-meta.json"
+    ))
+    .expect("v4 document meta-schema JSON must be valid");
 
     pub static ref DRAFT_202012_META_SCHEMA: JSONSchema = JSONSchema::options()
         .with_draft(Draft::Draft202012)
@@ -297,6 +301,61 @@ lazy_static! {
         )
         .to_owned()
         .compile(&DOCUMENT_META_JSON_V3)
+        .expect("Invalid data contract schema");
+
+    // Compiled version of document meta schema v4
+    // Introduced for protocol version 15 (the keep-history document
+    // lifecycle). v3 plus the document-type keyword `canBeErased`, which lets
+    // a deleted keep-history document have its retained revisions purged by
+    // an erase transition. Hosting it on a schema only v15+ contracts validate
+    // against leaves v14 validation untouched: under v3 the key still fails
+    // `additionalProperties: false` on a document type.
+    pub static ref DOCUMENT_META_SCHEMA_V4: JSONSchema = JSONSchema::options()
+        .with_keyword(
+            "byteArray",
+            |_, _, _| Ok(Box::new(ByteArrayKeyword)),
+        )
+        .with_patterns_regex_engine(RegexEngine::Regex(RegexOptions {
+            size_limit: Some(5 * (1 << 20)),
+            ..Default::default()
+        }))
+        .should_ignore_unknown_formats(false)
+        .should_validate_formats(true)
+        .with_draft(Draft::Draft202012)
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
+            DRAFT202012_APPLICATOR.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/core".to_string(),
+            DRAFT202012_CORE.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/unevaluated".to_string(),
+            DRAFT202012_UNEVALUATED.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/validation".to_string(),
+            DRAFT202012_VALIDATION.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/meta-data".to_string(),
+            DRAFT202012_META_DATA.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/format-annotation".to_string(),
+            DRAFT202012_FORMAT_ANNOTATION.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/content".to_string(),
+            DRAFT202012_CONTENT.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/schema".to_string(),
+            DRAFT202012.clone(),
+        )
+        .to_owned()
+        .compile(&DOCUMENT_META_JSON_V4)
         .expect("Invalid data contract schema");
 
 }

@@ -202,7 +202,8 @@ pub mod document_history_drive_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult, DocumentHistoryEntry,
-    DocumentHistoryFilter, DocumentHistoryLifecycle, DocumentHistoryState,
+    DocumentHistoryFilter, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+    DocumentHistoryState,
 };
 
 #[cfg(any(feature = "server", feature = "verify"))]

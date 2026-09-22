@@ -176,7 +176,13 @@ export interface DocumentHistoryQuery {
    */
   documentId: IdentifierLike
 
-  /** Inclusive lower time bound. Supply exactly one selector. */
+  /**
+   * Inclusive lower time bound. Supply exactly one selector.
+   *
+   * Every selector is an exact u64: a `number` is accepted only up to
+   * `Number.MAX_SAFE_INTEGER`, and anything larger must be a `bigint`, since
+   * JavaScript would have rounded it before the query is built.
+   */
   startAtMs?: bigint | number;
   /** Complete exclusive cursor returned by a previous page. */
   startAfter?: { timeMs: bigint | number; revision: bigint | number };
@@ -307,7 +313,6 @@ impl DocumentHistoryEntryWasm {
     pub fn time_ms(&self) -> BigInt {
         BigInt::from(self.time_ms)
     }
-
     #[wasm_bindgen(getter)]
     pub fn revision(&self) -> BigInt {
         BigInt::from(self.revision)
@@ -340,6 +345,10 @@ impl DocumentHistoryEntryWasm {
 pub struct DocumentHistoryLifecycleWasm {
     state: String,
     remaining_revisions: u64,
+    deleted_at_ms: u64,
+    erasing_started_at_ms: u64,
+    erasing_from_time_ms: u64,
+    erasing_from_revision: u64,
 }
 
 #[derive(Serialize)]
@@ -347,11 +356,21 @@ pub struct DocumentHistoryLifecycleWasm {
 struct DocumentHistoryLifecycleSerde {
     state: String,
     remaining_revisions: String,
+    deleted_at_ms: String,
+    erasing_started_at_ms: String,
+    erasing_from_time_ms: String,
+    erasing_from_revision: String,
 }
 
 #[wasm_bindgen(js_class = DocumentHistoryLifecycle)]
 impl DocumentHistoryLifecycleWasm {
-    #[wasm_bindgen(getter)]
+    /// `ACTIVE` while the document is visible to ordinary reads, `DELETED`
+    /// once it has been deleted and its revisions are retained, `ERASING` once
+    /// an authorized erasure has begun, `ABSENT` when nothing is left.
+    #[wasm_bindgen(
+        getter,
+        unchecked_return_type = "\"ACTIVE\" | \"DELETED\" | \"ERASING\" | \"ABSENT\""
+    )]
     pub fn state(&self) -> String {
         self.state.clone()
     }
@@ -359,6 +378,30 @@ impl DocumentHistoryLifecycleWasm {
     #[wasm_bindgen(getter = "remainingRevisions")]
     pub fn remaining_revisions(&self) -> BigInt {
         BigInt::from(self.remaining_revisions)
+    }
+
+    /// Zero unless the document has been deleted.
+    #[wasm_bindgen(getter = "deletedAtMs")]
+    pub fn deleted_at_ms(&self) -> BigInt {
+        BigInt::from(self.deleted_at_ms)
+    }
+
+    /// Zero unless an authorized erasure has begun.
+    #[wasm_bindgen(getter = "erasingStartedAtMs")]
+    pub fn erasing_started_at_ms(&self) -> BigInt {
+        BigInt::from(self.erasing_started_at_ms)
+    }
+
+    /// Timestamp of the newest revision retained when the erasure began.
+    #[wasm_bindgen(getter = "erasingFromTimeMs")]
+    pub fn erasing_from_time_ms(&self) -> BigInt {
+        BigInt::from(self.erasing_from_time_ms)
+    }
+
+    /// History sequence of the newest revision retained when the erasure began.
+    #[wasm_bindgen(getter = "erasingFromRevision")]
+    pub fn erasing_from_revision(&self) -> BigInt {
+        BigInt::from(self.erasing_from_revision)
     }
 
     #[wasm_bindgen(js_name = toJSON)]
@@ -372,6 +415,10 @@ impl DocumentHistoryLifecycleWasm {
         DocumentHistoryLifecycleSerde {
             state: self.state.clone(),
             remaining_revisions: self.remaining_revisions.to_string(),
+            deleted_at_ms: self.deleted_at_ms.to_string(),
+            erasing_started_at_ms: self.erasing_started_at_ms.to_string(),
+            erasing_from_time_ms: self.erasing_from_time_ms.to_string(),
+            erasing_from_revision: self.erasing_from_revision.to_string(),
         }
     }
 }
@@ -398,6 +445,8 @@ impl DocumentHistoryResultWasm {
         self.entries.clone()
     }
 
+    /// Missing when the legacy storage generation cannot authenticate lifecycle
+    /// metadata.
     #[wasm_bindgen(getter)]
     pub fn lifecycle(&self) -> Option<DocumentHistoryLifecycleWasm> {
         self.lifecycle.clone()
@@ -452,10 +501,16 @@ impl DocumentHistoryResultWasm {
                 .map(|lifecycle| DocumentHistoryLifecycleWasm {
                     state: match lifecycle.state {
                         DocumentHistoryState::Active => "ACTIVE",
+                        DocumentHistoryState::Deleted => "DELETED",
+                        DocumentHistoryState::Erasing => "ERASING",
                         DocumentHistoryState::Absent => "ABSENT",
                     }
                     .to_owned(),
                     remaining_revisions: lifecycle.remaining_revisions,
+                    deleted_at_ms: lifecycle.times.deleted_at_ms,
+                    erasing_started_at_ms: lifecycle.times.erasing_started_at_ms,
+                    erasing_from_time_ms: lifecycle.times.erasing_from_time_ms,
+                    erasing_from_revision: lifecycle.times.erasing_from_revision,
                 }),
         })
     }
@@ -1556,7 +1611,8 @@ mod tests {
 mod history_wasm_tests {
     use super::*;
     use drive_proof_verifier::types::{
-        DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+        DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+        DocumentHistoryState,
     };
     use js_sys::{Array, Reflect};
     use wasm_bindgen::JsCast;
@@ -1581,6 +1637,37 @@ mod history_wasm_tests {
         );
     }
 
+    /// A `u64` selector crosses from JavaScript exactly or not at all: the
+    /// deserializer takes a `number` only while it is a safe integer, since a
+    /// larger one was rounded before it reached Rust, and takes a `bigint` at
+    /// any `u64`. Nothing in this crate adds to that; this pins that it holds.
+    #[wasm_bindgen_test]
+    fn should_take_history_selectors_as_exact_integers_only() {
+        let query = |start_at_ms: JsValue| {
+            let object = js_sys::Object::new();
+            let id = IdentifierWasm::from([1u8; 32]).to_base58();
+            Reflect::set(&object, &"dataContractId".into(), &id.clone().into()).unwrap();
+            Reflect::set(&object, &"documentTypeName".into(), &"note".into()).unwrap();
+            Reflect::set(&object, &"documentId".into(), &id.into()).unwrap();
+            Reflect::set(&object, &"startAtMs".into(), &start_at_ms).unwrap();
+            parse_document_history_query(JsValue::from(object).unchecked_into())
+        };
+        let past_safe = (1u64 << 53) + 1;
+
+        let parsed = query(JsValue::from(js_sys::BigInt::from(past_safe)))
+            .expect("a bigint carries the exact value");
+        assert_eq!(
+            parsed.filter,
+            DocumentHistoryFilter::StartAtTime(past_safe),
+            "the selector must be the value the caller passed"
+        );
+
+        query(JsValue::from(past_safe as f64))
+            .expect_err("a number past Number.MAX_SAFE_INTEGER was already rounded and is refused");
+        query(JsValue::from(-1.0)).expect_err("a negative number is refused");
+        query(JsValue::from(1.5)).expect_err("a fractional number is refused");
+    }
+
     #[wasm_bindgen_test]
     fn should_preserve_same_time_revisions_and_exact_lifecycle_counts_in_javascript() {
         let count = (1u64 << 53) + 1;
@@ -1596,6 +1683,7 @@ mod history_wasm_tests {
             lifecycle: Some(DocumentHistoryLifecycle {
                 state: DocumentHistoryState::Active,
                 remaining_revisions: count,
+                times: Default::default(),
             }),
         };
         let result = JsValue::from(
@@ -1620,6 +1708,47 @@ mod history_wasm_tests {
         );
     }
 
+    /// Every lifecycle time crosses into JavaScript as an exact BigInt, like
+    /// the counts and revisions beside them: a millisecond timestamp does not
+    /// survive a JavaScript number.
+    #[wasm_bindgen_test]
+    fn should_report_the_erasing_state_and_its_times_exactly_in_javascript() {
+        let started_at = (1u64 << 53) + 3;
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Erasing,
+                remaining_revisions: 7,
+                times: DocumentHistoryLifecycleTimes {
+                    deleted_at_ms: 1_700_000_000_001,
+                    erasing_started_at_ms: started_at,
+                    erasing_from_time_ms: 1_700_000_000_002,
+                    erasing_from_revision: 42,
+                },
+            }),
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+        let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"state".into()).unwrap(),
+            JsValue::from_str("ERASING")
+        );
+        for (key, expected) in [
+            ("deletedAtMs", 1_700_000_000_001u64),
+            ("erasingStartedAtMs", started_at),
+            ("erasingFromTimeMs", 1_700_000_000_002),
+            ("erasingFromRevision", 42),
+        ] {
+            assert_eq!(
+                Reflect::get(&lifecycle, &key.into()).unwrap(),
+                JsValue::from(expected),
+                "{key} must survive as an exact BigInt"
+            );
+        }
+    }
+
     #[wasm_bindgen_test]
     fn should_serialize_history_data_in_a_proof_metadata_response() {
         let history = DocumentHistory {
@@ -1631,6 +1760,7 @@ mod history_wasm_tests {
             lifecycle: Some(DocumentHistoryLifecycle {
                 state: DocumentHistoryState::Active,
                 remaining_revisions: (1u64 << 53) + 1,
+                times: Default::default(),
             }),
         };
         let response = ProofMetadataResponseWasm::from_sdk_parts(

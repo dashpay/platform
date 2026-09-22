@@ -1,5 +1,6 @@
 pub mod v1;
 pub mod v10;
+pub mod v11;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -225,6 +226,8 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier
     /// version table, where the kind cannot appear.
     pub document_index_only_delete_transition_structure_validation: FeatureVersion,
+    /// The erase kind, active from protocol version 15.
+    pub document_erase_transition_structure_validation: OptionalFeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
     pub document_transfer_transition_structure_validation: FeatureVersion,
     pub document_purchase_transition_structure_validation: FeatureVersion,
@@ -235,6 +238,12 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier
     /// version table, where the kind cannot appear.
     pub document_index_only_delete_transition_state_validation: FeatureVersion,
+    /// The erase kind, active from protocol version 15.
+    pub document_erase_transition_state_validation: OptionalFeatureVersion,
+    /// Versions `fetch_keep_history_document_lifecycle`, the stateful read
+    /// that classifies a keep-history document as active, deleted, erasing or
+    /// absent. The helper is active from protocol version 15.
+    pub fetch_keep_history_document_lifecycle: OptionalFeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,

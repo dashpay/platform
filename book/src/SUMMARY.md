@@ -74,6 +74,7 @@
 - [Ranked Index Examples](drive/ranked-index-examples.md)
 - [Time-Range Index TTL](drive/time-range-ttl.md)
 - [Index-Only Document Types](drive/index-only-document-types.md)
+- [Keep-History Documents](drive/keep-history-documents.md)
 
 # Testing
 

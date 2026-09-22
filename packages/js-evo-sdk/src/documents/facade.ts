@@ -121,6 +121,19 @@ export class DocumentsFacade {
     return w.documentDelete(options);
   }
 
+  /**
+   * Erases a chunk of the retained revisions of an already deleted document.
+   *
+   * A document with more retained revisions than one transition may remove
+   * needs several calls. The first must be signed by the document's owner and
+   * commits the document to erasure; any identity may sign the ones after it.
+   * Read `history` to see how many revisions are left.
+   */
+  async erase(options: wasm.DocumentEraseOptions): Promise<void> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.documentErase(options);
+  }
+
   async transfer(options: wasm.DocumentTransferOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentTransfer(options);

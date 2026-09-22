@@ -93,7 +93,7 @@ impl DocumentTypeRef<'_> {
     /// existing properties stay frozen by the schema compatibility differ;
     /// this check judges the top-level `required` key, which is stripped
     /// from the diff exactly like `indices`.
-    fn validate_required_fields_update(
+    pub(super) fn validate_required_fields_update(
         &self,
         new_document_type: DocumentTypeRef,
         new_contract_version: u32,
@@ -171,7 +171,7 @@ impl DocumentTypeRef<'_> {
     /// on-disk subtrees. Compare the definitions by index name — the
     /// comparison must not depend on where a changed index's name sorts
     /// relative to the document type's other indexes.
-    fn validate_index_definitions_unchanged(
+    pub(super) fn validate_index_definitions_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {

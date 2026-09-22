@@ -794,6 +794,9 @@ mod tests {
                 crate::data_contract::document_type::DocumentTypeRef::V2(v2) => {
                     v2.requires_revision()
                 }
+                crate::data_contract::document_type::DocumentTypeRef::V3(v3) => {
+                    v3.requires_revision()
+                }
             }
         }
 
@@ -807,6 +810,9 @@ mod tests {
                 }
                 crate::data_contract::document_type::DocumentTypeRef::V2(v2) => {
                     v2.initial_revision()
+                }
+                crate::data_contract::document_type::DocumentTypeRef::V3(v3) => {
+                    v3.initial_revision()
                 }
             }
         }
@@ -822,6 +828,9 @@ mod tests {
                 crate::data_contract::document_type::DocumentTypeRef::V2(v2) => {
                     v2.top_level_indices()
                 }
+                crate::data_contract::document_type::DocumentTypeRef::V3(v3) => {
+                    v3.top_level_indices()
+                }
             }
         }
 
@@ -835,6 +844,9 @@ mod tests {
                 }
                 crate::data_contract::document_type::DocumentTypeRef::V2(v2) => {
                     v2.top_level_indices_of_contested_unique_indexes()
+                }
+                crate::data_contract::document_type::DocumentTypeRef::V3(v3) => {
+                    v3.top_level_indices_of_contested_unique_indexes()
                 }
             }
         }
@@ -850,6 +862,9 @@ mod tests {
                 }
                 crate::data_contract::document_type::DocumentTypeRef::V2(v2) => {
                     v2.index_structure()
+                }
+                crate::data_contract::document_type::DocumentTypeRef::V3(v3) => {
+                    v3.index_structure()
                 }
             }
         }
@@ -869,6 +884,9 @@ mod tests {
                 crate::data_contract::document_type::DocumentTypeRef::V2(v2) => {
                     v2.unique_id_for_document_field(index_level, base_event)
                 }
+                crate::data_contract::document_type::DocumentTypeRef::V3(v3) => {
+                    v3.unique_id_for_document_field(index_level, base_event)
+                }
             }
         }
 
@@ -882,6 +900,9 @@ mod tests {
                 }
                 crate::data_contract::document_type::DocumentTypeRef::V2(v2) => {
                     v2.sanitize_document_properties(properties)
+                }
+                crate::data_contract::document_type::DocumentTypeRef::V3(v3) => {
+                    v3.sanitize_document_properties(properties)
                 }
             }
         }

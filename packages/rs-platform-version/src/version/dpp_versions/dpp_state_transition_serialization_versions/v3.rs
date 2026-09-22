@@ -110,6 +110,8 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
                 default_current_version: 0,
             },
         }),
+        // The erase kind joins the wire at protocol version 15.
+        document_erase_state_transition: None,
         document_transfer_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {
                 min_version: 0,

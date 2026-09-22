@@ -38,7 +38,7 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 
 use super::common;
 
-mod ranked_prefix_overlap;
+pub(in crate::data_contract::document_type::class_methods::try_from_schema) mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
 
 /// grovedb's ceiling on the key of an entry stored directly under an
@@ -215,10 +215,10 @@ fn validate_ranked_index_property_key_length(
 /// exactly equivalent there — this alias exists only so the call site can pass
 /// the check unconditionally.
 #[cfg(feature = "validation")]
-const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
+pub(in crate::data_contract::document_type::class_methods::try_from_schema) const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
     validate_ranked_index_property_key_length;
 #[cfg(not(feature = "validation"))]
-const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
+pub(in crate::data_contract::document_type::class_methods::try_from_schema) const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
     common::no_ranked_index_key_length_check;
 
 /// Parses a document type schema through the generation-3 grammar: the

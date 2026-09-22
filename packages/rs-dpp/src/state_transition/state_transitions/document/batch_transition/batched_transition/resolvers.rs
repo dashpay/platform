@@ -1,5 +1,6 @@
 use crate::state_transition::batch_transition::batched_transition::{
-    BatchedTransition, BatchedTransitionRef, DocumentPurchaseTransition, DocumentTransferTransition,
+    BatchedTransition, BatchedTransitionRef, DocumentEraseTransition, DocumentPurchaseTransition,
+    DocumentTransferTransition,
 };
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{
@@ -42,6 +43,13 @@ impl BatchTransitionResolversV0 for BatchedTransition {
     fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition> {
         match self {
             BatchedTransition::Document(document) => document.as_transition_purchase(),
+            BatchedTransition::Token(_) => None,
+        }
+    }
+
+    fn as_transition_erase(&self) -> Option<&DocumentEraseTransition> {
+        match self {
+            BatchedTransition::Document(document) => document.as_transition_erase(),
             BatchedTransition::Token(_) => None,
         }
     }
@@ -162,6 +170,13 @@ impl BatchTransitionResolversV0 for BatchedTransitionRef<'_> {
     fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition> {
         match self {
             BatchedTransitionRef::Document(document) => document.as_transition_purchase(),
+            BatchedTransitionRef::Token(_) => None,
+        }
+    }
+
+    fn as_transition_erase(&self) -> Option<&DocumentEraseTransition> {
+        match self {
+            BatchedTransitionRef::Document(document) => document.as_transition_erase(),
             BatchedTransitionRef::Token(_) => None,
         }
     }

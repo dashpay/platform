@@ -1,8 +1,10 @@
 mod creation;
 mod deletion;
 mod dpns;
+mod erase;
 mod index_only;
 mod keep_history;
+mod lifecycle_contracts;
 mod nft;
 mod ranked_group_drain;
 mod replacement;

@@ -14,7 +14,8 @@ use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes
 pub use self::batched_transition::{
     document_base_transition, document_create_transition,
     document_create_transition::DocumentCreateTransition, document_delete_transition,
-    document_delete_transition::DocumentDeleteTransition, document_index_only_delete_transition,
+    document_delete_transition::DocumentDeleteTransition, document_erase_transition,
+    document_erase_transition::DocumentEraseTransition, document_index_only_delete_transition,
     document_index_only_delete_transition::DocumentIndexOnlyDeleteTransition,
     document_replace_transition, document_replace_transition::DocumentReplaceTransition,
     token_base_transition, token_burn_transition, token_burn_transition::TokenBurnTransition,
