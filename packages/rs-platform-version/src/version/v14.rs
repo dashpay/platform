@@ -643,9 +643,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the requirements (meta-schema v3, `apply_property_reference` 0,
 ///     `IdentityKeyReferenceRequirements` on
 ///     `DocumentPropertyReferenceTarget::IdentityPublicKey`).
-///     `create_document_types_from_document_schemas` 2 refuses a contract
-///     whose `boundTo` names a document type it does not have, so the check
-///     never needs a second contract fetch. The document reference validation
+///     `create_document_types_from_document_schemas` 1, edited in place (the
+///     check is inert before this version, where no parsed reference carries
+///     requirements), refuses a contract whose `boundTo` names a document type
+///     it does not have or one no key of the required purpose can be bound
+///     to, so the check never needs a second contract fetch and a declared
+///     requirement can be met. The document reference validation
 ///     checks the requirements against the key it fetched for the existence
 ///     check, so they cost no further read, and refuses the first unmet one
 ///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed

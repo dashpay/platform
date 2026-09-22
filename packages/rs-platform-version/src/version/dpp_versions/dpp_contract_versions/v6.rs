@@ -72,7 +72,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         },
         class_method_versions: DocumentTypeClassMethodVersions {
             try_from_schema: 3, // changed: parser generation 3 — generation 2 plus the ranked index keywords
-            create_document_types_from_document_schemas: 2, // changed: an identity key reference's `keyRequirements.boundTo` must name a document type of the same contract
+            create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
