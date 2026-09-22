@@ -547,6 +547,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
+/// 25. **Identity key references may require a purpose and a document type
+///     bound**: an `identityPublicKey` `refersTo` declaration may carry
+///     `keyRequirements`, what the referenced key must be beyond existing and
+///     not being disabled, with `purpose` (the key's purpose, by its wire name,
+///     any but `system`) and `boundTo` (the key's contract bounds must be
+///     exactly the declaring contract and the named document type of it) as
+///     the requirements (meta-schema v3, `apply_property_reference` 0,
+///     `IdentityKeyReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::IdentityPublicKey`).
+///     `create_document_types_from_document_schemas` 2 refuses a contract
+///     whose `boundTo` names a document type it does not have, so the check
+///     never needs a second contract fetch. The document reference validation
+///     checks the requirements against the key it fetched for the existence
+///     check, so they cost no further read, and refuses the first unmet one
+///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed
+///     `keyRequirements` is an incompatible schema change on update.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

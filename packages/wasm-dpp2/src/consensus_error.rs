@@ -56,11 +56,15 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// open, a minimum age or a minimum time since its last update at the block
     /// time of the write.
     ReferencedContractRequirementNotMet = 40135,
+    /// The referenced identity public key exists and is enabled but does not
+    /// meet what the reference's `keyRequirements` require of it: its
+    /// purpose, or a binding to a document type of the declaring contract.
+    ReferencedIdentityKeyRequirementNotMet = 40136,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131 or 40135.
+    /// is not in the 40120-40125 range, 40131, 40135 or 40136.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -71,6 +75,7 @@ impl DocumentReferenceErrorCodeWasm {
             40125 => Some(Self::ReferencedKeyIdPropertyInvalid),
             40131 => Some(Self::ReferencedDocumentTypeNotDeletable),
             40135 => Some(Self::ReferencedContractRequirementNotMet),
+            40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
             _ => None,
         }
     }
@@ -162,6 +167,7 @@ mod tests {
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
     use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
     use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+    use dpp::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
     use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::data_contract::document_type::DocumentPropertyReferenceTarget;
@@ -233,6 +239,21 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedContractRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedIdentityKeyRequirementNotMetError(
+                    ReferencedIdentityKeyRequirementNotMetError::new(
+                        "joinRequest".to_string(),
+                        "recipientId".to_string(),
+                        id(),
+                        3,
+                        "purpose".to_string(),
+                        "decryption".to_string(),
+                        "encryption".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedIdentityKeyRequirementNotMet,
             ),
             (
                 StateError::ReferencedDocumentTypeNotFoundError(
@@ -331,7 +352,7 @@ mod tests {
 
     #[test]
     fn codes_outside_the_reference_range_are_not_claimed() {
-        for code in [40119, 40126, 0, 40200] {
+        for code in [40119, 40126, 40137, 0, 40200] {
             assert_eq!(DocumentReferenceErrorCodeWasm::from_code(code), None);
         }
     }

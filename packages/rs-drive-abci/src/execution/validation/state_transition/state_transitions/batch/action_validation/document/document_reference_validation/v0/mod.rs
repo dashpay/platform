@@ -25,6 +25,7 @@ use dpp::errors::consensus::state::document::referenced_contract_requirement_not
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use dpp::errors::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use dpp::errors::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -246,9 +247,9 @@ fn validate_document_type_references_v0(
                 // it is checked against the new target, or not at all once
                 // the reference is cleared.
                 DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
-                DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
-                    is_changed_field(changed, key_id_property)
-                }
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property, ..
+                } => is_changed_field(changed, key_id_property),
                 DocumentPropertyReferenceTarget::Identity
                 | DocumentPropertyReferenceTarget::Contract { .. }
                 | DocumentPropertyReferenceTarget::Token => false,
@@ -564,7 +565,10 @@ fn validate_document_type_references_v0(
 
                 referenced_document.is_some()
             }
-            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property,
+                key_requirements,
+            } => {
                 // The referenced key id is carried by the named sibling property
                 let key_id: KeyID =
                     match document_data.get_optional_integer_at_path(key_id_property) {
@@ -623,6 +627,26 @@ fn validate_document_type_references_v0(
                             Identifier::from(referenced_id),
                             key_id,
                             path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+
+                // The declaration's requirements are checked against the key just
+                // fetched, so they cost no further read; the first unmet one refuses
+                // the write. A bound names the declaring contract and one of its own
+                // document types (checked when the contract was registered), so the
+                // check needs nothing beyond the key and the contract in hand
+                if let Some(requirement) = key_requirements.first_unmet_by(&key, contract.id()) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedIdentityKeyRequirementNotMetError::new(
+                            document_type.name().to_string(),
+                            path.to_string(),
+                            Identifier::from(referenced_id),
+                            key_id,
+                            requirement.field().to_string(),
+                            requirement.required(),
+                            requirement.actual_of(&key),
                         )
                         .into(),
                     ));

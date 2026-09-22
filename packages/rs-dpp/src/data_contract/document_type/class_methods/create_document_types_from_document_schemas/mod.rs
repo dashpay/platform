@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
@@ -82,9 +83,23 @@ impl DocumentType {
                 validation_operations,
                 platform_version,
             ),
+            // in v2 an identity key reference's keyRequirements.boundTo must name a document type of the contract
+            2 => DocumentType::create_document_types_from_document_schemas_v2(
+                data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
+                document_schemas,
+                schema_defs,
+                token_configurations,
+                data_contact_config,
+                full_validation,
+                has_tokens,
+                validation_operations,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "create_document_types_from_document_schemas".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
