@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
       "type": "object",
       "patternProperties": {
-        "^[a-zA-Z0-9-_]{1,64}$": {
+        "^[a-zA-Z0-9_]{1,64}$": {
           "type": "object",
           "allOf": [
             {
@@ -18,7 +18,7 @@
         }
       },
       "propertyNames": {
-        "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+        "pattern": "^[a-zA-Z0-9_]{1,64}$"
       },
       "minProperties": 1,
       "maxProperties": 100
@@ -167,7 +167,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+              "pattern": "^[a-zA-Z0-9_]{1,64}$"
             },
             "contractRequirements": {
               "description": "contract references only: what the referenced contract must declare beyond existing, checked when the referring document is written against the contract already fetched for the existence check and the block time, so a requirement costs no further read. Each key names an aspect of the referenced contract and its value the requirement: moderation \"elected\" requires the contract to declare an elected moderation team and \"electionOpen\" one whose own electionDelay, counted from the contract's creation, has passed at the block time of the write (or which declares none); minimumAgeSeconds requires the contract's recorded creation time to be at least that many seconds before the block time of the write, and minimumSecondsSinceUpdate the later of its recorded creation and last update times (a contract without a recorded creation time never meets either); owner \"self\" requires the contract to be owned by the writer of the referring document (its $ownerId), \"other\" by anyone else; readonly true requires the contract's config to be readonly (one that can never be updated again) and keepsHistory true its config to keep history, only true being declarable for either; ownerProtected requires the contract's elected moderation declaration to protect (true) or not protect (false) the contract owner from the team, a contract without elected moderation meeting neither. An unmet requirement refuses the write (ReferencedContractRequirementNotMetError, 40135)",
@@ -213,7 +213,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
-              "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+              "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
             },
             "propertyAgreement": {
               "description": "permanentDocument and deletableDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
@@ -223,7 +223,7 @@
               "propertyNames": {
                 "anyOf": [
                   {
-                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                    "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
                   },
                   {
                     "const": "$ownerId"
@@ -236,7 +236,7 @@
                   {
                     "minLength": 1,
                     "maxLength": 256,
-                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                    "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
                   },
                   {
                     "enum": [
@@ -607,7 +607,7 @@
       ]
     },
     "documentArrayItem": {
-      "$comment": "The element schema of a typed array: one scalar, an integer, a number, a string, a boolean, or a byte array (byteArray: true), which with the identifier contentMediaType is an identifier. Objects and arrays of arrays are refused. An element carries no position, requiredSince, refersTo, uniqueItems, const or examples of its own (a one-value enum does what const would, and an update can widen it; examples annotate nothing an element needs)",
+      "$comment": "The element schema of a typed array: one scalar, an integer, a number, a string, a boolean, or a byte array (byteArray: true), which with the identifier contentMediaType is an identifier. Objects and arrays of arrays are refused. An element carries no position, requiredSince, refersTo, uniqueItems, const or examples of its own (a one-value enum does what const would, and an update can widen it; examples annotate nothing an element needs). An enum's members are values of the element type (a byte array or identifier element takes none), and an integer element's minimum and maximum are integers; the parser reads them so random documents stay inside them",
       "type": "object",
       "properties": {
         "$comment": {
@@ -774,7 +774,7 @@
       },
       "allOf": [
         {
-          "$comment": "an array element is a byte array: a typed array cannot hold another typed array",
+          "$comment": "an array element is a byte array: a typed array cannot hold another typed array. A byte array or identifier element takes no enum",
           "if": {
             "properties": {
               "type": {
@@ -786,9 +786,109 @@
             ]
           },
           "then": {
+            "properties": {
+              "enum": false
+            },
             "required": [
               "byteArray"
             ]
+          }
+        },
+        {
+          "$comment": "a string element's enum members are strings",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "an integer element's enum members, minimum and maximum are integers",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "integer"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "minimum": {
+                "type": "integer"
+              },
+              "maximum": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "a number element's enum members are numbers",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "number"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "a boolean element's enum members are booleans",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "boolean"
+                }
+              }
+            }
           }
         }
       ]
@@ -1367,7 +1467,7 @@
         "oneOf": [
           {
             "type": "string",
-            "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+            "pattern": "^[a-zA-Z0-9_]{1,64}$"
           },
           {
             "type": "string",

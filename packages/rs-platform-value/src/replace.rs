@@ -1,18 +1,8 @@
+use crate::btreemap_extensions::btreemap_field_replacement::replace_leaf;
 use crate::btreemap_extensions::btreemap_field_replacement::IntegerReplacementType;
 use crate::inner_value_at_path::is_array_path;
 use crate::{Error, ReplacementType, Value, ValueMapHelper};
 use std::collections::HashSet;
-
-/// Replaces one value in place with its `replacement_type` form, reading the
-/// bytes it holds in whatever encoding it currently has.
-fn replace_value(value: &mut Value, replacement_type: ReplacementType) -> Result<(), Error> {
-    let bytes = match replacement_type {
-        ReplacementType::Identifier | ReplacementType::TextBase58 => value.to_identifier_bytes()?,
-        ReplacementType::BinaryBytes | ReplacementType::TextBase64 => value.to_binary_bytes()?,
-    };
-    *value = replacement_type.replace_for_bytes(bytes)?;
-    Ok(())
-}
 
 impl Value {
     /// If the `Value` is a `Map`, replaces the value at the path inside the map.
@@ -109,7 +99,7 @@ impl Value {
                     // `list[]` or `list[3]` ends the path: the members are the
                     // values to replace
                     for member in current_values {
-                        replace_value(member, replacement_type)?;
+                        replace_leaf(member, replacement_type)?;
                     }
                     return Ok(());
                 }
@@ -125,7 +115,7 @@ impl Value {
                         let new_value = map.get_optional_key_mut(path_component)?;
 
                         if split.peek().is_none() {
-                            return replace_value(new_value, replacement_type).err().map(Err);
+                            return replace_leaf(new_value, replacement_type).err().map(Err);
                         }
                         Some(Ok(new_value))
                     })
@@ -696,6 +686,22 @@ mod tests {
         assert!(value
             .replace_at_path("ids[2]", ReplacementType::Identifier)
             .is_err());
+    }
+
+    #[test]
+    fn should_keep_the_fixed_size_kind_of_a_replaced_member() {
+        // The same helper serves the map replacer: a 32-byte value replaced
+        // as binary bytes stays `Bytes32` on both paths
+        let list = Value::Array(vec![Value::Bytes32([8u8; 32])]);
+        let mut value = Value::Map(vec![(Value::Text("digests".into()), list)]);
+
+        value
+            .replace_at_path("digests[]", ReplacementType::BinaryBytes)
+            .unwrap();
+        assert_eq!(
+            value.get_value_at_path("digests").unwrap(),
+            &Value::Array(vec![Value::Bytes32([8u8; 32])])
+        );
     }
 
     #[test]

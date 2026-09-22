@@ -570,8 +570,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     and arrays of arrays are refused. On the array `minItems` and
 ///     `maxItems` count elements, `maxItems` is required (with `minItems`
 ///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
-///     (1024), and `uniqueItems` refuses a document repeating an element.
-///     The array is stored inline, a varint element count followed by the
+///     (1024), and `uniqueItems` refuses a document repeating an element. An
+///     element's `enum` has members of the element type only (none on a byte
+///     array or identifier element), and an integer element's `minimum` and
+///     `maximum` are integers; the parser reads them so random documents stay
+///     inside them. The array is stored inline, a varint element count followed by the
 ///     elements, each encoded exactly as a required scalar property of its
 ///     type: an identifier element is 32 raw bytes, an integer element takes
 ///     the width its bounds give it, a fixed-size byte array element is raw.
@@ -620,6 +623,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     it with `InvalidEncryptedPropertyShapeError` (10420). Nothing else about
 ///     the ciphertext is verifiable on chain. A changed `encryptedFor` is an
 ///     incompatible schema change on update.
+///
+/// 27. **Property and document type names are word characters only**:
+///     meta-schema v3 refuses `-` in a property name (top-level or nested,
+///     and in the property paths of `refersTo` declarations) and generation
+///     3 of the document type parser refuses it in a document type name,
+///     under full validation. Every earlier meta-schema and generation
+///     admitted `-`, which the dotted and `list[]` path syntax was never
+///     written for; a census of every contract create and update on mainnet
+///     and testnet (2026-09-23) found no name carrying one, so nothing stored
+///     is affected. Stored contracts are read as they are.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
