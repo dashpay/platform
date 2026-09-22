@@ -803,6 +803,16 @@ fn parse_document_properties(
         .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
+    // Every property is in the flattened map now, so a `distinctFrom` target
+    // can be resolved against its siblings. Gated on the same version that
+    // parsed the declarations, so the two halves of the rule move together.
+    super::validate_distinct_from_targets(
+        &flattened_document_properties,
+        ctx.name,
+        ctx.platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+
     Ok(ParsedProperties {
         flattened_document_properties,
         document_properties,

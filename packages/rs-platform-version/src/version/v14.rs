@@ -199,6 +199,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   reference checks, re-validates a `refersTo: deletableDocument`
 ///   reference on every replace (a dead one must be repointed or cleared),
 ///   and lets an `immutable` one be cleared once its target is deleted.
+///   Document create structure validation 1 and replace structure
+///   validation 0 (extended in place) refuse a `distinctFrom` identifier
+///   property equal to the value it must differ from
+///   (`DocumentPropertyNotDistinctError`, 10419); transfer and purchase
+///   structure validation 0, extended in place, judge the stored document's
+///   `$ownerId` declarations against the new owner.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
@@ -576,6 +582,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refuses `items`, and an identifier (a byte array with the identifier
 ///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
 ///     no byte repeat.
+///
+/// 26. **Distinct identifier properties**: the `distinctFrom` property
+///     keyword (meta-schema v3, `apply_distinct_from` 0, `DistinctFrom` on
+///     `DocumentProperty`) requires an identifier property's value to differ
+///     from the value of a named property of the same document, or from the
+///     document's `$ownerId`; on the `items` of a typed array of identifiers
+///     it binds every element. A pure structure rule: document create
+///     structure validation 1 and replace structure validation 0 call
+///     `validate_distinct_from_properties` (`validate_distinct_from` 0) on the
+///     transition's data and owner id after the schema validation, transfer
+///     and purchase structure validation 0 call it on the stored document and
+///     its new owner (the three generation-0 modules were extended in place:
+///     the call is inert before this version, where no property carries the
+///     keyword), and each refuses an equal pair with
+///     `DocumentPropertyNotDistinctError` (10419); an absent named property
+///     passes. The parser checks the target at contract
+///     registration and update (it must exist, be an identifier and not be
+///     the declaring property), and a changed `distinctFrom` is an
+///     incompatible schema change on update.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

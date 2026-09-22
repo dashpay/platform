@@ -332,6 +332,38 @@ The array is stored inline in the document, like any other property: a varint el
 
 In Rust a typed array parses to `DocumentPropertyType::TypedArray(TypedArrayProperty)`, whose `item_type` is the `DocumentPropertyType` the `items` schema parses to as a property schema (`try_from_value_map` with the contract's parsing options). The parse is the versioned `parse_typed_array` (`None` before protocol version 14, where an array that is not a byte array is refused as it always was). The older `DocumentPropertyType::Array` variant, whose elements are an `ArrayItemType` in their own length-prefixed encoding, is never produced by the parser.
 
+## Distinct Identifier Properties
+
+Protocol version 14 adds the property-level `distinctFrom` keyword, a pure structure rule on identifier properties: the property's value must differ from the value of a named property of the same document, or from the document's `$ownerId`. It sits next to the reference keywords (`refersTo` and its `propertyAgreement`, which bind a property to another document's values) but reads nothing beyond the transition being written.
+
+```json
+"delegateId": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "distinctFrom": "$ownerId",
+  "position": 0
+},
+"backupId": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "distinctFrom": "delegateId",
+  "position": 1
+}
+```
+
+The value is `"$ownerId"` or the dotted path of another property of the document type (`"meta.reviewerId"` for a nested one). The parser (generation 3, meta-schema v3) checks the declaration when a contract enters the chain, on registration and on update:
+
+- The keyword is only allowed on identifier properties, enforced by the same dependent schema shape that restricts `refersTo`.
+- A named property must exist on the document type, must itself be an identifier (the only kind the value can be compared with), and must not be the declaring property. `$ownerId` needs no check; no other system property is accepted.
+- On contract update a changed, added or removed `distinctFrom` is an incompatible schema change, like a changed `refersTo`.
+- A typed array of identifiers declares it on its `items`, and every element must then differ from the named value; the declaration is refused on the array itself and on elements of any other type.
+
+Enforcement lives in the structure validation of the document create and replace actions (create structure generation 1, introduced at protocol version 14, and replace structure generation 0, extended in place: the call is inert before 14, where no property can carry the keyword), after the schema validation of the document's properties, so every value compared is already a 32-byte identifier. The check reads the transition's data and the owner id it carries and never touches Drive; the declaring properties come from a list the parser built (`distinct_from_fields`), so a type without declarations costs nothing. An equal pair fails the write with `DocumentPropertyNotDistinctError` (basic code 10419), which names the document type, the property and what it collided with. When the named property is absent from the document there is nothing to differ from, so the rule passes.
+
+A transfer or purchase changes `$ownerId` without touching the data, so the transfer and purchase structure validations (generation 0, extended in place: the call is inert before protocol version 14, where no property can carry the keyword) judge the stored document against its new owner: a transfer to, or a purchase by, the identity a `$ownerId`-distinct property names is refused with the same error. Price updates change neither owner nor data and are not judged.
+
+In Rust the declaration is `DocumentProperty::distinct_from` (`Option<DistinctFrom>`, absent on every property parsed before protocol version 14), the document check is `DocumentTypeV0Methods::validate_distinct_from_properties`, and `DistinctFrom::violation` judges one value on its own, which is how the elements of a typed array are judged one by one.
+
 ## Rules and Guidelines
 
 **Do:**
