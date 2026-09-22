@@ -12,6 +12,7 @@ use dapi_grpc::platform::v0::get_contract_document_removals_request::{
 use dapi_grpc::platform::v0::get_contract_document_removals_response::{
     get_contract_document_removals_response_v0,
     ContractDocumentRemoval as ContractDocumentRemovalProto, ContractDocumentRemovals,
+    ContractDocumentRestoration as ContractDocumentRestorationProto,
     GetContractDocumentRemovalsResponseV0,
 };
 use dpp::check_validation_result_with_data;
@@ -142,6 +143,13 @@ impl<C> Platform<C> {
                                     moderator_id: entry.removal.moderator_id.to_vec(),
                                     removed_at: entry.removal.removed_at,
                                     reason: Some(reason_to_response(entry.removal.reason)),
+                                    document_hash: entry.removal.document_hash.to_vec(),
+                                    restoration: entry.removal.restoration.map(|restoration| {
+                                        ContractDocumentRestorationProto {
+                                            moderator_id: restoration.moderator_id.to_vec(),
+                                            restored_at: restoration.restored_at,
+                                        }
+                                    }),
                                 })
                                 .collect(),
                         },
@@ -164,8 +172,8 @@ mod tests {
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::config::moderation::{
-        ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
-        ContractModerators,
+        ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
+        ContractModerationReason, ContractModerators,
     };
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
@@ -185,6 +193,7 @@ mod tests {
                 banlist: false,
                 suspensions: false,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             },
         )));
         contract
@@ -213,8 +222,15 @@ mod tests {
             reason: ContractModerationReason {
                 code: Some(seed as u16),
                 text: "spam".to_string(),
+                documents: vec![],
             },
             removed_at: 1_000 + seed as u64,
+            document_hash: [seed + 0x20; 32],
+            // Every other record was restored: the response carries the restoration too.
+            restoration: seed.is_multiple_of(2).then(|| ContractDocumentRestoration {
+                moderator_id: Identifier::from([0x78; 32]),
+                restored_at: 2_000 + seed as u64,
+            }),
         }
     }
 
@@ -227,6 +243,8 @@ mod tests {
                         document_type_name: POST.to_string(),
                         document_id: Identifier::from([seed; 32]),
                         removal: removal(seed),
+                        replaces_existing: false,
+                        moderator_id: Identifier::from([0x77; 32]),
                     },
                 )],
                 true,
@@ -275,7 +293,15 @@ mod tests {
             reason: Some(ContractModerationReasonProto {
                 code: Some(seed as u32),
                 text: "spam".to_string(),
+                documents: vec![],
             }),
+            document_hash: removal.document_hash.to_vec(),
+            restoration: removal
+                .restoration
+                .map(|restoration| ContractDocumentRestorationProto {
+                    moderator_id: restoration.moderator_id.to_vec(),
+                    restored_at: restoration.restored_at,
+                }),
         }
     }
 

@@ -339,6 +339,7 @@ mod tests {
             ranked_averageable: false,
             terminal: None,
             preallocated: false,
+            flat: false,
         }
     }
 

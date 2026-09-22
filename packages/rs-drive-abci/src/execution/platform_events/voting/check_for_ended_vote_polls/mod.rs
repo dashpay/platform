@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -35,9 +36,16 @@ where
                 transaction,
                 platform_version,
             ),
+            1 => self.check_for_ended_vote_polls_v1(
+                last_committed_platform_state,
+                block_platform_state,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_for_ended_vote_polls".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

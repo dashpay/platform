@@ -1,6 +1,8 @@
 //! The `canBeDeletedByModerators` doctype keyword (protocol version 14): what it requires of
 //! the contract and of the document type.
 use super::*;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use platform_value::platform_value;
@@ -12,6 +14,7 @@ fn moderated_config(platform_version: &PlatformVersion) -> DataContractConfig {
             banlist: false,
             suspensions: false,
             moderators: ContractModerators::ContractOwner,
+            warnings: false,
         }))
 }
 
@@ -81,6 +84,40 @@ fn assert_refused_naming(result: Result<DocumentType, ProtocolError>, fragments:
             message.contains(fragment),
             "error must name {fragment}, got {message}"
         );
+    }
+}
+
+#[test]
+fn should_preserve_contract_structure_errors_for_non_object_schemas() {
+    let platform_version = PlatformVersion::latest();
+    let config = moderated_config(platform_version);
+    for schema in [
+        Value::Null,
+        Value::Bool(false),
+        Value::Array(vec![]),
+        Value::Text("invalid".to_string()),
+        Value::U64(1),
+    ] {
+        for full_validation in [false, true] {
+            let error = parse_with_config(
+                schema.clone(),
+                &config,
+                platform_version.protocol_version,
+                full_validation,
+            )
+            .expect_err("a document schema must be an object");
+            let ProtocolError::ConsensusError(error) = error else {
+                panic!("expected a consensus error, got {error:?}");
+            };
+            assert!(
+                matches!(error.as_ref(),
+                    ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )) if message == "document schema must be an object: structure error: value is not a map"
+                ),
+                "schema {schema:?}, full_validation={full_validation}: {error:?}",
+            );
+        }
     }
 }
 
@@ -170,6 +207,40 @@ fn should_refuse_the_flag_on_an_index_only_type() {
     assert_refused_naming(
         parse_moderated(schema),
         &["indexOnly", "canBeDeletedByModerators"],
+    );
+}
+
+#[test]
+fn should_refuse_the_flag_on_a_type_with_a_contested_index() {
+    // A moderator's restore puts a deleted document back through an ordinary insert; a
+    // contested index only takes a document through a vote, so such a deletion could never be
+    // undone.
+    let schema = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeletedByModerators": true,
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{ "normalizedLabel": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [
+                        { "field": "normalizedLabel", "regexPattern": "^[a-z]{3,}$" },
+                    ],
+                    "resolution": 0,
+                },
+            },
+        ],
+        "properties": {
+            "normalizedLabel": { "type": "string", "maxLength": 50, "position": 0 },
+        },
+        "required": ["normalizedLabel"],
+        "additionalProperties": false,
+    });
+    assert_refused_naming(
+        parse_moderated(schema),
+        &["contested index", "canBeDeletedByModerators"],
     );
 }
 
@@ -316,6 +387,36 @@ fn should_refuse_a_window_that_is_not_a_positive_number_of_seconds_on_the_stored
             assert!(
                 result.is_err(),
                 "window {window:?} must be refused (full validation: {full_validation})"
+            );
+        }
+    }
+}
+
+#[test]
+fn should_refuse_a_schema_that_is_not_an_object_as_an_invalid_contract_structure() {
+    // The window is read off the raw schema before the core parser checks that
+    // the schema is an object. It must not be the reader that fails first: a
+    // schema that is no object carries no keyword, and the core parser is the
+    // one that names the real problem.
+    let platform_version = PlatformVersion::latest();
+    for full_validation in [true, false] {
+        for schema in [
+            platform_value!(null),
+            platform_value!("post"),
+            platform_value!([]),
+        ] {
+            let error = parse_with_config(
+                schema.clone(),
+                &moderated_config(platform_version),
+                platform_version.protocol_version,
+                full_validation,
+            )
+            .expect_err("a schema that is not an object must be refused");
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("InvalidContractStructure"),
+                "schema {schema:?} must be refused as an invalid contract structure (full \
+                 validation: {full_validation}), got {message}"
             );
         }
     }

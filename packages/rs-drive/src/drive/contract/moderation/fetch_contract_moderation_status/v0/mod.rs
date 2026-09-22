@@ -1,4 +1,4 @@
-use crate::drive::contract::moderation::types::{decode_ban, decode_suspension};
+use crate::drive::contract::moderation::types::{decode_ban, decode_suspension, decode_warnings};
 use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -45,6 +45,9 @@ impl Drive {
                 }
                 (ContractModerationList::Suspensions, Some(value)) => {
                     status.suspension = Some(decode_suspension(&value).map_err(malformed)?);
+                }
+                (ContractModerationList::Warnings, Some(value)) => {
+                    status.warnings = decode_warnings(&value).map_err(malformed)?;
                 }
             }
         }

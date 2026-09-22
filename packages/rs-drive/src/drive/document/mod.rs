@@ -78,6 +78,17 @@ pub mod index_only;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_only_row_commitment;
 
+/// The entry payload of an indexOnly document type: the value slot after
+/// the row commitment, its encoding and its fee-estimation bounds.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod index_only_entry_payload;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_entry_payload::{
+    decode_index_only_entry_payload, encode_index_only_entry_payload,
+    encode_index_only_entry_payload_value, index_only_entry_payload_max_size,
+    index_only_item_estimated_value_size,
+};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::index_only_row_commitment;
 #[cfg(feature = "server")]

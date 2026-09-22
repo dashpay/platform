@@ -513,7 +513,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // carries, so the property must sit on that index.
         if source_is_index_only_query {
             let carries = |index: &dpp::data_contract::document_type::Index| {
-                index.terminal.as_deref() == Some(binding.source_property.as_str())
+                index.terminal_contains(&binding.source_property)
                     || index
                         .properties
                         .iter()
@@ -656,7 +656,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     // The lookup's own field must be provable positionally:
                     // the resolved index has to carry it.
                     let index = shape.index_only_query_index(platform_version)?;
-                    let carried = index.terminal.as_deref() == Some(binding.field.as_str())
+                    let carried = index.terminal_contains(&binding.field)
                         || index
                             .properties
                             .iter()
@@ -744,7 +744,9 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect();
         if sub_query.document_type.index_only() {
             let index = shape.index_only_query_index(platform_version)?;
-            let terminal_is_bound = index.terminal.as_deref() == Some(binding.field.as_str());
+            // A composite terminal is bound only through every component;
+            // a single-component terminal through its one field.
+            let terminal_is_bound = index.single_terminal() == Some(binding.field.as_str());
             let prefix_fixed = index
                 .properties
                 .iter()
@@ -1381,13 +1383,14 @@ impl<'a> DriveDocumentQuery<'a> {
             let index = query.index_only_query_index(platform_version)?;
             return trios
                 .into_iter()
-                .map(|(path, key, _)| {
+                .map(|(path, key, element)| {
                     synthesize_index_only_document(
                         query.contract.id(),
                         query.document_type,
                         index,
                         &path,
                         &key,
+                        Some(&element),
                     )
                 })
                 .collect();

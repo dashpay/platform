@@ -269,6 +269,7 @@ impl ErrorWithCode for BasicError {
             Self::ContractModerationSelfTargetError(_) => 10901,
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
             Self::ContractModerationReasonTooLongError(_) => 10903,
+            Self::InvalidContractModerationReasonDocumentsError(_) => 10904,
         }
     }
 }
@@ -357,6 +358,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentActionFeeAgreementNotSetError(_) => 40132,
             Self::DocumentActionFeeAgreementMismatchError(_) => 40133,
             Self::DocumentActionFeeMultiplierNotToleratedError(_) => 40134,
+            Self::ReferencedContractRequirementNotMetError(_) => 40135,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -390,6 +392,7 @@ impl ErrorWithCode for StateError {
             Self::MasternodeVoteAlreadyPresentError(_) => 40304,
             Self::MasternodeIncorrectVotingAddressError(_) => 40305,
             Self::MasternodeIncorrectVoterIdentityIdError(_) => 40306,
+            Self::VoteChoiceNotAllowedForVotePollError(_) => 40307,
 
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,
@@ -467,6 +470,15 @@ impl ErrorWithCode for StateError {
             Self::ContractModerationCounterpartyBarredError(_) => 41114,
             Self::DocumentTypeNotDeletableByModeratorsError(_) => 41115,
             Self::DocumentModerationWindowElapsedError(_) => 41116,
+            Self::ContractUserNotWarnedError(_) => 41117,
+            Self::ContractUserWarningLimitReachedError(_) => 41118,
+            Self::ContractDocumentRemovalNotFoundError(_) => 41119,
+            Self::DocumentRestoreWindowElapsedError(_) => 41120,
+            Self::DocumentRestoreHashMismatchError(_) => 41121,
+            Self::ContractDocumentAlreadyRestoredError(_) => 41122,
+
+            // Contract moderation team errors: 41200-41299
+            Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
         }
     }
 }

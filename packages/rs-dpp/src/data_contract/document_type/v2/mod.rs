@@ -55,6 +55,10 @@ pub struct DocumentTypeV2 {
     /// keyword, protocol version 14). Once present they are frozen like the
     /// rest of the list. Every entry is also in `immutable_fields`.
     pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
+    /// On an indexOnly type, the top-level properties stored in every entry's
+    /// value after the row commitment (the `entryPayload` keyword), in name
+    /// order. Empty on every other type and on every pre-PV14 contract.
+    pub(in crate::data_contract) entry_payload: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Should transfers of documents of this type be recorded in the document
@@ -187,6 +191,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,
@@ -232,6 +237,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
             documents_keep_purchase_history: value.documents_keep_purchase_history,

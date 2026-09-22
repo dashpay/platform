@@ -13,9 +13,10 @@ use std::collections::HashMap;
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_size;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
+use crate::drive::document::index_only_entry_payload_max_size;
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
-use dpp::document::document_methods::DocumentMethodsV0;
 
 use crate::drive::Drive;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
@@ -124,10 +125,17 @@ impl Drive {
         // `add_reference_for_index_level_for_contract_operations_v0`.
         // `terminal` can only be `Some` on a PV14+ indexOnly contract, so
         // this branch is unreachable for every historical document.
-        if let Some(terminal_property) = index_type.terminal.as_deref() {
+        if let Some(terminal) = index_type.terminal.as_deref() {
             key_info_path.push(KnownKey(vec![0]));
 
             let member_tree_type = terminal_member_tree_type(index_type);
+            // The member key's estimated width follows the terminal property,
+            // mirroring the insert side.
+            let member_key_max_size =
+                index_only_terminal_max_key_size(document_type, terminal, platform_version)?;
+            // The stored item: the commitment plus the type's entry payload.
+            let entry_value_size = crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE
+                + index_only_entry_payload_max_size(document_type, platform_version)?;
 
             // Sum-bearing entries (`ItemWithSumItem`) carry the i64 sum
             // item alongside the commitment payload; mirror the insert
@@ -136,9 +144,9 @@ impl Drive {
             // and propagates the subtraction — same as stored-type
             // `ReferenceWithSumItem` entries below.
             let estimated_value_size = if index_type.summable.is_some() {
-                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 10
+                entry_value_size + 10
             } else {
-                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE
+                entry_value_size
             };
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
@@ -149,7 +157,7 @@ impl Drive {
                         tree_type: member_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllItems(
-                            DEFAULT_HASH_SIZE_U8,
+                            member_key_max_size,
                             estimated_value_size,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
@@ -165,23 +173,19 @@ impl Drive {
                 .document_info
                 .get_borrowed_document_and_storage_flags()
             {
-                Some((document, _)) => document
-                    .get_raw_for_document_type(
-                        terminal_property,
-                        document_type,
-                        document_and_contract_info.owned_document_info.owner_id,
-                        platform_version,
-                    )?
-                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "indexOnly terminal value must be present on delete: the \
-                         delete transition carries every property and the owner",
-                    )))?,
+                Some((document, _)) => index_only_member_key(
+                    document,
+                    document_type,
+                    terminal,
+                    document_and_contract_info.owned_document_info.owner_id,
+                    platform_version,
+                )?,
                 None => event_id.to_vec(),
             };
 
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllItems(
-                    DEFAULT_HASH_SIZE_U8,
+                    member_key_max_size,
                     estimated_value_size,
                     storage_flags.map(|s| s.serialized_size()),
                 ),
@@ -202,7 +206,12 @@ impl Drive {
             // keeps every tree, so a later entry costs the same as this one
             // did. Trees a pre-flag fallback created are kept the same way
             // — if-not-exists inserts make the two histories converge.
-            let stop_path_height = if index_type.preallocated {
+            // A FLAT index's entries sit at `[…doctype, <flat level>, 0]`:
+            // the flat level tree is registration-time structure (like a
+            // property-name tree), so the climb stops at its `0` bucket
+            // exactly as it does on a preallocated index. The level info
+            // carries the flag from the index that terminates there.
+            let stop_path_height = if index_type.preallocated || index_type.flat {
                 u16::try_from(key_info_path.len() - 1).map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "index path height must fit in u16",

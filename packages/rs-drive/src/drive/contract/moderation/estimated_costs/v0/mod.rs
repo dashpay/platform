@@ -32,7 +32,7 @@ impl Drive {
             drive_version,
         )?;
 
-        // The contract's other tree (`[64, id, 2]`): the version item and up to two list trees.
+        // The contract's other tree (`[64, id, 2]`): the version item and up to three list trees.
         Drive::add_estimation_costs_for_contract_other_tree(
             contract_id,
             estimated_costs_only_with_layer_info,

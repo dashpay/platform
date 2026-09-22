@@ -107,6 +107,14 @@ pub(crate) mod property_names {
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";
     pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
+    pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
+    pub const MODERATION: &str = "moderation";
+    pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
+    pub const MINIMUM_SECONDS_SINCE_UPDATE: &str = "minimumSecondsSinceUpdate";
+    pub const OWNER: &str = "owner";
+    pub const READONLY: &str = "readonly";
+    pub const KEEPS_HISTORY: &str = "keepsHistory";
+    pub const OWNER_PROTECTED: &str = "ownerProtected";
     pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
     pub const RANGE_COUNTABLE: &str = "rangeCountable";
     /// Doctype-level flag naming the property whose values are summed into
@@ -143,6 +151,14 @@ pub(crate) mod property_names {
     /// 14). See `apply_index_only` in `try_from_schema::common` for the
     /// structural constraints the flag imposes.
     pub const INDEX_ONLY: &str = "indexOnly";
+    /// Doctype-level list, on an `indexOnly` type, of the top-level properties
+    /// stored in every entry's value (after the row commitment) instead of in
+    /// a key: the type's value slot. Listed properties must be required, must
+    /// not appear in any index (as a property or a terminal component) and
+    /// must be bounded; they are recovered by decoding the proved element.
+    /// Meta-schema v3+ (protocol version 14). See `apply_index_only` in
+    /// `try_from_schema::common`.
+    pub const ENTRY_PAYLOAD: &str = "entryPayload";
     /// Doctype-level flag letting the contract's moderators (its owner and the
     /// identities its moderation config appoints) delete documents of this type
     /// with a `ContractUserModeration` transition, whatever `canBeDeleted` says

@@ -135,7 +135,7 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                                 .properties
                                 .iter()
                                 .map(|property| property.name.clone())
-                                .chain(index.terminal.clone())
+                                .chain(index.terminal_components().iter().cloned())
                                 .collect(),
                         ),
                     )),

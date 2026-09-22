@@ -25,9 +25,9 @@ import SwiftData
 /// protocol constant.
 ///
 /// Unlike the perpetual and pre-programmed kinds this one has no column on
-/// `PersistentToken`: `DashSchemaV5` is frozen, and a new stored property
-/// would move the model's entity hash (see `DashModelContainer.modelTypes`
-/// and `DashModelMigrationTests`). `PersistentToken.oncePerIdentityDistribution`
+/// `PersistentToken`: the contract JSON already persists it, so another
+/// column would duplicate the value and change the model's entity hash.
+/// `PersistentToken.oncePerIdentityDistribution`
 /// therefore derives the value from the contract JSON stored on the owning
 /// `PersistentDataContract`, which is why these tests seed
 /// `serializedContract` rather than leaving it empty like the sibling parser
@@ -405,6 +405,32 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
             1,
             "later reads, including the sibling position that has none, come from the memo"
         )
+    }
+
+    /// Frozen and live model copies pass the same stored values. Updating
+    /// the payload timestamp must invalidate the memo even at the same byte count.
+    func testCacheAcceptsStoredValuesAndInvalidatesUpdatedPayload() throws {
+        let cache = TokenOncePerIdentityDistributionCache()
+        let firstPayload = try JSONSerialization.data(withJSONObject: [
+            "tokens": ["0": tokenDict(oncePerIdentity: ["amount": 100])]
+        ])
+        let nextPayload = try JSONSerialization.data(withJSONObject: [
+            "tokens": ["0": tokenDict(oncePerIdentity: ["amount": 200])]
+        ])
+        XCTAssertEqual(firstPayload.count, nextPayload.count)
+        let firstUpdate = Date(timeIntervalSince1970: 1_000)
+        let nextUpdate = firstUpdate.addingTimeInterval(1)
+
+        for _ in 0..<2 {
+            XCTAssertEqual(cache.distribution(
+                contractId: contractId, serializedContract: firstPayload,
+                lastUpdated: firstUpdate, position: 0)?.amount, "100")
+        }
+        XCTAssertEqual(cache.decodeCount, 1)
+        XCTAssertEqual(cache.distribution(
+            contractId: contractId, serializedContract: nextPayload,
+            lastUpdated: nextUpdate, position: 0)?.amount, "200")
+        XCTAssertEqual(cache.decodeCount, 2)
     }
 
     /// Two contracts are two payloads: the memo is keyed per contract, not

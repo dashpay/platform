@@ -1,5 +1,5 @@
-//! Contract moderation: the banlist and the suspension list a moderated data contract keeps
-//! under its own subtree (protocol version 14).
+//! Contract moderation: the banlist, the suspension list and the warning list a moderated
+//! data contract keeps under its own subtree (protocol version 14).
 //!
 //! ```text
 //! [64] DataContractDocuments
@@ -9,7 +9,8 @@
 //!     └── [2] other
 //!         ├── [64]  contract version item
 //!         ├── [128] banlist     -> <identity id> -> Item(reason)               (when declared)
-//!         └── [192] suspensions -> <identity id> -> Item(until ‖ reason)       (when declared)
+//!         ├── [192] suspensions -> <identity id> -> Item(until ‖ reason)       (when declared)
+//!         └── [224] warnings    -> <identity id> -> Item((warned at ‖ len ‖ reason)+)  (when declared)
 //! ```
 //!
 //! and the records of the documents the contract's moderators deleted, under the same other
@@ -27,7 +28,10 @@
 //!
 //! `until` is a u64 of block time in milliseconds, big-endian. A reason is a tag byte (`0`: no
 //! code, `1`: a code), the code as a big-endian u16 when tagged, and the text as UTF-8 up to
-//! the end of the value: see [`types::encode_ban`] and [`types::encode_suspension`].
+//! the end of the value: see [`types::encode_ban`] and [`types::encode_suspension`]. A warning
+//! list entry holds every warning the identity carries, oldest first, each its block time as a
+//! u64 big-endian, the length of its reason as a u16 big-endian and the reason: see
+//! [`types::encode_warnings`]. A warning bars nothing.
 //!
 //! An entry's storage flags name the moderator that wrote it, so the storage refund of its
 //! deletion goes to that moderator whichever transition deletes it: an explicit unban or
@@ -40,6 +44,8 @@ mod add_contract_ban;
 mod add_contract_document_removal;
 #[cfg(feature = "server")]
 mod add_contract_suspension;
+#[cfg(feature = "server")]
+mod add_contract_warning;
 #[cfg(feature = "server")]
 mod estimated_costs;
 #[cfg(feature = "server")]
@@ -63,6 +69,8 @@ mod queries;
 mod remove_contract_ban;
 #[cfg(feature = "server")]
 mod remove_contract_suspension;
+#[cfg(feature = "server")]
+mod remove_contract_warnings;
 /// Query and result types shared by the fetch and verify sides.
 pub mod types;
 

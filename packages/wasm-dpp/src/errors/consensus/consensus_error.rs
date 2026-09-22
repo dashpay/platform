@@ -91,21 +91,23 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::basic::contract_moderation::{
-    ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
+    ContractModerationReasonTooLongError, InvalidContractModerationReasonDocumentsError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError,
     InvalidContractModerationConfigError,
 };
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
-    ContractFeesNothingToClaimError,
+    ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, ContractUserSuspendedError,
-    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
-    IdentityNotContractModeratorError,
+    ContractUserNotSuspendedError, ContractUserNotWarnedError, ContractUserSuspendedError,
+    ContractUserWarningLimitReachedError, ContractDocumentAlreadyRestoredError,
+    ContractDocumentRemovalNotFoundError, DocumentModerationWindowElapsedError,
+    DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::contract_group::{
     ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -156,12 +158,14 @@ use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError, ShieldedInvalidDenominationError};
+use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
@@ -655,6 +659,33 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentModerationWindowElapsedError(e) => {
             generic_consensus_error!(DocumentModerationWindowElapsedError, e).into()
+        }
+        StateError::ContractDocumentRemovalNotFoundError(e) => {
+            generic_consensus_error!(ContractDocumentRemovalNotFoundError, e).into()
+        }
+        StateError::DocumentRestoreWindowElapsedError(e) => {
+            generic_consensus_error!(DocumentRestoreWindowElapsedError, e).into()
+        }
+        StateError::DocumentRestoreHashMismatchError(e) => {
+            generic_consensus_error!(DocumentRestoreHashMismatchError, e).into()
+        }
+        StateError::ContractDocumentAlreadyRestoredError(e) => {
+            generic_consensus_error!(ContractDocumentAlreadyRestoredError, e).into()
+        }
+        StateError::ContractUserNotWarnedError(e) => {
+            generic_consensus_error!(ContractUserNotWarnedError, e).into()
+        }
+        StateError::ContractUserWarningLimitReachedError(e) => {
+            generic_consensus_error!(ContractUserWarningLimitReachedError, e).into()
+        }
+        StateError::ContractModeratedDocumentTypeNotYetUsableError(e) => {
+            generic_consensus_error!(ContractModeratedDocumentTypeNotYetUsableError, e).into()
+        }
+        StateError::VoteChoiceNotAllowedForVotePollError(e) => {
+            generic_consensus_error!(VoteChoiceNotAllowedForVotePollError, e).into()
+        }
+        StateError::ReferencedContractRequirementNotMetError(e) => {
+            generic_consensus_error!(ReferencedContractRequirementNotMetError, e).into()
         }
     }
 }
@@ -1229,6 +1260,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ContractModerationReasonTooLongError(e) => {
             generic_consensus_error!(ContractModerationReasonTooLongError, e).into()
+        }
+        BasicError::InvalidContractModerationReasonDocumentsError(e) => {
+            generic_consensus_error!(InvalidContractModerationReasonDocumentsError, e).into()
         }
     }
 }

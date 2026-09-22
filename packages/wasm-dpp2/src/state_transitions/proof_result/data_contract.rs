@@ -5,12 +5,13 @@ use crate::DataContractWasm;
 use crate::IdentifierWasm;
 use crate::PlatformVersionLikeJs;
 use crate::data_contract::{
-    ContractModerationReasonJs, DataContractJSONJs, DataContractObjectJs, moderation_reason_to_js,
+    ContractModerationReasonJs, ContractWarningsJs, DataContractJSONJs, DataContractObjectJs,
+    moderation_reason_to_js, moderation_warnings_to_js,
 };
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::serialization::conversions::normalize_js_value_for_json;
-use dpp::data_contract::config::moderation::ContractModerationReason;
+use dpp::data_contract::config::moderation::{ContractModerationReason, ContractWarning};
 use js_sys::{BigInt, Map};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -77,9 +78,9 @@ impl VerifiedDataContractWasm {
 impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
 
 /// `VerifiedContractModerationListStatuses` proof-result wrapper: the target identity's status
-/// on the lists a moderation transition touched (both for a ban, the edited one otherwise).
-/// A list the proof does not cover is unknown: `banned` is undefined unless `lists` includes
-/// `banlist`.
+/// on the lists a moderation transition touched (every barring list for a ban, the edited one
+/// otherwise). A list the proof does not cover is unknown: `banned` is undefined unless
+/// `lists` includes `banlist`, and `warnings` unless it includes `warnings`.
 #[wasm_bindgen(js_name = "VerifiedContractModerationListStatuses")]
 #[derive(Clone)]
 pub struct VerifiedContractModerationListStatusesWasm {
@@ -87,7 +88,7 @@ pub struct VerifiedContractModerationListStatusesWasm {
     pub contract_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
     pub identity_id: IdentifierWasm,
-    /// The lists the proof covers: `banlist`, `suspensions`, or both
+    /// The lists the proof covers: `banlist` and `suspensions` for a ban, else the one edited
     #[wasm_bindgen(getter_with_clone)]
     pub lists: Vec<String>,
     /// When `lists` includes `banlist`: the identity is on the banlist
@@ -100,9 +101,20 @@ pub struct VerifiedContractModerationListStatusesWasm {
     pub suspended_until: Option<u64>,
     #[wasm_bindgen(skip)]
     pub suspension_reason: Option<ContractModerationReason>,
+    /// When `lists` includes `warnings`: the identity's warnings, oldest first, empty when it
+    /// carries none
+    #[wasm_bindgen(skip)]
+    pub warnings: Option<Vec<ContractWarning>>,
 }
 
 impl VerifiedContractModerationListStatusesWasm {
+    fn warnings_or_undefined(&self, as_json: bool) -> JsValue {
+        self.warnings
+            .as_deref()
+            .map(|warnings| moderation_warnings_to_js(warnings, as_json))
+            .unwrap_or(JsValue::UNDEFINED)
+    }
+
     fn reason_or_undefined(reason: &Option<ContractModerationReason>) -> JsValue {
         reason
             .as_ref()
@@ -127,6 +139,14 @@ impl VerifiedContractModerationListStatusesWasm {
         self.suspension_reason
             .as_ref()
             .map(|reason| moderation_reason_to_js(reason).into())
+    }
+
+    /// When `lists` includes `warnings`: the identity's warnings, oldest first
+    #[wasm_bindgen(getter = "warnings")]
+    pub fn warnings(&self) -> Option<ContractWarningsJs> {
+        self.warnings
+            .as_deref()
+            .map(|warnings| moderation_warnings_to_js(warnings, false).into())
     }
 
     #[wasm_bindgen(js_name = toObject)]
@@ -159,6 +179,7 @@ impl VerifiedContractModerationListStatusesWasm {
                 "suspensionReason",
                 Self::reason_or_undefined(&self.suspension_reason),
             ),
+            ("warnings", self.warnings_or_undefined(false)),
         ]))
     }
 
@@ -198,6 +219,7 @@ impl VerifiedContractModerationListStatusesWasm {
                 "suspensionReason",
                 Self::reason_or_undefined(&self.suspension_reason),
             ),
+            ("warnings", self.warnings_or_undefined(true)),
         ]))
     }
 }
@@ -324,8 +346,10 @@ fn json_safe_credits(credits: u64) -> JsValue {
 impl_wasm_type_info!(VerifiedContractFeeClaimWasm, VerifiedContractFeeClaim);
 
 /// `VerifiedContractDocumentRemoval` proof-result wrapper: the record a moderator's document
-/// deletion left under the contract. The document itself is gone; the record says whose it
-/// was, who removed it, why and when.
+/// deletion left under the contract, as a deletion or a restore leaves it. After a deletion
+/// the document is gone and the record says whose it was, who removed it, why, when and what
+/// it was (its hash); after a restore the document is live again and the record also says who
+/// brought it back and when.
 #[wasm_bindgen(js_name = "VerifiedContractDocumentRemoval")]
 #[derive(Clone)]
 pub struct VerifiedContractDocumentRemovalWasm {
@@ -346,6 +370,16 @@ pub struct VerifiedContractDocumentRemovalWasm {
     /// The time of the block that removed it, in milliseconds
     #[wasm_bindgen(js_name = "removedAt")]
     pub removed_at: u64,
+    #[wasm_bindgen(skip)]
+    pub document_hash: [u8; 32],
+    /// The contract owner or moderator that restored the document, undefined while the
+    /// removal stands
+    #[wasm_bindgen(getter_with_clone, js_name = "restoredBy")]
+    pub restored_by: Option<IdentifierWasm>,
+    /// The time of the block that restored it, in milliseconds, undefined while the removal
+    /// stands
+    #[wasm_bindgen(js_name = "restoredAt")]
+    pub restored_at: Option<u64>,
 }
 
 #[wasm_bindgen(js_class = VerifiedContractDocumentRemoval)]
@@ -354,6 +388,13 @@ impl VerifiedContractDocumentRemovalWasm {
     #[wasm_bindgen(getter = "reason")]
     pub fn reason(&self) -> ContractModerationReasonJs {
         moderation_reason_to_js(&self.reason).into()
+    }
+
+    /// A double SHA-256 of the document as it was serialized under its type when it was
+    /// removed: what a restore must bring back byte for byte, as 64 hex characters
+    #[wasm_bindgen(getter = "documentHash")]
+    pub fn document_hash(&self) -> String {
+        hex::encode(self.document_hash)
     }
 
     #[wasm_bindgen(js_name = toObject)]
@@ -371,6 +412,21 @@ impl VerifiedContractDocumentRemovalWasm {
             (
                 "removedAt",
                 JsValue::from(js_sys::BigInt::from(self.removed_at)),
+            ),
+            (
+                "documentHash",
+                JsValue::from_str(&hex::encode(self.document_hash)),
+            ),
+            (
+                "restoredBy",
+                self.restored_by
+                    .map_or(JsValue::UNDEFINED, |restored_by| restored_by.into()),
+            ),
+            (
+                "restoredAt",
+                self.restored_at.map_or(JsValue::UNDEFINED, |restored_at| {
+                    JsValue::from(js_sys::BigInt::from(restored_at))
+                }),
             ),
         ]))
     }
@@ -400,6 +456,22 @@ impl VerifiedContractDocumentRemovalWasm {
             ),
             ("reason", moderation_reason_to_js(&self.reason)),
             ("removedAt", JsValue::from_f64(self.removed_at as f64)),
+            (
+                "documentHash",
+                JsValue::from_str(&hex::encode(self.document_hash)),
+            ),
+            (
+                "restoredBy",
+                self.restored_by.map_or(JsValue::UNDEFINED, |restored_by| {
+                    JsValue::from_str(&restored_by.to_base58())
+                }),
+            ),
+            (
+                "restoredAt",
+                self.restored_at.map_or(JsValue::UNDEFINED, |restored_at| {
+                    JsValue::from_f64(restored_at as f64)
+                }),
+            ),
         ]))
     }
 }

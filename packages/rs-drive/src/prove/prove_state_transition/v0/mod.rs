@@ -16,6 +16,8 @@ use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
@@ -257,7 +259,9 @@ impl Drive {
             // every list the contract keeps (the banlist entry present, the suspension absent);
             // an unban, a suspend and an unsuspend prove the one entry they edit.
             // A document deletion proves the record it left: a document id is produced at most
-            // once, so the record is of that document and the document is gone.
+            // once, so the record is of that document and the document is gone. A document
+            // restore proves the same record, now marked restored; the document's id is inside
+            // the bytes the transition carries, read under the contract's document type.
             StateTransition::ContractUserModeration(st) => {
                 let contract_id = st.data_contract_id();
                 if let Some((document_type_name, document_id)) = st.action().document() {
@@ -268,6 +272,35 @@ impl Drive {
                             document_type_name: document_type_name.to_string(),
                             selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
                                 document_id,
+                            ]),
+                        },
+                    )
+                } else if let Some((document_type_name, document_bytes)) =
+                    st.action().restored_document()
+                {
+                    let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                        contract_id.to_buffer(),
+                        false,
+                        None,
+                        platform_version,
+                    )?
+                    else {
+                        return Err(Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in contract moderation proving",
+                            contract_id
+                        ))));
+                    };
+                    let document_type = contract_fetch_info
+                        .contract
+                        .document_type_for_name(document_type_name)?;
+                    let document =
+                        Document::from_bytes(document_bytes, document_type, platform_version)?;
+                    Drive::contract_document_removals_query(
+                        contract_id.to_buffer(),
+                        &ContractDocumentRemovalsQuery {
+                            document_type_name: document_type_name.to_string(),
+                            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
+                                document.id(),
                             ]),
                         },
                     )
@@ -291,11 +324,14 @@ impl Drive {
                                     contract_id
                                 ))));
                             };
+                            // A ban removes a suspension too, so its proof covers the lists
+                            // that bar; the warning list, which a ban leaves alone, is not
+                            // among them.
                             contract_fetch_info
                                 .contract
                                 .config()
                                 .moderation()
-                                .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                                .map(|moderation| moderation.barring_lists().collect::<Vec<_>>())
                                 .unwrap_or_else(|| vec![ContractModerationList::Banlist])
                         }
                         ContractUserModerationAction::Unban { .. } => {
@@ -305,9 +341,14 @@ impl Drive {
                         | ContractUserModerationAction::Unsuspend { .. } => {
                             vec![ContractModerationList::Suspensions]
                         }
-                        ContractUserModerationAction::DeleteDocument { .. } => {
+                        ContractUserModerationAction::Warn { .. }
+                        | ContractUserModerationAction::ClearWarnings { .. } => {
+                            vec![ContractModerationList::Warnings]
+                        }
+                        ContractUserModerationAction::DeleteDocument { .. }
+                        | ContractUserModerationAction::RestoreDocument { .. } => {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "a document deletion is proved by the arm above",
+                                "a document deletion or restore is proved by the arms above",
                             )))
                         }
                     };

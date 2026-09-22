@@ -1,5 +1,6 @@
 //! Contract moderation through the whole processing pipeline: the transition that edits a
-//! contract's banlist and suspension list, and the document gate that enforces them.
+//! contract's banlist, suspension list and warning list, and the document gate that enforces
+//! the first two.
 
 use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
 use crate::execution::validation::state_transition::tests::setup_identity;
@@ -18,9 +19,11 @@ use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::config::moderation::{
-    ContractBan, ContractDocumentRemoval, ContractModerationConfig, ContractModerationList,
-    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
-    ContractModerationStatus, ContractModerators, ContractSuspension,
+    ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
+    ContractModerationDocument, ContractModerationList, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
+    ContractModerators, ContractSuspension, ContractWarning, ElectedModerators, InterimModerators,
+    ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -30,12 +33,13 @@ use dpp::data_contract::document_type::random_document::{
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
+use dpp::platform_value::{platform_value, BinaryData, Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -54,23 +58,27 @@ use dpp::state_transition::proof_result::{
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract;
+use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
 };
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
+use drive::query::DriveDocumentQuery;
 use drive::util::storage_flags::StorageFlags;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
 const CONTRACT_MODERATION_REASON_TOO_LONG: u32 = 10903;
+const INVALID_CONTRACT_MODERATION_REASON_DOCUMENTS: u32 = 10904;
 const OVERFLOW: u32 = 10700;
 const CONTRACT_MODERATION_NOT_ENABLED: u32 = 41100;
 const IDENTITY_NOT_CONTRACT_MODERATOR: u32 = 41101;
@@ -86,6 +94,15 @@ const CONTRACT_MODERATOR_IDENTITY_NOT_FOUND: u32 = 41110;
 const CONTRACT_MODERATION_COUNTERPARTY_BARRED: u32 = 41114;
 const DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS: u32 = 41115;
 const DOCUMENT_MODERATION_WINDOW_ELAPSED: u32 = 41116;
+const CONTRACT_USER_NOT_WARNED: u32 = 41117;
+const CONTRACT_USER_WARNING_LIMIT_REACHED: u32 = 41118;
+const CONTRACT_MODERATED_DOCUMENT_TYPE_NOT_YET_USABLE: u32 = 41200;
+const CONTRACT_DOCUMENT_REMOVAL_NOT_FOUND: u32 = 41119;
+const DOCUMENT_RESTORE_WINDOW_ELAPSED: u32 = 41120;
+const DOCUMENT_RESTORE_HASH_MISMATCH: u32 = 41121;
+const CONTRACT_DOCUMENT_ALREADY_RESTORED: u32 = 41122;
+const DECODING_DOCUMENT: u32 = 10223;
+const DUPLICATE_UNIQUE_INDEX: u32 = 40105;
 const INVALID_DOCUMENT_TYPE: u32 = 10406;
 const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
 const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
@@ -161,9 +178,19 @@ const THE_MODERATOR: Identifier = Identifier::new([7; 32]);
 const THE_OWNER: Identifier = Identifier::new([8; 32]);
 
 fn moderation(banlist: bool, suspensions: bool, moderator: Identifier) -> ContractModerationConfig {
+    moderation_with_warnings(banlist, suspensions, false, moderator)
+}
+
+fn moderation_with_warnings(
+    banlist: bool,
+    suspensions: bool,
+    warnings: bool,
+    moderator: Identifier,
+) -> ContractModerationConfig {
     ContractModerationConfig {
         banlist,
         suspensions,
+        warnings,
         moderators: ContractModerators::AppointedModerators([moderator].into_iter().collect()),
     }
 }
@@ -211,7 +238,17 @@ impl Setup {
         )
         .data_contract_owned();
         let moderation = moderation.map(|mut moderation| {
-            if let ContractModerators::AppointedModerators(ids) = &mut moderation.moderators {
+            let named = match &mut moderation.moderators {
+                ContractModerators::AppointedModerators(ids) => Some(ids),
+                ContractModerators::Elected(elected) => match &mut elected.interim {
+                    InterimModerators::AppointedModerators(ids) => Some(ids),
+                    InterimModerators::ContractOwner
+                    | InterimModerators::NotYetUsable
+                    | InterimModerators::NoModeration => None,
+                },
+                ContractModerators::ContractOwner => None,
+            };
+            if let Some(ids) = named {
                 if ids.remove(&THE_MODERATOR) {
                     ids.insert(moderator.id());
                 }
@@ -393,6 +430,42 @@ impl Setup {
             .map(|entry| entry.removal)
     }
 
+    /// The document of `document_type_name` stored at `document_id`, if there is one
+    fn stored_document(
+        &self,
+        document_type_name: &str,
+        document_id: Identifier,
+        transaction: Option<&Transaction>,
+    ) -> Option<Document> {
+        let document_type = self
+            .contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type");
+        let query = DriveDocumentQuery::new_primary_key_single_item_query(
+            &self.contract,
+            document_type,
+            document_id,
+        );
+        self.platform
+            .drive
+            .query_documents(query, None, false, transaction, None)
+            .expect("expected to query the document")
+            .documents_owned()
+            .pop()
+    }
+
+    /// `document` serialized under its type: what a restore carries, and what a removal
+    /// record hashes
+    fn document_bytes(&self, document_type_name: &str, document: &Document) -> Vec<u8> {
+        let document_type = self
+            .contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type");
+        document
+            .serialize(document_type, &self.contract, PlatformVersion::latest())
+            .expect("expected to serialize the document")
+    }
+
     fn balance(&self, identity_id: Identifier, transaction: Option<&Transaction>) -> Credits {
         self.platform
             .drive
@@ -405,8 +478,10 @@ impl Setup {
             .expect("expected the identity to have a balance")
     }
 
-    /// Proves the committed state for a document deletion and checks the proof shows its
-    /// record.
+    /// Proves the committed state for a document deletion or restore and checks the proof
+    /// shows its record. A restore's verifier reads the document's id out of the bytes under
+    /// the contract's document type, so it is given the contract, as a client holding it is;
+    /// a deletion's needs none.
     fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
         let platform_version = PlatformVersion::latest();
         let proof = self
@@ -416,11 +491,13 @@ impl Setup {
             .expect("expected to prove the state transition")
             .into_data()
             .expect("expected proof bytes");
+        let known_contracts: BTreeMap<Identifier, DataContract> =
+            BTreeMap::from([(self.contract.id(), self.contract.clone())]);
         let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             transition,
             &BlockInfo::default(),
             &proof,
-            &|_| Ok(None),
+            &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
             platform_version,
         )
         .expect("expected the proof to verify");
@@ -531,12 +608,21 @@ impl Setup {
         identity_id: Identifier,
         transaction: Option<&Transaction>,
     ) -> ContractModerationStatus {
+        self.status_on(identity_id, &BOTH, transaction)
+    }
+
+    fn status_on(
+        &self,
+        identity_id: Identifier,
+        lists: &[ContractModerationList],
+        transaction: Option<&Transaction>,
+    ) -> ContractModerationStatus {
         self.platform
             .drive
             .fetch_contract_moderation_status(
                 self.contract.id(),
                 identity_id,
-                &BOTH,
+                lists,
                 transaction,
                 PlatformVersion::latest(),
             )
@@ -632,6 +718,7 @@ fn suspension_reason() -> ContractModerationReason {
     ContractModerationReason {
         code: Some(7),
         text: "flooding".to_string(),
+        documents: vec![],
     }
 }
 
@@ -671,6 +758,34 @@ fn suspend_action(identity_id: Identifier, until: TimestampMillis) -> ContractUs
 
 fn unsuspend_action(identity_id: Identifier) -> ContractUserModerationAction {
     ContractUserModerationAction::Unsuspend { identity_id }
+}
+
+fn warn_action(identity_id: Identifier, text: &str) -> ContractUserModerationAction {
+    ContractUserModerationAction::Warn {
+        identity_id,
+        reason: ContractModerationReason::from_text(text),
+    }
+}
+
+fn clear_warnings_action(identity_id: Identifier) -> ContractUserModerationAction {
+    ContractUserModerationAction::ClearWarnings { identity_id }
+}
+
+/// The warning a `warn_action` for `text` leaves in a block at `time_ms`.
+fn warning(time_ms: TimestampMillis, text: &str) -> ContractWarning {
+    ContractWarning {
+        warned_at: time_ms,
+        reason: ContractModerationReason::from_text(text),
+    }
+}
+
+/// The status of an identity that carries `warnings` and nothing else.
+fn warned_with(warnings: Vec<ContractWarning>) -> ContractModerationStatus {
+    ContractModerationStatus {
+        ban: None,
+        suspension: None,
+        warnings,
+    }
 }
 
 #[tokio::test]
@@ -762,6 +877,388 @@ async fn should_suspend_until_a_block_time_and_sweep_the_suspension_once_it_laps
     assert_paid_with_code(
         &setup.process(&unsuspend, &transaction),
         CONTRACT_USER_NOT_SUSPENDED,
+    );
+}
+
+#[tokio::test]
+async fn should_warn_a_user_without_barring_it_accumulate_the_warnings_and_clear_them() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        true,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let warnings = [ContractModerationList::Warnings];
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let first = setup
+        .moderate(&setup.owner, warn_action(user_id, "first strike"))
+        .await;
+    assert_success(&setup.process(&first, &transaction));
+    // A warned user carries on: its documents pass, in the mempool and in a block.
+    let document = setup.create_document(&setup.user).await;
+    assert!(setup.check_tx(&document).is_empty());
+    assert_success(&setup.process(&document, &transaction));
+
+    // A second warning, by the named moderator, in a later block: the entry grows.
+    let second = setup
+        .moderate(&setup.moderator, warn_action(user_id, "second strike"))
+        .await;
+    assert_success(&setup.process_at(&second, BLOCK_TIME_MS + 5_000, &transaction));
+    setup.commit(transaction);
+    assert_eq!(
+        setup.status_on(user_id, &warnings, None),
+        warned_with(vec![
+            warning(BLOCK_TIME_MS, "first strike"),
+            warning(BLOCK_TIME_MS + 5_000, "second strike"),
+        ])
+    );
+    // The banlist says nothing: warnings bar nothing.
+    assert_eq!(
+        setup.status(user_id, None),
+        ContractModerationStatus::default()
+    );
+    // The execution proof shows the warning list alone, with the latest warning last.
+    assert_eq!(
+        setup.assert_execution_proved(&second),
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Warnings {
+            warnings: vec![
+                warning(BLOCK_TIME_MS, "first strike"),
+                warning(BLOCK_TIME_MS + 5_000, "second strike"),
+            ],
+        }])
+    );
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let clear = setup
+        .moderate(&setup.owner, clear_warnings_action(user_id))
+        .await;
+    assert_success(&setup.process(&clear, &transaction));
+    assert_eq!(
+        setup.status_on(user_id, &warnings, Some(&transaction)),
+        ContractModerationStatus::default()
+    );
+    // Nothing is left to clear.
+    let clear_again = setup
+        .moderate(&setup.owner, clear_warnings_action(user_id))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&clear_again, &transaction),
+        CONTRACT_USER_NOT_WARNED,
+    );
+    setup.commit(transaction);
+    assert_eq!(
+        setup.assert_execution_proved(&clear),
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Warnings {
+            warnings: vec![],
+        }])
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_warning_past_the_limit_until_the_warnings_are_cleared() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        false,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let max_warnings = PlatformVersion::latest()
+        .system_limits
+        .max_contract_warnings_per_identity;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    for index in 0..max_warnings {
+        let warn = setup
+            .moderate(
+                &setup.owner,
+                warn_action(user_id, &format!("strike {index}")),
+            )
+            .await;
+        assert_success(&setup.process(&warn, &transaction));
+    }
+    setup.commit(transaction);
+    assert_eq!(
+        setup
+            .status_on(user_id, &[ContractModerationList::Warnings], None)
+            .warnings
+            .len(),
+        usize::from(max_warnings)
+    );
+    // The mempool refuses the one too many before a block does.
+    let one_too_many = setup
+        .moderate(&setup.owner, warn_action(user_id, "one too many"))
+        .await;
+    let mempool_errors = setup.check_tx(&one_too_many);
+    assert_eq!(mempool_errors.len(), 1, "{mempool_errors:?}");
+    assert_eq!(
+        mempool_errors[0].code(),
+        CONTRACT_USER_WARNING_LIMIT_REACHED
+    );
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_paid_with_code(
+        &setup.process(&one_too_many, &transaction),
+        CONTRACT_USER_WARNING_LIMIT_REACHED,
+    );
+
+    let clear = setup
+        .moderate(&setup.owner, clear_warnings_action(user_id))
+        .await;
+    assert_success(&setup.process(&clear, &transaction));
+    let again = setup
+        .moderate(&setup.owner, warn_action(user_id, "a fresh start"))
+        .await;
+    assert_success(&setup.process(&again, &transaction));
+}
+
+#[tokio::test]
+async fn should_keep_the_warning_list_out_of_bans_and_the_gate() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        true,
+        true,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let every_list = [
+        ContractModerationList::Banlist,
+        ContractModerationList::Suspensions,
+        ContractModerationList::Warnings,
+    ];
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let warn = setup
+        .moderate(&setup.owner, warn_action(user_id, "first strike"))
+        .await;
+    assert_success(&setup.process(&warn, &transaction));
+    // A ban of a warned user leaves the warnings, which say how it came to that.
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    assert_eq!(
+        setup.status_on(user_id, &every_list, Some(&transaction)),
+        ContractModerationStatus {
+            ban: banned(),
+            suspension: None,
+            warnings: vec![warning(BLOCK_TIME_MS, "first strike")],
+        }
+    );
+    // A banned user may still be warned: the warning outlives the ban.
+    let warn_banned = setup
+        .moderate(&setup.owner, warn_action(user_id, "and again"))
+        .await;
+    assert_success(&setup.process(&warn_banned, &transaction));
+    setup.commit(transaction);
+
+    // The ban's proof covers the barring lists and leaves the warning list unknown.
+    let proved = setup.assert_execution_proved(&ban);
+    assert_eq!(proved.banned(), Some(true));
+    assert_eq!(proved.suspended_until(), Some(None));
+    assert_eq!(proved.warnings(), None);
+
+    // Unbanned, the user carries on with its two warnings on record.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let unban = setup.moderate(&setup.owner, unban_action(user_id)).await;
+    assert_success(&setup.process(&unban, &transaction));
+    let document = setup.create_document(&setup.user).await;
+    assert_success(&setup.process(&document, &transaction));
+    assert_eq!(
+        setup
+            .status_on(
+                user_id,
+                &[ContractModerationList::Warnings],
+                Some(&transaction)
+            )
+            .warnings
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn should_store_the_documents_a_reason_cites_without_looking_them_up() {
+    let setup = Setup::new_with_posts(Some(moderation_with_warnings(
+        true,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let max_documents = PlatformVersion::latest()
+        .system_limits
+        .max_contract_moderation_reason_documents;
+    let cite = |seeds: &[u8]| {
+        seeds
+            .iter()
+            .map(|seed| ContractModerationDocument {
+                document_type_name: POST.to_string(),
+                document_id: Identifier::from([*seed; 32]),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    // The user's real post, and one that never existed: neither is looked up.
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let mut documents = cite(&[0xEE]);
+    documents.push(ContractModerationDocument {
+        document_type_name: POST.to_string(),
+        document_id: post.id(),
+    });
+    let reason = ContractModerationReason::from_text("these posts").with_documents(documents);
+    let warn = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Warn {
+                identity_id: user_id,
+                reason: reason.clone(),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&warn, &transaction));
+    assert_eq!(
+        setup
+            .status_on(
+                user_id,
+                &[ContractModerationList::Warnings],
+                Some(&transaction)
+            )
+            .warnings[0]
+            .reason,
+        reason
+    );
+    // A ban cites documents the same way, and its proof carries them.
+    let ban = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::Ban {
+                identity_id: user_id,
+                reason: reason.clone(),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    setup.commit(transaction);
+    assert_eq!(
+        setup
+            .assert_execution_proved(&ban)
+            .ban()
+            .flatten()
+            .map(|ban| &ban.reason),
+        Some(&reason)
+    );
+
+    // Too many, or one twice: refused unpaid, in the mempool as in a block.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    for documents in [
+        cite(&(1..=max_documents as u8 + 1).collect::<Vec<u8>>()),
+        cite(&[1, 1]),
+    ] {
+        let refused = setup
+            .moderate(
+                &setup.owner,
+                ContractUserModerationAction::Warn {
+                    identity_id: setup.stranger.id(),
+                    reason: ContractModerationReason::from_text("spam").with_documents(documents),
+                },
+            )
+            .await;
+        assert_eq!(
+            setup.check_tx(&refused)[0].code(),
+            INVALID_CONTRACT_MODERATION_REASON_DOCUMENTS
+        );
+        assert_unpaid_with_code(
+            &setup.process(&refused, &transaction),
+            INVALID_CONTRACT_MODERATION_REASON_DOCUMENTS,
+        );
+    }
+}
+
+#[tokio::test]
+async fn should_refuse_a_warning_that_breaks_a_rule() {
+    let setup = Setup::new(Some(moderation_with_warnings(
+        true,
+        false,
+        true,
+        THE_MODERATOR,
+    )))
+    .await;
+    let user_id = setup.user.id();
+    let max_length = PlatformVersion::latest()
+        .system_limits
+        .max_contract_moderation_reason_length as usize;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    // Only a moderator warns, and neither the owner nor a moderator can be warned.
+    let by_stranger = setup
+        .moderate(&setup.stranger, warn_action(user_id, "spam"))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&by_stranger, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+    let owner_warns_moderator = setup
+        .moderate(&setup.owner, warn_action(setup.moderator.id(), "spam"))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&owner_warns_moderator, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+    let self_target = setup
+        .moderate(&setup.owner, warn_action(setup.owner.id(), "spam"))
+        .await;
+    assert_unpaid_with_code(
+        &setup.process(&self_target, &transaction),
+        CONTRACT_MODERATION_SELF_TARGET,
+    );
+    let unknown = setup
+        .moderate(
+            &setup.owner,
+            warn_action(Identifier::from([0xEE; 32]), "spam"),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&unknown, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_FOUND,
+    );
+    // The reason of a warning is bounded like a ban's, and refused unpaid.
+    let too_long = setup
+        .moderate(
+            &setup.owner,
+            warn_action(user_id, &"x".repeat(max_length + 1)),
+        )
+        .await;
+    assert_unpaid_with_code(
+        &setup.process(&too_long, &transaction),
+        CONTRACT_MODERATION_REASON_TOO_LONG,
+    );
+    assert_eq!(
+        setup.check_tx(&too_long)[0].code(),
+        CONTRACT_MODERATION_REASON_TOO_LONG
+    );
+
+    // A contract without a warning list refuses a warning and a clearing alike.
+    let without = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = without.platform.drive.grove.start_transaction();
+    let warn = without
+        .moderate(&without.owner, warn_action(without.user.id(), "spam"))
+        .await;
+    assert_paid_with_code(
+        &without.process(&warn, &transaction),
+        CONTRACT_MODERATION_NOT_ENABLED,
+    );
+    let clear = without
+        .moderate(&without.owner, clear_warnings_action(without.user.id()))
+        .await;
+    assert_paid_with_code(
+        &without.process(&clear, &transaction),
+        CONTRACT_MODERATION_NOT_ENABLED,
     );
 }
 
@@ -880,6 +1377,7 @@ async fn should_refuse_actions_that_do_not_fit_the_targets_status() {
         ContractModerationStatus {
             ban: banned(),
             suspension: None,
+            warnings: vec![],
         }
     );
     let ban_again = setup.moderate(&setup.owner, ban_action(user_id)).await;
@@ -958,6 +1456,17 @@ async fn should_fix_the_lists_a_contract_keeps_when_it_is_created() {
         let update = setup.contract_update(changed).await;
         config_update_refused(setup.process(&update, &transaction), what);
     }
+    // The warning list is fixed at creation like the others.
+    let mut with_warnings = setup.contract.clone();
+    with_warnings.set_version(2);
+    with_warnings.set_config(with_warnings.config().clone().with_moderation(Some(
+        moderation_with_warnings(true, false, true, setup.moderator.id()),
+    )));
+    let update = setup.contract_update(with_warnings).await;
+    config_update_refused(
+        setup.process(&update, &transaction),
+        "a warning list turned on",
+    );
 }
 
 #[tokio::test]
@@ -1150,6 +1659,7 @@ async fn should_refuse_an_update_adding_a_moderator_that_does_not_exist() {
                 moderators: ContractModerators::AppointedModerators(
                     [setup.moderator.id(), unknown].into_iter().collect(),
                 ),
+                warnings: false,
             })),
     );
     let update = setup.contract_update(widened).await;
@@ -1179,6 +1689,7 @@ async fn should_accept_an_update_that_keeps_the_existing_moderators() {
                         .into_iter()
                         .collect(),
                 ),
+                warnings: false,
             })),
     );
     let update = setup.contract_update(widened).await;
@@ -1199,6 +1710,7 @@ async fn should_accept_an_update_that_keeps_the_existing_moderators() {
                         .into_iter()
                         .collect(),
                 ),
+                warnings: false,
             })),
     );
     let update = setup.contract_update(unchanged).await;
@@ -1213,6 +1725,7 @@ async fn should_accept_the_owner_named_among_the_moderators() {
         moderators: ContractModerators::AppointedModerators(
             [THE_OWNER, THE_MODERATOR].into_iter().collect(),
         ),
+        warnings: false,
     }))
     .await;
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -1260,6 +1773,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
     let suspension_reason = ContractModerationReason {
         code: Some(u16::MAX),
         text: "flooding the feed".to_string(),
+        documents: vec![],
     };
     let transaction = setup.platform.drive.grove.start_transaction();
     let suspend = setup
@@ -1281,6 +1795,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
                 until,
                 reason: suspension_reason,
             }),
+            warnings: vec![],
         }
     );
 
@@ -1300,6 +1815,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
         ContractModerationStatus {
             ban: Some(ContractBan::default()),
             suspension: None,
+            warnings: vec![],
         }
     );
 }
@@ -1690,10 +2206,18 @@ fn delete_action(
     }
 }
 
+fn restore_action(document_type_name: &str, document: Vec<u8>) -> ContractUserModerationAction {
+    ContractUserModerationAction::RestoreDocument {
+        document_type_name: document_type_name.to_string(),
+        document: BinaryData::new(document),
+    }
+}
+
 fn deletion_reason() -> ContractModerationReason {
     ContractModerationReason {
         code: Some(3),
         text: "spam".to_string(),
+        documents: vec![],
     }
 }
 
@@ -1712,6 +2236,12 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
     assert_success(&setup.process(&create, &transaction));
     setup.commit(transaction);
     let balance_before = setup.balance(user_id, None);
+    // What the record will commit to: the post as stored, timestamps the block gave it
+    // included, serialized under its type.
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let document_hash = hash_double(setup.document_bytes(POST, &stored));
 
     let delete = setup
         .moderate(&setup.moderator, delete_action(POST, post.id()))
@@ -1749,12 +2279,14 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
     );
     drop(transaction);
 
-    // Its record says whose it was, who removed it, why and when.
+    // Its record says whose it was, who removed it, why and when, and what it was.
     let expected = ContractDocumentRemoval {
         document_owner_id: user_id,
         moderator_id: setup.moderator.id(),
         reason: deletion_reason(),
         removed_at: BLOCK_TIME_MS,
+        document_hash,
+        restoration: None,
     };
     assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
     assert_eq!(setup.assert_removal_proved(&delete), expected);
@@ -1967,6 +2499,7 @@ async fn should_tie_the_document_type_keyword_to_the_moderation_declaration() {
                 banlist: false,
                 suspensions: false,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             })),
     );
     let create = DataContractCreateTransition::new_from_data_contract(
@@ -2501,4 +3034,703 @@ async fn should_fix_the_window_of_a_document_type() {
         let update = setup.contract_update(changed).await;
         assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);
     }
+}
+
+/// An elected declaration keeping both lists, allowing bans and suspensions, moderating
+/// `moderated`, with `interim` until a team is seated
+fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModerationConfig {
+    ContractModerationConfig {
+        banlist: true,
+        suspensions: true,
+        warnings: false,
+        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            challenge_cool_down: 1_209_600,
+            moderated_document_types: moderated
+                .iter()
+                .map(|name| {
+                    (
+                        name.to_string(),
+                        BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]),
+                    )
+                })
+                .collect(),
+            interim,
+            election_delay: None,
+            owner_protected: false,
+        })),
+    }
+}
+
+fn assert_config_update_refused(execution: &StateTransitionExecutionResult, what: &str) {
+    assert!(
+        matches!(
+            execution,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DataContractConfigUpdateError(_)),
+                ..
+            }
+        ),
+        "expected {what} to be refused, got {execution:?}"
+    );
+}
+
+/// The owner moderates an elected contract until a team is seated: it bans, nobody else may,
+/// the moderated type is usable, and the declaration is frozen against every update that
+/// touches it while one that leaves it alone goes through.
+#[tokio::test]
+async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::ContractOwner,
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    // The moderated type is usable: somebody moderates.
+    let post = setup.create_document(&setup.user).await;
+    assert_success(&setup.process(&post, &transaction));
+
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.user.id()))
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    assert_eq!(
+        setup.status(setup.user.id(), Some(&transaction)).ban,
+        banned()
+    );
+    let refused = setup.create_document(&setup.user).await;
+    assert_paid_with_code(&setup.process(&refused, &transaction), CONTRACT_USER_BANNED);
+
+    // The interim names nobody else: the moderator of the other tests is a stranger here.
+    for actor in [&setup.moderator, &setup.stranger] {
+        let ban = setup.moderate(actor, ban_action(setup.user.id())).await;
+        assert_paid_with_code(
+            &setup.process(&ban, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+
+    // Frozen: a changed field, a changed interim, and leaving elected moderation.
+    let with_config = |moderation: ContractModerationConfig| {
+        let mut changed = setup.contract.clone();
+        changed.set_version(2);
+        changed.set_config(changed.config().clone().with_moderation(Some(moderation)));
+        changed
+    };
+    let mut longer_cool_down = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+    if let ContractModerators::Elected(declaration) = &mut longer_cool_down.moderators {
+        declaration.challenge_cool_down += 1;
+    }
+    let mut protected_owner = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+    if let ContractModerators::Elected(declaration) = &mut protected_owner.moderators {
+        declaration.owner_protected = true;
+    }
+    for (moderation, what) in [
+        (longer_cool_down, "a longer cool-down"),
+        (protected_owner, "the owner flag turned on"),
+        (
+            elected(
+                InterimModerators::AppointedModerators([setup.moderator.id()].into()),
+                &[DOCUMENT_TYPE],
+            ),
+            "an appointed interim set",
+        ),
+        (
+            moderation(true, true, setup.moderator.id()),
+            "leaving elected moderation",
+        ),
+    ] {
+        let update = setup.contract_update(with_config(moderation)).await;
+        assert_config_update_refused(&setup.process(&update, &transaction), what);
+    }
+    // A wider moderated set is frozen too, even when the same update adds the type it names
+    // (without the type, the declaration's own validation refuses first).
+    let mut wider = with_config(elected(
+        InterimModerators::ContractOwner,
+        &[DOCUMENT_TYPE, POST],
+    ));
+    add_document_type(&mut wider, POST, post_schema(false));
+    let update = setup.contract_update(wider).await;
+    assert_config_update_refused(
+        &setup.process(&update, &transaction),
+        "a wider moderated set",
+    );
+
+    // An update that leaves the declaration alone goes through, and may add a type.
+    let mut widened = setup.contract.clone();
+    widened.set_version(2);
+    add_document_type(&mut widened, POST, post_schema(false));
+    let update = setup.contract_update(widened).await;
+    assert_success(&setup.process(&update, &transaction));
+}
+
+/// An appointed interim set moderates as an appointed set does: the moderator and the owner
+/// ban, a stranger may not, and both are protected from each other's bans.
+#[tokio::test]
+async fn should_let_an_appointed_interim_set_moderate_an_elected_contract() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::AppointedModerators([THE_MODERATOR].into()),
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    let ban = setup
+        .moderate(&setup.moderator, ban_action(setup.user.id()))
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.stranger.id()))
+        .await;
+    assert_success(&setup.process(&ban, &transaction));
+    let ban = setup
+        .moderate(&setup.stranger, ban_action(setup.user.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.moderator.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+    let ban = setup
+        .moderate(&setup.moderator, ban_action(setup.owner.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+
+    // The interim set shares the moderators pot, as an appointed set does.
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    assert_eq!(
+        ContractFeePot::Moderators.recipients(&setup.contract),
+        [setup.moderator.id()].into()
+    );
+}
+
+/// With nobody named in the interim, the moderated type waits for a team: its creates are
+/// refused, paid, in the mempool and in a block, another type works, nobody moderates, and
+/// nobody claims the moderators pot.
+#[tokio::test]
+async fn should_block_the_moderated_types_of_an_elected_contract_until_a_team_is_seated() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::NotYetUsable,
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    let blocked = setup.create_document(&setup.user).await;
+    let mempool_errors = setup.check_tx(&blocked);
+    assert_eq!(mempool_errors.len(), 1, "{mempool_errors:?}");
+    assert_eq!(
+        mempool_errors[0].code(),
+        CONTRACT_MODERATED_DOCUMENT_TYPE_NOT_YET_USABLE
+    );
+    assert_paid_with_code(
+        &setup.process(&blocked, &transaction),
+        CONTRACT_MODERATED_DOCUMENT_TYPE_NOT_YET_USABLE,
+    );
+
+    let (_, allowed) = setup
+        .create_document_of_type(&setup.user, "prettyDocument")
+        .await;
+    assert_success(&setup.process(&allowed, &transaction));
+
+    // Nobody moderates: the owner included.
+    for actor in [&setup.owner, &setup.moderator] {
+        let ban = setup.moderate(actor, ban_action(setup.user.id())).await;
+        assert_paid_with_code(
+            &setup.process(&ban, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    assert!(ContractFeePot::Moderators
+        .recipients(&setup.contract)
+        .is_empty());
+}
+
+/// Under a `noModeration` interim the moderated types are used, unmoderated: nobody may
+/// moderate, the owner included, and nobody claims the pot.
+#[tokio::test]
+async fn should_leave_the_moderated_types_usable_and_unmoderated_under_no_moderation() {
+    let setup = Setup::new(Some(elected(
+        InterimModerators::NoModeration,
+        &[DOCUMENT_TYPE],
+    )))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    let post = setup.create_document(&setup.user).await;
+    assert!(setup.check_tx(&post).is_empty());
+    assert_success(&setup.process(&post, &transaction));
+
+    for actor in [&setup.owner, &setup.moderator] {
+        let ban = setup.moderate(actor, ban_action(setup.user.id())).await;
+        assert_paid_with_code(
+            &setup.process(&ban, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    assert!(ContractFeePot::Moderators
+        .recipients(&setup.contract)
+        .is_empty());
+}
+
+/// A declaration outside a bound or naming a type the contract does not have is refused,
+/// unpaid, at the create; a contract that was not born elected can not become so.
+#[tokio::test]
+async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
+    let mut setup = Setup::new(None).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract = setup.contract.clone();
+    let with = |modify: fn(&mut ElectedModerators)| {
+        let mut moderation = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+        if let ContractModerators::Elected(declaration) = &mut moderation.moderators {
+            modify(declaration);
+        }
+        moderation
+    };
+    for (moderation, what) in [
+        (
+            with(|d| d.join_window = 86_399),
+            "a join window under a day",
+        ),
+        (
+            with(|d| d.vote_window = 86_399),
+            "a vote window under a day",
+        ),
+        (
+            with(|d| d.challenge_cool_down = 94_608_001),
+            "a cool-down over three years",
+        ),
+        (
+            with(|d| {
+                d.moderated_document_types = BTreeMap::from([(
+                    "comment".to_string(),
+                    BTreeSet::from([ModerationAbility::Ban]),
+                )]);
+            }),
+            "an unknown moderated type",
+        ),
+        (
+            with(|d| {
+                d.moderated_document_types
+                    .insert(DOCUMENT_TYPE.to_string(), BTreeSet::new());
+            }),
+            "an empty ability set",
+        ),
+        (
+            with(|d| {
+                d.moderated_document_types
+                    .get_mut(DOCUMENT_TYPE)
+                    .expect("moderated")
+                    .insert(ModerationAbility::DeleteDocuments);
+            }),
+            "deletions on a type moderators can not delete from",
+        ),
+    ] {
+        setup
+            .contract
+            .set_config(contract.config().clone().with_moderation(Some(moderation)));
+        let create = setup
+            .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+            .await;
+        let execution = setup.process(&create, &transaction);
+        assert_unpaid_with_code(&execution, INVALID_CONTRACT_MODERATION_CONFIG);
+        assert!(
+            matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.to_string().contains("elected moderation")),
+            "expected {what} to name the declaration, got {execution:?}"
+        );
+    }
+    // The bounds hold: the same declaration at its minimums is accepted.
+    setup
+        .contract
+        .set_config(contract.config().clone().with_moderation(Some(with(|d| {
+            d.join_window = 86_400;
+            d.vote_window = 86_400;
+        }))));
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    drop(transaction);
+
+    // Entering elected moderation by an update is refused.
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let mut entering = setup.contract.clone();
+    entering.set_version(2);
+    entering.set_config(entering.config().clone().with_moderation(Some(elected(
+        InterimModerators::ContractOwner,
+        &[DOCUMENT_TYPE],
+    ))));
+    let update = setup.contract_update(entering).await;
+    assert_config_update_refused(
+        &setup.process(&update, &transaction),
+        "entering elected moderation",
+    );
+}
+/// How long after a moderator's deletion a document can be restored: the protocol's week.
+fn restore_window_ms() -> TimestampMillis {
+    PlatformVersion::latest()
+        .system_limits
+        .contract_document_restore_window_ms
+}
+
+#[tokio::test]
+async fn should_let_any_moderator_restore_a_deleted_post_within_a_week_and_delete_it_again() {
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    // The post as stored is what comes back: a client keeps it, or its bytes, before deleting.
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+    let removal = setup
+        .post_removal(post.id(), None)
+        .expect("expected the record");
+    assert_eq!(removal.document_hash, hash_double(&bytes));
+    assert_eq!(removal.restoration, None);
+    assert_eq!(setup.stored_document(POST, post.id(), None), None);
+
+    // Restored by the contract owner, not the moderator that deleted it, to the millisecond
+    // the window ends on. The mempool takes it, as it does a ban.
+    let restored_at = BLOCK_TIME_MS + restore_window_ms();
+    let author_before = setup.balance(user_id, None);
+    let owner_before = setup.balance(setup.owner.id(), None);
+    let restore = setup
+        .moderate(&setup.owner, restore_action(POST, bytes.clone()))
+        .await;
+    assert!(setup.check_tx(&restore).is_empty());
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process_at(&restore, restored_at, &transaction));
+    setup.commit(transaction);
+
+    // The post is back as it was, and its record says who brought it back and when.
+    assert_eq!(setup.stored_document(POST, post.id(), None), Some(stored));
+    let expected = ContractDocumentRemoval {
+        restoration: Some(ContractDocumentRestoration {
+            moderator_id: setup.owner.id(),
+            restored_at,
+        }),
+        ..removal.clone()
+    };
+    assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
+    assert_eq!(setup.assert_removal_proved(&restore), expected);
+    // The owner paid for the post's storage; its author paid nothing and got nothing.
+    assert!(setup.balance(setup.owner.id(), None) < owner_before);
+    assert_eq!(setup.balance(user_id, None), author_before);
+
+    // Deleted again: a fresh record in place of the restored one, the author refunded nothing.
+    let removed_again_at = restored_at + 1;
+    let delete_again = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process_at(&delete_again, removed_again_at, &transaction));
+    setup.commit(transaction);
+    assert_eq!(
+        setup.post_removal(post.id(), None),
+        Some(ContractDocumentRemoval {
+            removed_at: removed_again_at,
+            restoration: None,
+            ..removal
+        })
+    );
+    assert_eq!(setup.stored_document(POST, post.id(), None), None);
+    assert_eq!(setup.balance(user_id, None), author_before);
+}
+
+#[tokio::test]
+async fn should_refund_the_author_who_deletes_a_restored_post() {
+    // The restored post's storage flags name its author, as they did before: the refund of the
+    // author's own deletion is the author's, though a moderator paid to put the post back.
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process_at(&restore, BLOCK_TIME_MS + 1, &transaction));
+    setup.commit(transaction);
+
+    let author_before = setup.balance(user_id, None);
+    let moderator_before = setup.balance(setup.moderator.id(), None);
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let own_delete = own_post_deletion(&setup, &setup.user, stored).await;
+    assert_success(&setup.process(&own_delete, &transaction));
+    setup.commit(transaction);
+    assert!(
+        setup.balance(user_id, None) > author_before,
+        "the storage refund outweighs the deletion's processing fee"
+    );
+    assert_eq!(setup.balance(setup.moderator.id(), None), moderator_before);
+    // The author's deletion is no moderation: the record stays as the restore left it.
+    assert_eq!(
+        setup
+            .post_removal(post.id(), None)
+            .and_then(|removal| removal.restoration)
+            .map(|restoration| restoration.moderator_id),
+        Some(setup.moderator.id())
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_document_restore_that_breaks_a_rule() {
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let (nice_document, create) = setup.create_document_keeping_it(&setup.user).await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    // Nothing to restore: the post is live and has no record.
+    let live = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes.clone()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&live, &transaction),
+        CONTRACT_DOCUMENT_REMOVAL_NOT_FOUND,
+    );
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // Nobody but the owner and the moderators, the post's author included.
+    for actor in [&setup.stranger, &setup.user] {
+        let by_other = setup
+            .moderate(actor, restore_action(POST, bytes.clone()))
+            .await;
+        assert_paid_with_code(
+            &setup.process(&by_other, &transaction),
+            IDENTITY_NOT_CONTRACT_MODERATOR,
+        );
+    }
+
+    // Only a document type that says so, and one that exists.
+    let nice_stored = setup
+        .stored_document(DOCUMENT_TYPE, nice_document.id(), Some(&transaction))
+        .expect("expected the document to be stored");
+    let of_another_type = setup
+        .moderate(
+            &setup.moderator,
+            restore_action(
+                DOCUMENT_TYPE,
+                setup.document_bytes(DOCUMENT_TYPE, &nice_stored),
+            ),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_another_type, &transaction),
+        DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS,
+    );
+    let of_no_type = setup
+        .moderate(&setup.moderator, restore_action("comment", bytes.clone()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_no_type, &transaction),
+        INVALID_DOCUMENT_TYPE,
+    );
+
+    // Bytes that do not decode under the type: a paid refusal, never an execution error.
+    let garbage = setup
+        .moderate(&setup.moderator, restore_action(POST, vec![]))
+        .await;
+    assert_paid_with_code(&setup.process(&garbage, &transaction), DECODING_DOCUMENT);
+
+    // The post as it was, not an edit of it: the same post with other text decodes, and is
+    // refused by its hash.
+    let mut edited = stored.clone();
+    edited.set("text", Value::Text("something else".to_string()));
+    let of_an_edit = setup
+        .moderate(
+            &setup.moderator,
+            restore_action(POST, setup.document_bytes(POST, &edited)),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_an_edit, &transaction),
+        DOCUMENT_RESTORE_HASH_MISMATCH,
+    );
+
+    // Not past the window, whoever asks.
+    let past_the_window = BLOCK_TIME_MS + restore_window_ms() + 1;
+    for actor in [&setup.moderator, &setup.owner] {
+        let too_late = setup
+            .moderate(actor, restore_action(POST, bytes.clone()))
+            .await;
+        assert_paid_with_code(
+            &setup.process_at(&too_late, past_the_window, &transaction),
+            DOCUMENT_RESTORE_WINDOW_ELAPSED,
+        );
+    }
+
+    // None of it brought the post back or touched its record.
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        None
+    );
+    assert_eq!(
+        setup
+            .post_removal(post.id(), Some(&transaction))
+            .map(|removal| removal.restoration),
+        Some(None)
+    );
+
+    // Once restored, restored: the record says so.
+    let restore = setup
+        .moderate(&setup.owner, restore_action(POST, bytes.clone()))
+        .await;
+    assert_success(&setup.process_at(&restore, BLOCK_TIME_MS + restore_window_ms(), &transaction));
+    let twice = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&twice, &transaction),
+        CONTRACT_DOCUMENT_ALREADY_RESTORED,
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_to_restore_a_post_whose_unique_value_another_post_took_meanwhile() {
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "indices": [
+                        { "name": "byText", "properties": [{ "text": "asc" }], "unique": true },
+                    ],
+                })),
+            )
+        },
+    )
+    .await;
+    let text = Value::Text("first!".to_string());
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("text", text.clone())
+        })
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // The value is free while the post is gone, and a stranger takes it.
+    let (_, create_other) = setup
+        .create_document_of_type_with(&setup.stranger, POST, |document| {
+            document.set("text", text.clone())
+        })
+        .await;
+    assert_success(&setup.process(&create_other, &transaction));
+
+    // The post can not come back beside it, and the refusal is paid.
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&restore, BLOCK_TIME_MS + 1, &transaction),
+        DUPLICATE_UNIQUE_INDEX,
+    );
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        None
+    );
+}
+
+#[tokio::test]
+async fn should_bring_a_post_back_settled_when_its_deletion_window_ran_out_meanwhile() {
+    // A restored post is the post as it was, `$updatedAt` included: the type's deletion
+    // window, measured from that, may have run out on it while it was gone. The author can
+    // still delete it; the moderators can not, until the author edits it.
+    let setup = setup_with_a_moderation_window().await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // Restored after the deletion window, within the restore window.
+    let restored_at = BLOCK_TIME_MS + MODERATION_WINDOW_MS + 1;
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process_at(&restore, restored_at, &transaction));
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        Some(stored.clone())
+    );
+
+    let delete_again = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&delete_again, restored_at + 1, &transaction),
+        DOCUMENT_MODERATION_WINDOW_ELAPSED,
+    );
+    let own_delete = own_post_deletion(&setup, &setup.user, stored).await;
+    assert_success(&setup.process_at(&own_delete, restored_at + 1, &transaction));
 }

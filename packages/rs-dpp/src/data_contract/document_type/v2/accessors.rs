@@ -232,6 +232,11 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.index_only
     }
 
+    /// The entry-payload property names of an indexOnly type.
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        &self.entry_payload
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         self.documents_can_be_deleted_by_moderators
     }

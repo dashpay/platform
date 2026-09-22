@@ -2574,6 +2574,9 @@ public class PlatformWalletManager: ObservableObject {
             )
         }
 
+        // Snapshot cleanup must succeed before deleting keys or live rows.
+        try persistenceHandler.deleteCompletedMigrationSnapshots()
+
         let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
 
         // Wipe Keychain BEFORE the SwiftData identity deletion runs.

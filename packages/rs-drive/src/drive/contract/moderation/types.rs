@@ -1,6 +1,6 @@
 use dpp::data_contract::config::moderation::{
-    ContractBan, ContractDocumentRemoval, ContractModerationList, ContractModerationReason,
-    ContractSuspension,
+    ContractBan, ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationDocument,
+    ContractModerationList, ContractModerationReason, ContractSuspension, ContractWarning,
 };
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::Identifier;
@@ -21,16 +21,22 @@ pub struct ContractModerationEntriesQuery {
 /// One entry of a moderation list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractModerationEntry {
-    /// The barred identity.
+    /// The identity on the list.
     pub identity_id: Identifier,
-    /// The end of the suspension for a suspension list entry, `None` for a banlist entry.
+    /// The end of the suspension for a suspension list entry, `None` for the other lists.
     pub until: Option<TimestampMillis>,
-    /// Why the moderator banned or suspended the identity.
+    /// Why the identity is on the list: the ban's reason, the suspension's, or for a warning
+    /// list entry the reason of the latest warning (which is kept once, with the warnings, on
+    /// the wire).
     pub reason: ContractModerationReason,
+    /// For a warning list entry, every warning the identity carries, oldest first; empty for
+    /// the other lists.
+    pub warnings: Vec<ContractWarning>,
 }
 
 impl ContractModerationEntry {
-    /// Decodes one stored entry: see [`encode_ban`] and [`encode_suspension`].
+    /// Decodes one stored entry: see [`encode_ban`], [`encode_suspension`] and
+    /// [`encode_warnings`].
     pub fn from_key_element(
         list: ContractModerationList,
         key: &[u8],
@@ -48,6 +54,7 @@ impl ContractModerationEntry {
                     identity_id,
                     until: None,
                     reason,
+                    warnings: vec![],
                 })
             }
             ContractModerationList::Suspensions => {
@@ -56,6 +63,21 @@ impl ContractModerationEntry {
                     identity_id,
                     until: Some(until),
                     reason,
+                    warnings: vec![],
+                })
+            }
+            ContractModerationList::Warnings => {
+                let warnings = decode_warnings(value)?;
+                // A stored entry holds at least one warning: `decode_warnings` refuses none.
+                let reason = warnings
+                    .last()
+                    .map(|warning| warning.reason.clone())
+                    .unwrap_or_default();
+                Ok(Self {
+                    identity_id,
+                    until: None,
+                    reason,
+                    warnings,
                 })
             }
         }
@@ -64,6 +86,15 @@ impl ContractModerationEntry {
 
 /// The stored size of the `until` a suspension entry starts with: a u64.
 pub const CONTRACT_SUSPENSION_UNTIL_SIZE: usize = 8;
+
+/// The stored size of what each warning of a warning list entry starts with: its block time
+/// as a u64 and the length of its reason as a u16.
+pub const CONTRACT_WARNING_FIXED_SIZE: usize = 8 + 2;
+
+/// The number of warnings a warning list entry is estimated to hold when it is not known: the
+/// entries a write walks past, and the entry a clearing removes. An entry being written is
+/// priced by its own size.
+pub const ESTIMATED_CONTRACT_WARNINGS_PER_ENTRY: u32 = 2;
 
 /// The most bytes a reason's code takes in an entry: the tag and the u16.
 pub const CONTRACT_MODERATION_REASON_CODE_MAX_SIZE: u32 = 3;
@@ -77,13 +108,16 @@ pub const ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE: u32 = 128;
 /// write walks past, and the entry a delete removes. An entry being written is priced by its
 /// own size.
 pub fn estimated_entry_value_size(list: ContractModerationList) -> u32 {
-    let until_size = match list {
-        ContractModerationList::Banlist => 0,
-        ContractModerationList::Suspensions => CONTRACT_SUSPENSION_UNTIL_SIZE as u32,
-    };
-    until_size
-        + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
-        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
+    let reason_size =
+        CONTRACT_MODERATION_REASON_CODE_MAX_SIZE + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE;
+    match list {
+        ContractModerationList::Banlist => reason_size,
+        ContractModerationList::Suspensions => CONTRACT_SUSPENSION_UNTIL_SIZE as u32 + reason_size,
+        ContractModerationList::Warnings => {
+            ESTIMATED_CONTRACT_WARNINGS_PER_ENTRY
+                * (CONTRACT_WARNING_FIXED_SIZE as u32 + reason_size)
+        }
+    }
 }
 
 /// Which removal records of one document type to read.
@@ -148,27 +182,55 @@ impl ContractDocumentRemovalEntry {
 }
 
 /// The stored size of what a document removal starts with: the document owner's id, the
-/// moderator's id and the removal time as a u64.
-pub const CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE: usize = 32 + 32 + 8;
+/// moderator's id, the removal time as a u64, the hash of the removed document and the tag
+/// byte that says whether a restoration follows.
+pub const CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE: usize = 32 + 32 + 8 + 32 + 1;
+
+/// The stored size of the restoration a restored record carries after its tag: the restoring
+/// moderator's id and the restoration time as a u64.
+pub const CONTRACT_DOCUMENT_RESTORATION_SIZE: usize = 32 + 8;
+
+const NOT_RESTORED: u8 = 0;
+const RESTORED: u8 = 1;
 
 /// The size a document removal record is estimated at when its value is not known: the
-/// records a write walks past, sized like a list entry's typical reason. A record being
-/// written is priced by its own size.
+/// records a write walks past, sized like a list entry's typical reason and as if restored,
+/// the larger of the two shapes. A record being written is priced by its own size.
 pub fn estimated_document_removal_value_size() -> u32 {
-    CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE as u32
+    (CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + CONTRACT_DOCUMENT_RESTORATION_SIZE) as u32
         + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
         + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
 }
 
+/// The stored size of a document removal record.
+pub fn document_removal_encoded_size(removal: &ContractDocumentRemoval) -> usize {
+    CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE
+        + if removal.restoration.is_some() {
+            CONTRACT_DOCUMENT_RESTORATION_SIZE
+        } else {
+            0
+        }
+        + reason_encoded_size(&removal.reason)
+}
+
 /// Encodes a document removal record: the document owner's id, the moderator's id, the removal
-/// time as eight big-endian bytes, then the reason as in [`encode_ban`].
+/// time as eight big-endian bytes, the hash of the removed document, a tag byte (`0`: not
+/// restored, `1`: restored) followed when restored by the restoring moderator's id and the
+/// restoration time as eight big-endian bytes, then the reason as in [`encode_ban`].
 pub fn encode_document_removal(removal: &ContractDocumentRemoval) -> Vec<u8> {
-    let mut value = Vec::with_capacity(
-        CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + reason_encoded_size(&removal.reason),
-    );
+    let mut value = Vec::with_capacity(document_removal_encoded_size(removal));
     value.extend_from_slice(removal.document_owner_id.as_slice());
     value.extend_from_slice(removal.moderator_id.as_slice());
     value.extend_from_slice(&removal.removed_at.to_be_bytes());
+    value.extend_from_slice(&removal.document_hash);
+    match &removal.restoration {
+        None => value.push(NOT_RESTORED),
+        Some(restoration) => {
+            value.push(RESTORED);
+            value.extend_from_slice(restoration.moderator_id.as_slice());
+            value.extend_from_slice(&restoration.restored_at.to_be_bytes());
+        }
+    }
     encode_reason_into(&removal.reason, &mut value);
     value
 }
@@ -184,7 +246,33 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
     };
     let (document_owner_id, rest) = value.split_first_chunk::<32>().ok_or_else(cut_short)?;
     let (moderator_id, rest) = rest.split_first_chunk::<32>().ok_or_else(cut_short)?;
-    let (removed_at, reason) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
+    let (removed_at, rest) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
+    let (document_hash, rest) = rest.split_first_chunk::<32>().ok_or_else(cut_short)?;
+    let (tag, rest) = rest.split_first().ok_or_else(cut_short)?;
+    let (restoration, reason) = match *tag {
+        NOT_RESTORED => (None, rest),
+        RESTORED => {
+            let (restored_by, rest) = rest.split_first_chunk::<32>().ok_or_else(|| {
+                "document removal is cut short inside its restoration".to_string()
+            })?;
+            let (restored_at, reason) = rest.split_first_chunk::<8>().ok_or_else(|| {
+                "document removal is cut short inside its restoration".to_string()
+            })?;
+            (
+                Some(ContractDocumentRestoration {
+                    moderator_id: Identifier::from(*restored_by),
+                    restored_at: TimestampMillis::from_be_bytes(*restored_at),
+                }),
+                reason,
+            )
+        }
+        tag => {
+            return Err(format!(
+                "document removal has unknown restoration tag {}",
+                tag
+            ))
+        }
+    };
     // A list entry with no reason bytes is one written before entries carried a reason. No
     // record was ever written without one, so here the same bytes are a record cut short.
     if reason.is_empty() {
@@ -195,18 +283,24 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
         moderator_id: Identifier::from(*moderator_id),
         reason: decode_reason(reason)?,
         removed_at: TimestampMillis::from_be_bytes(*removed_at),
+        document_hash: *document_hash,
+        restoration,
     })
 }
 
+/// The tag byte of a reason: bit 0 says a code follows, bit 1 that documents follow.
 const REASON_WITHOUT_CODE: u8 = 0;
 const REASON_WITH_CODE: u8 = 1;
+const REASON_WITH_DOCUMENTS: u8 = 2;
 
 /// Encodes a banlist entry: its reason.
 ///
-/// A reason is a tag byte (`0`: no code, `1`: a code), the code as two big-endian bytes when
-/// the tag says so, and the text as UTF-8 up to the end of the value. A reason is always
-/// written with its tag; a value without one is an entry from before reasons existed and
-/// decodes as the empty reason.
+/// A reason is a tag byte (bit 0: a code, bit 1: documents), the code as two big-endian bytes
+/// when the tag says so, then, when the tag says so, the documents it cites as their count in
+/// one byte followed by each one's type name (its length in one byte, then the name) and its
+/// 32-byte id, and the text as UTF-8 up to the end of the value. A reason is always written
+/// with its tag; a value without one is an entry from before reasons existed and decodes as
+/// the empty reason, and a tag without bit 1 is a reason from before documents could be cited.
 pub fn encode_ban(reason: &ContractModerationReason) -> Vec<u8> {
     let mut value = Vec::with_capacity(reason_encoded_size(reason));
     encode_reason_into(reason, &mut value);
@@ -245,40 +339,171 @@ pub fn decode_suspension(value: &[u8]) -> Result<ContractSuspension, String> {
     })
 }
 
+/// Encodes a warning list entry: for each warning, oldest first, its block time as eight
+/// big-endian bytes, the length of its encoded reason as two big-endian bytes, then the reason
+/// as in [`encode_ban`]. The length prefix is what lets one value hold several reasons, each
+/// of which would otherwise run to the end of the value.
+///
+/// A reason is at most a tag, a code and `max_contract_moderation_reason_length` bytes of
+/// text, well within a u16, and a longer one never gets past basic structure validation. One
+/// that does not fit the prefix is refused rather than written short: an entry whose prefix
+/// undercounts its reason could never be read back.
+pub fn encode_warnings(warnings: &[ContractWarning]) -> Result<Vec<u8>, String> {
+    let mut value = Vec::with_capacity(
+        warnings
+            .iter()
+            .map(|warning| CONTRACT_WARNING_FIXED_SIZE + reason_encoded_size(&warning.reason))
+            .sum(),
+    );
+    for warning in warnings {
+        value.extend_from_slice(&warning.warned_at.to_be_bytes());
+        let reason_size = u16::try_from(reason_encoded_size(&warning.reason)).map_err(|_| {
+            format!(
+                "a warning's reason of {} bytes exceeds the {} the entry can hold",
+                reason_encoded_size(&warning.reason),
+                u16::MAX
+            )
+        })?;
+        value.extend_from_slice(&reason_size.to_be_bytes());
+        encode_reason_into(&warning.reason, &mut value);
+    }
+    Ok(value)
+}
+
+/// Decodes a warning list entry. An entry holds at least one warning: one that holds none was
+/// never written, since clearing the last warning deletes the entry.
+pub fn decode_warnings(value: &[u8]) -> Result<Vec<ContractWarning>, String> {
+    let mut warnings = Vec::new();
+    let mut rest = value;
+    while !rest.is_empty() {
+        let cut_short = || {
+            format!(
+                "warning list entry is cut short inside warning {}",
+                warnings.len() + 1
+            )
+        };
+        let (warned_at, after_time) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
+        let (reason_size, after_size) =
+            after_time.split_first_chunk::<2>().ok_or_else(cut_short)?;
+        let reason_size = usize::from(u16::from_be_bytes(*reason_size));
+        if after_size.len() < reason_size {
+            return Err(cut_short());
+        }
+        let (reason, after_reason) = after_size.split_at(reason_size);
+        // A reason is always written with its tag: no warning was ever written before reasons
+        // existed, so an empty one is a malformed entry rather than the empty reason.
+        if reason.is_empty() {
+            return Err(format!(
+                "warning {} of the warning list entry holds no reason",
+                warnings.len() + 1
+            ));
+        }
+        warnings.push(ContractWarning {
+            warned_at: TimestampMillis::from_be_bytes(*warned_at),
+            reason: decode_reason(reason)?,
+        });
+        rest = after_reason;
+    }
+    if warnings.is_empty() {
+        return Err("warning list entry holds no warning".to_string());
+    }
+    Ok(warnings)
+}
+
 fn reason_encoded_size(reason: &ContractModerationReason) -> usize {
-    1 + if reason.code.is_some() { 2 } else { 0 } + reason.text.len()
+    let documents_size = if reason.documents.is_empty() {
+        0
+    } else {
+        1 + reason
+            .documents
+            .iter()
+            .map(|document| 1 + document.document_type_name.len() + 32)
+            .sum::<usize>()
+    };
+    1 + if reason.code.is_some() { 2 } else { 0 } + documents_size + reason.text.len()
 }
 
 fn encode_reason_into(reason: &ContractModerationReason, value: &mut Vec<u8>) {
-    match reason.code {
-        None => value.push(REASON_WITHOUT_CODE),
-        Some(code) => {
-            value.push(REASON_WITH_CODE);
-            value.extend_from_slice(&code.to_be_bytes());
+    let mut tag = REASON_WITHOUT_CODE;
+    if reason.code.is_some() {
+        tag |= REASON_WITH_CODE;
+    }
+    if !reason.documents.is_empty() {
+        tag |= REASON_WITH_DOCUMENTS;
+    }
+    value.push(tag);
+    if let Some(code) = reason.code {
+        value.extend_from_slice(&code.to_be_bytes());
+    }
+    if !reason.documents.is_empty() {
+        // The count and each name fit a byte: the reason's validation bounds both, so a
+        // longer one never reaches a writer.
+        value.push(reason.documents.len().min(u8::MAX as usize) as u8);
+        for document in &reason.documents {
+            let name = document.document_type_name.as_bytes();
+            value.push(name.len().min(u8::MAX as usize) as u8);
+            value.extend_from_slice(name);
+            value.extend_from_slice(document.document_id.as_slice());
         }
     }
     value.extend_from_slice(reason.text.as_bytes());
 }
 
 fn decode_reason(value: &[u8]) -> Result<ContractModerationReason, String> {
-    let (code, text) = match value.split_first() {
-        Some((&REASON_WITHOUT_CODE, text)) => (None, text),
-        Some((&REASON_WITH_CODE, rest)) => {
-            let Some((code, text)) = rest.split_first_chunk::<2>() else {
-                return Err("moderation reason is cut short inside its code".to_string());
-            };
-            (Some(u16::from_be_bytes(*code)), text)
-        }
-        Some((tag, _)) => return Err(format!("moderation reason has unknown code tag {}", tag)),
-        // An entry written before entries carried a reason: an empty banlist item, a bare
-        // `until`. It reads as the empty reason rather than as corrupted state, which would
-        // turn every document transition of the identity, and its unban, into an internal error.
-        None => return Ok(ContractModerationReason::default()),
+    // An entry written before entries carried a reason: an empty banlist item, a bare
+    // `until`. It reads as the empty reason rather than as corrupted state, which would turn
+    // every document transition of the identity, and its unban, into an internal error.
+    let Some((&tag, mut rest)) = value.split_first() else {
+        return Ok(ContractModerationReason::default());
     };
-    let text = std::str::from_utf8(text)
+    if tag & !(REASON_WITH_CODE | REASON_WITH_DOCUMENTS) != 0 {
+        return Err(format!("moderation reason has unknown tag {}", tag));
+    }
+    let code = if tag & REASON_WITH_CODE != 0 {
+        let Some((code, after)) = rest.split_first_chunk::<2>() else {
+            return Err("moderation reason is cut short inside its code".to_string());
+        };
+        rest = after;
+        Some(u16::from_be_bytes(*code))
+    } else {
+        None
+    };
+    let mut documents = Vec::new();
+    if tag & REASON_WITH_DOCUMENTS != 0 {
+        let Some((&count, after)) = rest.split_first() else {
+            return Err("moderation reason is cut short before its documents".to_string());
+        };
+        rest = after;
+        for index in 0..count {
+            let cut_short = || {
+                format!(
+                    "moderation reason is cut short inside document {}",
+                    index + 1
+                )
+            };
+            let (&name_length, after_length) = rest.split_first().ok_or_else(cut_short)?;
+            if after_length.len() < usize::from(name_length) + 32 {
+                return Err(cut_short());
+            }
+            let (name, after_name) = after_length.split_at(usize::from(name_length));
+            let (id, after_id) = after_name.split_first_chunk::<32>().ok_or_else(cut_short)?;
+            documents.push(ContractModerationDocument {
+                document_type_name: std::str::from_utf8(name)
+                    .map_err(|_| "moderation reason document type name is not UTF-8".to_string())?
+                    .to_string(),
+                document_id: Identifier::from(*id),
+            });
+            rest = after_id;
+        }
+    }
+    let text = std::str::from_utf8(rest)
         .map_err(|_| "moderation reason text is not UTF-8".to_string())?
         .to_string();
-    Ok(ContractModerationReason { code, text })
+    Ok(ContractModerationReason {
+        code,
+        text,
+        documents,
+    })
 }
 
 #[cfg(test)]
@@ -297,6 +522,7 @@ mod tests {
         let coded = ContractModerationReason {
             code: Some(0x0102),
             text: "spam".to_string(),
+            documents: vec![],
         };
         assert_eq!(encode_ban(&coded), [&[1u8, 1, 2][..], b"spam"].concat());
         assert_eq!(
@@ -310,10 +536,80 @@ mod tests {
     }
 
     #[test]
+    fn should_round_trip_the_documents_a_reason_cites() {
+        let cited = ContractModerationReason {
+            code: Some(0x0102),
+            text: "spam".to_string(),
+            documents: vec![
+                ContractModerationDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: Identifier::from([7; 32]),
+                },
+                ContractModerationDocument {
+                    document_type_name: "reply".to_string(),
+                    document_id: Identifier::from([8; 32]),
+                },
+            ],
+        };
+        let value = encode_ban(&cited);
+        // tag with both bits, the code, the count, then each name (length, bytes) and id
+        assert_eq!(value[0], 3);
+        assert_eq!(&value[1..3], &[1, 2]);
+        assert_eq!(value[3], 2);
+        assert_eq!(&value[4..9], [&[4u8][..], b"post"].concat());
+        assert_eq!(&value[9..41], &[7; 32]);
+        assert_eq!(&value[41..47], [&[5u8][..], b"reply"].concat());
+        assert_eq!(&value[47..79], &[8; 32]);
+        assert_eq!(&value[79..], b"spam");
+        assert_eq!(decode_ban(&value).expect("decode").reason, cited);
+        assert_eq!(reason_encoded_size(&cited), value.len());
+
+        // Without a code the tag carries the documents bit alone.
+        let uncoded = ContractModerationReason {
+            code: None,
+            ..cited.clone()
+        };
+        let value = encode_ban(&uncoded);
+        assert_eq!(value[0], 2);
+        assert_eq!(decode_ban(&value).expect("decode").reason, uncoded);
+        // Inside a suspension and a warning the reason decodes the same.
+        let suspension = encode_suspension(5, &cited);
+        assert_eq!(
+            decode_suspension(&suspension).expect("decode").reason,
+            cited
+        );
+        let warnings = encode_warnings(&[ContractWarning {
+            warned_at: 1,
+            reason: cited.clone(),
+        }])
+        .expect("encode");
+        assert_eq!(decode_warnings(&warnings).expect("decode")[0].reason, cited);
+    }
+
+    #[test]
+    fn should_refuse_a_reason_cut_short_inside_its_documents() {
+        decode_ban(&[2]).expect_err("no count");
+        decode_ban(&[2, 1]).expect_err("no name length");
+        decode_ban(&[2, 1, 4, b'p', b'o']).expect_err("name cut short");
+        let mut short_id = vec![2, 1, 4];
+        short_id.extend_from_slice(b"post");
+        short_id.extend_from_slice(&[7; 31]);
+        decode_ban(&short_id).expect_err("id cut short");
+        decode_ban(&[4, b'x']).expect_err("unknown tag bit");
+        // A count of zero under the documents bit is a reason about no document.
+        assert!(decode_ban(&[2, 0, b'x'])
+            .expect("decode")
+            .reason
+            .documents
+            .is_empty());
+    }
+
+    #[test]
     fn should_round_trip_a_suspension() {
         let reason = ContractModerationReason {
             code: Some(9),
             text: "flooding, second time".to_string(),
+            documents: vec![],
         };
         let value = encode_suspension(77, &reason);
         assert_eq!(&value[..8], &77u64.to_be_bytes());
@@ -324,6 +620,74 @@ mod tests {
     }
 
     #[test]
+    fn should_round_trip_warnings_oldest_first() {
+        let first = ContractWarning {
+            warned_at: 1_000,
+            reason: ContractModerationReason::from_text("first strike"),
+        };
+        let second = ContractWarning {
+            warned_at: 2_000,
+            reason: ContractModerationReason {
+                code: Some(3),
+                text: String::new(),
+                documents: vec![],
+            },
+        };
+        let value = encode_warnings(&[first.clone(), second.clone()]).expect("encode");
+        // block time, length, tag + text; block time, length, tag + code + no text
+        assert_eq!(&value[..8], &1_000u64.to_be_bytes());
+        assert_eq!(&value[8..10], &13u16.to_be_bytes());
+        assert_eq!(&value[10..23], [&[0u8][..], b"first strike"].concat());
+        assert_eq!(&value[23..31], &2_000u64.to_be_bytes());
+        assert_eq!(&value[31..33], &3u16.to_be_bytes());
+        assert_eq!(&value[33..], &[1u8, 0, 3]);
+        assert_eq!(
+            decode_warnings(&value).expect("decode"),
+            vec![first.clone(), second]
+        );
+
+        let id = Identifier::from([5; 32]);
+        let entry = ContractModerationEntry::from_key_element(
+            ContractModerationList::Warnings,
+            id.as_slice(),
+            &Element::new_item(value),
+        )
+        .expect("decode");
+        assert_eq!(entry.identity_id, id);
+        assert_eq!(entry.until, None);
+        // The entry's reason is the latest warning's.
+        assert_eq!(entry.reason.code, Some(3));
+        assert_eq!(entry.warnings.len(), 2);
+        assert_eq!(entry.warnings[0], first);
+    }
+
+    #[test]
+    fn should_refuse_a_malformed_warning_list_entry() {
+        decode_warnings(&[]).expect_err("no warning");
+        decode_warnings(&[0; 9]).expect_err("cut short inside the time");
+        let mut no_reason = 1_000u64.to_be_bytes().to_vec();
+        no_reason.extend_from_slice(&0u16.to_be_bytes());
+        decode_warnings(&no_reason).expect_err("a warning holds a reason");
+        let mut short_reason = 1_000u64.to_be_bytes().to_vec();
+        short_reason.extend_from_slice(&5u16.to_be_bytes());
+        short_reason.push(0);
+        decode_warnings(&short_reason).expect_err("reason cut short");
+        let mut trailing = encode_warnings(&[ContractWarning {
+            warned_at: 1,
+            reason: ContractModerationReason::default(),
+        }])
+        .expect("encode");
+        trailing.push(0);
+        decode_warnings(&trailing).expect_err("trailing byte");
+        // A reason the length prefix can not measure is refused, not written short.
+        encode_warnings(&[ContractWarning {
+            warned_at: 1,
+            reason: ContractModerationReason::from_text("x".repeat(usize::from(u16::MAX))),
+        }])
+        .expect_err("reason past a u16");
+    }
+
+    #[test]
     fn should_round_trip_a_document_removal() {
         let removal = ContractDocumentRemoval {
             document_owner_id: Identifier::from([1; 32]),
@@ -331,15 +695,44 @@ mod tests {
             reason: ContractModerationReason {
                 code: Some(3),
                 text: "spam".to_string(),
+                documents: vec![],
             },
             removed_at: 1_700_000_000_123,
+            document_hash: [4; 32],
+            restoration: None,
         };
         let value = encode_document_removal(&removal);
         assert_eq!(&value[..32], &[1; 32]);
         assert_eq!(&value[32..64], &[2; 32]);
         assert_eq!(&value[64..72], &1_700_000_000_123u64.to_be_bytes());
-        assert_eq!(&value[72..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(&value[72..104], &[4; 32]);
+        assert_eq!(value[104], 0, "not restored");
+        assert_eq!(&value[105..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(value.len(), document_removal_encoded_size(&removal));
         assert_eq!(decode_document_removal(&value).expect("decode"), removal);
+
+        // Restored: the restoring moderator and the time follow the tag, before the reason.
+        let restored = ContractDocumentRemoval {
+            restoration: Some(ContractDocumentRestoration {
+                moderator_id: Identifier::from([5; 32]),
+                restored_at: 1_700_000_000_999,
+            }),
+            ..removal.clone()
+        };
+        let value = encode_document_removal(&restored);
+        assert_eq!(value[104], 1, "restored");
+        assert_eq!(&value[105..137], &[5; 32]);
+        assert_eq!(&value[137..145], &1_700_000_000_999u64.to_be_bytes());
+        assert_eq!(&value[145..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(value.len(), document_removal_encoded_size(&restored));
+        assert_eq!(decode_document_removal(&value).expect("decode"), restored);
+        assert!(
+            decode_document_removal(&value[..140]).is_err(),
+            "a record cut short inside its restoration is refused"
+        );
+        let mut unknown_tag = value.clone();
+        unknown_tag[104] = 2;
+        assert!(decode_document_removal(&unknown_tag).is_err());
 
         // No code and no text: what a moderator that gives no reason leaves.
         let bare = ContractDocumentRemoval {
@@ -379,7 +772,7 @@ mod tests {
 
     #[test]
     fn should_refuse_a_malformed_entry() {
-        decode_ban(&[2, b'x']).expect_err("unknown tag");
+        decode_ban(&[4, b'x']).expect_err("unknown tag");
         decode_ban(&[1, 0]).expect_err("code cut short");
         decode_ban(&[0, 0xff, 0xfe]).expect_err("not utf-8");
         decode_suspension(&[0; 7]).expect_err("until cut short");
@@ -418,6 +811,7 @@ mod tests {
                 identity_id: id,
                 until: None,
                 reason: reason.clone(),
+                warnings: vec![],
             }
         );
         let suspension = Element::new_item(encode_suspension(12, &reason));
@@ -432,6 +826,7 @@ mod tests {
                 identity_id: id,
                 until: Some(12),
                 reason,
+                warnings: vec![],
             }
         );
     }

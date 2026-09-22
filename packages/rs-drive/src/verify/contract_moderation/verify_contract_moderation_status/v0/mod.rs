@@ -1,5 +1,7 @@
-use crate::drive::contract::moderation::types::{decode_ban, decode_suspension};
-use crate::drive::contract::paths::{CONTRACT_BANLIST_KEY, CONTRACT_SUSPENSIONS_KEY};
+use crate::drive::contract::moderation::types::{decode_ban, decode_suspension, decode_warnings};
+use crate::drive::contract::paths::{
+    CONTRACT_BANLIST_KEY, CONTRACT_SUSPENSIONS_KEY, CONTRACT_WARNINGS_KEY,
+};
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -60,6 +62,9 @@ impl Drive {
                 }
                 Some([CONTRACT_SUSPENSIONS_KEY]) => {
                     status.suspension = Some(decode_suspension(&value).map_err(malformed)?);
+                }
+                Some([CONTRACT_WARNINGS_KEY]) => {
+                    status.warnings = decode_warnings(&value).map_err(malformed)?;
                 }
                 _ => {
                     return Err(Error::Proof(ProofError::CorruptedProof(

@@ -517,7 +517,11 @@ pub(crate) mod gas_sponsorship_tests {
             self.check_tx_at(transition, FirstTimeCheck)
         }
 
-        fn check_tx_at(&self, transition: &StateTransition, level: CheckTxLevel) -> Vec<u32> {
+        pub(crate) fn check_tx_at(
+            &self,
+            transition: &StateTransition,
+            level: CheckTxLevel,
+        ) -> Vec<u32> {
             let platform_version = self.platform_version;
             let state = self.platform.state.load();
             let platform_ref = PlatformRef {
