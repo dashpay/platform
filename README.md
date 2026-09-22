@@ -172,7 +172,9 @@ are located in the [packages](./packages) directory. Key packages include:
 - **rs-sdk** -- Rust SDK for building applications on Dash Platform
 - **wasm-sdk** / **wasm-dpp2** -- WebAssembly bindings for browser-based
   applications
-- **rs-sdk-ffi** / **swift-sdk** -- FFI layer and iOS/Swift SDK
+- **rs-sdk-ffi** / **rs-platform-wallet-ffi** / **rs-unified-sdk-ffi** /
+  **rs-unified-sdk-jni** -- FFI and JNI layers under the mobile SDKs
+- **swift-sdk** / **kotlin-sdk** -- iOS/Swift SDK and Android/Kotlin SDK
 - **js-evo-sdk** -- JavaScript SDK
 - **dashmate** -- Node management and local development tool
 - **dapi** / **rs-dapi** -- Decentralized API server implementations
@@ -183,8 +185,8 @@ are located in the [packages](./packages) directory. Key packages include:
 |-----|--------|---------|
 | **Rust** | Available now | [`rs-sdk`](./packages/rs-sdk) |
 | **JavaScript** | Available now | [`js-evo-sdk`](./packages/js-evo-sdk) |
-| **iOS (Swift)** | Coming in v3.1 | [`swift-sdk`](./packages/swift-sdk) |
-| **Android** | Coming in v3.2 | -- |
+| **iOS (Swift)** | Available; built from source with `build_ios.sh` (Swift Package Manager, iOS 18+ / macOS 15+) | [`swift-sdk`](./packages/swift-sdk) |
+| **Android (Kotlin)** | Available; shipped as an AAR asset on each platform GitHub release | [`kotlin-sdk`](./packages/kotlin-sdk) |
 
 For details on choosing an SDK and what each one provides, see the
 [SDK Support](https://dashpay.github.io/platform/sdk-support.html) chapter in
