@@ -107,6 +107,8 @@ pub(crate) mod property_names {
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";
     pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
+    pub const CONTRACT_FIELDS: &str = "contractFields";
+    pub const MODERATION: &str = "moderation";
     pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
     pub const RANGE_COUNTABLE: &str = "rangeCountable";
     /// Doctype-level flag naming the property whose values are summed into

@@ -51,11 +51,15 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// reference; a `permanentDocument` reference is the one for a type
     /// declaring `canBeDeleted: false`.
     ReferencedDocumentTypeNotDeletable = 40131,
+    /// The referenced contract exists but does not declare what the
+    /// reference's `contractFields` require of it, elected moderation for
+    /// one.
+    ReferencedContractRequirementNotMet = 40135,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is neither in the 40120-40125 range nor 40131.
+    /// is not in the 40120-40125 range, 40131 or 40135.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -65,6 +69,7 @@ impl DocumentReferenceErrorCodeWasm {
             40124 => Some(Self::ReferencedIdentityKeyDisabled),
             40125 => Some(Self::ReferencedKeyIdPropertyInvalid),
             40131 => Some(Self::ReferencedDocumentTypeNotDeletable),
+            40135 => Some(Self::ReferencedContractRequirementNotMet),
             _ => None,
         }
     }
@@ -150,6 +155,7 @@ impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -214,6 +220,18 @@ mod tests {
                 ))
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedEntityNotFound,
+            ),
+            (
+                StateError::ReferencedContractRequirementNotMetError(
+                    ReferencedContractRequirementNotMetError::new(
+                        id(),
+                        "moderation".to_string(),
+                        "elected".to_string(),
+                        "targetContractId".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedContractRequirementNotMet,
             ),
             (
                 StateError::ReferencedDocumentTypeNotFoundError(

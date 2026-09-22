@@ -21,6 +21,7 @@ use dpp::errors::consensus::state::document::referenced_document_property_mismat
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use dpp::errors::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use dpp::errors::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -249,7 +250,7 @@ fn validate_document_type_references_v0(
                     is_changed_field(changed, key_id_property)
                 }
                 DocumentPropertyReferenceTarget::Identity
-                | DocumentPropertyReferenceTarget::Contract
+                | DocumentPropertyReferenceTarget::Contract { .. }
                 | DocumentPropertyReferenceTarget::Token => false,
             };
             if !is_changed_field(changed, path) && !bound_property_changed {
@@ -280,7 +281,7 @@ fn validate_document_type_references_v0(
                     .fetch_identity_revision(referenced_id, true, transaction, platform_version)?
                     .is_some()
             }
-            DocumentPropertyReferenceTarget::Contract => {
+            DocumentPropertyReferenceTarget::Contract { contract_fields } => {
                 let (fee, referenced_contract) =
                     platform.drive.get_contract_with_fetch_info_and_fee(
                         referenced_id,
@@ -297,7 +298,28 @@ fn validate_document_type_references_v0(
                 // The cost is added even if the referenced contract does not exist or was cached
                 execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
-                referenced_contract.is_some()
+                match referenced_contract {
+                    None => false,
+                    Some(fetch_info) => {
+                        // The declaration's requirements are checked against the contract
+                        // just fetched, so they cost no further read; the first unmet one
+                        // refuses the write
+                        if let Some(requirement) =
+                            contract_fields.first_unmet_by(&fetch_info.contract)
+                        {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                ReferencedContractRequirementNotMetError::new(
+                                    Identifier::from(referenced_id),
+                                    requirement.field().to_string(),
+                                    requirement.required().to_string(),
+                                    path.to_string(),
+                                )
+                                .into(),
+                            ));
+                        }
+                        true
+                    }
+                }
             }
             DocumentPropertyReferenceTarget::Token => {
                 // Token contract info is written for every token when its contract is

@@ -28,6 +28,8 @@ mod creation_tests {
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
     use drive::util::test_helpers::setup_contract;
+    use crate::test::helpers::setup::TempPlatform;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, perform_votes_multi};
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
@@ -5295,6 +5297,12 @@ mod creation_tests {
     /// references it since it is the one contract known to exist in state.
     const REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_ID: &str =
         "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd";
+    const REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-elected-contract-ref.json";
+    /// The `id` of the elected-contract-reference fixture: the one contract in state in its
+    /// tests, and one that declares no moderation, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_ID: &str =
+        "9k3RE6kHNTsDmyXFwEPpiFQ3ipXfp5FuXGXpQ1rDHDJb";
     const REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-token-ref.json";
     const REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH: &str =
@@ -5315,6 +5323,26 @@ mod creation_tests {
     ) -> StateTransitionExecutionResult
     where
         F: FnOnce(&mut Document, &ReferenceTargets),
+    {
+        run_reference_validation_creation_with_setup_and_mutator(
+            contract_path,
+            |_, _| Identifier::default(),
+            |document, targets, _| mutator(document, targets),
+        )
+        .await
+    }
+
+    /// Like `run_reference_validation_creation_with_mutator`, with a `setup` step that writes
+    /// whatever else the test needs into state before the contract, and hands the mutator an
+    /// id it produced (a contract's, say).
+    async fn run_reference_validation_creation_with_setup_and_mutator<S, F>(
+        contract_path: &str,
+        setup: S,
+        mutator: F,
+    ) -> StateTransitionExecutionResult
+    where
+        S: FnOnce(&mut TempPlatform<MockCoreRPCLike>, &PlatformVersion) -> Identifier,
+        F: FnOnce(&mut Document, &ReferenceTargets, Identifier),
     {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -5344,6 +5372,8 @@ mod creation_tests {
             other_identity_id: other_identity.id(),
             token_id,
         };
+
+        let setup_id = setup(&mut platform, platform_version);
 
         let contract = setup_contract(
             &platform.drive,
@@ -5375,7 +5405,7 @@ mod creation_tests {
             .set_id_for_creation(message, &entropy.0, 2, platform_version)
             .expect("expected to set the document id");
 
-        mutator(&mut document, &targets);
+        mutator(&mut document, &targets, setup_id);
 
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(
@@ -5562,6 +5592,117 @@ mod creation_tests {
             REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
             |document, _| {
                 document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A contract with an elected moderation team, for a reference that requires one. It is
+    /// written to state directly, the way the fixtures are, so the moderated type needs no
+    /// list behind it.
+    fn insert_elected_contract(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        _platform_version: &PlatformVersion,
+    ) -> Identifier {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+            ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        };
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+            Some([0xE1; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: true,
+                        suspensions: true,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: 1_209_600,
+                            moderated_document_types: BTreeMap::from([(
+                                "message".to_string(),
+                                BTreeSet::from([ModerationAbility::Ban]),
+                            )]),
+                            interim: InterimModerators::ContractOwner,
+                            owner_protected: false,
+                        })),
+                    },
+                )));
+            }),
+            None,
+            None,
+        );
+        contract.id()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_is_not_elected_moderated() {
+        // The fixture contract itself exists in state and declares no moderation at all
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "moderation"
+                && e.required() == "elected"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_elected_contract_missing() {
+        // A missing contract is still reported as missing, not as unmet
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_contract_is_elected_moderated() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
+            insert_elected_contract,
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
             },
         )
         .await;

@@ -1996,6 +1996,40 @@ mod tests {
                 );
             }
         }
+        #[test]
+        fn should_return_invalid_result_when_a_contract_reference_requirement_changes() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_fields, new_fields, changed_path) in [
+                (
+                    platform_value!({ "type": "contract" }),
+                    platform_value!({ "type": "contract", "contractFields": { "moderation": "elected" } }),
+                    "/properties/toUserId/refersTo/contractFields",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractFields": { "moderation": "elected" } }),
+                    platform_value!({ "type": "contract" }),
+                    "/properties/toUserId/refersTo/contractFields",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_fields), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_fields), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
     }
 
     mod validate_byte_array_encoding {
