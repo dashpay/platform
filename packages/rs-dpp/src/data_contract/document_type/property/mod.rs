@@ -124,12 +124,14 @@ pub struct ContractReferenceRequirements {
 #[serde(rename_all = "camelCase")]
 pub enum ContractReferenceModeration {
     /// The contract declares an elected moderation team (`ContractModerators::Elected`),
-    /// whatever its interim and whether a team is seated yet.
+    /// whatever its interim, whether a team is seated yet and whether its election delay
+    /// has passed. A charter proposal declares this, so teams can form during the notice
+    /// the contract gives before its first election.
     Elected,
     /// The contract declares an elected moderation team whose own `electionDelay`, counted
     /// from the contract's creation, has passed at the block time of the write, or which
     /// declares no delay. The delay is the contract's, not the reference's: the charter
-    /// contract's `targetContractId` declares this and carries no number.
+    /// that opens the contest declares this and carries no number.
     ElectionOpen,
 }
 
