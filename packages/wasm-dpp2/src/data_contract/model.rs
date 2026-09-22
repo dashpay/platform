@@ -1,3 +1,7 @@
+use crate::data_contract::document_type_array::{
+    DocumentTypedArrayPropertyArrayJs, DocumentTypedArrayPropertyMapJs,
+    typed_array_properties_for_document_type,
+};
 use crate::data_contract::document_type_immutability::{
     DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
     immutable_properties_for_document_type,
@@ -766,6 +770,55 @@ impl DataContractWasm {
         let properties =
             immutable_properties_for_document_type(document_type, document_type_name.as_str())?;
         Ok(JsValue::from(properties).into())
+    }
+
+    /// The typed scalar array properties of one document type, in schema
+    /// property order: each with its dotted `path`, its parsed `items` type
+    /// and its `minItems` / `maxItems` / `uniqueItems` bounds.
+    ///
+    /// Returns an empty array when the document type declares none. Throws
+    /// when the contract has no document type by that name, so "no such
+    /// type" and "no lists" stay distinguishable.
+    ///
+    /// Typed arrays are only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version cannot
+    /// carry one: its parser refuses an array property that is not a byte
+    /// array, exactly as consensus did at that version.
+    #[wasm_bindgen(js_name = "documentTypeArrayProperties")]
+    pub fn document_type_array_properties(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentTypedArrayPropertyArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let arrays = typed_array_properties_for_document_type(document_type)?;
+        Ok(JsValue::from(arrays).into())
+    }
+
+    /// Every document type that declares at least one typed scalar array
+    /// property, keyed by document type name.
+    ///
+    /// Document types without one are omitted, so an empty `Map` means
+    /// "this contract declares no typed arrays at all".
+    #[wasm_bindgen(getter = "documentArrayProperties")]
+    pub fn document_array_properties(&self) -> WasmDppResult<DocumentTypedArrayPropertyMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let arrays = typed_array_properties_for_document_type(document_type.as_ref())?;
+            if arrays.length() > 0 {
+                map.set(&JsValue::from_str(name), &arrays.into());
+            }
+        }
+
+        Ok(JsValue::from(map).into())
     }
 
     /// Every document type that freezes at least one property, keyed by

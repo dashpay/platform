@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed scalar arrays (an array property declared by an items schema instead of byteArray, stored inline as a count followed by the elements), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -35,6 +35,155 @@
         ],
         "unevaluatedProperties": false
       }
+    },
+    "typedArrayItemSchema": {
+      "$comment": "The items schema of a typed scalar array: one scalar type with its bounds, read by the property parser into the array's item type. Objects, arrays that are not byte arrays (arrays of arrays), $ref, enum, const, refersTo (a reference on identifier items is a separate follow-up) and position are not items",
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "array"
+          ]
+        },
+        "$comment": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/core#/properties/$comment"
+        },
+        "description": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/description"
+        },
+        "multipleOf": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/multipleOf"
+        },
+        "maximum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maximum"
+        },
+        "exclusiveMaximum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMaximum"
+        },
+        "minimum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minimum"
+        },
+        "exclusiveMinimum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMinimum"
+        },
+        "maxLength": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxLength"
+        },
+        "minLength": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minLength"
+        },
+        "pattern": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/pattern"
+        },
+        "format": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/format-annotation#/properties/format"
+        },
+        "maxItems": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxItems"
+        },
+        "minItems": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minItems"
+        },
+        "contentMediaType": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/content#/properties/contentMediaType"
+        },
+        "byteArray": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "byteArray": {
+          "description": "should be used only with array type",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "array"
+            }
+          }
+        },
+        "contentMediaType": {
+          "if": {
+            "properties": {
+              "contentMediaType": {
+                "const": "application/x.dash.dpp.identifier"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "byteArray": {
+                "const": true
+              },
+              "minItems": {
+                "const": 32
+              },
+              "maxItems": {
+                "const": 32
+              }
+            },
+            "required": [
+              "byteArray",
+              "minItems",
+              "maxItems"
+            ]
+          }
+        },
+        "pattern": {
+          "description": "prevent slow pattern matching of large strings",
+          "properties": {
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000
+            }
+          },
+          "required": [
+            "maxLength"
+          ]
+        },
+        "format": {
+          "description": "prevent slow format validation of large strings",
+          "properties": {
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000
+            }
+          },
+          "required": [
+            "maxLength"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "an array item is a byte array: arrays of arrays are not supported",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "byteArray"
+            ]
+          }
+        }
+      ]
     },
     "documentSchema": {
       "type": "object",
@@ -90,6 +239,10 @@
         },
         "uniqueItems": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/uniqueItems"
+        },
+        "items": {
+          "description": "The item schema of a typed scalar array (protocol version 14): one scalar type with its bounds. The array is stored inline in the document as a count followed by the elements; minItems and maxItems on the array count elements, uniqueItems refuses a repeated element. Only allowed on an array property that is not a byte array",
+          "$ref": "#/$defs/typedArrayItemSchema"
         },
         "refersTo": {
           "type": "object",
@@ -424,7 +577,7 @@
           }
         },
         {
-          "$comment": "allow only byte arrays",
+          "$comment": "an array property is either a byte array (byteArray: true, no items) or a typed scalar array (an items schema and maxItems, no byteArray). Typed scalar arrays exist from protocol version 14: minItems and maxItems count elements, uniqueItems refuses a repeated element, and contentMediaType belongs on the items",
           "if": {
             "properties": {
               "type": {
@@ -436,11 +589,30 @@
             ]
           },
           "then": {
-            "properties": {
-              "byteArray": true
-            },
-            "required": [
-              "byteArray"
+            "oneOf": [
+              {
+                "$comment": "byte array",
+                "properties": {
+                  "byteArray": true,
+                  "items": false
+                },
+                "required": [
+                  "byteArray"
+                ]
+              },
+              {
+                "$comment": "typed scalar array",
+                "properties": {
+                  "items": true,
+                  "maxItems": true,
+                  "byteArray": false,
+                  "contentMediaType": false
+                },
+                "required": [
+                  "items",
+                  "maxItems"
+                ]
+              }
             ]
           }
         },

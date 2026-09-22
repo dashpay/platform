@@ -599,6 +599,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,
         max_time_range_ttl_seconds: None,
+        max_typed_array_items: None,
         min_time_range_ttl_drop_operations_per_write: None,
         minimum_grovedb_proof_envelope_version: 0,
     },

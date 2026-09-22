@@ -368,6 +368,36 @@ impl DocumentTypeV0 {
                         "byteArray": true,
                     })
                 },
+                DocumentPropertyType::TypedArray(array) => {
+                    let items_schema = match &array.items {
+                        ArrayItemType::String(min, max) => json!({"type": "string", "minLength": min, "maxLength": max}),
+                        ArrayItemType::Integer => json!({"type": "integer"}),
+                        ArrayItemType::Number => json!({"type": "number"}),
+                        ArrayItemType::ByteArray(min, max) => {
+                            json!({"type": "array", "byteArray": true, "minItems": min, "maxItems": max})
+                        },
+                        ArrayItemType::Identifier => json!({
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier"
+                        }),
+                        ArrayItemType::Boolean => json!({"type": "boolean"}),
+                        ArrayItemType::Date => json!({"type": "number"}),
+                    };
+
+                    let mut schema = json!({
+                        "type": "array",
+                        "items": items_schema,
+                        "maxItems": array.max_items,
+                        "uniqueItems": array.unique_items,
+                    });
+                    if let Some(min_items) = array.min_items {
+                        schema["minItems"] = json!(min_items);
+                    }
+                    schema
+                },
                 DocumentPropertyType::VariableTypeArray(types) => {
                     let types_schema = types.iter().map(|t| {
                         match t {

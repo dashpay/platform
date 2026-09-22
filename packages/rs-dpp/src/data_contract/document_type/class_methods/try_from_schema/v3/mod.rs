@@ -460,6 +460,8 @@ mod keep_history_tests;
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]
 mod moderators_delete_tests;
+#[cfg(test)]
+mod typed_array_tests;
 
 #[cfg(test)]
 mod tests {

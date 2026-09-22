@@ -94,6 +94,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
+    max_typed_array_items: Some(1024),
     min_time_range_ttl_drop_operations_per_write: Some(32),
     minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
 };

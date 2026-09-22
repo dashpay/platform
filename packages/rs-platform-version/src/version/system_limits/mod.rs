@@ -177,6 +177,23 @@ pub struct SystemLimits {
     /// `None` preserves the behavior of protocol versions that predate the
     /// `ttl` key (nothing to bound: the key does not parse there).
     pub max_time_range_ttl_seconds: Option<u64>,
+    /// Maximum `maxItems` a typed scalar array property (`type: array` with an
+    /// `items` schema, protocol version 14) may declare, enforced at contract
+    /// registration by the property parser (`parse_typed_array` 0).
+    ///
+    /// A typed array is stored inline in the document as a count followed by
+    /// its elements, and every size-sensitive path (fee estimation, the
+    /// document size estimate) sizes it by `maxItems` times the item bound, so
+    /// the declaration has to be bounded and the bound has to stay small
+    /// enough for those estimates to mean something. 1024 in V4: far beyond
+    /// what a document of any real item type fits under
+    /// `max_state_transition_size`, while keeping the worst-case size of an
+    /// identifier list (33 bytes an element) inside the `u16` the estimates
+    /// are computed in.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate typed
+    /// arrays (nothing to bound: the `items` keyword does not parse there).
+    pub max_typed_array_items: Option<u16>,
     /// Minimum per-write drainage budget for a TTL'd time-range grid.
     /// Drive raises this floor to twice the maximum trees one document
     /// can create in the grid's merged index structure, times its overlap

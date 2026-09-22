@@ -1,9 +1,25 @@
+use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
+use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::VarInt;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
+use rand::distributions::{Alphanumeric, Standard};
+use rand::rngs::StdRng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::io::BufReader;
 
+/// The element type of an array property: what one element encodes to inside
+/// the array's inline value (a count followed by the elements). Produced by the
+/// parser of a typed scalar array (`type: array` with an `items` schema,
+/// meta-schema v3) through [`ArrayItemType::try_from_item_schema`]; only
+/// scalars are elements, an object or a typed array as an item is refused
+/// there. `Date` has no schema spelling (a user property cannot be declared a
+/// date) and is kept for the codec's completeness.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(into = "ArrayItemTypeRepr", from = "ArrayItemTypeRepr")]
 pub enum ArrayItemType {
@@ -318,6 +334,296 @@ impl ArrayItemType {
     }
 }
 
+/// The `contentMediaType` value that makes a byte array an identifier.
+const IDENTIFIER_CONTENT_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
+
+/// The longest string an item without `maxLength` is sized and generated at,
+/// the same default the parent string property type uses.
+const DEFAULT_MAX_STRING_LENGTH: u16 = 16383;
+
+/// Bytes of the varint that prefixes a length or a count.
+fn varint_len(value: u16) -> u16 {
+    value.required_space() as u16
+}
+
+impl ArrayItemType {
+    /// Parses the `items` schema of a typed scalar array: one scalar property
+    /// schema, read with the same keywords the parent parser reads for a
+    /// top-level property of that type (`minLength` / `maxLength` on a string,
+    /// `byteArray` with `minItems` / `maxItems` and the identifier
+    /// `contentMediaType` on a byte array). The bounds a keyword declares on
+    /// the elements (`minimum`, `pattern`, and so on) stay in the schema and
+    /// are enforced on the document by the JSON schema validator.
+    ///
+    /// Refused as items, with a clear error: an object, an array that is not
+    /// a byte array (arrays of arrays), a `$ref`, and `refersTo`. A reference
+    /// on the items of an identifier array is a separate follow-up; this
+    /// parser reads the whole item schema so it can carry one later.
+    pub fn try_from_item_schema(
+        item_schema: &BTreeMap<String, &Value>,
+    ) -> Result<Self, DataContractError> {
+        if item_schema.contains_key(property_names::REFERS_TO) {
+            return Err(DataContractError::InvalidContractStructure(
+                "array items may not carry refersTo: references on array items are not \
+                 supported yet"
+                    .to_string(),
+            ));
+        }
+        if item_schema.contains_key(property_names::REF) {
+            return Err(DataContractError::InvalidContractStructure(
+                "array items must be an inline scalar schema, not a $ref".to_string(),
+            ));
+        }
+        let type_name = item_schema.get_str(property_names::TYPE)?;
+        let item_type = match type_name {
+            "integer" => ArrayItemType::Integer,
+            "number" => ArrayItemType::Number,
+            "boolean" => ArrayItemType::Boolean,
+            "string" => ArrayItemType::String(
+                item_schema.get_optional_integer(property_names::MIN_LENGTH)?,
+                item_schema.get_optional_integer(property_names::MAX_LENGTH)?,
+            ),
+            "array" => {
+                match item_schema.get_optional_bool(property_names::BYTE_ARRAY)? {
+                    Some(true) => {}
+                    Some(false) => {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "byteArray should always be true if defined".to_string(),
+                        ));
+                    }
+                    None => {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "arrays of arrays are not supported: an array item that is an \
+                             array must be a byte array (byteArray: true)"
+                                .to_string(),
+                        ));
+                    }
+                }
+                match item_schema.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
+                    Some(IDENTIFIER_CONTENT_MEDIA_TYPE) => ArrayItemType::Identifier,
+                    Some(_) | None => ArrayItemType::ByteArray(
+                        item_schema.get_optional_integer(property_names::MIN_ITEMS)?,
+                        item_schema.get_optional_integer(property_names::MAX_ITEMS)?,
+                    ),
+                }
+            }
+            "object" => {
+                return Err(DataContractError::InvalidContractStructure(
+                    "arrays of objects are not supported: array items must be a scalar (an \
+                     integer, a number, a string, a boolean, a byte array or an identifier)"
+                        .to_string(),
+                ));
+            }
+            other => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "unsupported array item type: {other}"
+                )));
+            }
+        };
+        Ok(item_type)
+    }
+}
+
+impl TryFrom<&Value> for ArrayItemType {
+    type Error = DataContractError;
+
+    /// The `items` schema as a value map, see [`ArrayItemType::try_from_item_schema`].
+    fn try_from(item_schema: &Value) -> Result<Self, Self::Error> {
+        let item_schema = item_schema.to_btree_ref_string_map()?;
+        Self::try_from_item_schema(&item_schema)
+    }
+}
+
+impl ArrayItemType {
+    /// The schema type name of the item, as the parent property types name
+    /// themselves.
+    pub fn name(&self) -> &'static str {
+        match self {
+            ArrayItemType::Integer => "integer",
+            ArrayItemType::Number => "number",
+            ArrayItemType::String(_, _) => "string",
+            ArrayItemType::ByteArray(_, _) => "byteArray",
+            ArrayItemType::Identifier => "identifier",
+            ArrayItemType::Boolean => "boolean",
+            ArrayItemType::Date => "date",
+        }
+    }
+
+    /// Reads one element, the mirror of [`Self::encode_value_with_size`]. A
+    /// length the element claims for itself is never trusted to size an
+    /// allocation: the bytes are read as they arrive and a short input is an
+    /// error.
+    pub fn read_value_from(&self, buf: &mut BufReader<&[u8]>) -> Result<Value, DataContractError> {
+        match self {
+            ArrayItemType::String(_, _) => {
+                let bytes = DocumentPropertyType::read_varint_value(buf)?;
+                let string = String::from_utf8(bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading string array item from serialized document".to_string(),
+                    )
+                })?;
+                Ok(Value::Text(string))
+            }
+            ArrayItemType::Date | ArrayItemType::Number => {
+                let value = buf.read_f64::<BigEndian>().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading number array item from serialized document".to_string(),
+                    )
+                })?;
+                Ok(Value::Float(value))
+            }
+            ArrayItemType::Integer => {
+                let value = buf.read_i64::<BigEndian>().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading integer array item from serialized document".to_string(),
+                    )
+                })?;
+                Ok(Value::I64(value))
+            }
+            ArrayItemType::ByteArray(_, _) => {
+                let bytes = DocumentPropertyType::read_varint_value(buf)?;
+                Ok(Value::Bytes(bytes))
+            }
+            ArrayItemType::Identifier => {
+                let bytes = DocumentPropertyType::read_varint_value(buf)?;
+                let id: [u8; 32] = bytes.try_into().map_err(|bytes: Vec<u8>| {
+                    DataContractError::CorruptedSerialization(format!(
+                        "identifier array item is {} bytes long, expected 32",
+                        bytes.len()
+                    ))
+                })?;
+                Ok(Value::Identifier(id))
+            }
+            ArrayItemType::Boolean => {
+                let value = buf.read_u8().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading boolean array item from serialized document".to_string(),
+                    )
+                })?;
+                Ok(Value::Bool(value != 0))
+            }
+        }
+    }
+
+    /// The fewest bytes one element encodes to, length prefix included: a
+    /// string or a byte array at its lower bound (one byte a character),
+    /// an identifier at its fixed 33.
+    pub fn min_byte_size(&self) -> u16 {
+        match self {
+            ArrayItemType::Integer | ArrayItemType::Number | ArrayItemType::Date => 8,
+            ArrayItemType::Boolean => 1,
+            ArrayItemType::String(min_length, _) | ArrayItemType::ByteArray(min_length, _) => {
+                let min = min_length.map_or(0, |min| u16::try_from(min).unwrap_or(u16::MAX));
+                min.saturating_add(varint_len(min))
+            }
+            ArrayItemType::Identifier => 32 + varint_len(32),
+        }
+    }
+
+    /// The most bytes one element encodes to, length prefix included: a
+    /// string at four bytes a character (the factor the parent string type
+    /// sizes with), a byte array at its upper bound, `u16::MAX` when the
+    /// element is unbounded.
+    pub fn max_byte_size(&self) -> u16 {
+        match self {
+            ArrayItemType::Integer | ArrayItemType::Number | ArrayItemType::Date => 8,
+            ArrayItemType::Boolean => 1,
+            ArrayItemType::String(_, max_length) => match max_length {
+                None => u16::MAX,
+                Some(max) => {
+                    let max = u16::try_from(*max).unwrap_or(u16::MAX).saturating_mul(4);
+                    max.saturating_add(varint_len(max))
+                }
+            },
+            ArrayItemType::ByteArray(_, max_size) => match max_size {
+                None => u16::MAX,
+                Some(max) => {
+                    let max = u16::try_from(*max).unwrap_or(u16::MAX);
+                    max.saturating_add(varint_len(max))
+                }
+            },
+            ArrayItemType::Identifier => 32 + varint_len(32),
+        }
+    }
+
+    /// The length a random string or byte array element is generated at:
+    /// anywhere within the bounds.
+    fn random_length(
+        rng: &mut StdRng,
+        min: Option<usize>,
+        max: Option<usize>,
+        default_max: u16,
+    ) -> usize {
+        let min = min.unwrap_or(0);
+        let max = max.unwrap_or(default_max as usize).max(min);
+        rng.gen_range(min..=max)
+    }
+
+    /// A random element of any size within the item's bounds.
+    pub fn random_value(&self, rng: &mut StdRng) -> Value {
+        match self {
+            ArrayItemType::String(min, max) => {
+                let length = Self::random_length(rng, *min, *max, DEFAULT_MAX_STRING_LENGTH);
+                Self::random_string(rng, length)
+            }
+            ArrayItemType::ByteArray(min, max) => {
+                let length = Self::random_length(rng, *min, *max, u16::MAX);
+                Self::random_bytes(rng, length)
+            }
+            other => other.random_fixed_size_value(rng),
+        }
+    }
+
+    /// A random element at the smallest size the item's bounds allow.
+    pub fn random_min_value(&self, rng: &mut StdRng) -> Value {
+        match self {
+            ArrayItemType::String(min, _) => Self::random_string(rng, min.unwrap_or(0)),
+            ArrayItemType::ByteArray(min, _) => Self::random_bytes(rng, min.unwrap_or(0)),
+            other => other.random_fixed_size_value(rng),
+        }
+    }
+
+    /// A random element at the largest size the item's bounds allow.
+    pub fn random_max_value(&self, rng: &mut StdRng) -> Value {
+        match self {
+            ArrayItemType::String(_, max) => {
+                Self::random_string(rng, max.unwrap_or(DEFAULT_MAX_STRING_LENGTH as usize))
+            }
+            ArrayItemType::ByteArray(_, max) => {
+                Self::random_bytes(rng, max.unwrap_or(u16::MAX as usize))
+            }
+            other => other.random_fixed_size_value(rng),
+        }
+    }
+
+    fn random_fixed_size_value(&self, rng: &mut StdRng) -> Value {
+        match self {
+            ArrayItemType::Integer => Value::I64(rng.gen::<i64>()),
+            ArrayItemType::Number => Value::Float(rng.gen::<f64>()),
+            ArrayItemType::Identifier => Value::Identifier(rng.gen()),
+            ArrayItemType::Boolean => Value::Bool(rng.gen::<bool>()),
+            ArrayItemType::Date => {
+                let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
+                Value::Float(f.round() / 1000.0)
+            }
+            ArrayItemType::String(_, _) | ArrayItemType::ByteArray(_, _) => self.random_value(rng),
+        }
+    }
+
+    fn random_string(rng: &mut StdRng, length: usize) -> Value {
+        Value::Text(
+            rng.sample_iter(Alphanumeric)
+                .take(length)
+                .map(char::from)
+                .collect(),
+        )
+    }
+
+    fn random_bytes(rng: &mut StdRng, length: usize) -> Value {
+        Value::Bytes(rng.sample_iter(Standard).take(length).collect())
+    }
+}
+
 fn get_field_type_matching_error() -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::ValueWrongType(
         "document field type doesn't match document value for array".to_string(),
@@ -328,6 +634,198 @@ fn get_field_type_matching_error() -> ProtocolError {
 #[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
+    use platform_value::platform_value;
+    use rand::SeedableRng;
+
+    // -----------------------------------------------------------------------
+    // try_from_item_schema() tests
+    // -----------------------------------------------------------------------
+
+    fn item(schema: Value) -> Result<ArrayItemType, DataContractError> {
+        ArrayItemType::try_from(&schema)
+    }
+
+    #[test]
+    fn should_parse_every_scalar_item_schema() {
+        assert_eq!(
+            item(platform_value!({ "type": "integer", "minimum": 0 })).unwrap(),
+            ArrayItemType::Integer
+        );
+        assert_eq!(
+            item(platform_value!({ "type": "number" })).unwrap(),
+            ArrayItemType::Number
+        );
+        assert_eq!(
+            item(platform_value!({ "type": "boolean" })).unwrap(),
+            ArrayItemType::Boolean
+        );
+        assert_eq!(
+            item(platform_value!({ "type": "string", "minLength": 2, "maxLength": 9 })).unwrap(),
+            ArrayItemType::String(Some(2), Some(9))
+        );
+        assert_eq!(
+            item(platform_value!({ "type": "string" })).unwrap(),
+            ArrayItemType::String(None, None)
+        );
+        assert_eq!(
+            item(platform_value!({ "type": "array", "byteArray": true, "maxItems": 20 })).unwrap(),
+            ArrayItemType::ByteArray(None, Some(20))
+        );
+        assert_eq!(
+            item(platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            }))
+            .unwrap(),
+            ArrayItemType::Identifier
+        );
+    }
+
+    #[test]
+    fn should_refuse_object_array_ref_and_reference_items() {
+        for (schema, fragment) in [
+            (platform_value!({ "type": "object" }), "arrays of objects"),
+            (
+                platform_value!({ "type": "array", "items": { "type": "integer" } }),
+                "arrays of arrays",
+            ),
+            (
+                platform_value!({ "type": "array", "byteArray": false }),
+                "byteArray should always be true",
+            ),
+            (platform_value!({ "$ref": "#/$defs/x" }), "$ref"),
+            (
+                platform_value!({ "type": "integer", "refersTo": { "type": "identity" } }),
+                "refersTo",
+            ),
+            (
+                platform_value!({ "type": "date" }),
+                "unsupported array item type",
+            ),
+            (platform_value!({ "minimum": 1 }), "type"),
+        ] {
+            let error = item(schema.clone())
+                .expect_err("should be refused")
+                .to_string();
+            assert!(
+                error.contains(fragment),
+                "{schema:?}: expected {fragment:?}, got {error}"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // read_value_from() mirrors the encoding
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn should_read_back_every_item_type_it_encodes() {
+        for (item_type, value) in [
+            (ArrayItemType::Integer, Value::I64(-42)),
+            (ArrayItemType::Number, Value::Float(2.5)),
+            (ArrayItemType::Date, Value::Float(1648910575.0)),
+            (ArrayItemType::Boolean, Value::Bool(true)),
+            (ArrayItemType::Boolean, Value::Bool(false)),
+            (
+                ArrayItemType::String(None, None),
+                Value::Text("héllo".to_string()),
+            ),
+            (
+                ArrayItemType::String(None, None),
+                Value::Text(String::new()),
+            ),
+            (
+                ArrayItemType::ByteArray(None, None),
+                Value::Bytes(vec![1, 2, 3]),
+            ),
+            (ArrayItemType::ByteArray(None, None), Value::Bytes(vec![])),
+            (ArrayItemType::Identifier, Value::Identifier([7u8; 32])),
+        ] {
+            let bytes = item_type
+                .encode_value_ref_with_size(&value)
+                .expect("should encode");
+            let mut reader = BufReader::new(bytes.as_slice());
+            let read = item_type
+                .read_value_from(&mut reader)
+                .expect("should decode");
+            assert_eq!(read, value, "{item_type:?}");
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_short_or_wrong_sized_item() {
+        let mut short = BufReader::new(&[0u8, 1, 2][..]);
+        assert!(ArrayItemType::Integer.read_value_from(&mut short).is_err());
+
+        // a string declaring more bytes than remain
+        let mut claims_more = BufReader::new(&[5u8, b'a'][..]);
+        assert!(ArrayItemType::String(None, None)
+            .read_value_from(&mut claims_more)
+            .is_err());
+
+        // an identifier item that is not 32 bytes
+        let not_an_id = ArrayItemType::ByteArray(None, None)
+            .encode_value_ref_with_size(&Value::Bytes(vec![1u8; 31]))
+            .unwrap();
+        let mut reader = BufReader::new(not_an_id.as_slice());
+        assert!(ArrayItemType::Identifier
+            .read_value_from(&mut reader)
+            .is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // byte sizes and random values
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn should_size_items_by_their_encoding() {
+        assert_eq!(ArrayItemType::Integer.min_byte_size(), 8);
+        assert_eq!(ArrayItemType::Integer.max_byte_size(), 8);
+        assert_eq!(ArrayItemType::Boolean.max_byte_size(), 1);
+        assert_eq!(ArrayItemType::Identifier.min_byte_size(), 33);
+        assert_eq!(ArrayItemType::Identifier.max_byte_size(), 33);
+        assert_eq!(ArrayItemType::String(Some(2), Some(9)).min_byte_size(), 3);
+        assert_eq!(ArrayItemType::String(Some(2), Some(9)).max_byte_size(), 37);
+        assert_eq!(ArrayItemType::String(None, None).max_byte_size(), u16::MAX);
+        assert_eq!(
+            ArrayItemType::ByteArray(None, Some(200)).max_byte_size(),
+            202
+        );
+        assert_eq!(
+            ArrayItemType::ByteArray(None, None).max_byte_size(),
+            u16::MAX
+        );
+    }
+
+    #[test]
+    fn should_generate_random_items_within_their_bounds() {
+        let mut rng = StdRng::seed_from_u64(1);
+        for _ in 0..32 {
+            match ArrayItemType::String(Some(2), Some(5)).random_value(&mut rng) {
+                Value::Text(text) => assert!((2..=5).contains(&text.chars().count())),
+                other => panic!("expected text, got {other:?}"),
+            }
+            match ArrayItemType::ByteArray(Some(3), Some(3)).random_value(&mut rng) {
+                Value::Bytes(bytes) => assert_eq!(bytes.len(), 3),
+                other => panic!("expected bytes, got {other:?}"),
+            }
+        }
+        assert!(matches!(
+            ArrayItemType::String(Some(2), Some(5)).random_min_value(&mut rng),
+            Value::Text(text) if text.len() == 2
+        ));
+        assert!(matches!(
+            ArrayItemType::String(Some(2), Some(5)).random_max_value(&mut rng),
+            Value::Text(text) if text.len() == 5
+        ));
+        assert!(matches!(
+            ArrayItemType::Identifier.random_value(&mut rng),
+            Value::Identifier(_)
+        ));
+    }
 
     // -----------------------------------------------------------------------
     // encode_value_with_size() tests

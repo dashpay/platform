@@ -243,6 +243,35 @@ What happens to data:
 - **New writes are held to the new schema.** Creates must supply the property; replaces re-supply full content, so replacing a grandfathered document requires the new property and re-stamps the document at the current version — lazy migration, one document at a time.
 - **Indexes are unaffected** because index additions on update remain banned — a newly added required field cannot be indexed retroactively (there is no backfill).
 
+## Typed Scalar Arrays
+
+Until protocol v14 the only `type: array` a document schema could declare was a byte array (`byteArray: true`). From v14 (meta-schema v3) an array property may instead declare an `items` schema, which makes it a **typed scalar array**: a list of one scalar type stored inline in the document, exactly like every other property.
+
+```json
+"reasons": {
+  "type": "array",
+  "minItems": 0,
+  "maxItems": 64,
+  "uniqueItems": true,
+  "items": {
+    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+    "contentMediaType": "application/x.dash.dpp.identifier"
+  },
+  "position": 2
+}
+```
+
+The rules, enforced by the meta-schema on the validating path and by the parser (`DocumentPropertyType::try_from_value_map`, `parse_typed_array` version 0) on both paths:
+
+- `items` is any scalar property schema the parser already reads at the top level: an integer, a number, a string with `minLength` / `maxLength`, a boolean, a byte array with `minItems` / `maxItems`, or an identifier. Arrays of objects, arrays of arrays, a `$ref`, `enum` / `const`, and `refersTo` on the items are refused (a reference on identifier items is a separate follow-up; the item schema is parsed whole so it can carry one later).
+- `minItems` and `maxItems` on the array count elements, not bytes. `maxItems` is required and may not exceed `SystemLimits::max_typed_array_items` (1024), because the count-prefixed inline encoding is sized for fees by its bound. `uniqueItems: true` refuses a repeated element.
+- An array is either a byte array or a typed array, never both: `byteArray` and `items` are mutually exclusive, and `contentMediaType` belongs on the items.
+- An array property cannot be indexed. Drive's query conditions give the type no operator, so an index on one is refused at registration with `InvalidIndexPropertyTypeError`, and an indexOnly `entryPayload` cannot name one.
+
+The parsed form is `DocumentPropertyType::TypedArray(TypedArrayProperty { items, min_items, max_items, unique_items })`, with `items` an `ArrayItemType`. Documents carry the list as a `Value::Array` of the item type's values, validated by the JSON schema validator (`minItems`, `maxItems`, `uniqueItems`, and the item constraints all surface as the usual `JsonSchemaError`), and serialized as a varint element count followed by the elements (see [Document Serialization](../serialization/document-serialization.md)). Fee estimation sizes the property by `maxItems` times the item bound plus the count prefix. Identifier and byte array items are registered as `path[]` conversion paths, so a document built from JSON converts every element of the list.
+
+The Swift and Kotlin contract parsers still read every `type: array` as a byte array; typed arrays reach those SDKs in a follow-up.
+
 ## Rules and Guidelines
 
 **Do:**

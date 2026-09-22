@@ -92,6 +92,11 @@ pub struct DocumentTypeSchemaVersions {
     /// keyword: they ignore it entirely, exactly as they parsed before it
     /// existed.
     pub apply_required_since: OptionalFeatureVersion,
+    /// Parses `type: array` with an `items` schema into a typed scalar array
+    /// (`DocumentPropertyType::TypedArray`, stored inline as a count followed by
+    /// its elements). `None` on versions that predate typed arrays: there an
+    /// array property must be a byte array, exactly as they parsed before.
+    pub parse_typed_array: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

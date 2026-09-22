@@ -547,6 +547,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
+/// 25. **Typed scalar arrays in document schemas**: an array property may be
+///     declared by an `items` schema instead of `byteArray: true` (meta-schema
+///     v3, `parse_typed_array` 0, `DocumentPropertyType::TypedArray`): a list
+///     of one scalar type (integer, number, string, boolean, byte array or
+///     identifier) stored inline in the document as a varint element count
+///     followed by the elements, with no per-element index entry, subtree or
+///     reference. `minItems` and `maxItems` count elements; `maxItems` is
+///     required and capped by `SYSTEM_LIMITS_V4.max_typed_array_items`
+///     (1024); `uniqueItems` refuses a repeated element. The JSON schema
+///     validator enforces them and the item bounds on every document write.
+///     Arrays of objects, arrays of arrays, `refersTo` on the items and an
+///     index on an array property are refused at registration.
+///     `find_identifier_and_binary_paths` 1 registers identifier and byte
+///     array items as `path[]` conversion paths.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

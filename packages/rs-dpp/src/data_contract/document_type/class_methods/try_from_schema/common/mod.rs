@@ -1319,8 +1319,10 @@ fn check_indexable_property_shape(
     property_type: &DocumentPropertyType,
 ) -> Result<(), ProtocolError> {
     match property_type {
-        // Array and objects aren't supported for indexing yet
+        // Array and objects aren't supported for indexing: the query
+        // conditions give them no operator, so a typed array is refused too
         DocumentPropertyType::Array(_)
+        | DocumentPropertyType::TypedArray(_)
         | DocumentPropertyType::Object(_)
         | DocumentPropertyType::VariableTypeArray(_) => {
             Err(ProtocolError::ConsensusError(Box::new(
@@ -2539,6 +2541,7 @@ pub(super) fn apply_index_only(
             property.property_type,
             DocumentPropertyType::Object(_)
                 | DocumentPropertyType::Array(_)
+                | DocumentPropertyType::TypedArray(_)
                 | DocumentPropertyType::VariableTypeArray(_)
         ) {
             return Err(structure_error(format!(

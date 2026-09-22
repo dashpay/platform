@@ -3,6 +3,17 @@ use crate::inner_value_at_path::is_array_path;
 use crate::{Error, ReplacementType, Value, ValueMapHelper};
 use std::collections::HashSet;
 
+/// Replaces one value in place with its `replacement_type` form, reading the
+/// bytes the value holds in whatever encoding it currently has.
+fn replace_value(value: &mut Value, replacement_type: ReplacementType) -> Result<(), Error> {
+    let bytes = match replacement_type {
+        ReplacementType::Identifier | ReplacementType::TextBase58 => value.to_identifier_bytes()?,
+        ReplacementType::BinaryBytes | ReplacementType::TextBase64 => value.to_binary_bytes()?,
+    };
+    *value = replacement_type.replace_for_bytes(bytes)?;
+    Ok(())
+}
+
 impl Value {
     /// If the `Value` is a `Map`, replaces the value at the path inside the map.
     /// This is used to set inner values as Identifiers or BinaryData, or from Identifiers or
@@ -64,30 +75,43 @@ impl Value {
         let mut current_values = vec![self];
         while let Some(path_component) = split.next() {
             if let Some((string_part, number_part)) = is_array_path(path_component)? {
+                let is_last_component = split.peek().is_none();
                 current_values = current_values
                     .into_iter()
-                    .map(|current_value| {
-                        let map = current_value.to_map_mut()?;
-                        let array_value = map.get_key_mut(string_part)?;
-                        let array = array_value.to_array_mut()?;
+                    .filter_map(|current_value| {
+                        let map = match current_value.to_map_mut() {
+                            Ok(map) => map,
+                            Err(err) => return Some(Err(err)),
+                        };
+                        // An absent array is an absent optional property: nothing to replace
+                        let array_value = map.get_optional_key_mut(string_part)?;
+                        let array = match array_value.to_array_mut() {
+                            Ok(array) => array,
+                            Err(err) => return Some(Err(err)),
+                        };
                         if let Some(number_part) = number_part {
-                            if array.len() < number_part {
-                                //this already exists
-                                Ok(vec![array.get_mut(number_part).unwrap()])
-                            } else {
-                                Err(Error::StructureError(format!(
+                            match array.get_mut(number_part) {
+                                Some(member) => Some(Ok(vec![member])),
+                                None => Some(Err(Error::StructureError(format!(
                                     "element at position {number_part} in array does not exist"
-                                )))
+                                )))),
                             }
                         } else {
                             // we are replacing all members in array
-                            Ok(array.iter_mut().collect())
+                            Some(Ok(array.iter_mut().collect()))
                         }
                     })
                     .collect::<Result<Vec<Vec<&mut Value>>, Error>>()?
                     .into_iter()
                     .flatten()
-                    .collect()
+                    .collect();
+                if is_last_component {
+                    // `list[]` or `list[3]` ends the path: the members are the values to replace
+                    for member in current_values {
+                        replace_value(member, replacement_type)?;
+                    }
+                    return Ok(());
+                }
             } else {
                 current_values = current_values
                     .into_iter()
@@ -100,23 +124,10 @@ impl Value {
                         let new_value = map.get_optional_key_mut(path_component)?;
 
                         if split.peek().is_none() {
-                            let bytes_result = match replacement_type {
-                                ReplacementType::Identifier | ReplacementType::TextBase58 => {
-                                    new_value.to_identifier_bytes()
-                                }
-                                ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
-                                    new_value.to_binary_bytes()
-                                }
+                            return match replace_value(new_value, replacement_type) {
+                                Ok(()) => None,
+                                Err(err) => Some(Err(err)),
                             };
-                            let bytes = match bytes_result {
-                                Ok(bytes) => bytes,
-                                Err(err) => return Some(Err(err)),
-                            };
-                            *new_value = match replacement_type.replace_for_bytes(bytes) {
-                                Ok(value) => value,
-                                Err(err) => return Some(Err(err)),
-                            };
-                            return None;
                         }
                         Some(Ok(new_value))
                     })
@@ -643,6 +654,61 @@ mod tests {
             value.get_value_at_path("items[1].id").unwrap(),
             &Value::Identifier([3u8; 32])
         );
+    }
+
+    // ===============================================================
+    // replace_at_path: array path ending in [] (the members themselves)
+    // ===============================================================
+
+    #[test]
+    fn replace_at_path_array_members_are_the_leaves() {
+        let b58 = base58_of_32_bytes(7);
+        let arr = Value::Array(vec![Value::Text(b58.clone()), Value::Text(b58)]);
+        let mut value = Value::Map(vec![(Value::Text("ids".into()), arr)]);
+
+        value
+            .replace_at_path("ids[]", ReplacementType::Identifier)
+            .unwrap();
+        assert_eq!(
+            value.get_value_at_path("ids").unwrap(),
+            &Value::Array(vec![
+                Value::Identifier([7u8; 32]),
+                Value::Identifier([7u8; 32])
+            ])
+        );
+    }
+
+    #[test]
+    fn replace_at_path_array_member_by_index_is_the_leaf() {
+        let b58 = base58_of_32_bytes(9);
+        let arr = Value::Array(vec![Value::Text("keep".into()), Value::Text(b58)]);
+        let mut value = Value::Map(vec![(Value::Text("ids".into()), arr)]);
+
+        value
+            .replace_at_path("ids[1]", ReplacementType::Identifier)
+            .unwrap();
+        assert_eq!(
+            value.get_value_at_path("ids").unwrap(),
+            &Value::Array(vec![
+                Value::Text("keep".into()),
+                Value::Identifier([9u8; 32])
+            ])
+        );
+        // An index past the end is an error, not a panic
+        assert!(value
+            .replace_at_path("ids[2]", ReplacementType::Identifier)
+            .is_err());
+    }
+
+    #[test]
+    fn replace_at_path_absent_array_returns_ok() {
+        let mut value = Value::Map(vec![(Value::Text("a".into()), Value::U32(42))]);
+        assert!(value
+            .replace_at_path("ids[]", ReplacementType::Identifier)
+            .is_ok());
+        assert!(value
+            .replace_at_path("ids[].inner", ReplacementType::Identifier)
+            .is_ok());
     }
 
     // ===============================================================

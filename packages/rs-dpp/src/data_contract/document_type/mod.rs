@@ -99,6 +99,11 @@ pub(crate) mod property_names {
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";
+    /// The item schema of a typed scalar array (`type: array` without
+    /// `byteArray`). Meta-schema v3+ (protocol version 14).
+    pub const ITEMS: &str = "items";
+    /// Whether a typed scalar array refuses a repeated element.
+    pub const UNIQUE_ITEMS: &str = "uniqueItems";
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
     pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
     pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";

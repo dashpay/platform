@@ -1311,7 +1311,7 @@ impl<'a> WhereClause {
                     Value::I8(_) | Value::I16(_) | Value::I32(_) | Value::I64(_) | Value::I128(_)
                 ),
                 // No validation for object/array types as operators are disallowed
-                T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => false,
+                T::Object(_) | T::Array(_) | T::TypedArray(_) | T::VariableTypeArray(_) => false,
             }
         };
 
@@ -1364,7 +1364,9 @@ impl<'a> WhereClause {
                     T::ByteArray(_) => matches!(self.value, Value::Bytes(_)),
                     T::Boolean => matches!(self.value, Value::Bool(_)),
                     // Not applicable for object/array/variable arrays
-                    T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => false,
+                    T::Object(_) | T::Array(_) | T::TypedArray(_) | T::VariableTypeArray(_) => {
+                        false
+                    }
                 };
                 if !ok {
                     return QuerySyntaxSimpleValidationResult::new_with_error(
@@ -1462,6 +1464,7 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
         DocumentPropertyType::Boolean => &[Equal],
         DocumentPropertyType::Object(_)
         | DocumentPropertyType::Array(_)
+        | DocumentPropertyType::TypedArray(_)
         | DocumentPropertyType::VariableTypeArray(_) => &[],
     }
 }
