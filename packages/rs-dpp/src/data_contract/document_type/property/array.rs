@@ -46,7 +46,7 @@ pub struct TypedArrayProperty {
     pub min_items: Option<u16>,
     /// `maxItems`: the most elements a document may hold. Every parse
     /// requires it; full validation also caps it at
-    /// `SystemLimits::max_document_array_items`.
+    /// `SystemLimits::max_typed_array_items`.
     pub max_items: u16,
     /// `uniqueItems`: whether a document is refused for repeating an element.
     pub unique_items: bool,

@@ -429,7 +429,7 @@ fn try_from_schema_generation_3(
 }
 
 /// Every typed array property's `maxItems` (which the parse requires) is at
-/// most `SystemLimits::max_document_array_items`, so its worst-case encoded
+/// most `SystemLimits::max_typed_array_items`, so its worst-case encoded
 /// size stays small. Read off the flattened properties, which reach a typed
 /// array nested in an object too.
 ///
@@ -442,7 +442,7 @@ fn validate_typed_array_max_items(
     name: &str,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
-    let limit = platform_version.system_limits.max_document_array_items;
+    let limit = platform_version.system_limits.max_typed_array_items;
     for (path, property) in document_type.flattened_properties() {
         let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
             continue;

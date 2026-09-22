@@ -525,7 +525,7 @@
       ]
     },
     "documentArrayItem": {
-      "$comment": "The element schema of a typed array: one scalar, an integer, a number, a string, a boolean, or a byte array (byteArray: true), which with the identifier contentMediaType is an identifier. Objects and arrays of arrays are refused. An element carries no position, requiredSince, refersTo, uniqueItems or const of its own (a one-value enum does what const would, and an update can widen it)",
+      "$comment": "The element schema of a typed array: one scalar, an integer, a number, a string, a boolean, or a byte array (byteArray: true), which with the identifier contentMediaType is an identifier. Objects and arrays of arrays are refused. An element carries no position, requiredSince, refersTo, uniqueItems, const or examples of its own (a one-value enum does what const would, and an update can widen it; examples annotate nothing an element needs)",
       "type": "object",
       "properties": {
         "$comment": {
@@ -533,9 +533,6 @@
         },
         "description": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/description"
-        },
-        "examples": {
-          "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/examples"
         },
         "type": {
           "enum": [

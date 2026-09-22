@@ -563,7 +563,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     number, a string, a boolean, a byte array or an identifier; objects
 ///     and arrays of arrays are refused. On the array `minItems` and
 ///     `maxItems` count elements, `maxItems` is required (with `minItems`
-///     not above it) and at most `SYSTEM_LIMITS_V4.max_document_array_items`
+///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
 ///     (1024), and `uniqueItems` refuses a document repeating an element.
 ///     The array is stored inline, a varint element count followed by the
 ///     elements, and cannot be an index property or one side of a

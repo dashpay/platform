@@ -4,7 +4,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     max_document_value_depth: None,
-    max_document_array_items: 1024,
+    max_typed_array_items: 1024,
     max_state_transition_size: 20480, //20 KiB
     // TODO: this is currently capped at 1 because the batch state-transition
     // pipeline has known correctness issues with multi-transition batches:

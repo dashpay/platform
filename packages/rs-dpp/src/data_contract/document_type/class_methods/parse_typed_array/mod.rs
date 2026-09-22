@@ -36,3 +36,40 @@ pub(crate) fn parse_typed_array(
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::document_type::array::{ArrayItemType, TypedArrayProperty};
+    use platform_value::platform_value;
+
+    #[test]
+    fn should_parse_a_typed_array_from_protocol_version_14_and_leave_it_alone_before() {
+        let schema = platform_value!({
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": { "type": "string", "maxLength": 16 }
+        });
+        let map = schema
+            .to_btree_ref_string_map()
+            .expect("the schema is a map");
+
+        assert_eq!(
+            parse_typed_array(&map, PlatformVersion::latest()).expect("parses"),
+            Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type: ArrayItemType::String(None, Some(16)),
+                min_items: Some(1),
+                max_items: 8,
+                unique_items: true,
+            }))
+        );
+        // Protocol version 13 leaves the property to the scalar parser
+        let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+        assert_eq!(
+            parse_typed_array(&map, platform_version_13).expect("parses"),
+            None
+        );
+    }
+}

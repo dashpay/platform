@@ -300,6 +300,40 @@ fn should_refuse_an_index_on_a_typed_array_property() {
     );
 }
 
+/// The ranked key-length check runs before the index property-type check and
+/// would otherwise size the whole list as a key, so it skips a typed array:
+/// the type error is the one reported.
+#[test]
+fn should_refuse_a_typed_array_in_an_index_with_a_ranked_axis_as_an_invalid_index_type() {
+    let mut schema = schema_with_list(reasons_list());
+    schema
+        .set_value(
+            "indices",
+            platform_value!([{
+                "name": "byList",
+                "properties": [{ "list": "asc" }],
+                "rangeCountable": true,
+                "rankedCountable": true
+            }]),
+        )
+        .expect("indices apply");
+
+    let result = parse_dispatched(schema, PlatformVersion::latest(), true);
+
+    assert!(
+        matches!(
+            &result,
+            Err(ProtocolError::ConsensusError(boxed))
+                if matches!(
+                    **boxed,
+                    ConsensusError::BasicError(BasicError::InvalidIndexPropertyTypeError(_))
+                )
+        ),
+        "a ranked index on a typed array should be refused as an invalid index property type, \
+         got {result:?}"
+    );
+}
+
 #[test]
 fn should_refuse_a_typed_array_below_protocol_version_14_and_accept_it_at_14() {
     let schema = schema_with_list(reasons_list());
@@ -321,7 +355,7 @@ fn should_refuse_a_typed_array_below_protocol_version_14_and_accept_it_at_14() {
 #[test]
 fn should_require_max_items_on_a_typed_array_within_the_system_limit() {
     let platform_version = PlatformVersion::latest();
-    let limit = platform_version.system_limits.max_document_array_items;
+    let limit = platform_version.system_limits.max_typed_array_items;
 
     // maxItems is the shape of the declaration: required on every parse
     let without_max_items = schema_with_list(platform_value!({
@@ -496,10 +530,11 @@ fn should_refuse_refers_to_on_the_elements_of_a_typed_array() {
 }
 
 /// An element may be limited to allowed values with `enum`, but takes no
-/// `const`: a list of one repeated value carries only its length, and a
-/// one-value `enum` does the same while an update can still widen it.
+/// `const` (a list of one repeated value carries only its length, and a
+/// one-value `enum` does the same while an update can still widen it) and no
+/// `examples`.
 #[test]
-fn should_accept_enum_and_refuse_const_on_the_elements_of_a_typed_array() {
+fn should_accept_enum_and_refuse_const_and_examples_on_the_elements_of_a_typed_array() {
     let list_with_items = |items: Value| {
         schema_with_list(platform_value!({
             "type": "array",
@@ -520,16 +555,21 @@ fn should_accept_enum_and_refuse_const_on_the_elements_of_a_typed_array() {
     )
     .expect("enum on an element parses");
 
-    let error = expect_json_schema_error(parse_dispatched(
-        list_with_items(platform_value!({ "type": "integer", "const": 1 })),
-        PlatformVersion::latest(),
-        true,
-    ));
-    assert!(
-        error.instance_path().ends_with("/list/items"),
-        "const on an element should be refused, got {}",
-        error.instance_path()
-    );
+    for items in [
+        platform_value!({ "type": "integer", "const": 1 }),
+        platform_value!({ "type": "integer", "examples": [1] }),
+    ] {
+        let error = expect_json_schema_error(parse_dispatched(
+            list_with_items(items.clone()),
+            PlatformVersion::latest(),
+            true,
+        ));
+        assert!(
+            error.instance_path().ends_with("/list/items"),
+            "{items:?} should be refused on an element, got {}",
+            error.instance_path()
+        );
+    }
 }
 
 /// A contract whose `charter` type carries a typed array of every element
