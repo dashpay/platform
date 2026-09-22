@@ -57,8 +57,10 @@ enabled can hold notes that would become unspendable, and a pool that is enabled
 need a tree created under an existing token.
 
 A pool also makes freezing and confiscation unenforceable: shielded notes belong to no identity
-account, so a holder who expects a freeze shields first and nothing can freeze, destroy or even
-see those notes. Rather than let an issuer advertise controls that cover only transparent
+account, so a holder who expects a freeze shields first and nothing can freeze or destroy those
+notes, because no account holds them for an issuer to act on. The notes themselves are not
+hidden — their commitments and ciphertexts are stored and queryable — but who owns one and how
+much it carries are. Rather than let an issuer advertise controls that cover only transparent
 balances, a token with `hasShieldedPool` must disable them permanently: `freezeRules`,
 `unfreezeRules` and `destroyFrozenFundsRules` must each authorize no one to take the action and
 have no admin action takers, so no later configuration update can switch them on. Contract
@@ -103,7 +105,8 @@ bundle is therefore proven once, by the proposer: the digest covers the spend au
 signatures, so the sighash cannot depend on which signer's batch carries the bundle. It binds
 the group action's proposer as `burner_id` (the batch owner for a direct burn) and every other
 signer submits the proposer's bundle unchanged. No token history document is written for pool
-operations: shielded activity is not recorded publicly.
+operations, so the ledger records no actor for them. The operations still leave public traces:
+spent nullifiers, the pool's note count and its anchors are all in state.
 
 ## Documents paid from the pool
 
