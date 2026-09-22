@@ -9,10 +9,13 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::document::Document;
 use crate::document::INITIAL_REVISION;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
+use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::versioned_methods::DocumentTypeV0MethodsVersioned;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
@@ -457,6 +460,43 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             0 => Ok(self.contested_vote_poll_for_document_properties_v0(document_properties)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "contested_vote_poll_for_document_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Judges the `distinctFrom` declarations of the document type against a document's
+    /// `data` and the id of the identity writing it: an identifier property whose value
+    /// equals the named property of the same document, or the writer's `$ownerId`, fails
+    /// with `DocumentPropertyNotDistinctError` (10419). A declaration whose named property
+    /// is absent from `data` passes. Reads the transition alone, so it runs in the structure
+    /// stage of document create and replace, and of transfer and purchase against the
+    /// stored document and its new owner.
+    ///
+    /// `None` in the version table (protocol versions before 14) selects the behavior of
+    /// the versions that predate the keyword: nothing is checked, as no parsed property
+    /// carries a declaration there.
+    fn validate_distinct_from_properties(
+        &self,
+        data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_distinct_from
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_distinct_from_properties_v0(data, owner_id)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_distinct_from_properties".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

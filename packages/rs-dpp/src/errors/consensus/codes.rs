@@ -166,6 +166,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentCreationNotAllowedError(_) => 10416,
             Self::DocumentFieldMaxSizeExceededError(_) => 10417,
             Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
+            Self::DocumentPropertyNotDistinctError(_) => 10419,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,

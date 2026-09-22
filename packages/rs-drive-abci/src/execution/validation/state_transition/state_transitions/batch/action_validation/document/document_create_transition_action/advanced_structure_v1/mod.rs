@@ -149,9 +149,22 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
         }
         // Validate user defined properties
 
-        data_contract
+        let result = data_contract
             .validate_document_properties(document_type_name, self.data().into(), platform_version)
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // -->> Introduced in V1 <<--
+        // A `distinctFrom` identifier property must differ from the named sibling
+        // property or from the writer's `$ownerId`. Both are on the transition, so
+        // this is a structure check; it runs after the schema validation above so
+        // every value it compares is already known to be a 32-byte identifier.
+        document_type
+            .validate_distinct_from_properties(self.data(), owner_id, platform_version)
             .map_err(Error::Protocol)
+        // -->> End Introduced in V1 <<--
     }
 }
 

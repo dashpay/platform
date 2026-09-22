@@ -55,6 +55,10 @@ pub struct DocumentTypeV2 {
     /// keyword, protocol version 14). Once present they are frozen like the
     /// rest of the list. Every entry is also in `immutable_fields`.
     pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
+    /// The dotted paths of the properties that declare `distinctFrom`
+    /// (protocol version 14), in schema order, so a document write finds
+    /// them without walking every property. Empty on every pre-PV14 contract.
+    pub(in crate::data_contract) distinct_from_fields: Vec<String>,
     /// On an indexOnly type, the top-level properties stored in every entry's
     /// value after the row commitment (the `entryPayload` keyword), in name
     /// order. Empty on every other type and on every pre-PV14 contract.
@@ -176,8 +180,21 @@ impl crate::data_contract::document_type::accessors::DocumentTypeV1Setters for D
     }
 }
 
+/// The dotted paths of the properties that declare `distinctFrom`, in the
+/// flattened map's (schema) order.
+fn distinct_from_fields_of(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<String> {
+    flattened_properties
+        .iter()
+        .filter(|(_, property)| property.distinct_from.is_some())
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
 impl From<DocumentTypeV0> for DocumentTypeV2 {
     fn from(value: DocumentTypeV0) -> Self {
+        let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -191,6 +208,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            distinct_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
@@ -224,6 +242,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
 
 impl From<DocumentTypeV1> for DocumentTypeV2 {
     fn from(value: DocumentTypeV1) -> Self {
+        let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -237,6 +256,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            distinct_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,

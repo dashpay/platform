@@ -336,6 +336,12 @@
           "type": "integer",
           "minimum": 0
         },
+        "distinctFrom": {
+          "description": "Only on identifier properties: the value must differ from the value of the named property of the same document (a dotted path for a nested one) or, as \"$ownerId\", from the document's owner. Checked on document create and replace against the transition alone; an equal pair is refused (DocumentPropertyNotDistinctError, 10419). When the named property is absent from the document there is nothing to differ from, so the rule passes. A transfer to, or a purchase by, the identity a $ownerId declaration names is refused the same way, judged against the stored document. The named property must exist on the document type, be an identifier, and not be the declaring property itself. On a typed array of identifiers the keyword goes on the items and applies to every element. Available from protocol version 14.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
         "requiredSince": {
           "type": "integer",
           "minimum": 1,
@@ -404,6 +410,33 @@
           },
           "required": [
             "maxLength"
+          ]
+        },
+        "distinctFrom": {
+          "description": "distinctFrom is only allowed on identifier properties",
+          "properties": {
+            "type": {
+              "const": "array"
+            },
+            "byteArray": {
+              "const": true
+            },
+            "contentMediaType": {
+              "const": "application/x.dash.dpp.identifier"
+            },
+            "minItems": {
+              "const": 32
+            },
+            "maxItems": {
+              "const": 32
+            }
+          },
+          "required": [
+            "type",
+            "byteArray",
+            "contentMediaType",
+            "minItems",
+            "maxItems"
           ]
         },
         "refersTo": {
@@ -636,6 +669,12 @@
         "byteArray": {
           "type": "boolean",
           "const": true
+        },
+        "distinctFrom": {
+          "description": "Only on identifier elements: every element must differ from the value of the named property of the same document (a dotted path for a nested one) or, as \"$ownerId\", from the document's owner, exactly as distinctFrom on an identifier property. The declaration belongs on the items, not on the array. Available from protocol version 14.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "required": [
@@ -643,6 +682,33 @@
       ],
       "additionalProperties": false,
       "dependentSchemas": {
+        "distinctFrom": {
+          "description": "distinctFrom is only allowed on identifier elements",
+          "properties": {
+            "type": {
+              "const": "array"
+            },
+            "byteArray": {
+              "const": true
+            },
+            "contentMediaType": {
+              "const": "application/x.dash.dpp.identifier"
+            },
+            "minItems": {
+              "const": 32
+            },
+            "maxItems": {
+              "const": 32
+            }
+          },
+          "required": [
+            "type",
+            "byteArray",
+            "contentMediaType",
+            "minItems",
+            "maxItems"
+          ]
+        },
         "byteArray": {
           "description": "should be used only with array type",
           "properties": {
