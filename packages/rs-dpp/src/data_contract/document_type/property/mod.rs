@@ -68,8 +68,8 @@ pub struct DocumentProperty {
 /// consensus compares the property's value with the named one when the document is created
 /// or replaced, and refuses an equal pair with `DocumentPropertyNotDistinctError` (10419).
 /// When the named property is absent from the document there is nothing to differ from,
-/// so the rule passes. Transfers and purchases carry no property data and are not judged, so
-/// a change of owner to the identity an `$ownerId` declaration names is not refused. The
+/// so the rule passes. A transfer to, or a purchase by, the identity an `$ownerId`
+/// declaration names is refused the same way, judged against the stored document. The
 /// target is checked at contract registration and update: it must
 /// be `$ownerId` or an existing identifier property of the same document type other than
 /// the declaring one.

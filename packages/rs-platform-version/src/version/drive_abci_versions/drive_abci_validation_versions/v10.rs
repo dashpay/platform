@@ -20,7 +20,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // Document replace structure validation moves to 1, and document create
 // structure validation 1 gains the same check: a `distinctFrom` identifier
 // property whose value equals the named sibling property or the writer's
-// `$ownerId` is refused (DocumentPropertyNotDistinctError, 10419).
+// `$ownerId` is refused (DocumentPropertyNotDistinctError, 10419). Document
+// transfer and purchase structure validation move to 1 to judge the stored
+// document's `$ownerId` declarations against the new owner.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -229,8 +231,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
                 document_replace_transition_structure_validation: 1, // changed: v1 also refuses a `distinctFrom` identifier property equal to the value it must differ from (DocumentPropertyNotDistinctError, 10419)
-                document_transfer_transition_structure_validation: 0,
-                document_purchase_transition_structure_validation: 0,
+                document_transfer_transition_structure_validation: 1, // changed: v1 judges the stored document's `distinctFrom: $ownerId` properties against the recipient
+                document_purchase_transition_structure_validation: 1, // changed: v1 judges the stored document's `distinctFrom: $ownerId` properties against the buyer
                 document_update_price_transition_structure_validation: 0,
                 document_base_transition_state_validation: 0,
                 document_create_transition_state_validation: 2,

@@ -13,7 +13,9 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::versioned_methods::DocumentTypeV0MethodsVersioned;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
@@ -469,7 +471,8 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// equals the named property of the same document, or the writer's `$ownerId`, fails
     /// with `DocumentPropertyNotDistinctError` (10419). A declaration whose named property
     /// is absent from `data` passes. Reads the transition alone, so it runs in the structure
-    /// stage of document create and replace.
+    /// stage of document create and replace, and of transfer and purchase against the
+    /// stored document and its new owner.
     ///
     /// `None` in the version table (protocol versions before 14) selects the behavior of
     /// the versions that predate the keyword: nothing is checked, as no parsed property
@@ -479,7 +482,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
         match platform_version
             .dpp
             .contract_versions

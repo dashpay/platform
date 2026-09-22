@@ -15,6 +15,8 @@ mod distinct_from_tests {
     use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::codes::ErrorWithCode;
+    use dpp::document::DocumentV0Setters;
+    use dpp::fee::Credits;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
@@ -46,14 +48,16 @@ mod distinct_from_tests {
         property
     }
 
-    /// A mutable `delegation` type: `delegateId` must differ from the owner,
-    /// `backupId` from `delegateId`, and the nested `meta.reviewerId` from its
-    /// sibling `meta.approverId`. Only the string `note` is required, so any
-    /// identifier may be left out of a document.
+    /// A mutable, transferable and purchasable `delegation` type: `delegateId`
+    /// must differ from the owner, `backupId` from `delegateId`, and the nested
+    /// `meta.reviewerId` from its sibling `meta.approverId`. Only the string
+    /// `note` is required, so any identifier may be left out of a document.
     fn delegation_schema() -> Value {
         platform_value!({
             "type": "object",
             "documentsMutable": true,
+            "transferable": 1,
+            "tradeMode": 1,
             "properties": {
                 "delegateId": identifier_property(0, Some("$ownerId")),
                 "backupId": identifier_property(1, Some("delegateId")),
@@ -281,6 +285,139 @@ mod distinct_from_tests {
                 self.document = Some(replacement);
             }
             result
+        }
+
+        /// Transfers the stored delegation to `recipient`. On success the
+        /// fixture's document becomes the transferred version.
+        async fn transfer(&mut self, recipient: Identifier) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let mut transferred = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            transferred
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let delegation_type = self
+                    .contract
+                    .document_type_for_name("delegation")
+                    .expect("expected the delegation document type");
+                BatchTransition::new_document_transfer_transition_from_document(
+                    transferred.clone(),
+                    delegation_type,
+                    recipient,
+                    &self.key,
+                    self.next_nonce,
+                    0,
+                    None,
+                    &self.signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the transfer transition")
+            };
+            self.next_nonce += 1;
+
+            let result = self.process(&transition);
+            if matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ) {
+                transferred.set_owner_id(recipient);
+                self.document = Some(transferred);
+            }
+            result
+        }
+
+        /// Puts the stored delegation up for sale at `price`.
+        async fn set_price(&mut self, price: Credits) {
+            let platform_version = PlatformVersion::latest();
+            let mut priced = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            priced
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let delegation_type = self
+                    .contract
+                    .document_type_for_name("delegation")
+                    .expect("expected the delegation document type");
+                BatchTransition::new_document_update_price_transition_from_document(
+                    priced.clone(),
+                    delegation_type,
+                    price,
+                    &self.key,
+                    self.next_nonce,
+                    0,
+                    None,
+                    &self.signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the update price transition")
+            };
+            self.next_nonce += 1;
+
+            assert_matches!(
+                self.process(&transition),
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "setting the price must succeed"
+            );
+            self.document = Some(priced);
+        }
+
+        /// A second funded identity on the fixture's platform.
+        fn other_identity(&mut self, seed: u64) -> (Identity, SimpleSigner, IdentityPublicKey) {
+            setup_identity(&mut self.platform, seed, dash_to_credits!(0.5))
+        }
+
+        /// `buyer` purchases the stored delegation at `price` (its first
+        /// transition, so nonce 1).
+        async fn purchase_by(
+            &mut self,
+            buyer: &(Identity, SimpleSigner, IdentityPublicKey),
+            price: Credits,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let (buyer_identity, buyer_signer, buyer_key) = buyer;
+            let mut bought = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            bought
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let delegation_type = self
+                    .contract
+                    .document_type_for_name("delegation")
+                    .expect("expected the delegation document type");
+                BatchTransition::new_document_purchase_transition_from_document(
+                    bought,
+                    delegation_type,
+                    buyer_identity.id(),
+                    price,
+                    buyer_key,
+                    1,
+                    0,
+                    None,
+                    buyer_signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the purchase transition")
+            };
+
+            self.process(&transition)
         }
 
         /// The stored delegations, read back from Drive.
@@ -546,6 +683,94 @@ mod distinct_from_tests {
             fixture.stored_delegations()[0].get("delegateId"),
             Some(&id(1))
         );
+    }
+
+    #[tokio::test]
+    async fn should_reject_a_transfer_to_the_identity_the_property_must_differ_from() {
+        let mut fixture = DelegationFixture::new();
+        let (recipient, _, _) = fixture.other_identity(450);
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("delegateId", Value::Identifier(recipient.id().to_buffer()))
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture.transfer(recipient.id()).await;
+
+        expect_not_distinct_error(result, "delegateId", "$ownerId");
+        assert_eq!(
+            fixture.stored_delegations()[0].owner_id(),
+            fixture.identity.id(),
+            "the refused transfer must leave the owner unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_accept_a_transfer_to_another_identity() {
+        let mut fixture = DelegationFixture::new();
+        let (recipient, _, _) = fixture.other_identity(450);
+        assert_matches!(
+            fixture
+                .create(|document| document.set("delegateId", id(1)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture.transfer(recipient.id()).await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_delegations()[0].owner_id(), recipient.id());
+    }
+
+    #[tokio::test]
+    async fn should_reject_a_purchase_by_the_identity_the_property_must_differ_from() {
+        let mut fixture = DelegationFixture::new();
+        let buyer = fixture.other_identity(450);
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("delegateId", Value::Identifier(buyer.0.id().to_buffer()))
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        fixture.set_price(dash_to_credits!(0.1)).await;
+
+        let result = fixture.purchase_by(&buyer, dash_to_credits!(0.1)).await;
+
+        expect_not_distinct_error(result, "delegateId", "$ownerId");
+        assert_eq!(
+            fixture.stored_delegations()[0].owner_id(),
+            fixture.identity.id(),
+            "the refused purchase must leave the owner unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_accept_a_purchase_by_another_identity() {
+        let mut fixture = DelegationFixture::new();
+        let buyer = fixture.other_identity(450);
+        assert_matches!(
+            fixture
+                .create(|document| document.set("delegateId", id(1)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        fixture.set_price(dash_to_credits!(0.1)).await;
+
+        let result = fixture.purchase_by(&buyer, dash_to_credits!(0.1)).await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_delegations()[0].owner_id(), buyer.0.id());
     }
 
     #[tokio::test]

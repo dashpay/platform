@@ -201,7 +201,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   and lets an `immutable` one be cleared once its target is deleted.
 ///   Document replace structure validation 1 and create structure
 ///   validation 1 refuse a `distinctFrom` identifier property equal to the
-///   value it must differ from (`DocumentPropertyNotDistinctError`, 10419).
+///   value it must differ from (`DocumentPropertyNotDistinctError`, 10419);
+///   transfer and purchase structure validation 1 judge the stored
+///   document's `$ownerId` declarations against the new owner.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
@@ -566,9 +568,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document's `$ownerId`. A pure structure rule: document create
 ///     structure validation 1 and replace structure validation 1 call
 ///     `validate_distinct_from_properties` (`validate_distinct_from` 0) on the
-///     transition's data and owner id after the schema validation, and refuse
-///     an equal pair with `DocumentPropertyNotDistinctError` (10419); an
-///     absent named property passes. The parser checks the target at contract
+///     transition's data and owner id after the schema validation, transfer
+///     and purchase structure validation 1 call it on the stored document and
+///     its new owner, and each refuses an equal pair with
+///     `DocumentPropertyNotDistinctError` (10419); an absent named property
+///     passes. The parser checks the target at contract
 ///     registration and update (it must exist, be an identifier and not be
 ///     the declaring property), and a changed `distinctFrom` is an
 ///     incompatible schema change on update.

@@ -1,4 +1,6 @@
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -778,16 +780,25 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
 
     /// `validate_distinct_from_properties` version 0: every property of the document type
     /// that declares `distinctFrom` and has a value in `data` is compared with what it
-    /// must differ from, the writer's `owner_id` or the named property, and the first
-    /// equal pair is reported. Each value is judged by `DistinctFrom::violation`, so an
-    /// array item can be judged by the same rule with the item's value.
+    /// must differ from, the document's `owner_id` or the named property, and the first
+    /// equal pair is reported. The declaring properties are read from the list the parser
+    /// built, so a type without declarations costs nothing. Each value is judged by
+    /// `DistinctFrom::violation`, so an array item can be judged by the same rule with
+    /// the item's value.
     fn validate_distinct_from_properties_v0(
         &self,
         data: &BTreeMap<String, Value>,
         owner_id: Identifier,
-    ) -> SimpleConsensusValidationResult {
-        for (path, property) in self.flattened_properties() {
-            let Some(distinct_from) = &property.distinct_from else {
+    ) -> SimpleConsensusValidationResult
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for path in self.distinct_from_fields() {
+            let Some(distinct_from) = self
+                .flattened_properties()
+                .get(path)
+                .and_then(|property| property.distinct_from.as_ref())
+            else {
                 continue;
             };
             // A lookup error (an intermediate that is not an object) is refused by the
