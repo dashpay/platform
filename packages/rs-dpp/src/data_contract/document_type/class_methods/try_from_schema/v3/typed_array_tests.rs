@@ -495,6 +495,43 @@ fn should_refuse_refers_to_on_the_elements_of_a_typed_array() {
     );
 }
 
+/// An element may be limited to allowed values with `enum`, but takes no
+/// `const`: a list of one repeated value carries only its length, and a
+/// one-value `enum` does the same while an update can still widen it.
+#[test]
+fn should_accept_enum_and_refuse_const_on_the_elements_of_a_typed_array() {
+    let list_with_items = |items: Value| {
+        schema_with_list(platform_value!({
+            "type": "array",
+            "maxItems": 4,
+            "items": items,
+            "position": 0
+        }))
+    };
+
+    parse_dispatched(
+        list_with_items(platform_value!({
+            "type": "string",
+            "maxLength": 20,
+            "enum": ["spam", "abuse", "offTopic"]
+        })),
+        PlatformVersion::latest(),
+        true,
+    )
+    .expect("enum on an element parses");
+
+    let error = expect_json_schema_error(parse_dispatched(
+        list_with_items(platform_value!({ "type": "integer", "const": 1 })),
+        PlatformVersion::latest(),
+        true,
+    ));
+    assert!(
+        error.instance_path().ends_with("/list/items"),
+        "const on an element should be refused, got {}",
+        error.instance_path()
+    );
+}
+
 /// A contract whose `charter` type carries a typed array of every element
 /// type, `reasons` and `counts` required and the rest optional.
 fn charter_contract(platform_version: &PlatformVersion) -> DataContract {
