@@ -231,6 +231,12 @@ if state_transition.has_identity_minimum_balance_pre_check_validation() {
 }
 ```
 
+A `MasternodeVote` is paid by its vote poll's prefunded specialized balance, not by
+the voter, so its pre-check is on that pot: a vote on a poll whose pot does not exist,
+or holds less than the single vote cost, is refused unpaid with
+`PrefundedSpecializedBalanceNotFoundError` or
+`PrefundedSpecializedBalanceInsufficientError`.
+
 ## Stage 8: Advanced Structure Validation (without State)
 
 Some transitions need structural validation that goes beyond basic checks but does not

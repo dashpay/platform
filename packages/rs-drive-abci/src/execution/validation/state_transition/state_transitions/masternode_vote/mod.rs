@@ -8616,7 +8616,10 @@ mod tests {
                     pro_tx_hash,
                     &voting_key,
                     2,
-                    Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Awarded(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW)"),
+                    // Settling the poll deleted its pot, and a block checks the pot before the
+                    // poll's status; check_tx, which validates the poll's status first, is what
+                    // tells a late voter the poll is over.
+                    Some("Did not find a specialized balance with id: 8cLBdc35uovu4yHKuMKy4JWYhRFVUPSnnm8KTJJaaJw4"),
                     platform_version,
                 )
                 .await;
@@ -8811,7 +8814,10 @@ mod tests {
                     pro_tx_hash,
                     &voting_key,
                     2,
-                    Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Locked"),
+                    // Settling the poll deleted its pot, and a block checks the pot before the
+                    // poll's status; check_tx, which validates the poll's status first, is what
+                    // tells a late voter the poll is over.
+                    Some("Did not find a specialized balance with id: 8cLBdc35uovu4yHKuMKy4JWYhRFVUPSnnm8KTJJaaJw4"),
                     platform_version,
                 )
                 .await;
