@@ -35,11 +35,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.queries.DocumentLifecycle
+import org.dashfoundation.dashsdk.queries.describeEraseProgress
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -57,10 +60,11 @@ import org.dashfoundation.example.util.truncateMiddle
 
 /**
  * Owned-document actions for one document — the DOC-03 replace / DOC-04
- * delete / DOC-05 transfer flows the iOS document ops menu ships
- * (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
- * `transferDocument`). Reached from a document row's "Actions…" button and
- * from the document replace/delete/transfer transition-catalog entries.
+ * delete / DOC-05 transfer flows the iOS document ops menu ships, plus the
+ * erase (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
+ * `eraseDocument` / `transferDocument`). Reached from a document row's
+ * "Actions…" button and from the document replace/delete/erase/transfer
+ * transition-catalog entries.
  *
  * The document is probed by id (debounced, like [DocumentWithPriceScreen]) so
  * the acting-identity ownership badge and the replace-field prefill reflect
@@ -116,11 +120,13 @@ fun DocumentActionsScreen(
 
     var recipient by remember { mutableStateOf<RecipientSelection?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showEraseConfirm by remember { mutableStateOf(false) }
 
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var replaceSuccess by remember { mutableStateOf<String?>(null) }
     var deleteSuccess by remember { mutableStateOf<String?>(null) }
+    var eraseSuccess by remember { mutableStateOf<String?>(null) }
     var transferSuccess by remember { mutableStateOf<String?>(null) }
 
     val schema = remember(contract?.lastUpdated, typeName) {
@@ -143,6 +149,7 @@ fun DocumentActionsScreen(
     val capabilities = documentTypeCapabilities(schema, contractConfig)
     val documentsMutable = capabilities.documentsMutable
     val canBeDeleted = capabilities.canBeDeleted
+    val canBeErased = capabilities.canBeErased
 
     // Default acting identity to the on-chain owner when it's one of ours,
     // else the first identity — replace/delete/transfer require ownership.
@@ -448,6 +455,46 @@ fun DocumentActionsScreen(
                 ) { showDeleteConfirm = true }
             }
 
+            // ── Erase ─────────────────────────────────────────────────────
+            // A deleted document is invisible to the probe above, so the
+            // erase cannot be ownership-gated here; consensus refuses a
+            // first erase from anyone but the owner (a paid rejection) and
+            // accepts later ones from any identity.
+            FormSection(title = "Erase") {
+                Text(
+                    "Remove the retained revisions of a document that has already " +
+                        "been deleted. Each erase removes up to 100 revisions; the " +
+                        "lifecycle read after each one says how many remain.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("documentActions.erase"),
+                )
+                eraseSuccess?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag("eraseDocument.success"),
+                    )
+                }
+                if (!canBeErased) {
+                    Text(
+                        "This document type cannot be erased — an erase will be " +
+                            "rejected by consensus (fees are still charged).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                SubmitButton(
+                    text = "Erase Document…",
+                    isLoading = false,
+                    enabled = !isSubmitting && actingIdentity != null && manager != null &&
+                        canBeErased && documentIdText.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("eraseDocument.button"),
+                ) { showEraseConfirm = true }
+            }
+
             // ── Transfer (DOC-05) ─────────────────────────────────────────
             FormSection(title = "Transfer") {
                 Text(
@@ -559,7 +606,94 @@ fun DocumentActionsScreen(
         )
     }
 
+    if (showEraseConfirm) {
+        AlertDialog(
+            onDismissRequest = { showEraseConfirm = false },
+            title = { Text("Erase document history?") },
+            text = {
+                Text(
+                    "This removes up to 100 retained revisions of the deleted document " +
+                        "${truncateMiddle(documentIdText.trim(), 8, 6)}. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEraseConfirm = false
+                        val signer = actingIdentity ?: return@TextButton
+                        val docIdBytes = Base58.decodeIdentifier(documentIdText.trim())
+                            ?: return@TextButton
+                        submitDocumentTransaction(
+                            begin = { isSubmitting = true; eraseSuccess = null },
+                            end = { isSubmitting = false },
+                            fail = { error = it },
+                            scope = scope,
+                        ) {
+                            val (wallet, mgr, signingKeyId) = resolveSigning(container, signer)
+                            val docIdB58 = Base58.encode(docIdBytes)
+                            eraseSuccess = eraseAndDescribe(
+                                readLifecycle = {
+                                    sdk?.documents?.lifecycle(contractIdBase58, typeName, docIdB58)
+                                },
+                            ) {
+                                mgr.documentTransactions.erase(
+                                    walletHandle = wallet,
+                                    ownerId = signer.identityId,
+                                    contractId = contractIdBytes,
+                                    documentType = typeName,
+                                    documentId = docIdBytes,
+                                    signingKeyId = signingKeyId,
+                                    signerHandle = mgr.signerHandle,
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier.testTag("eraseDocument.confirm"),
+                ) { Text("Erase") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEraseConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     ErrorAlertDialog(message = error, onDismiss = { error = null })
+}
+
+/**
+ * Submit the erase, then say what it achieved, from the lifecycle read before
+ * it and the one read after. Extracted from [DocumentActionsScreen] so the
+ * failure split is unit-testable.
+ *
+ * Only [erase] decides whether the submission succeeded. The erase result
+ * itself observes only that the document is absent from ordinary reads, which
+ * it already was, so the lifecycle is the account of what was removed — but it
+ * is an observation of an already-broadcast, already-confirmed transition. A
+ * read that fails therefore leaves the erase successful and merely unreported;
+ * surfacing it as a failure would invite a second, fee-bearing erase. A
+ * [CancellationException] still propagates so structured concurrency is intact.
+ */
+internal suspend fun eraseAndDescribe(
+    readLifecycle: suspend () -> DocumentLifecycle?,
+    erase: suspend () -> Unit,
+): String {
+    suspend fun observe(): DocumentLifecycle? = try {
+        readLifecycle()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+    val before = observe()
+    erase()
+    val after = observe()
+    return "Erase submitted; document absence observed. " +
+        if (after != null) {
+            describeEraseProgress(before, after)
+        } else {
+            "Lifecycle not read; query the document history to see what remains."
+        }
 }
 
 /** The owner + current field values [DocumentActionsScreen]'s probe reads. */

@@ -757,6 +757,52 @@ class Documents internal constructor(private val sdk: Sdk) {
         }
     }
 
+    /**
+     * Read a page of a keep-history document's revision history with its
+     * lifecycle block (see [DocumentLifecycle]); returns the JSON object
+     * `{"entries":[{"time_ms","revision","document"}],"lifecycle":{…}}` or
+     * null when the response is missing. [contractId] is base58 and is
+     * resolved through the SDK's trusted contract provider. Exactly one
+     * [filter] applies; [limit] is at most ten, 0 for the default. Needs the
+     * protocol-15 history layout: a page served from the earlier layout has no
+     * lifecycle block and the FFI refuses it.
+     */
+    suspend fun history(
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        filter: DocumentHistoryFilter = DocumentHistoryFilter.StartAtTime(0),
+        limit: Int = 0,
+    ): String? = sdk.queryGate.op {
+        require(limit >= 0) { "limit must be non-negative, got $limit" }
+        mapNativeErrors {
+            QueriesNative.documentHistory(
+                sdk.handle,
+                contractId,
+                documentType,
+                documentId,
+                filter.code,
+                filter.timeMs,
+                filter.revision,
+                limit,
+            )
+        }
+    }
+
+    /**
+     * Read where a keep-history document stands right now: its lifecycle
+     * state and the exact number of revisions still retained. A current
+     * observation, not the outcome of any particular transition; the erase
+     * result itself only observes absence (see `DocumentTransactions.erase`).
+     */
+    suspend fun lifecycle(
+        contractId: String,
+        documentType: String,
+        documentId: String,
+    ): DocumentLifecycle? =
+        history(contractId, documentType, documentId, DocumentHistoryFilter.StartAtTime(0), 1)
+            ?.let(DocumentLifecycle::fromHistoryJson)
+
     /** Count documents; returns the JSON count result. */
     suspend fun count(
         contract: DataContractRef,
