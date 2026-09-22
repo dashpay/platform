@@ -2343,17 +2343,33 @@ message WaitForStateTransitionResultRequest {
     bytes state_transition_hash =
         1;          // The hash of the state transition to wait for
     bool prove = 2; // Flag to request a proof as the response
+    // Flag to request, without a proof, the credit balance of the identity
+    // that owns the transition after it executed. Ignored when a proof is
+    // requested: from protocol version 14 the proof of an owned, fee-paying
+    // transition (document and token batches, contract creates and updates,
+    // identity updates and key limit updates, contract moderation) carries
+    // the owner's balance itself.
+    bool request_user_balance = 3;
   }
   oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultResponse {
+  // The result of a successful wait that asked for the owner's balance and for no proof
+  message SuccessWithOwnerBalance {
+    // The credit balance of the identity that owns the transition after it
+    // executed, read from a Drive state at or past the block that executed it
+    uint64 owner_balance = 1 [ jstype = JS_STRING ];
+  }
   message WaitForStateTransitionResultResponseV0 {
     oneof result {
       StateTransitionBroadcastError error =
           1; // Any error that occurred during the state transition broadcast
       Proof proof =
           2; // Cryptographic proof for the state transition, if requested
+      // Success with the owner's balance, unproved, when the request asked
+      // for it and for no proof
+      SuccessWithOwnerBalance success_with_owner_balance = 4;
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }

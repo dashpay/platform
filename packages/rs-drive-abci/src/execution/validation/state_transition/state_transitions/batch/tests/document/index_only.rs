@@ -1525,13 +1525,26 @@ mod index_only_executed_proof_tests {
         // An indexOnly snapshot authenticates the resulting STATE (the
         // commitment-checked entry), never THIS transition's execution —
         // a second create with identical values shares the entry.
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
+        let owner_balance = outcome.owner_balance();
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
+        // The owner's balance after the create rides in the same proof, read
+        // from the same state as the entry.
+        let alice_balance = platform
+            .drive
+            .fetch_identity_balance(alice.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch alice's balance")
+            .expect("alice has a balance");
+        assert_eq!(owner_balance, Some(alice_balance));
+        assert!(
+            alice_balance < dash_to_credits!(1.0),
+            "the create cost credits"
+        );
         let (_, verified_like) = documents.into_iter().next().expect("one document");
         let verified_like = verified_like.expect("the created like is present");
         assert_eq!(
@@ -1576,13 +1589,21 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
+        let owner_balance = outcome.owner_balance();
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
+        assert_eq!(
+            owner_balance,
+            platform
+                .drive
+                .fetch_identity_balance(alice.id().to_buffer(), None, platform_version)
+                .expect("expected to fetch alice's balance")
+        );
         let (_, absent) = documents.into_iter().next().expect("one entry");
         assert!(absent.is_none(), "the unliked entry must be proven absent");
     }
@@ -2573,9 +2594,9 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
@@ -2638,9 +2659,9 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
@@ -2772,9 +2793,9 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
@@ -2837,9 +2858,9 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
-        assert_matches!(
-            &outcome,
-            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {outcome:?}"
         );
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
