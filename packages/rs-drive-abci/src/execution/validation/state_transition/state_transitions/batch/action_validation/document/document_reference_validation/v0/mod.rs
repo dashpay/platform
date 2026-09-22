@@ -12,7 +12,7 @@ use dpp::data_contract::document_type::accessors::{
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentTypeRef, KeyReferenceIdentityProperty,
+    DocumentPropertyType, DocumentTypeRef, KeyReferenceIdentityProperty, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -326,10 +326,14 @@ fn validate_document_type_references_v0(
                     None => false,
                     Some(fetch_info) => {
                         // The declaration's requirements are checked against the contract
-                        // just fetched and the block time, so they cost no further read;
-                        // the first unmet one refuses the write
-                        if let Some(requirement) = contract_requirements
-                            .first_unmet_by(&fetch_info.contract, block_info.time_ms)
+                        // just fetched and the write itself (its owner and block time), so
+                        // they cost no further read; the first unmet one refuses the write
+                        let write = ReferringWrite {
+                            owner_id,
+                            block_time_ms: block_info.time_ms,
+                        };
+                        if let Some(requirement) =
+                            contract_requirements.first_unmet_by(&fetch_info.contract, write)
                         {
                             return Ok(SimpleConsensusValidationResult::new_with_error(
                                 ReferencedContractRequirementNotMetError::new(
