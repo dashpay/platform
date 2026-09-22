@@ -951,6 +951,195 @@ mod token_shielded_pool_tests {
         );
     }
 
+    /// A token pool's anchors are namespaced by token id, so an anchor the chain recorded for
+    /// one token proves nothing about another token's note tree.
+    ///
+    /// The existing unknown-anchor test spends against an anchor recorded in no pool at all, so
+    /// it would still pass if the lookup read the credit pool's tree or the wrong token's. This
+    /// one records the anchor in a real, neighbouring pool and requires the spend to be refused
+    /// anyway.
+    #[tokio::test]
+    async fn test_token_unshield_rejects_an_anchor_recorded_in_another_tokens_pool() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9101);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (recipient, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1));
+
+        let (contract_a, token_a) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        // A second owner, because a contract id derives from its owner: the same owner would
+        // give back the same contract and the same pool, and the test would prove nothing.
+        let (other_owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1));
+        let (_contract_b, token_b) = create_token_contract_with_owner_identity(
+            &mut platform,
+            other_owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        assert_ne!(token_a, token_b, "the two tokens must own separate pools");
+
+        // Recorded in token B's pool, and nowhere else.
+        let (note, anchor, merkle_path) = spendable_note(6_000, 21);
+        insert_token_pool_anchor(&platform, token_b, &anchor);
+
+        let unshield_amount = 1_000;
+        let extra = token_unshield_extra_sighash_data_v0(
+            &token_a.to_buffer(),
+            &identity.id().to_buffer(),
+            &recipient.id().to_buffer(),
+            unshield_amount,
+        );
+        let (unshield_bundle, _) =
+            build_spend_bundle(note, merkle_path, anchor, unshield_amount, &extra, 22);
+
+        let unshield = BatchTransition::new_token_unshield_transition(
+            token_a,
+            identity.id(),
+            contract_a.id(),
+            0,
+            unshield_amount,
+            recipient.id(),
+            unshield_bundle,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token unshield transition");
+
+        let result = process(&platform, &unshield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidAnchorError(_)),
+                ..
+            }]
+        );
+        assert_eq!(
+            identity_token_balance(&platform, token_a, recipient.id()),
+            None
+        );
+    }
+
+    /// Spent nullifiers are namespaced by token id too: spending a note in one token's pool must
+    /// not mark that nullifier spent in another's, or the first token to use a nullifier would
+    /// make every other pool's note with the same nullifier unspendable.
+    #[tokio::test]
+    async fn test_a_nullifier_spent_in_one_token_pool_is_unspent_in_another() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9102);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (recipient, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1));
+
+        let (contract_a, token_a) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        // A second owner, because a contract id derives from its owner: the same owner would
+        // give back the same contract and the same pool, and the test would prove nothing.
+        let (other_owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1));
+        let (_contract_b, token_b) = create_token_contract_with_owner_identity(
+            &mut platform,
+            other_owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        assert_ne!(token_a, token_b, "the two tokens must own separate pools");
+
+        let shield = BatchTransition::new_token_shield_transition(
+            token_a,
+            identity.id(),
+            contract_a.id(),
+            0,
+            SHIELD_AMOUNT,
+            build_shield_bundle(SHIELD_AMOUNT, 23),
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        assert_matches!(
+            process(&platform, &shield).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let (note, anchor, merkle_path) = spendable_note(6_000, 24);
+        insert_token_pool_anchor(&platform, token_a, &anchor);
+        let unshield_amount = 4_000;
+        let extra = token_unshield_extra_sighash_data_v0(
+            &token_a.to_buffer(),
+            &identity.id().to_buffer(),
+            &recipient.id().to_buffer(),
+            unshield_amount,
+        );
+        let (unshield_bundle, _) =
+            build_spend_bundle(note, merkle_path, anchor, unshield_amount, &extra, 25);
+
+        let unshield = BatchTransition::new_token_unshield_transition(
+            token_a,
+            identity.id(),
+            contract_a.id(),
+            0,
+            unshield_amount,
+            recipient.id(),
+            unshield_bundle.clone(),
+            &key,
+            3,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token unshield transition");
+        assert_matches!(
+            process(&platform, &unshield).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        for action in unshield_bundle.actions.iter() {
+            assert!(
+                nullifier_is_spent(&platform, token_a, &action.nullifier),
+                "the spend must be recorded in its own pool"
+            );
+            assert!(
+                !nullifier_is_spent(&platform, token_b, &action.nullifier),
+                "a spend in one pool must not mark the nullifier spent in another"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_token_shield_rejected_before_protocol_version_14() {
         let platform_version =
