@@ -52,7 +52,7 @@ impl ReferencedContractRequirementNotMetError {
         &self.contract_id
     }
 
-    /// The `contractFields` key of the requirement, `moderation` for one
+    /// The `contractRequirements` key of the requirement, `moderation` for one
     pub fn field(&self) -> &str {
         &self.field
     }

@@ -52,7 +52,7 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// declaring `canBeDeleted: false`.
     ReferencedDocumentTypeNotDeletable = 40131,
     /// The referenced contract exists but does not declare what the
-    /// reference's `contractFields` require of it, elected moderation for
+    /// reference's `contractRequirements` require of it, elected moderation for
     /// one.
     ReferencedContractRequirementNotMet = 40135,
 }

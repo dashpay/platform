@@ -4,7 +4,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    property_names, ContractReferenceFields, ContractReferenceModeration, DocumentProperty,
+    property_names, ContractReferenceModeration, ContractReferenceRequirements, DocumentProperty,
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
@@ -372,9 +372,11 @@ fn apply_property_reference_v0(
         .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
 
     // Requirements on the referenced contract belong to contract references alone
-    if reference_type != "contract" && refers_to_map.contains_key(property_names::CONTRACT_FIELDS) {
+    if reference_type != "contract"
+        && refers_to_map.contains_key(property_names::CONTRACT_REQUIREMENTS)
+    {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "{} refersTo does not take contractFields",
+            "{} refersTo does not take contractRequirements",
             reference_type
         )));
     }
@@ -382,7 +384,7 @@ fn apply_property_reference_v0(
     let target = match reference_type {
         "identity" => DocumentPropertyReferenceTarget::Identity,
         "contract" => DocumentPropertyReferenceTarget::Contract {
-            contract_fields: parse_contract_reference_fields(&refers_to_map)?,
+            contract_requirements: parse_contract_reference_requirements(&refers_to_map)?,
         },
         "token" => DocumentPropertyReferenceTarget::Token,
         // The two document targets share one declaration shape; they differ
@@ -523,38 +525,40 @@ fn apply_property_reference_v0(
     Ok(DocumentPropertyType::IdentifierWithReference(target))
 }
 
-/// The `contractFields` of a `contract` reference: each key an aspect of the referenced
+/// The `contractRequirements` of a `contract` reference: each key an aspect of the referenced
 /// contract with a closed set of values, at least one when the object is given at all.
-fn parse_contract_reference_fields(
+fn parse_contract_reference_requirements(
     refers_to_map: &BTreeMap<String, &Value>,
-) -> Result<ContractReferenceFields, DataContractError> {
-    let Some(fields_value) = refers_to_map.get(property_names::CONTRACT_FIELDS) else {
-        return Ok(ContractReferenceFields::default());
+) -> Result<ContractReferenceRequirements, DataContractError> {
+    let Some(fields_value) = refers_to_map.get(property_names::CONTRACT_REQUIREMENTS) else {
+        return Ok(ContractReferenceRequirements::default());
     };
     let fields_map = fields_value.to_btree_ref_string_map()?;
     if fields_map.is_empty() {
         return Err(DataContractError::InvalidContractStructure(
-            "contract refersTo contractFields must declare at least one requirement".to_string(),
+            "contract refersTo contractRequirements must declare at least one requirement"
+                .to_string(),
         ));
     }
-    let mut fields = ContractReferenceFields::default();
+    let mut fields = ContractReferenceRequirements::default();
     for (field, value) in fields_map {
         match field.as_str() {
             property_names::MODERATION => {
                 let name = value.as_text().ok_or_else(|| {
                     DataContractError::InvalidContractStructure(
-                        "contract refersTo contractFields moderation must be a string".to_string(),
+                        "contract refersTo contractRequirements moderation must be a string"
+                            .to_string(),
                     )
                 })?;
                 fields.moderation = Some(ContractReferenceModeration::from_wire_name(name).ok_or_else(|| {
                     DataContractError::InvalidContractStructure(format!(
-                        "contract refersTo contractFields moderation {name:?} is unknown, expected \"elected\""
+                        "contract refersTo contractRequirements moderation {name:?} is unknown, expected \"elected\""
                     ))
                 })?);
             }
             other => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "contract refersTo contractFields {other:?} is unknown"
+                    "contract refersTo contractRequirements {other:?} is unknown"
                 )));
             }
         }
@@ -1066,12 +1070,12 @@ mod tests {
     }
 
     #[test]
-    fn should_parse_contract_refers_to_without_contract_fields_as_no_requirement() {
+    fn should_parse_contract_refers_to_without_contract_requirements_as_no_requirement() {
         assert_eq!(
             contract_reference_target(json!({ "type": "contract" })),
             DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::Contract {
-                    contract_fields: ContractReferenceFields::default(),
+                    contract_requirements: ContractReferenceRequirements::default(),
                 }
             )
         );
@@ -1082,11 +1086,11 @@ mod tests {
         assert_eq!(
             contract_reference_target(json!({
                 "type": "contract",
-                "contractFields": { "moderation": "elected" }
+                "contractRequirements": { "moderation": "elected" }
             })),
             DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::Contract {
-                    contract_fields: ContractReferenceFields {
+                    contract_requirements: ContractReferenceRequirements {
                         moderation: Some(ContractReferenceModeration::Elected),
                     },
                 }
@@ -1095,27 +1099,27 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_contract_fields_that_are_empty_unknown_or_on_another_type() {
+    fn should_reject_contract_requirements_that_are_empty_unknown_or_on_another_type() {
         for (refers_to, fragment) in [
             (
-                json!({ "type": "contract", "contractFields": {} }),
+                json!({ "type": "contract", "contractRequirements": {} }),
                 "at least one requirement",
             ),
             (
-                json!({ "type": "contract", "contractFields": { "moderation": "appointed" } }),
+                json!({ "type": "contract", "contractRequirements": { "moderation": "appointed" } }),
                 "is unknown",
             ),
             (
-                json!({ "type": "contract", "contractFields": { "moderation": 1 } }),
+                json!({ "type": "contract", "contractRequirements": { "moderation": 1 } }),
                 "must be a string",
             ),
             (
-                json!({ "type": "contract", "contractFields": { "tokens": "any" } }),
+                json!({ "type": "contract", "contractRequirements": { "tokens": "any" } }),
                 "is unknown",
             ),
             (
-                json!({ "type": "identity", "contractFields": { "moderation": "elected" } }),
-                "does not take contractFields",
+                json!({ "type": "identity", "contractRequirements": { "moderation": "elected" } }),
+                "does not take contractRequirements",
             ),
         ] {
             let err = try_document_type_from_schema(contract_reference_schema(refers_to.clone()))

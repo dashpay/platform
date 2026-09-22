@@ -132,7 +132,7 @@
               "maxLength": 64,
               "pattern": "^[a-zA-Z0-9-_]{1,64}$"
             },
-            "contractFields": {
+            "contractRequirements": {
               "description": "contract references only: what the referenced contract must declare beyond existing, checked when the referring document is written against the contract already fetched for the existence check, so a requirement costs no further read. Each key names an aspect of the referenced contract and its value the requirement: moderation \"elected\" requires the contract to declare an elected moderation team. An unmet requirement refuses the write (ReferencedContractRequirementNotMetError, 40135)",
               "type": "object",
               "properties": {
@@ -229,7 +229,7 @@
               "then": {},
               "else": {
                 "properties": {
-                  "contractFields": false
+                  "contractRequirements": false
                 }
               }
             }

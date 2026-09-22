@@ -2003,13 +2003,13 @@ mod tests {
             for (old_fields, new_fields, changed_path) in [
                 (
                     platform_value!({ "type": "contract" }),
-                    platform_value!({ "type": "contract", "contractFields": { "moderation": "elected" } }),
-                    "/properties/toUserId/refersTo/contractFields",
+                    platform_value!({ "type": "contract", "contractRequirements": { "moderation": "elected" } }),
+                    "/properties/toUserId/refersTo/contractRequirements",
                 ),
                 (
-                    platform_value!({ "type": "contract", "contractFields": { "moderation": "elected" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "moderation": "elected" } }),
                     platform_value!({ "type": "contract" }),
-                    "/properties/toUserId/refersTo/contractFields",
+                    "/properties/toUserId/refersTo/contractRequirements",
                 ),
             ] {
                 let old_document_type =

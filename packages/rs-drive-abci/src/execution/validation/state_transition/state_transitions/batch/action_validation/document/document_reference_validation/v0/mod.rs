@@ -281,7 +281,9 @@ fn validate_document_type_references_v0(
                     .fetch_identity_revision(referenced_id, true, transaction, platform_version)?
                     .is_some()
             }
-            DocumentPropertyReferenceTarget::Contract { contract_fields } => {
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements,
+            } => {
                 let (fee, referenced_contract) =
                     platform.drive.get_contract_with_fetch_info_and_fee(
                         referenced_id,
@@ -305,7 +307,7 @@ fn validate_document_type_references_v0(
                         // just fetched, so they cost no further read; the first unmet one
                         // refuses the write
                         if let Some(requirement) =
-                            contract_fields.first_unmet_by(&fetch_info.contract)
+                            contract_requirements.first_unmet_by(&fetch_info.contract)
                         {
                             return Ok(SimpleConsensusValidationResult::new_with_error(
                                 ReferencedContractRequirementNotMetError::new(

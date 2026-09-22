@@ -41,7 +41,7 @@ export type DocumentPropertyReferenceTarget =
        * requires an elected moderation team (code 40135 when unmet).
        * Absent when the declaration carries no requirement.
        */
-      contractFields?: { moderation?: 'elected' };
+      contractRequirements?: { moderation?: 'elected' };
     }
   | { type: 'token' }
   | {
@@ -176,10 +176,12 @@ fn reference_to_js(
 
     match target {
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
-        DocumentPropertyReferenceTarget::Contract { contract_fields } => {
+        DocumentPropertyReferenceTarget::Contract {
+            contract_requirements,
+        } => {
             // Absent, not `{}`-valued, when the declaration requires nothing,
             // matching the schema's own omission.
-            if let Some(moderation) = contract_fields.moderation {
+            if let Some(moderation) = contract_requirements.moderation {
                 let fields = Object::new();
                 set_field(
                     &fields,
@@ -187,7 +189,7 @@ fn reference_to_js(
                     &JsValue::from_str(moderation.as_str()),
                     path,
                 )?;
-                set_field(&object, "contractFields", &fields, path)?;
+                set_field(&object, "contractRequirements", &fields, path)?;
             }
         }
         DocumentPropertyReferenceTarget::PermanentDocument {

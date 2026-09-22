@@ -90,7 +90,7 @@ pub struct ByteArrayPropertySizes {
 
 /// What a `contract` reference requires of the contract it points at, beyond its existence.
 ///
-/// Declared as `refersTo: { "type": "contract", "contractFields": { ... } }`: each key names an
+/// Declared as `refersTo: { "type": "contract", "contractRequirements": { ... } }`: each key names an
 /// aspect of the referenced contract and its value the requirement on it. Consensus checks the
 /// requirements when the referring document is written, against the contract it has already
 /// fetched for the existence check, so a requirement costs no further read. An unmet one
@@ -99,7 +99,7 @@ pub struct ByteArrayPropertySizes {
     Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ContractReferenceFields {
+pub struct ContractReferenceRequirements {
     /// The moderation the referenced contract must declare.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moderation: Option<ContractReferenceModeration>,
@@ -117,7 +117,7 @@ pub enum ContractReferenceModeration {
 }
 
 impl ContractReferenceModeration {
-    /// The wire name, the value of `contractFields.moderation`.
+    /// The wire name, the value of `contractRequirements.moderation`.
     pub fn as_str(&self) -> &'static str {
         match self {
             ContractReferenceModeration::Elected => "elected",
@@ -144,7 +144,7 @@ impl ContractReferenceModeration {
     }
 }
 
-/// One requirement of a [`ContractReferenceFields`] declaration, named the way the
+/// One requirement of a [`ContractReferenceRequirements`] declaration, named the way the
 /// declaration spells it, for the error that reports it unmet.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ContractReferenceRequirement {
@@ -152,7 +152,7 @@ pub enum ContractReferenceRequirement {
 }
 
 impl ContractReferenceRequirement {
-    /// The `contractFields` key the requirement was declared under.
+    /// The `contractRequirements` key the requirement was declared under.
     pub fn field(&self) -> &'static str {
         match self {
             ContractReferenceRequirement::Moderation(_) => property_names::MODERATION,
@@ -167,7 +167,7 @@ impl ContractReferenceRequirement {
     }
 }
 
-impl ContractReferenceFields {
+impl ContractReferenceRequirements {
     /// Whether the declaration requires nothing beyond the contract's existence.
     pub fn is_empty(&self) -> bool {
         self.moderation.is_none()
@@ -207,10 +207,13 @@ impl ContractReferenceFields {
 pub enum DocumentPropertyReferenceTarget {
     Identity,
     /// A data contract, which must exist when the referring document is written and meet the
-    /// declared [`ContractReferenceFields`], if any.
+    /// declared [`ContractReferenceRequirements`], if any.
     Contract {
-        #[serde(default, skip_serializing_if = "ContractReferenceFields::is_empty")]
-        contract_fields: ContractReferenceFields,
+        #[serde(
+            default,
+            skip_serializing_if = "ContractReferenceRequirements::is_empty"
+        )]
+        contract_requirements: ContractReferenceRequirements,
     },
     Token,
     /// A document of a document type whose documents can never be deleted
@@ -376,9 +379,11 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
-            DocumentPropertyReferenceTarget::Contract { contract_fields } => {
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements,
+            } => {
                 write!(f, "contract")?;
-                if let Some(moderation) = contract_fields.moderation {
+                if let Some(moderation) = contract_requirements.moderation {
                     write!(f, " with {} moderation", moderation.as_str())?;
                 }
                 Ok(())
@@ -7635,14 +7640,14 @@ mod tests {
         );
         assert_eq!(
             DocumentPropertyReferenceTarget::Contract {
-                contract_fields: Default::default()
+                contract_requirements: Default::default()
             }
             .to_string(),
             "contract"
         );
         assert_eq!(
             DocumentPropertyReferenceTarget::Contract {
-                contract_fields: ContractReferenceFields {
+                contract_requirements: ContractReferenceRequirements {
                     moderation: Some(ContractReferenceModeration::Elected),
                 },
             }
@@ -7731,7 +7736,7 @@ mod tests {
         let targets = [
             DocumentPropertyReferenceTarget::Identity,
             DocumentPropertyReferenceTarget::Contract {
-                contract_fields: Default::default(),
+                contract_requirements: Default::default(),
             },
             DocumentPropertyReferenceTarget::Token,
             DocumentPropertyReferenceTarget::PermanentDocument {
