@@ -39,7 +39,7 @@ use rs_sdk_ffi::{
     dash_sdk_token_get_perpetual_distribution_last_claim,
     dash_sdk_token_get_pre_programmed_distributions, dash_sdk_token_get_statuses,
     dash_sdk_token_get_total_supply, dash_sdk_voting_get_vote_polls_by_end_date,
-    DashSDKDocumentHistorySelector, DashSDKDocumentSearchParams, DataContractHandle, SDKHandle,
+    DashSDKDocumentHistoryFilter, DashSDKDocumentSearchParams, DataContractHandle, SDKHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -340,7 +340,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
 
 /// Read a page of a keep-history document's revision history with its
 /// lifecycle block; returns the JSON object `dash_sdk_document_fetch_history`
-/// produces. `selector` is the `DashSDKDocumentHistorySelector` discriminant
+/// produces. `filter` is the `DashSDKDocumentHistoryFilter` discriminant
 /// (0 start-at time, 1 start-after cursor, 2 start-at revision, 3 single
 /// revision); `time_ms` and `revision` are read according to it, and `limit`
 /// zero takes the server default. Negative numbers are rejected before the
@@ -354,19 +354,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
     contract_id: JString,
     document_type: JString,
     document_id: JString,
-    selector: jint,
+    filter: jint,
     time_ms: jlong,
     revision: jlong,
     limit: jint,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let selector = match selector {
-            0 => DashSDKDocumentHistorySelector::HistoryStartAtTime,
-            1 => DashSDKDocumentHistorySelector::HistoryStartAfter,
-            2 => DashSDKDocumentHistorySelector::HistoryStartAtRevision,
-            3 => DashSDKDocumentHistorySelector::HistoryRevision,
+        let filter = match filter {
+            0 => DashSDKDocumentHistoryFilter::HistoryStartAtTime,
+            1 => DashSDKDocumentHistoryFilter::HistoryStartAfter,
+            2 => DashSDKDocumentHistoryFilter::HistoryStartAtRevision,
+            3 => DashSDKDocumentHistoryFilter::HistoryRevision,
             _ => {
-                throw_sdk_exception(env, 1, "unknown document history selector");
+                throw_sdk_exception(env, 1, "unknown document history filter");
                 return ptr::null_mut();
             }
         };
@@ -387,7 +387,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
                 contract_c.as_ptr(),
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
-                selector,
+                filter,
                 time_ms as u64,
                 revision as u64,
                 limit as u32,

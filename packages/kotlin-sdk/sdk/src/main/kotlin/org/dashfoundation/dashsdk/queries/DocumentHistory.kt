@@ -7,26 +7,26 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Which revisions of a keep-history document [Documents.history] reads.
- * Exactly one selector applies per call. [code] is the discriminant of the
- * FFI's `DashSDKDocumentHistorySelector`; [timeMs] and [revision] carry the
- * selector's operands, zero where the selector has none.
+ * Exactly one filter applies per call. [code] is the discriminant of the
+ * FFI's `DashSDKDocumentHistoryFilter`; [timeMs] and [revision] carry the
+ * filter's operands, zero where the filter has none.
  */
-sealed class DocumentHistorySelector(
+sealed class DocumentHistoryFilter(
     internal val code: Int,
     internal val timeMs: Long,
     internal val revision: Long,
 ) {
     /** Revisions written at or after [ms], oldest first; 0 is the first page of everything. */
-    class StartAtTime(ms: Long) : DocumentHistorySelector(0, ms, 0)
+    class StartAtTime(ms: Long) : DocumentHistoryFilter(0, ms, 0)
 
     /** Revisions after the complete cursor of the last entry received. */
-    class StartAfter(timeMs: Long, revision: Long) : DocumentHistorySelector(1, timeMs, revision)
+    class StartAfter(timeMs: Long, revision: Long) : DocumentHistoryFilter(1, timeMs, revision)
 
     /** Revisions from history sequence number [revision] onwards. */
-    class StartAtRevision(revision: Long) : DocumentHistorySelector(2, 0, revision)
+    class StartAtRevision(revision: Long) : DocumentHistoryFilter(2, 0, revision)
 
     /** Exactly the revision at history sequence number [revision]; limit must be 1. */
-    class Revision(revision: Long) : DocumentHistorySelector(3, 0, revision)
+    class Revision(revision: Long) : DocumentHistoryFilter(3, 0, revision)
 }
 
 /** Where a keep-history document stands, as the history query authenticates it. */

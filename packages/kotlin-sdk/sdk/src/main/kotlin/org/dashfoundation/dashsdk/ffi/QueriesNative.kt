@@ -85,7 +85,7 @@ internal object QueriesNative {
 
     /**
      * JSON page of a keep-history document's revisions plus its lifecycle
-     * block, from `dash_sdk_document_fetch_history`. [selector] is the C
+     * block, from `dash_sdk_document_fetch_history`. [filter] is the C
      * enum discriminant (0 start-at time, 1 start-after cursor, 2 start-at
      * revision, 3 single revision); [timeMs] / [revision] are read according
      * to it; [limit] 0 takes the server default.
@@ -95,7 +95,7 @@ internal object QueriesNative {
         contractId: String,
         documentType: String,
         documentId: String,
-        selector: Int,
+        filter: Int,
         timeMs: Long,
         revision: Long,
         limit: Int,

@@ -763,13 +763,13 @@ class Documents internal constructor(private val sdk: Sdk) {
      * `{"entries":[{"time_ms","revision","document"}],"lifecycle":{…}}` or
      * null when the response is missing. [contractId] is base58 and is
      * resolved through the SDK's trusted contract provider. Exactly one
-     * [selector] applies; [limit] is at most ten, 0 for the default.
+     * [filter] applies; [limit] is at most ten, 0 for the default.
      */
     suspend fun history(
         contractId: String,
         documentType: String,
         documentId: String,
-        selector: DocumentHistorySelector = DocumentHistorySelector.StartAtTime(0),
+        filter: DocumentHistoryFilter = DocumentHistoryFilter.StartAtTime(0),
         limit: Int = 0,
     ): String? = sdk.queryGate.op {
         require(limit >= 0) { "limit must be non-negative, got $limit" }
@@ -779,9 +779,9 @@ class Documents internal constructor(private val sdk: Sdk) {
                 contractId,
                 documentType,
                 documentId,
-                selector.code,
-                selector.timeMs,
-                selector.revision,
+                filter.code,
+                filter.timeMs,
+                filter.revision,
                 limit,
             )
         }
@@ -798,7 +798,7 @@ class Documents internal constructor(private val sdk: Sdk) {
         documentType: String,
         documentId: String,
     ): DocumentLifecycle? =
-        history(contractId, documentType, documentId, DocumentHistorySelector.StartAtTime(0), 1)
+        history(contractId, documentType, documentId, DocumentHistoryFilter.StartAtTime(0), 1)
             ?.let(DocumentLifecycle::fromHistoryJson)
 
     /** Count documents; returns the JSON count result. */

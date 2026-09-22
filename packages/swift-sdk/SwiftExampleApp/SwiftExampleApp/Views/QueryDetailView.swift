@@ -373,7 +373,7 @@ struct QueryDetailView: View {
             let contractId = queryInputs["dataContractId"] ?? ""
             let documentType = queryInputs["documentType"] ?? ""
             let documentId = queryInputs["documentId"] ?? ""
-            // Every non-empty number must parse, and exactly one selector
+            // Every non-empty number must parse, and exactly one filter
             // group may be given, so a typo or a half cursor is refused
             // rather than silently read as the first page.
             func number(_ name: String) throws -> UInt64? {
@@ -397,21 +397,21 @@ struct QueryDetailView: View {
             if groups.filter({ $0 }).count > 1 {
                 throw SDKError.invalidParameter("Give only one of Start At, Start After, Start At Revision, or Revision")
             }
-            let selector: DocumentHistorySelector
+            let filter: DocumentHistoryFilter
             if let revision {
-                selector = .revision(revision)
+                filter = .revision(revision)
             } else if let startAtRevision {
-                selector = .startAtRevision(startAtRevision)
+                filter = .startAtRevision(startAtRevision)
             } else if let timeMs = startAfterTimeMs, let rev = startAfterRevision {
-                selector = .startAfter(timeMs: timeMs, revision: rev)
+                filter = .startAfter(timeMs: timeMs, revision: rev)
             } else {
-                selector = .startAtTime(ms: startAtMs ?? 0)
+                filter = .startAtTime(ms: startAtMs ?? 0)
             }
             return try await sdk.documentGetHistory(
                 dataContractId: contractId,
                 documentType: documentType,
                 documentId: documentId,
-                selector: selector,
+                filter: filter,
                 limit: limit
             )
 

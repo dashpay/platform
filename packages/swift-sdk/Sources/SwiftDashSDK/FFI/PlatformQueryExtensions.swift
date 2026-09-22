@@ -126,8 +126,8 @@ public struct PathElement: Sendable {
 }
 
 /// Which revisions of a keep-history document to read. Exactly one
-/// selector applies per `documentGetHistory` call.
-public enum DocumentHistorySelector: Sendable {
+/// filter applies per `documentGetHistory` call.
+public enum DocumentHistoryFilter: Sendable {
     /// Revisions written at or after the time, oldest first. Zero reads
     /// the first page of the whole history.
     case startAtTime(ms: UInt64)
@@ -139,14 +139,14 @@ public enum DocumentHistorySelector: Sendable {
     /// must be one.
     case revision(UInt64)
 
-    var ffiValue: DashSDKDocumentHistorySelector {
-        // DashSDKDocumentHistorySelector is a C enum; Swift doesn't always
+    var ffiValue: DashSDKDocumentHistoryFilter {
+        // DashSDKDocumentHistoryFilter is a C enum; Swift doesn't always
         // import named cases, so the raw values are spelled out.
         switch self {
-        case .startAtTime: return DashSDKDocumentHistorySelector(rawValue: 0)
-        case .startAfter: return DashSDKDocumentHistorySelector(rawValue: 1)
-        case .startAtRevision: return DashSDKDocumentHistorySelector(rawValue: 2)
-        case .revision: return DashSDKDocumentHistorySelector(rawValue: 3)
+        case .startAtTime: return DashSDKDocumentHistoryFilter(rawValue: 0)
+        case .startAfter: return DashSDKDocumentHistoryFilter(rawValue: 1)
+        case .startAtRevision: return DashSDKDocumentHistoryFilter(rawValue: 2)
+        case .revision: return DashSDKDocumentHistoryFilter(rawValue: 3)
         }
     }
 
@@ -638,7 +638,7 @@ extension SDK {
             dataContractId: dataContractId,
             documentType: documentType,
             documentId: documentId,
-            selector: .startAtTime(ms: 0),
+            filter: .startAtTime(ms: 0),
             limit: 1
         )
         guard let lifecycleJSON = page["lifecycle"] as? [String: Any],
@@ -660,7 +660,7 @@ extension SDK {
         dataContractId: String,
         documentType: String,
         documentId: String,
-        selector: DocumentHistorySelector = .startAtTime(ms: 0),
+        filter: DocumentHistoryFilter = .startAtTime(ms: 0),
         limit: UInt32? = nil
     ) async throws -> [String: Any] {
         guard let handle = handle else {
@@ -672,9 +672,9 @@ extension SDK {
             dataContractId,
             documentType,
             documentId,
-            selector.ffiValue,
-            selector.timeMs,
-            selector.revisionValue,
+            filter.ffiValue,
+            filter.timeMs,
+            filter.revisionValue,
             limit ?? 0
         )
 

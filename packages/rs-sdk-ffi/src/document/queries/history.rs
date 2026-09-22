@@ -10,7 +10,7 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::serialization::ValueConvertible;
 use dash_sdk::platform::documents::document_history_query::{
-    DocumentHistoryQuery, DocumentHistorySelector,
+    DocumentHistoryFilter, DocumentHistoryQuery,
 };
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryState};
@@ -25,13 +25,13 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Which revisions of a document's history to read
 ///
-/// Exactly one selector applies to a `dash_sdk_document_fetch_history`
-/// call; the selector decides which of `time_ms` and `revision` are read.
+/// Exactly one filter applies to a `dash_sdk_document_fetch_history`
+/// call; the filter decides which of `time_ms` and `revision` are read.
 /// The variants carry a `History` prefix because cbindgen exports them as
 /// bare C constants.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DashSDKDocumentHistorySelector {
+pub enum DashSDKDocumentHistoryFilter {
     /// Revisions written at or after `time_ms`, oldest first. Pass 0 for
     /// the first page of a document's whole history.
     HistoryStartAtTime = 0,
@@ -124,7 +124,7 @@ fn document_history_to_json(history: DocumentHistory) -> Result<String, FFIError
 /// - `contract_id`: Base58-encoded contract ID (resolved through the trusted context provider)
 /// - `document_type`: Name of a keep-history document type in that contract
 /// - `document_id`: Base58-encoded document ID
-/// - `selector`: Which revisions to read; decides how `time_ms` and `revision` are used
+/// - `filter`: Which revisions to read; decides how `time_ms` and `revision` are used
 /// - `time_ms`: Inclusive lower time bound (`StartAtTime`) or cursor time (`StartAfter`)
 /// - `revision`: Cursor revision (`StartAfter`), first revision (`StartAtRevision`), or the revision (`Revision`)
 /// - `limit`: Maximum number of entries, at most ten (0 for the default)
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
     contract_id: *const c_char,
     document_type: *const c_char,
     document_id: *const c_char,
-    selector: DashSDKDocumentHistorySelector,
+    filter: DashSDKDocumentHistoryFilter,
     time_ms: u64,
     revision: u64,
     limit: c_uint,
@@ -178,19 +178,17 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
-    let selector = match selector {
-        DashSDKDocumentHistorySelector::HistoryStartAtTime => {
-            DocumentHistorySelector::StartAtTime(time_ms)
+    let filter = match filter {
+        DashSDKDocumentHistoryFilter::HistoryStartAtTime => {
+            DocumentHistoryFilter::StartAtTime(time_ms)
         }
-        DashSDKDocumentHistorySelector::HistoryStartAfter => {
-            DocumentHistorySelector::StartAfter { time_ms, revision }
+        DashSDKDocumentHistoryFilter::HistoryStartAfter => {
+            DocumentHistoryFilter::StartAfter { time_ms, revision }
         }
-        DashSDKDocumentHistorySelector::HistoryStartAtRevision => {
-            DocumentHistorySelector::StartAtRevision(revision)
+        DashSDKDocumentHistoryFilter::HistoryStartAtRevision => {
+            DocumentHistoryFilter::StartAtRevision(revision)
         }
-        DashSDKDocumentHistorySelector::HistoryRevision => {
-            DocumentHistorySelector::Revision(revision)
-        }
+        DashSDKDocumentHistoryFilter::HistoryRevision => DocumentHistoryFilter::Revision(revision),
     };
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
@@ -230,7 +228,7 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
             data_contract_id: contract_id,
             document_type_name: document_type_str.to_string(),
             document_id,
-            selector,
+            filter,
             limit: if limit == 0 { None } else { Some(limit) },
         };
 
@@ -341,7 +339,7 @@ mod tests {
                     contract,
                     doc_type,
                     doc_id,
-                    DashSDKDocumentHistorySelector::HistoryStartAtTime,
+                    DashSDKDocumentHistoryFilter::HistoryStartAtTime,
                     0,
                     0,
                     0,
