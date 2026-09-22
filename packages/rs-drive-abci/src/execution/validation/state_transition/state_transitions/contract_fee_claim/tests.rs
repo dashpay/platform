@@ -695,7 +695,7 @@ async fn should_prove_the_pot_and_the_balances_of_everyone_it_paid() {
         balances,
     ) = outcome.into_result()
     else {
-        panic!("expected a contract fee claim result, got {outcome:?}");
+        panic!("expected a contract fee claim result");
     };
     assert_eq!(contract_id, setup.contract.id());
     assert_eq!(pot, ContractFeePot::Moderators);

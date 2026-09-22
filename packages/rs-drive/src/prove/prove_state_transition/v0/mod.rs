@@ -224,21 +224,7 @@ impl Drive {
                             }
                         };
 
-                        if carries_owner_balance {
-                            // The owner's credit balance after the transition
-                            // rides in the same proof as the document, so a
-                            // wallet learns what the write left it with without
-                            // a second query. The verifier rebuilds this merged
-                            // query and verifies it strictly.
-                            let owner_balance_query =
-                                Drive::identity_balance_query(&owner_id.to_buffer());
-                            PathQuery::merge(
-                                vec![&document_path_query, &owner_balance_query],
-                                &platform_version.drive.grove_version,
-                            )?
-                        } else {
-                            document_path_query
-                        }
+                        document_path_query
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();
@@ -756,11 +742,13 @@ impl Drive {
             }
         };
 
-        // From version 1 the proof of the other owned, fee-paying transitions
-        // carries the owner's credit balance next to its result; the verifier
-        // reads the result and the balance as subsets of the merged proof.
-        // (A document batch merged it above; an identity update composed it
-        // the way the identity keys verifier does.)
+        // From version 1 the proof of an owned, fee-paying transition carries
+        // the owner's credit balance next to its result, so a wallet learns
+        // what the write left it with without a second query. The verifier
+        // rebuilds a document batch's merged query and verifies it strictly,
+        // and reads the other kinds' result and balance as subsets of the
+        // merged proof. (An identity update composed its balance above, the
+        // way the identity keys verifier does.)
         let path_query =
             if carries_owner_balance && Self::proof_merges_owner_balance_after(state_transition) {
                 let owner_id = state_transition.owner_id().ok_or(Error::Proof(
@@ -790,20 +778,15 @@ impl Drive {
     }
 
     /// The transitions whose version 1 proof gains the owner's balance by a merge
-    /// after their own path query is built: contract creates and updates, contract
-    /// moderation and token batches.
+    /// after their own path query is built: document and token batches, contract
+    /// creates and updates, and contract moderation.
     fn proof_merges_owner_balance_after(state_transition: &StateTransition) -> bool {
-        match state_transition {
-            StateTransition::DataContractCreate(_)
-            | StateTransition::DataContractUpdate(_)
-            | StateTransition::ContractUserModeration(_) => true,
-            StateTransition::Batch(batch) => {
-                matches!(
-                    batch.first_transition(),
-                    Some(BatchedTransitionRef::Token(_))
-                )
-            }
-            _ => false,
-        }
+        matches!(
+            state_transition,
+            StateTransition::Batch(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::ContractUserModeration(_)
+        )
     }
 }

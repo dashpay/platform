@@ -657,7 +657,8 @@ impl Drive {
                                 token_transition.base().using_group_info().is_some();
 
                             let (root_hash, document) = query.verify_proof(
-                                is_group_action, // it will be a subset if it is a group action
+                                // a subset if it is a group action or the owner's balance rides along
+                                is_group_action || carries_owner_balance,
                                 proof,
                                 token_history_document_type,
                                 platform_version,
@@ -3084,9 +3085,7 @@ mod tests {
     use dpp::identity::Identity;
     use dpp::prelude::DataContract;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-    use dpp::state_transition::proof_result::{
-        StateTransitionProofOutcome, StateTransitionProofResult,
-    };
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
@@ -3139,12 +3138,22 @@ mod tests {
     fn verify_data_contract_create_happy_path() {
         let (drive, contract) = setup_drive_and_contract();
         let platform_version = PlatformVersion::latest();
-        let contract_id = contract.id().to_buffer();
 
-        // Generate a proof for this contract
-        let proof = drive
-            .prove_contract(contract_id, None, platform_version)
-            .expect("expected to prove contract");
+        // The contract's owner, with the balance every identity has: the version 1
+        // proof carries it next to the contract.
+        let mut owner = Identity::random_identity(2, Some(21), platform_version)
+            .expect("expected a random identity");
+        owner.set_id(contract.owner_id());
+        drive
+            .add_new_identity(
+                owner.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the contract owner");
 
         // Build the DataContractCreate state transition from the contract
         let data_contract_serialized: DataContractInSerializationFormat = contract
@@ -3163,6 +3172,13 @@ mod tests {
                 signature: Default::default(),
             },
         ));
+
+        // The prover's proof: the contract and the owner's balance
+        let proof = drive
+            .prove_state_transition(&st, None, platform_version)
+            .expect("expected to prove the transition")
+            .into_data()
+            .expect("expected proof bytes");
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -3206,13 +3222,24 @@ mod tests {
     fn verify_data_contract_update_happy_path() {
         let (drive, contract) = setup_drive_and_contract();
         let platform_version = PlatformVersion::latest();
-        let contract_id = contract.id().to_buffer();
 
         // For the update transition, we use the same contract (version hasn't changed
         // in the fixture, but the proof verifies the contract is as expected).
-        let proof = drive
-            .prove_contract(contract_id, None, platform_version)
-            .expect("expected to prove contract");
+        // The contract's owner, with the balance every identity has: the version 1
+        // proof carries it next to the contract.
+        let mut owner = Identity::random_identity(2, Some(21), platform_version)
+            .expect("expected a random identity");
+        owner.set_id(contract.owner_id());
+        drive
+            .add_new_identity(
+                owner.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the contract owner");
 
         let data_contract_serialized: DataContractInSerializationFormat = contract
             .clone()
@@ -3229,6 +3256,13 @@ mod tests {
                 signature: Default::default(),
             },
         ));
+
+        // The prover's proof: the contract and the owner's balance
+        let proof = drive
+            .prove_state_transition(&st, None, platform_version)
+            .expect("expected to prove the transition")
+            .into_data()
+            .expect("expected proof bytes");
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -3476,8 +3510,10 @@ mod tests {
         let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
         let keys_path_query = key_request.into_path_query();
         let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let balance_path_query = Drive::balance_for_identity_id_query(identity_id);
+        // The keys, the balance and the revision, as the version 1 prover composes them.
         let merged = grovedb::PathQuery::merge(
-            vec![&keys_path_query, &revision_path_query],
+            vec![&keys_path_query, &balance_path_query, &revision_path_query],
             &platform_version.drive.grove_version,
         )
         .expect("expected to merge path queries");
@@ -3536,8 +3572,10 @@ mod tests {
         let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
         let keys_path_query = key_request.into_path_query();
         let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let balance_path_query = Drive::balance_for_identity_id_query(identity_id);
+        // The keys, the balance and the revision, as the version 1 prover composes them.
         let merged = grovedb::PathQuery::merge(
-            vec![&keys_path_query, &revision_path_query],
+            vec![&keys_path_query, &balance_path_query, &revision_path_query],
             &platform_version.drive.grove_version,
         )
         .expect("expected to merge path queries");
@@ -3577,8 +3615,10 @@ mod tests {
         let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
         let keys_path_query = key_request.into_path_query();
         let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let balance_path_query = Drive::balance_for_identity_id_query(identity_id);
+        // The keys, the balance and the revision, as the version 1 prover composes them.
         let merged = grovedb::PathQuery::merge(
-            vec![&keys_path_query, &revision_path_query],
+            vec![&keys_path_query, &balance_path_query, &revision_path_query],
             &platform_version.drive.grove_version,
         )
         .expect("expected to merge path queries");
@@ -3646,8 +3686,10 @@ mod tests {
         let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
         let keys_path_query = key_request.into_path_query();
         let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let balance_path_query = Drive::balance_for_identity_id_query(identity_id);
+        // The keys, the balance and the revision, as the version 1 prover composes them.
         let merged = grovedb::PathQuery::merge(
-            vec![&keys_path_query, &revision_path_query],
+            vec![&keys_path_query, &balance_path_query, &revision_path_query],
             &platform_version.drive.grove_version,
         )
         .expect("expected to merge path queries");

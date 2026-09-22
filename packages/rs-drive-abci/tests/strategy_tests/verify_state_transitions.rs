@@ -749,7 +749,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                                 let (root_hash, serialized_document) = query
                                     .verify_proof_keep_serialized(
-                                        false,
+                                        // From prover version 1 the proof also carries the owner's balance.
+                                        platform_version.drive.methods.prove.prove_state_transition
+                                            >= 1,
                                         &response_proof.grovedb_proof,
                                         platform_version,
                                     )
@@ -1147,8 +1149,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             proof_address_infos,
                         ) = data.into_result()
                         else {
-                            panic!("expected identity/address infos for top up from addresses proof, got {}",
-                        std::any::type_name_of_val(&data));
+                            panic!(
+                                "expected identity/address infos for top up from addresses proof"
+                            );
                         };
 
                         assert!(

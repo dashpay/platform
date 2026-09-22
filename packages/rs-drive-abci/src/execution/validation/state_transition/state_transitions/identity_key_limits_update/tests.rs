@@ -710,7 +710,7 @@ async fn should_prove_the_rewritten_key() {
     );
     let StateTransitionProofResult::VerifiedPartialIdentity(identity) = outcome.into_result()
     else {
-        panic!("expected the affected state to be proved, got {outcome:?}");
+        panic!("expected the affected state to be proved as a partial identity");
     };
     let key = &identity.loaded_public_keys[&LIMITED_KEY_ID];
     assert_eq!(key.total_budget(), Some(BUDGET * 2));
