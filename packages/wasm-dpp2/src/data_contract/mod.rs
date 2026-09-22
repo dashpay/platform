@@ -2,6 +2,7 @@ pub mod contract_bounds;
 pub mod document;
 pub mod document_type_immutability;
 pub mod document_type_reference;
+pub mod document_type_typed_arrays;
 pub mod model;
 pub mod transitions;
 
@@ -12,6 +13,9 @@ pub use document_type_immutability::{
 };
 pub use document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs,
+};
+pub use document_type_typed_arrays::{
+    DocumentTypedArrayPropertyArrayJs, DocumentTypedArrayPropertyMapJs,
 };
 pub use model::{
     DataContractJSONJs, DataContractObjectJs, DataContractWasm, tokens_configuration_from_js_value,
