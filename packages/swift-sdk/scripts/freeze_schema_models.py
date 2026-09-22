@@ -695,6 +695,25 @@ def render_snapshot(root, version, entry, *, inventory=None):
     return files
 
 
+APP_STORE_BASELINE_FIELDS = {
+    "bundle_id": r"[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+",
+    "app_id": r"[0-9]+",
+    "app_version": r"[0-9]+(\.[0-9]+){1,2}",
+    "release_id": r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+}
+
+
+def validate_app_store_baseline(binding):
+    """The published release a historical schema is bound to. The iOS release
+    gate reads exactly this object, so its shape is part of the contract."""
+    if not isinstance(binding, dict) or set(binding) != set(APP_STORE_BASELINE_FIELDS):
+        raise SystemExit("historical schema must bind exactly one App Store baseline")
+    for field, pattern in APP_STORE_BASELINE_FIELDS.items():
+        value = binding[field]
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
+            raise SystemExit(f"invalid App Store baseline {field}")
+
+
 def validate_historical_schemas(root, registry):
     """Historical reconstruction is separate from archive-captured releases."""
     entries = registry.get("historical_schemas", {})
@@ -709,6 +728,7 @@ def validate_historical_schemas(root, registry):
             raise SystemExit("historical schema reconstruction provenance differs")
         if entry.get("provenance") != "reconstructed-model-match":
             raise SystemExit("historical schema must identify reconstruction provenance")
+        validate_app_store_baseline(entry.get("app_store_baseline"))
         digest = entry["fixture_sha256"]
         path = entry["fixture_path"]
         if path != "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/Fixtures/SchemaStores/historical-v2.store":

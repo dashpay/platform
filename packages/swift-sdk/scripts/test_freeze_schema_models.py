@@ -239,9 +239,30 @@ class ReleaseTests(unittest.TestCase):
         registry["historical_schemas"] = {"2.0.0": {
             "schema": dict(self.schema), "fixture_path": path,
             "fixture_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-            "source_sha": gen.HISTORICAL_V2_SOURCE, "provenance": "reconstructed-model-match"}}
+            "source_sha": gen.HISTORICAL_V2_SOURCE, "provenance": "reconstructed-model-match",
+            "app_store_baseline": {
+                "bundle_id": "org.dashfoundation.dash", "app_id": "1206647026", "app_version": "9.0.2",
+                "release_id": "679060c3-2e64-49d6-b28e-baa307c817be"}}}
         Path(self.root, gen.REGISTRY_FILE).write_text(json.dumps(registry))
         return registry
+
+    def test_should_validate_the_historical_app_store_baseline_the_ios_gate_reads(self):
+        self.assertEqual(gen.validate_historical_schemas(self.root, self.historical_registry()).keys(), {"2.0.0"})
+        mutations = {
+            "missing": lambda entry: entry.pop("app_store_baseline"),
+            "not an object": lambda entry: entry.__setitem__("app_store_baseline", "9.0.2"),
+            "missing field": lambda entry: entry["app_store_baseline"].pop("release_id"),
+            "extra field": lambda entry: entry["app_store_baseline"].__setitem__("build_number", "30"),
+            "empty version": lambda entry: entry["app_store_baseline"].__setitem__("app_version", ""),
+            "non-string app id": lambda entry: entry["app_store_baseline"].__setitem__("app_id", 1206647026),
+            "malformed release id": lambda entry: entry["app_store_baseline"].__setitem__("release_id", "release-30"),
+            "malformed bundle id": lambda entry: entry["app_store_baseline"].__setitem__("bundle_id", "dash"),
+        }
+        for name, mutate in mutations.items():
+            registry = self.historical_registry()
+            mutate(registry["historical_schemas"]["2.0.0"])
+            with self.subTest(case=name), self.assertRaisesRegex(SystemExit, "App Store baseline"):
+                gen.validate_historical_schemas(self.root, registry)
 
     def test_should_reserve_historical_v2_without_writing_snapshot(self):
         self.historical_registry()

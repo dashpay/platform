@@ -207,8 +207,14 @@ public enum DashModelContainer {
     /// Select by the complete stored model identity, after journal recovery.
     /// Accepted V1 contains fields absent from the real historical V2; sending
     /// it through V2 would delete those values before V3 adds the fields again.
-    static func migrationPlan(at url: URL, defaultPlan: any SchemaMigrationPlan.Type) throws
-        -> any SchemaMigrationPlan.Type {
+    /// `identity` resolves a schema's stored identity; tests inject a failing
+    /// probe to pin which routes may depend on it. Only labels whose route is
+    /// undecidable without it (1.0.0, 2.0.0) consult the probe at all.
+    static func migrationPlan(
+        at url: URL, defaultPlan: any SchemaMigrationPlan.Type,
+        identity: (any VersionedSchema.Type) throws -> DashLegacySchemaBridge.Identity
+            = DashLegacySchemaBridge.identity(for:)
+    ) throws -> any SchemaMigrationPlan.Type {
         guard ObjectIdentifier(defaultPlan) == ObjectIdentifier(DashMigrationPlan.self) else { return defaultPlan }
         guard FileManager.default.fileExists(atPath: url.path) else {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
@@ -233,9 +239,13 @@ public enum DashModelContainer {
                 "route": .publicText(route), "target_version": .publicText("3.0.0")])
         }
         func matches(_ type: any VersionedSchema.Type) throws -> Bool {
-            let expected = try DashLegacySchemaBridge.identity(for: type)
+            let expected = try identity(type)
             return hashes == expected.hashes && (checksum == nil || checksum == expected.checksum)
         }
+        // A 1.0.0 label alone cannot choose between the accepted-V1 route and
+        // the legacy bridge, and the default plan has no V1 stage, so a failed
+        // probe stays fatal here: the open fails with the probe's own error
+        // instead of an inapplicable plan, and the store is untouched.
         if versions == ["1.0.0"], try matches(DashSchemaV1.self) {
             logRoute("accepted-v1-to-v3")
             return DashAcceptedV1MigrationPlan.self
@@ -243,6 +253,7 @@ public enum DashModelContainer {
         if versions == ["2.0.0"] {
             // The immediately preceding candidate used the current graph with
             // a V2 label. Accept its exact shape, never arbitrary beta V2 data.
+            // A probe failure is equally undecidable and refuses the same way.
             let historical = try matches(DashSchemaV2.self)
             let previousCurrent = try !historical && matches(DashSchemaV3.self)
             guard historical || previousCurrent else {
@@ -251,8 +262,11 @@ public enum DashModelContainer {
                     "The database identifies itself as schema 2.0.0 but its model does not match the supported historical or current schema. The original database has not been replaced. Contact support; do not delete the app.")
             }
             logRoute(historical ? "historical-v2-to-v3" : "previous-live-v2-current-shape")
-        } else if versions == ["3.0.0"], try matches(DashSchemaV3.self) {
-            logRoute("already-current-v3")
+        } else if versions == ["3.0.0"] {
+            // Same plan either way. Opening a current store must neither wait
+            // on nor fail with a schema probe that could only refine this line;
+            // `source_checksum` above already identifies the exact graph.
+            logRoute("labelled-current-v3")
         } else {
             logRoute("ordinary-current-plan")
         }

@@ -20,7 +20,22 @@ V1 → V3 plan: V1 already contains the 13 properties missing from historical
 V2, so a V1 → V2 → V3 chain could discard values. Routing uses model metadata
 and runs after recovery; a version label alone never selects an unknown beta
 schema. The former live V2 is accepted only when its complete graph matches
-current V3.
+current V3 exactly, entity hashes and checksum alike. That alias therefore
+lasts only until the next live-graph change: after it, every store still
+labelled `2.0.0` with the former live shape becomes `unsupported-v2` and fails
+closed. Check internal devices still carrying that label before the next
+shape change and migrate or deliberately reset them then, rather than
+discovering them afterwards as failed opens.
+
+The route decision is logged as `store_migration_route` with the validated
+`source_version`, `source_checksum` and one of `new-store`,
+`accepted-v1-to-v3`, `historical-v2-to-v3`, `previous-live-v2-current-shape`,
+`unsupported-v2`, `labelled-current-v3`, `ordinary-current-plan` or, from the
+bridge, `legacy-v1-bridge-to-v3`. Resolving a frozen schema's identity builds
+a temporary store, so it is memoized per process and consulted only where a
+label is undecidable without it (`1.0.0`, `2.0.0`); a `3.0.0` label takes the
+default plan without any probe, and a probe failure on the undecidable labels
+refuses the open with the probe's own error while leaving the store untouched.
 
 ## Legacy stores before the release registry
 

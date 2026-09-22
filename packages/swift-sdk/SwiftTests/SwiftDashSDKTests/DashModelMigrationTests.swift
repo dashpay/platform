@@ -66,6 +66,8 @@ final class DashModelMigrationTests: XCTestCase {
         let session = directory.appendingPathComponent("logs", isDirectory: true)
         // This is the same file sink setting installed by the default low preset.
         XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
+        // The sink is process-wide: detach it before the directory disappears.
+        defer { SDKLogger.removeFileSink() }
         let sourceChecksum = try Self.storeHashes(at: url).0
 
         try autoreleasepool { _ = try DashModelContainer.create(url: url) }
@@ -77,7 +79,7 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertTrue(log.contains("source_version=\"2.0.0\""))
         XCTAssertTrue(log.contains("source_checksum=\"\(sourceChecksum)\""))
         XCTAssertTrue(log.contains("target_version=\"3.0.0\""))
-        XCTAssertTrue(log.contains("route=\"already-current-v3\""))
+        XCTAssertTrue(log.contains("route=\"labelled-current-v3\""))
         XCTAssertEqual(log.components(separatedBy: "event=store_open_succeeded").count - 1, 2)
         XCTAssertFalse(log.contains("event=store_open_failed"))
         XCTAssertFalse(log.contains(directory.path))
@@ -97,6 +99,64 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertTrue(failure.contains("error_code="))
         XCTAssertFalse(updatedLog.contains(directory.path))
         XCTAssertFalse(updatedLog.contains("private-invalid-store-content"))
+    }
+
+    /// Opening a current store must not depend on the temporary-store probe
+    /// that resolves a frozen schema's identity: the plan is the default
+    /// either way. Labels whose route is undecidable without that probe
+    /// (accepted V1 versus the bridge, historical V2 versus a beta layout)
+    /// keep failing closed, leaving the store untouched.
+    func testCurrentV3RouteNeverDependsOnTheSchemaIdentityProbe() throws {
+        struct ProbeUnavailable: Error {}
+        let failingProbe: (any VersionedSchema.Type) throws -> DashLegacySchemaBridge.Identity = { _ in
+            throw ProbeUnavailable()
+        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let current = directory.appendingPathComponent("current.store")
+        try autoreleasepool { _ = try DashModelContainer.create(url: current) }
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: current).versions, ["3.0.0"])
+        let plan = try DashModelContainer.migrationPlan(
+            at: current, defaultPlan: DashMigrationPlan.self, identity: failingProbe)
+        XCTAssertTrue(ObjectIdentifier(plan) == ObjectIdentifier(DashMigrationPlan.self))
+
+        for fixture in Self.fixtures {
+            let (fixtureDirectory, url) = try copyFixture(fixture)
+            defer { try? FileManager.default.removeItem(at: fixtureDirectory) }
+            let before = try DashLegacyStoreSQLite.rawDigest(url)
+            XCTAssertThrowsError(try DashModelContainer.migrationPlan(
+                at: url, defaultPlan: DashMigrationPlan.self, identity: failingProbe), fixture.name) { error in
+                XCTAssertTrue(error is ProbeUnavailable, fixture.name)
+            }
+            XCTAssertEqual(try DashLegacyStoreSQLite.rawDigest(url), before, fixture.name)
+        }
+    }
+
+    func testSchemaIdentityIsComputedOncePerProcessAndFailuresAreNotRemembered() throws {
+        struct ProbeUnavailable: Error {}
+        let cache = DashLegacySchemaBridge.SchemaIdentityCache()
+        let identity = DashLegacySchemaBridge.Identity(
+            versions: ["3.0.0"], checksum: "checksum", hashes: ["PersistentWallet": Data([1])])
+        var computations = 0
+        XCTAssertThrowsError(try cache.identity(for: DashSchemaV3.self) {
+            computations += 1
+            throw ProbeUnavailable()
+        })
+        XCTAssertEqual(try cache.identity(for: DashSchemaV3.self) { computations += 1; return identity }, identity)
+        XCTAssertEqual(try cache.identity(for: DashSchemaV3.self) {
+            computations += 1
+            throw ProbeUnavailable()
+        }, identity)
+        XCTAssertEqual(computations, 2)
+        XCTAssertThrowsError(try cache.identity(for: DashSchemaV2.self) {
+            computations += 1
+            throw ProbeUnavailable()
+        })
+        XCTAssertEqual(computations, 3)
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(for: DashSchemaV3.self),
+                       try DashLegacySchemaBridge.identity(for: DashSchemaV3.self))
     }
 
     private static func storeHashes(at url: URL) throws -> (String, [String: Data]) {

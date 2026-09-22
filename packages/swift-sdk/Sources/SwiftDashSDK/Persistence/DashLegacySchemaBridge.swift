@@ -351,7 +351,16 @@ enum DashLegacySchemaBridge {
         return Identity(versions: versions, checksum: checksum, hashes: hashes)
     }
 
+    /// The identity Core Data records for a versioned schema. It is a pure
+    /// function of the frozen model graph, but computing it writes a complete
+    /// temporary store, so each successful result is kept for the process.
     static func identity(for type: any VersionedSchema.Type) throws -> Identity {
+        try identityCache.identity(for: type) { try computeIdentity(for: type) }
+    }
+
+    private static let identityCache = SchemaIdentityCache()
+
+    private static func computeIdentity(for type: any VersionedSchema.Type) throws -> Identity {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -363,6 +372,23 @@ enum DashLegacySchemaBridge {
             ])
         }
         return try identity(at: url)
+    }
+
+    /// Process-lifetime memo of schema identities. Only successful
+    /// computations are stored: a failed probe (for example a full disk) is
+    /// retried on the next request rather than remembered.
+    final class SchemaIdentityCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var identities: [ObjectIdentifier: Identity] = [:]
+
+        func identity(for type: any VersionedSchema.Type,
+                      compute: () throws -> Identity) throws -> Identity {
+            let key = ObjectIdentifier(type)
+            if let cached = lock.withLock({ identities[key] }) { return cached }
+            let computed = try compute()
+            lock.withLock { identities[key] = computed }
+            return computed
+        }
     }
 
     private static func rejectExternalStorage(at url: URL) throws {

@@ -243,10 +243,17 @@ def git_environment(token):
 
 
 def source_commits(registry):
-    return {
+    """Every commit a later regeneration must be able to read, including the
+    reconstructed historical sources that never went through a release."""
+    commits = {
         require_string(entry.get("platform_sha"), SHA, "registered Platform commit")
         for group in ("schemas", "releases") for entry in registry.get(group, {}).values()
     }
+    commits.update(
+        require_string(entry.get("source_sha"), SHA, "historical schema source commit")
+        for entry in registry.get("historical_schemas", {}).values()
+    )
+    return commits
 
 
 def fetch_sources(clone, commits, env):
