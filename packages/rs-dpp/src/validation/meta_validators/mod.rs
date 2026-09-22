@@ -435,6 +435,7 @@ mod tests {
             json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": 2 } }),
             json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": "" } }),
             json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": "a.b" } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": "a-b" } }),
             json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "securityLevel": "high" } }),
             json!({ "type": "identity", "keyRequirements": { "purpose": "decryption" } }),
             json!({ "type": "contract", "keyRequirements": { "purpose": "decryption" } }),
