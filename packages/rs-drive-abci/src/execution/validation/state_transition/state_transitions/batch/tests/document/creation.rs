@@ -5317,6 +5317,18 @@ mod creation_tests {
     /// The minimum age, and minimum time since the last update, the aged- and
     /// updated-contract-reference fixtures declare, in milliseconds
     const AGED_REFERENCE_MINIMUM_AGE_MS: u64 = 3_600_000;
+    const REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-self-contract-ref.json";
+    /// The `id` of the self-owned-contract-reference fixture (`owner: "self"`): owned by an
+    /// identity that is not the writer, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_ID: &str =
+        "Gb9ZqQQTAoV7JCUrZhsS4ssZozbE33Suunzhr7RVy2pD";
+    const REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-other-contract-ref.json";
+    /// The `id` of the other-owned-contract-reference fixture (`owner: "other"`): owned by an
+    /// identity that is not the writer, so a reference to it is met.
+    const REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_ID: &str =
+        "EPHoATa8ifeWoviLaxTQRWfsJUHAQUCro6dEkwgjwog7";
     const REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-token-ref.json";
     const REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH: &str =
@@ -5341,15 +5353,16 @@ mod creation_tests {
         run_reference_validation_creation_with_setup_and_mutator(
             contract_path,
             BlockInfo::default(),
-            |_, _| Identifier::default(),
+            |_, _, _| Identifier::default(),
             |document, targets, _| mutator(document, targets),
         )
         .await
     }
 
     /// Like `run_reference_validation_creation_with_mutator`, with a `setup` step that writes
-    /// whatever else the test needs into state before the contract, and hands the mutator an
-    /// id it produced (a contract's, say). The document is written in a block of `block_info`.
+    /// whatever else the test needs into state before the contract, given the targets already
+    /// in state (the writer's identity among them), and hands the mutator an id it produced
+    /// (a contract's, say). The document is written in a block of `block_info`.
     async fn run_reference_validation_creation_with_setup_and_mutator<S, F>(
         contract_path: &str,
         block_info: BlockInfo,
@@ -5357,7 +5370,11 @@ mod creation_tests {
         mutator: F,
     ) -> StateTransitionExecutionResult
     where
-        S: FnOnce(&mut TempPlatform<MockCoreRPCLike>, &PlatformVersion) -> Identifier,
+        S: FnOnce(
+            &mut TempPlatform<MockCoreRPCLike>,
+            &ReferenceTargets,
+            &PlatformVersion,
+        ) -> Identifier,
         F: FnOnce(&mut Document, &ReferenceTargets, Identifier),
     {
         let platform_version = PlatformVersion::latest();
@@ -5389,7 +5406,7 @@ mod creation_tests {
             token_id,
         };
 
-        let setup_id = setup(&mut platform, platform_version);
+        let setup_id = setup(&mut platform, &targets, platform_version);
 
         let contract = setup_contract(
             &platform.drive,
@@ -5623,6 +5640,7 @@ mod creation_tests {
     /// list behind it.
     fn insert_elected_contract(
         platform: &mut TempPlatform<MockCoreRPCLike>,
+        _targets: &ReferenceTargets,
         _platform_version: &PlatformVersion,
     ) -> Identifier {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -5735,7 +5753,8 @@ mod creation_tests {
     /// create transition would have recorded.
     fn insert_contract_created_at(
         created_at: Option<u64>,
-    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &PlatformVersion) -> Identifier {
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
         insert_contract_with_times(created_at, None)
     }
 
@@ -5744,8 +5763,9 @@ mod creation_tests {
     fn insert_contract_with_times(
         created_at: Option<u64>,
         updated_at: Option<u64>,
-    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &PlatformVersion) -> Identifier {
-        move |platform, _platform_version| {
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        move |platform, _targets, _platform_version| {
             use dpp::data_contract::accessors::v1::DataContractV1Setters;
 
             let contract = setup_contract(
@@ -5811,7 +5831,7 @@ mod creation_tests {
         let result = run_reference_validation_creation_with_setup_and_mutator(
             REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH,
             aged_reference_block_info(),
-            |_, _| Identifier::default(),
+            |_, _, _| Identifier::default(),
             |document, _, _| {
                 document.set("refContractId", existing_contract_id.into());
             },
@@ -5922,6 +5942,121 @@ mod creation_tests {
         assert_matches!(
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A contract owned by the writer of the referring document, for a reference that requires
+    /// the referenced contract to be, or not to be, the writer's own. Written to state directly,
+    /// the way the fixtures are.
+    fn insert_contract_owned_by_writer(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        targets: &ReferenceTargets,
+        _platform_version: &PlatformVersion,
+    ) -> Identifier {
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+            Some([0xB1; 32]),
+            Some(targets.identity_id.to_buffer()),
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+        contract.id()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_self_owned_contract_is_the_writers() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_owned_by_writer,
+            |document, _, own_contract_id| {
+                document.set("refContractId", own_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_self_owned_contract_is_someone_elses() {
+        // The fixture contract itself exists in state, owned by an identity that is not the
+        // writer
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "owner"
+                && e.required() == "self"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_other_owned_contract_is_someone_elses()
+    {
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_other_owned_contract_is_the_writers() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_owned_by_writer,
+            |document, _, own_contract_id| {
+                document.set("refContractId", own_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xB1; 32])
+                && e.field() == "owner"
+                && e.required() == "other"
+                && e.path() == "refContractId"
         );
     }
 

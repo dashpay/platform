@@ -347,6 +347,9 @@ mod tests {
             json!({ "minimumAgeSeconds": 4294967295u64 }),
             json!({ "minimumSecondsSinceUpdate": 86400 }),
             json!({ "moderation": "elected", "minimumAgeSeconds": 604800, "minimumSecondsSinceUpdate": 86400 }),
+            json!({ "owner": "self" }),
+            json!({ "owner": "other" }),
+            json!({ "moderation": "elected", "owner": "other" }),
         ] {
             let schema = document_schema_with_refers_to(json!({
                 "type": "contract",
@@ -372,7 +375,10 @@ mod tests {
             json!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 0 } }),
             json!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": "60" } }),
             json!({ "type": "contract", "contractRequirements": { "tokens": "any" } }),
+            json!({ "type": "contract", "contractRequirements": { "owner": "anyone" } }),
+            json!({ "type": "contract", "contractRequirements": { "owner": true } }),
             json!({ "type": "identity", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
+            json!({ "type": "identity", "contractRequirements": { "owner": "self" } }),
         ] {
             let schema = document_schema_with_refers_to(refers_to.clone());
 

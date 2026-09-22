@@ -42,13 +42,16 @@ export type DocumentPropertyReferenceTarget =
        * `minimumAgeSeconds` requires the contract's recorded creation time
        * to be at least that many seconds before the block time of the write,
        * and `minimumSecondsSinceUpdate` the same of the later of its creation
-       * and last update times (code 40135 when any is unmet). Absent when
+       * and last update times, and `owner: 'self'` requires the contract to
+       * be owned by the writer of the referring document (its `$ownerId`),
+       * `'other'` by anyone else (code 40135 when any is unmet). Absent when
        * the declaration carries no requirement.
        */
       contractRequirements?: {
         moderation?: 'elected';
         minimumAgeSeconds?: number;
         minimumSecondsSinceUpdate?: number;
+        owner?: 'self' | 'other';
       };
     }
   | { type: 'token' }
@@ -214,6 +217,9 @@ fn reference_to_js(
                         &JsValue::from_f64(f64::from(seconds)),
                         path,
                     )?;
+                }
+                if let Some(owner) = contract_requirements.owner {
+                    set_field(&fields, "owner", &JsValue::from_str(owner.as_str()), path)?;
                 }
                 set_field(&object, "contractRequirements", &fields, path)?;
             }

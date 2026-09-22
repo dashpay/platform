@@ -2021,6 +2021,11 @@ mod tests {
                     platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 61 } }),
                     "/properties/toUserId/refersTo/contractRequirements/minimumSecondsSinceUpdate",
                 ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "other" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/owner",
+                ),
             ] {
                 let old_document_type =
                     identifier_document_type(Some(old_fields), platform_version);

@@ -4,8 +4,9 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    property_names, ContractReferenceModeration, ContractReferenceRequirements, DocumentProperty,
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType,
+    property_names, ContractReferenceModeration, ContractReferenceOwner,
+    ContractReferenceRequirements, DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -526,8 +527,8 @@ fn apply_property_reference_v0(
 }
 
 /// The `contractRequirements` of a `contract` reference: each key an aspect of the referenced
-/// contract with a closed set of values (`moderation`), or a bound on it (`minimumAgeSeconds`),
-/// at least one when the object is given at all.
+/// contract with a closed set of values (`moderation`, `owner`), or a bound on it
+/// (`minimumAgeSeconds`), at least one when the object is given at all.
 fn parse_contract_reference_requirements(
     refers_to_map: &BTreeMap<String, &Value>,
 ) -> Result<ContractReferenceRequirements, DataContractError> {
@@ -563,6 +564,18 @@ fn parse_contract_reference_requirements(
             property_names::MINIMUM_SECONDS_SINCE_UPDATE => {
                 fields.minimum_seconds_since_update =
                     Some(parse_contract_reference_seconds(&field, value)?);
+            }
+            property_names::OWNER => {
+                let name = value.as_text().ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(
+                        "contract refersTo contractRequirements owner must be a string".to_string(),
+                    )
+                })?;
+                fields.owner = Some(ContractReferenceOwner::from_wire_name(name).ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(format!(
+                        "contract refersTo contractRequirements owner {name:?} is unknown, expected \"self\" or \"other\""
+                    ))
+                })?);
             }
             other => {
                 return Err(DataContractError::InvalidContractStructure(format!(
@@ -1118,6 +1131,7 @@ mod tests {
                         moderation: Some(ContractReferenceModeration::Elected),
                         minimum_age_seconds: None,
                         minimum_seconds_since_update: None,
+                        owner: None,
                     },
                 }
             )
@@ -1137,6 +1151,7 @@ mod tests {
                         moderation: None,
                         minimum_age_seconds: Some(604_800),
                         minimum_seconds_since_update: None,
+                        owner: None,
                     },
                 }
             )
@@ -1152,6 +1167,7 @@ mod tests {
                         moderation: None,
                         minimum_age_seconds: None,
                         minimum_seconds_since_update: Some(86_400),
+                        owner: None,
                     },
                 }
             )
@@ -1171,6 +1187,45 @@ mod tests {
                         moderation: Some(ContractReferenceModeration::Elected),
                         minimum_age_seconds: Some(u32::MAX),
                         minimum_seconds_since_update: Some(1),
+                        owner: None,
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_an_owner_relation() {
+        for (name, owner) in [
+            ("self", ContractReferenceOwner::Writer),
+            ("other", ContractReferenceOwner::Other),
+        ] {
+            assert_eq!(
+                contract_reference_target(json!({
+                    "type": "contract",
+                    "contractRequirements": { "owner": name }
+                })),
+                DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::Contract {
+                        contract_requirements: ContractReferenceRequirements {
+                            owner: Some(owner),
+                            ..Default::default()
+                        },
+                    }
+                )
+            );
+        }
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "moderation": "elected", "owner": "other" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::Elected),
+                        owner: Some(ContractReferenceOwner::Other),
+                        ..Default::default()
                     },
                 }
             )
@@ -1220,6 +1275,14 @@ mod tests {
             (
                 json!({ "type": "contract", "contractRequirements": { "tokens": "any" } }),
                 "is unknown",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "owner": "anyone" } }),
+                "owner \"anyone\" is unknown, expected \"self\" or \"other\"",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "owner": true } }),
+                "owner must be a string",
             ),
             (
                 json!({ "type": "identity", "contractRequirements": { "moderation": "elected" } }),

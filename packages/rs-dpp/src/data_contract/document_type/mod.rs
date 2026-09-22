@@ -111,6 +111,7 @@ pub(crate) mod property_names {
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
     pub const MINIMUM_SECONDS_SINCE_UPDATE: &str = "minimumSecondsSinceUpdate";
+    pub const OWNER: &str = "owner";
     pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
     pub const RANGE_COUNTABLE: &str = "rangeCountable";
     /// Doctype-level flag naming the property whose values are summed into
