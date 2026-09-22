@@ -16,7 +16,7 @@ use crate::util::batch::{
     DriveOperation,
 };
 use crate::util::grove_operations::DirectQueryType;
-use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use crate::util::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
 use crate::util::object_size_info::{
     DataContractInfo, DocumentAndContractInfo, DocumentTypeInfo, OwnedDocumentInfo,
 };
@@ -26,7 +26,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason, ContractModerators,
+    ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
+    ContractModerationReason, ContractModerators,
 };
 use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -76,6 +77,7 @@ fn contract_with(moderated: bool, banlist: bool, deletable_types: &[&str]) -> Da
         banlist,
         suspensions: false,
         moderators: ContractModerators::ContractOwner,
+        warnings: false,
     });
     contract.set_config(contract.config().clone().with_moderation(moderation));
     for name in deletable_types {
@@ -141,8 +143,11 @@ fn removal(owner: u8, moderator: u8, text: &str, removed_at: u64) -> ContractDoc
         reason: ContractModerationReason {
             code: Some(7),
             text: text.to_string(),
+            documents: vec![],
         },
         removed_at,
+        document_hash: [removed_at as u8; 32],
+        restoration: None,
     }
 }
 
@@ -151,11 +156,31 @@ fn record<'a>(
     document_id: Identifier,
     removal: ContractDocumentRemoval,
 ) -> DriveOperation<'a> {
+    let moderator_id = removal.moderator_id;
     ContractModerationOperation(ContractModerationOperationType::AddDocumentRemoval {
         contract_id,
         document_type_name: POST.to_string(),
         document_id,
         removal,
+        replaces_existing: false,
+        moderator_id,
+    })
+}
+
+/// The replacement of `document_id`'s record by `removal`, paid for by `moderator_id`
+fn replace_record<'a>(
+    contract_id: Identifier,
+    document_id: Identifier,
+    removal: ContractDocumentRemoval,
+    moderator_id: Identifier,
+) -> DriveOperation<'a> {
+    ContractModerationOperation(ContractModerationOperationType::AddDocumentRemoval {
+        contract_id,
+        document_type_name: POST.to_string(),
+        document_id,
+        removal,
+        replaces_existing: true,
+        moderator_id,
     })
 }
 
@@ -364,6 +389,7 @@ fn should_keep_the_banlist_on_top_of_the_other_tree_when_every_tree_is_created_a
                 banlist,
                 suspensions,
                 moderators: ContractModerators::ContractOwner,
+                warnings: false,
             },
         )));
         add_deletable_type(&mut contract, POST);
@@ -408,6 +434,7 @@ fn should_lose_the_top_of_the_other_tree_to_the_version_item_once_both_fee_pots_
             banlist: true,
             suspensions: true,
             moderators: ContractModerators::ContractOwner,
+            warnings: false,
         },
     )));
     add_deletable_type(&mut contract, POST);
@@ -699,6 +726,8 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                     moderator_id: moderator,
                     reason: ContractModerationReason::from_text("spam"),
                     removed_at: 10,
+                    document_hash: [0x43; 32],
+                    restoration: None,
                 },
             ),
             forfeit(),
@@ -742,7 +771,200 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                 moderator_id: moderator,
                 reason: ContractModerationReason::from_text("spam"),
                 removed_at: 10,
+                document_hash: [0x43; 32],
+                restoration: None,
             },
+        }],
+    );
+}
+
+/// The insert that brings `post` back: the document as it was, its storage flags naming its
+/// owner, as a create's do
+fn restore_post<'a>(contract: &'a DataContract, post: &Document) -> DriveOperation<'a> {
+    DocumentOperation(DocumentOperationType::AddDocument {
+        owned_document_info: OwnedDocumentInfo {
+            document_info: DocumentOwnedInfo((
+                post.clone(),
+                Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+                    3,
+                    post.owner_id().to_buffer(),
+                ))),
+            )),
+            owner_id: Some(post.owner_id().to_buffer()),
+        },
+        contract_info: DataContractInfo::BorrowedDataContract(contract),
+        document_type_info: DocumentTypeInfo::DocumentTypeName(POST.to_string()),
+        override_document: false,
+    })
+}
+
+fn post_is_stored(drive: &Drive, contract: &DataContract, document_id: Identifier) -> bool {
+    drive
+        .grove_has_raw(
+            (&contract_documents_primary_key_path(contract.id_ref().as_bytes(), POST)).into(),
+            document_id.as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            None,
+            &mut vec![],
+            &PlatformVersion::latest().drive,
+        )
+        .expect("expected to query the posts")
+}
+
+#[test]
+fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_deletion() {
+    let platform_version = PlatformVersion::latest();
+    let author = identity(0x41);
+    let moderator = identity(0x42);
+    let restorer = identity(0x43);
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(true, false, &[POST]);
+    insert(&drive, &contract);
+    let post = add_post(&drive, &contract, author);
+    let removal = ContractDocumentRemoval {
+        document_owner_id: author,
+        moderator_id: moderator,
+        reason: ContractModerationReason::from_text("spam"),
+        removed_at: 10,
+        document_hash: [0x44; 32],
+        restoration: None,
+    };
+    apply(
+        &drive,
+        vec![
+            delete_post_by_moderator(&contract, post.id()),
+            record(contract.id(), post.id(), removal.clone()),
+            forfeit(),
+        ],
+        true,
+    );
+    assert!(!post_is_stored(&drive, &contract, post.id()));
+
+    // The restore: the document back, the record marked in place. The restorer pays for the
+    // document and for the bytes the mark adds; nobody is refunded anything.
+    let restored = ContractDocumentRemoval {
+        restoration: Some(ContractDocumentRestoration {
+            moderator_id: restorer,
+            restored_at: 20,
+        }),
+        ..removal.clone()
+    };
+    let operations = || {
+        vec![
+            restore_post(&contract, &post),
+            replace_record(contract.id(), post.id(), restored.clone(), restorer),
+        ]
+    };
+    let estimated = apply(&drive, operations(), false);
+    let applied = apply(&drive, operations(), true);
+    assert!(
+        applied.storage_fee > 0,
+        "the restorer pays for the document"
+    );
+    assert!(
+        estimated.storage_fee >= applied.storage_fee,
+        "estimated {} < applied {}",
+        estimated.storage_fee,
+        applied.storage_fee
+    );
+    assert!(applied.fee_refunds.0.is_empty());
+    assert!(post_is_stored(&drive, &contract, post.id()));
+    assert_removals(
+        &drive,
+        contract.id(),
+        &by_ids(&[post.id()]),
+        vec![ContractDocumentRemovalEntry {
+            document_id: post.id(),
+            removal: restored.clone(),
+        }],
+    );
+
+    // Deleted again by a moderator: a fresh record in place of the restored one, the author
+    // refunded nothing again.
+    let again = ContractDocumentRemoval {
+        moderator_id: restorer,
+        removed_at: 30,
+        restoration: None,
+        ..removal
+    };
+    let applied = apply(
+        &drive,
+        vec![
+            delete_post_by_moderator(&contract, post.id()),
+            replace_record(contract.id(), post.id(), again.clone(), restorer),
+            forfeit(),
+        ],
+        true,
+    );
+    assert!(applied.fee_refunds.0.is_empty());
+    assert!(applied.removed_bytes_from_system > 0);
+    assert!(!post_is_stored(&drive, &contract, post.id()));
+    assert_removals(
+        &drive,
+        contract.id(),
+        &by_ids(&[post.id()]),
+        vec![ContractDocumentRemovalEntry {
+            document_id: post.id(),
+            removal: again,
+        }],
+    );
+}
+
+#[test]
+fn should_refund_the_author_who_deletes_a_restored_document() {
+    // The restored document's flags name its author, as they did before the deletion: the
+    // refund of the author's own deletion is the author's, though a moderator paid to put
+    // the document back.
+    let platform_version = PlatformVersion::latest();
+    let author = identity(0x41);
+    let moderator = identity(0x42);
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(true, false, &[POST]);
+    insert(&drive, &contract);
+    let post = add_post(&drive, &contract, author);
+    let removal = removal(0x41, 0x42, "spam", 10);
+    apply(
+        &drive,
+        vec![
+            delete_post_by_moderator(&contract, post.id()),
+            record(contract.id(), post.id(), removal.clone()),
+            forfeit(),
+        ],
+        true,
+    );
+    let restored = ContractDocumentRemoval {
+        restoration: Some(ContractDocumentRestoration {
+            moderator_id: moderator,
+            restored_at: 20,
+        }),
+        ..removal
+    };
+    apply(
+        &drive,
+        vec![
+            restore_post(&contract, &post),
+            replace_record(contract.id(), post.id(), restored.clone(), moderator),
+        ],
+        true,
+    );
+
+    let own = apply(&drive, vec![delete_post(&contract, post.id())], true);
+    let refunded: u64 = own
+        .fee_refunds
+        .get(author.as_bytes())
+        .expect("expected the author to be refunded")
+        .values()
+        .sum();
+    assert!(refunded > 0);
+    assert!(own.fee_refunds.get(moderator.as_bytes()).is_none());
+    // The record stays as it was: the author's deletion is not a moderation.
+    assert_removals(
+        &drive,
+        contract.id(),
+        &by_ids(&[post.id()]),
+        vec![ContractDocumentRemovalEntry {
+            document_id: post.id(),
+            removal: restored,
         }],
     );
 }

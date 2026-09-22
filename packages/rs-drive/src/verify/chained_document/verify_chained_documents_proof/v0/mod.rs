@@ -39,13 +39,14 @@ impl DriveDocumentQuery<'_> {
         let bootstrap_documents = bootstrap_trios
             .into_iter()
             .filter(|(_, _, element)| element.is_some())
-            .map(|(path, key, _)| {
+            .map(|(path, key, element)| {
                 synthesize_index_only_document(
                     self.contract.id(),
                     self.document_type,
                     index,
                     &path,
                     &key,
+                    element.as_ref(),
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -92,6 +93,7 @@ impl DriveDocumentQuery<'_> {
                         index,
                         &path,
                         &key,
+                        Some(&element),
                     )?);
                 }
                 Some(segment) if segment == outer_type_name => {

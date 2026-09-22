@@ -32,7 +32,37 @@ const DOCUMENT_PROPERTY_REFERENCE_TS: &'static str = r#"
  */
 export type DocumentPropertyReferenceTarget =
   | { type: 'identity' }
-  | { type: 'contract' }
+  | {
+      type: 'contract';
+      /**
+       * What the referenced contract must declare beyond existing, checked
+       * by consensus when the referring document is written against the
+       * contract fetched for the existence check and the block time:
+       * `moderation: 'elected'` requires an elected moderation team and
+       * `'electionOpen'` one whose own `electionDelay` has passed since the
+       * contract's creation (or which declares none),
+       * `minimumAgeSeconds` requires the contract's recorded creation time
+       * to be at least that many seconds before the block time of the write,
+       * and `minimumSecondsSinceUpdate` the same of the later of its creation
+       * and last update times, and `owner: 'self'` requires the contract to
+       * be owned by the writer of the referring document (its `$ownerId`),
+       * `'other'` by anyone else; `readonly: true` requires a read-only
+       * contract (one that can never be updated again), `keepsHistory: true`
+       * one keeping its history, and `ownerProtected` an elected moderation
+       * declaration whose owner protection flag has that value (code 40135
+       * when any is unmet). Absent when the declaration carries no
+       * requirement.
+       */
+      contractRequirements?: {
+        moderation?: 'elected' | 'electionOpen';
+        minimumAgeSeconds?: number;
+        minimumSecondsSinceUpdate?: number;
+        owner?: 'self' | 'other';
+        readonly?: true;
+        keepsHistory?: true;
+        ownerProtected?: boolean;
+      };
+    }
   | { type: 'token' }
   | {
       type: 'permanentDocument';
@@ -156,7 +186,7 @@ fn reference_to_js(
 
     let kind = match target {
         DocumentPropertyReferenceTarget::Identity => "identity",
-        DocumentPropertyReferenceTarget::Contract => "contract",
+        DocumentPropertyReferenceTarget::Contract { .. } => "contract",
         DocumentPropertyReferenceTarget::Token => "token",
         DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
@@ -165,9 +195,53 @@ fn reference_to_js(
     set_field(&object, "type", &JsValue::from_str(kind), path)?;
 
     match target {
-        DocumentPropertyReferenceTarget::Identity
-        | DocumentPropertyReferenceTarget::Contract
-        | DocumentPropertyReferenceTarget::Token => {}
+        DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
+        DocumentPropertyReferenceTarget::Contract {
+            contract_requirements,
+        } => {
+            // Absent, not `{}`-valued, when the declaration requires nothing,
+            // matching the schema's own omission.
+            if !contract_requirements.is_empty() {
+                let fields = Object::new();
+                if let Some(moderation) = contract_requirements.moderation {
+                    set_field(
+                        &fields,
+                        "moderation",
+                        &JsValue::from_str(moderation.as_str()),
+                        path,
+                    )?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_age_seconds {
+                    set_field(
+                        &fields,
+                        "minimumAgeSeconds",
+                        &JsValue::from_f64(f64::from(seconds)),
+                        path,
+                    )?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_seconds_since_update {
+                    set_field(
+                        &fields,
+                        "minimumSecondsSinceUpdate",
+                        &JsValue::from_f64(f64::from(seconds)),
+                        path,
+                    )?;
+                }
+                if let Some(owner) = contract_requirements.owner {
+                    set_field(&fields, "owner", &JsValue::from_str(owner.as_str()), path)?;
+                }
+                for (name, flag) in [
+                    ("readonly", contract_requirements.readonly),
+                    ("keepsHistory", contract_requirements.keeps_history),
+                    ("ownerProtected", contract_requirements.owner_protected),
+                ] {
+                    if let Some(flag) = flag {
+                        set_field(&fields, name, &JsValue::from_bool(flag), path)?;
+                    }
+                }
+                set_field(&object, "contractRequirements", &fields, path)?;
+            }
+        }
         DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id,
             document_type_name,

@@ -126,6 +126,7 @@ impl Setup {
                 banlist: true,
                 suspensions: false,
                 moderators,
+                warnings: false,
             },
         )));
 

@@ -36,11 +36,8 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContrac
         }
 
         if let Some(moderation) = self.data_contract().config().moderation() {
-            let result = moderation.validate(
-                self.data_contract()
-                    .has_document_type_deletable_by_moderators(),
-                platform_version,
-            )?;
+            let result =
+                moderation.validate(self.data_contract().document_schemas(), platform_version)?;
             if !result.is_valid() {
                 return Ok(result);
             }

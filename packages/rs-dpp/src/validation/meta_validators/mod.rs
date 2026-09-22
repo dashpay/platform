@@ -340,6 +340,71 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_contract_requirements_on_a_contract_refers_to_in_v3_document_schema() {
+        for requirements in [
+            json!({ "moderation": "elected" }),
+            json!({ "moderation": "electionOpen" }),
+            json!({ "minimumAgeSeconds": 1 }),
+            json!({ "minimumAgeSeconds": 4294967295u64 }),
+            json!({ "minimumSecondsSinceUpdate": 86400 }),
+            json!({ "moderation": "elected", "minimumAgeSeconds": 604800, "minimumSecondsSinceUpdate": 86400 }),
+            json!({ "owner": "self" }),
+            json!({ "owner": "other" }),
+            json!({ "moderation": "elected", "owner": "other" }),
+            json!({ "readonly": true }),
+            json!({ "keepsHistory": true }),
+            json!({ "ownerProtected": true }),
+            json!({ "ownerProtected": false }),
+            json!({ "moderation": "elected", "owner": "other", "readonly": true, "keepsHistory": true, "ownerProtected": false }),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "contract",
+                "contractRequirements": requirements
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected contractRequirements {requirements} to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_contract_requirements_in_v3_document_schema() {
+        for refers_to in [
+            json!({ "type": "contract", "contractRequirements": {} }),
+            json!({ "type": "contract", "contractRequirements": { "moderation": "appointed" } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 0 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 4294967296u64 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": "3600" } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 1.5 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 0 } }),
+            json!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": "60" } }),
+            json!({ "type": "contract", "contractRequirements": { "tokens": "any" } }),
+            json!({ "type": "contract", "contractRequirements": { "owner": "anyone" } }),
+            json!({ "type": "contract", "contractRequirements": { "owner": true } }),
+            json!({ "type": "identity", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
+            json!({ "type": "identity", "contractRequirements": { "owner": "self" } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": false } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "readonly": 1 } }),
+            json!({ "type": "contract", "contractRequirements": { "keepsHistory": false } }),
+            json!({ "type": "contract", "contractRequirements": { "keepsHistory": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": "true" } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": 1 } }),
+            json!({ "type": "contract", "contractRequirements": { "ownerProtected": null } }),
+            json!({ "type": "identity", "contractRequirements": { "readonly": true } }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected refersTo {refers_to} to be invalid"
+            );
+        }
+    }
+
+    #[test]
     fn should_accept_permanent_document_refers_to_in_v3_document_schema() {
         let schema = document_schema_with_refers_to(json!({
             "type": "permanentDocument",

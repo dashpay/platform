@@ -265,7 +265,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // The resolved index must carry the join property, so every
         // synthesized inner projection provably carries its value.
         let index = self.index_only_query_index(platform_version)?;
-        let index_carries_join_property = index.terminal.as_deref() == Some(join_property)
+        let index_carries_join_property = index.terminal_contains(join_property)
             || index
                 .properties
                 .iter()

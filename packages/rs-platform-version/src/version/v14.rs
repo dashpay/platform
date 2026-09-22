@@ -336,9 +336,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `SystemLimits::max_contract_suspension_until`) and unsuspends one
 ///     identity, signed by the owner or a moderator with a CRITICAL key; a
 ///     ban and a suspension carry a reason, stored with the entry: a text of
-///     at most `SystemLimits::max_contract_moderation_reason_length` bytes and
+///     at most `SystemLimits::max_contract_moderation_reason_length` bytes,
 ///     an optional code nothing checks, reserved for ban codes a contract may
-///     declare in a later version;
+///     declare in a later version, and up to
+///     `SystemLimits::max_contract_moderation_reason_documents` documents the
+///     reason is about, named by type and id and not looked up. A contract may also keep a warning list
+///     (`[64, contract, 2] / 224`): a warn appends a warning, the block time and
+///     a reason, to the identity's entry, at most
+///     `SystemLimits::max_contract_warnings_per_identity` at a time, and a
+///     clearWarnings deletes the entry; warnings bar nothing and are what a
+///     status query and the identity's clients read;
 ///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates on, moves the
 ///     contract update's basic structure to 2 and the contract create and
 ///     update state validation (already 1 here) checks the named moderators.
@@ -351,7 +358,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     party of a transfer or a purchase, so a barred identity neither
 ///     receives nor sells a document. Token transitions are not gated.
 ///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2,
-///     which creates the list trees (`[64, contract, 2] / 128` and `/ 192`, inside the contract's other tree), and
+///     which creates the list trees (`[64, contract, 2] / 128`, `/ 192` and `/ 224`, inside the contract's other tree), and
 ///     adds the `moderation` method table; the verify and
 ///     query tables gain the status and entries methods.
 ///
@@ -402,7 +409,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Ids of documents created before the upgrade can not be produced by
 ///     the new derivation either. A client that still derives the entropy
 ///     only id has every create rejected with
-///     `InvalidDocumentTransitionIdError`.
+///     `InvalidDocumentTransitionIdError`. Every create path of the clients
+///     in this repository derives through `Document::generate_document_id`:
+///     `DocumentCreateTransitionV0::from_document` for dpp, rs-sdk and the
+///     bindings built on them, and in wasm-dpp2 the `DocumentCreateTransition`
+///     constructor (which also writes the id back onto the JavaScript
+///     `Document`), `Document.generateId` with its `identityContractNonce`
+///     argument, `setIdForCreation` and the `identityContractNonce`
+///     constructor option.
 /// 19. **Document deletion by moderators**: a document type of a contract
 ///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
@@ -448,6 +462,106 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (40132), with one to other amounts or another pricing (40133), or
 ///     whose epoch's multiplier rose beyond the tolerance (40134), so a
 ///     contract whose fees change cannot make a signed transition pay them.
+///     Check tx judges the agreements again on every recheck, off the action
+///     the transformer rebuilt with the contract and the multiplier as they
+///     are then, so a batch a block would refuse leaves the mempool instead
+///     of failing there (mempool policy, not consensus).
+///
+/// 21. **Document restore by moderators**: the removal record a moderator's
+///     deletion leaves (19) also holds a double SHA-256 of the document as
+///     serialized under its type at the deletion (`ContractDocumentRemoval::
+///     document_hash`), and `ContractUserModeration` gains the
+///     `RestoreDocument` action: the owner or any current moderator brings
+///     the document back, as it was, within
+///     `SystemLimits::contract_document_restore_window_ms` (a week) of the
+///     removal. The bytes must decode under the type and hash to what the
+///     record holds; refused otherwise, or without a record (41119), past the
+///     window (41120), on a hash mismatch (41121), once restored (41122), or
+///     when another document took a value of one of the type's unique indexes
+///     meanwhile (40105). The document goes back through the ordinary insert,
+///     its storage flags naming its owner (the signer pays, the owner keeps
+///     the refund of a later deletion), and the record is marked restored in
+///     place (`ContractDocumentRemoval::restoration`: who, when) rather than
+///     deleted; a restored document deleted again gets a fresh record in place
+///     of the marked one, which the deletion transform reads to know. Neither
+///     the type's creation token cost nor its `actionFees` creation fee is
+///     charged, and no fee agreement is asked. `canBeDeletedByModerators` is
+///     now also refused on a type with a contested index, whose deletions
+///     could never be undone. The record grows on the wire
+///     (`getContractDocumentRemovals`: `document_hash`, `restoration`).
+///
+/// 22. **Elected moderation teams, the declaration and the interim**: a data
+///     contract may declare, when it is created, that its moderators are a team
+///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
+///     beside the owner and an appointed set, in the same config V2). The
+///     declaration is frozen: the join and vote windows (one day to four weeks,
+///     one week by default) and the challenge cool-down (two weeks to three
+///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; an optional,
+///     unbounded election delay in seconds after the contract's creation
+///     before the first charter may be filed (`electionDelay`, read by the
+///     `moderation: "electionOpen"` reference requirement of item 24); the document
+///     types the team moderates, each with the abilities a charter may claim on
+///     it; who moderates until the first team is seated (the owner, an
+///     appointed set, or nobody, with the moderated types not yet usable or
+///     used unmoderated meanwhile); and whether the owner is protected from the
+///     team. `validate_moderation_config` v0 checks
+///     it against the contract's document types (10900), and
+///     `validate_config_update` 2 refuses every change to it, and entering or
+///     leaving elected moderation, with `DataContractConfigUpdateError`. The
+///     interim moderators moderate and claim the pot as the merged kinds do;
+///     with nobody named, nobody may claim the moderators pot, which
+///     accumulates for the team to come, and with the types not yet usable
+///     `contract_moderation_gate` v0 refuses, paid, every document transition
+///     of a moderated type (`ContractModeratedDocumentTypeNotYetUsableError`,
+///     41200). No election exists yet.
+///
+/// 23. **Contested indexes without a Lock choice, and ties to the earliest
+///     contender**: a contested unique index may declare `"resolution": 1`,
+///     `ContestedIndexResolution::MasternodeVoteNoLocking` (meta-schema v3,
+///     parser generation 3). Such a contest offers no Lock choice
+///     (`VoteChoiceNotAllowedForVotePollError`, 40307, from `validate_state` 1
+///     of the masternode vote) and always ends with a winner. Its end date is
+///     the end of the join window until a second contender joins, when
+///     `add_contested_document_for_contract_operations` 1 moves it to the full
+///     poll duration, so a contest with a single contender is awarded without
+///     the vote window. `check_for_ended_vote_polls` 1 awards a tie to the
+///     **earliest** contender (creation time, block height, core height,
+///     document id) for every resolution, where the shipped rule awarded the
+///     latest; DPNS contests ending from this version on follow the new rule.
+///
+/// 24. **Contract references may require elected moderation, a minimum age, a
+///     minimum time since the last update, an owner relation to the writer or
+///     config flags of the referenced contract**: a `contract` `refersTo`
+///     declaration may carry `contractRequirements`, what the referenced
+///     contract must declare beyond existing, with `moderation: "elected"` or
+///     `"electionOpen"` (elected, and the contract's own `electionDelay` since
+///     its creation has passed, or it declares none),
+///     `minimumAgeSeconds` (the contract's recorded creation time must be at
+///     least that many seconds before the block time of the write),
+///     `minimumSecondsSinceUpdate` (the same of the later of its creation and
+///     last update times; a contract without a recorded creation time never
+///     meets either), `owner` (`"self"`: the contract is owned by the
+///     `$ownerId` of the referring document, `"other"`: by anyone else),
+///     `readonly: true` (its config is read-only, so it can never be updated
+///     again), `keepsHistory: true` (its config keeps history) and
+///     `ownerProtected` (its elected moderation declaration protects the owner
+///     from the team, or does not, as the value says; a contract without
+///     elected moderation meets neither value) as the requirements
+///     (meta-schema v3, `apply_property_reference` 0,
+///     `ContractReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::Contract`). The document reference
+///     validation checks them against the contract it fetched for the
+///     existence check and the write itself (its owner and block time), so
+///     they cost no further read, and refuses the first unmet requirement with
+///     `ReferencedContractRequirementNotMetError` (40135). A changed
+///     `contractRequirements` is an incompatible schema change on update.
+///
+/// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
+/// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
+/// the app's ephemeral key hash and the responding identity, with the wallet's
+/// ephemeral key and encrypted grant in `entryPayload`. Genesis registers it on
+/// chains born at this version; `transition_to_version_14` inserts it on upgrade.
+/// The Drive and trusted SDK caches serve it only from protocol version 14.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
@@ -505,7 +619,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
@@ -535,7 +649,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until and max_contract_moderation_reason_length
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -612,6 +726,66 @@ mod tests {
 
     /// The ranked index keywords are gated by the meta-schema version, so v14
     /// must select meta-schema v3 while v13 stays on v2.
+    /// Contested indexes without a Lock choice (item 23): the three method
+    /// versions that read the resolution are selected by v14 only, so a v13
+    /// replay keeps the shipped rules (a full poll for every contest, ties to
+    /// the latest contender, a Lock vote accepted on any contest).
+    #[test]
+    fn no_locking_contests_are_selected_by_v14_only() {
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .methods
+                .voting
+                .check_for_ended_vote_polls,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .methods
+                .voting
+                .check_for_ended_vote_polls,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .masternode_vote_state_transition
+                .state,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .masternode_vote_state_transition
+                .state,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_document_for_contract_operations,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_document_for_contract_operations,
+            1
+        );
+    }
+
     #[test]
     fn ranked_index_keywords_are_gated_by_meta_schema_v3() {
         assert_eq!(

@@ -22,16 +22,18 @@
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
-use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{DirectQueryType, QueryTarget};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::property_names::OWNER_ID;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -168,19 +170,33 @@ impl Drive {
                 })
                 .collect();
         }
+        // A flat index (no prefix properties) keeps its entries under the
+        // level keyed by its terminal's names, between the doctype and the
+        // `0` bucket.
+        if let Some(flat_key) = index.flat_level_key() {
+            for path in paths.iter_mut() {
+                path.push(flat_key.as_bytes().to_vec());
+            }
+        }
         for path in paths.iter_mut() {
             path.push(vec![0]);
         }
 
-        let terminal =
-            index
-                .terminal
-                .as_deref()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "index_only_entry_paths_and_key requires an indexOnly index (terminal is \
+        if index.terminal.is_none() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "index_only_entry_paths_and_key requires an indexOnly index (terminal is \
                  always Some there after parse normalization)",
-                )))?;
-        let member_key = raw_value_for(terminal)?;
+            )));
+        }
+        // The member key: the terminal components' encoded values,
+        // concatenated, exactly as the write side keys the entry.
+        let member_key = index_only_member_key(
+            document,
+            document_type,
+            index.terminal_components(),
+            owner_id,
+            platform_version,
+        )?;
 
         Ok((paths, member_key))
     }
@@ -244,8 +260,11 @@ impl Drive {
                 &platform_version.drive,
             )?;
             let matches = match element {
+                // The commitment is the item's first 32 bytes; an entry
+                // payload (the type's value slot) follows it and is covered
+                // by the commitment, so the prefix is what binds.
                 Some(grovedb::Element::Item(payload, _)) => {
-                    payload == expected_commitment.as_slice()
+                    payload.get(..expected_commitment.len()) == Some(expected_commitment.as_slice())
                 }
                 // Summable indexes store `ItemWithSumItem(commitment,
                 // amount)`; the commitment payload plays the same binding
@@ -253,7 +272,7 @@ impl Drive {
                 // of the document's properties, so it is already covered
                 // by the commitment.
                 Some(grovedb::Element::ItemWithSumItem(payload, _, _)) => {
-                    payload == expected_commitment.as_slice()
+                    payload.get(..expected_commitment.len()) == Some(expected_commitment.as_slice())
                 }
                 _ => false,
             };
@@ -283,6 +302,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let estimated_item_value_size =
+            index_only_item_estimated_value_size(document_type, platform_version)?;
         for index in document_type.indexes().values() {
             let (paths, member_key) = Self::index_only_entry_paths_and_key(
                 contract_id,
@@ -295,6 +316,16 @@ impl Drive {
             // keys the paths are built from, so the claimed tree type is
             // the one the walkers created the `0` member bucket with.
             let mut level = document_type.index_structure();
+            // A flat index terminates at its own level, directly under
+            // the root.
+            if let Some(flat_key) = index.flat_level_key() {
+                level = level.sub_levels().get(&flat_key).ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution(
+                        "a flat indexOnly index resolves to its flat level: the structure is \
+                         built from the same indexes",
+                    ),
+                ))?;
+            }
             for (position, property) in index.properties.iter().enumerate() {
                 let level_key = index.level_key(position, &property.name);
                 level = level.sub_levels().get(&*level_key).ok_or(Error::Drive(
@@ -311,9 +342,9 @@ impl Drive {
             ))?;
             let in_tree_type = terminal_member_tree_type(type_info);
             let estimated_value_size = if type_info.summable.is_some() {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+                estimated_item_value_size + 10
             } else {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+                estimated_item_value_size
             };
             for path in paths {
                 let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
@@ -370,4 +401,74 @@ impl Drive {
         }
         Ok(false)
     }
+}
+
+/// The widest member key an indexOnly index's terminal can produce: the
+/// sum over its components of 32 bytes for `$ownerId` and, otherwise, the
+/// component property's maximum encoded size (a bounded byte array or
+/// string encodes to at most its declared bound — the string bound counts
+/// characters of up to four bytes — and every other indexable type
+/// encodes to a fixed width). Fee estimation sizes the `0` member bucket's
+/// keys by it, so the dry run upper-bounds the applied fee for a wide or
+/// composite terminal exactly as it does for a 32-byte one. The contract
+/// parser keeps every terminal within grovedb's 255-byte key cap, so the
+/// clamp below is a guard, not a path.
+pub(crate) fn index_only_terminal_max_key_size(
+    document_type: DocumentTypeRef,
+    terminal: &[String],
+    platform_version: &PlatformVersion,
+) -> Result<u8, Error> {
+    let mut total: u32 = 0;
+    for component in terminal {
+        let width: u32 = if component == OWNER_ID {
+            u32::from(DEFAULT_HASH_SIZE_U8)
+        } else {
+            let property =
+                document_type
+                    .flattened_properties()
+                    .get(component)
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "indexOnly terminal names a property the document type lacks: the \
+                     contract parser admits only $ownerId or schema properties as terminal \
+                     components",
+                    )))?;
+            u32::from(
+                property
+                    .property_type
+                    .max_byte_size(platform_version)
+                    .map_err(|e| Error::Protocol(Box::new(e)))?
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "indexOnly terminal component has an unbounded type: the contract \
+                         parser refuses arrays and objects as terminal components",
+                    )))?,
+            )
+        };
+        total = total.saturating_add(width);
+    }
+    Ok(u8::try_from(total).unwrap_or(u8::MAX))
+}
+
+/// The member key `document` produces under a terminal: the components'
+/// values in their tree-key encoding, concatenated in the terminal's
+/// order — one component for a plain terminal, several for a composite
+/// one. The write path's twin of the query side's
+/// `serialize_value_for_key` concatenation.
+pub(crate) fn index_only_member_key(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    terminal: &[String],
+    owner_id: Option<[u8; 32]>,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let mut member_key = Vec::new();
+    for component in terminal {
+        let encoded = document
+            .get_raw_for_document_type(component, document_type, owner_id, platform_version)?
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "indexOnly terminal value must be present: the parser requires every \
+                 indexOnly property (and $ownerId) to be set",
+            )))?;
+        member_key.extend(encoded);
+    }
+    Ok(member_key)
 }

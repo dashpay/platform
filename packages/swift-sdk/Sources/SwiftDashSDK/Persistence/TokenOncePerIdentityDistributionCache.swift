@@ -13,10 +13,9 @@ import Foundation
 /// would otherwise decode a full contract to learn nothing. This decodes once
 /// per distinct contract payload instead and answers the rest from memory.
 ///
-/// A stored property on the model would have been the obvious place to keep
-/// the answer, but `DashSchemaV5` is frozen: a new stored property moves
-/// `PersistentToken`'s entity hash and costs a schema version. A process-wide
-/// memo sidesteps the schema entirely.
+/// The contract JSON already persists the answer. A process-wide memo
+/// avoids adding a redundant column to the model graph or changing any
+/// released schema. Stored values also let frozen model copies use this cache.
 ///
 /// Thread-safe: SwiftData rows are read from whichever actor owns their
 /// context, so the map is guarded by a lock rather than pinned to the main
@@ -71,17 +70,18 @@ final class TokenOncePerIdentityDistributionCache: @unchecked Sendable {
     }
 
     /// The once-per-identity distribution declared by the token at
-    /// `position` of `contract`, or nil when it declares none (or when the
+    /// `position` of a contract payload, or nil when it declares none (or when the
     /// contract's JSON cannot be read at all).
     func distribution(
-        for contract: PersistentDataContract,
+        contractId: Data,
+        serializedContract: Data,
+        lastUpdated: Date,
         position: Int
     ) -> TokenOncePerIdentityDistribution? {
-        let serialized = contract.serializedContract
         let key = Key(
-            contractId: contract.id,
-            byteCount: serialized.count,
-            lastUpdated: contract.lastUpdated
+            contractId: contractId,
+            byteCount: serializedContract.count,
+            lastUpdated: lastUpdated
         )
 
         return lock.withLock {
@@ -91,7 +91,7 @@ final class TokenOncePerIdentityDistributionCache: @unchecked Sendable {
 
             // The decode runs under the lock so two callers racing on a cold
             // contract decode it once between them rather than twice each.
-            let parsed = Self.parseAllPositions(serialized)
+            let parsed = Self.parseAllPositions(serializedContract)
             decodes += 1
             entries[key] = parsed
             insertionOrder.append(key)

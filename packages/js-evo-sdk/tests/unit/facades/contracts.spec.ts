@@ -216,9 +216,10 @@ describe('ContractsFacade', () => {
     const identityId = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
 
     // Every moderation transition resolves to the status on the lists its proof covers: both
-    // for a ban, the edited one otherwise. `banned` is only set when `lists` includes `banlist`.
-    // Each action gets the options the WASM entrypoint accepts for it: a reason for a ban and a
-    // suspend, `until` for a suspend alone, neither for an unban or an unsuspend.
+    // barring lists for a ban, the edited one otherwise. `banned` is only set when `lists`
+    // includes `banlist`. Each action gets the options the WASM entrypoint accepts for it: a
+    // reason for a ban, a suspend and a warn, `until` for a suspend alone, neither for an
+    // unban, an unsuspend or a clearWarnings.
     const transitions = [
       {
         facade: 'banUser',
@@ -248,6 +249,21 @@ describe('ContractsFacade', () => {
         extraOptions: {},
         result: { lists: ['suspensions'] },
       },
+      {
+        facade: 'warnUser',
+        wasm: 'contractWarnUser',
+        extraOptions: { reason: { text: 'first strike' } },
+        result: {
+          lists: ['warnings'],
+          warnings: [{ warnedAt: BigInt(1700000000000), reason: { text: 'first strike' } }],
+        },
+      },
+      {
+        facade: 'clearUserWarnings',
+        wasm: 'contractClearUserWarnings',
+        extraOptions: {},
+        result: { lists: ['warnings'], warnings: [] },
+      },
     ] as const;
 
     transitions.forEach(({
@@ -264,7 +280,7 @@ describe('ContractsFacade', () => {
         };
 
         // The per-action option types differ, so the facade method is called through one
-        // signature wide enough for all four.
+        // signature wide enough for all six.
         const method = client.contracts[facade].bind(client.contracts) as (
           moderationOptions: typeof options,
         ) => Promise<wasmSDKPackage.ContractModerationResult>;
@@ -279,6 +295,7 @@ describe('ContractsFacade', () => {
         expect(moderated.suspensionReason).to.deep.equal(
           'suspensionReason' in result ? result.suspensionReason : undefined,
         );
+        expect(moderated.warnings).to.deep.equal('warnings' in result ? result.warnings : undefined);
       });
     });
 
@@ -334,6 +351,7 @@ describe('ContractsFacade', () => {
       moderatorId: contractId,
       reason: { code: 2, text: 'spam' },
       removedAt: BigInt(1800000000000),
+      documentHash: '11'.repeat(32),
     };
 
     it('should forward moderatorDeleteDocument() to contractDeleteDocument() and return the removal record', async function run() {
@@ -373,6 +391,31 @@ describe('ContractsFacade', () => {
 
       expect(stub).to.be.calledOnceWithExactly(options);
       expect(result.reason).to.deep.equal({ text: '' });
+    });
+
+    it('should forward moderatorRestoreDocument() to contractRestoreDocument() and return the marked record', async function run() {
+      const record = {
+        contractId,
+        documentTypeName,
+        documentId,
+        ...removal,
+        restoredBy: identityId,
+        restoredAt: BigInt(1800000001000),
+      };
+      const stub = this.sinon.stub(wasmSdk, 'contractRestoreDocument').resolves(record);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        document: Object.create(wasmSDKPackage.Document.prototype),
+        signer,
+      };
+
+      const result = await client.contracts.moderatorRestoreDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(record);
+      expect(result.restoredBy).to.equal(identityId);
     });
 
     it('should fetch the removal records of the documents named, which carry no cursor', async function run() {

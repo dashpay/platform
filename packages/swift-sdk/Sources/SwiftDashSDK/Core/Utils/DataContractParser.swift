@@ -322,8 +322,14 @@ public struct DataContractParser {
             if let rankedAverageable = indexData["rankedAverageable"] as? Bool {
                 index.rankedAverageable = rankedAverageable
             }
+            // A composite terminal is an ordered list of component names;
+            // the persisted string keeps them joined, in order, so display
+            // layers show the whole member key.
             if let terminal = indexData["terminal"] as? String {
                 index.terminal = terminal
+            } else if let components = indexData["terminal"] as? [String],
+                      !components.isEmpty {
+                index.terminal = components.joined(separator: " ‖ ")
             }
             if let preallocated = indexData["preallocated"] as? Bool {
                 index.preallocated = preallocated

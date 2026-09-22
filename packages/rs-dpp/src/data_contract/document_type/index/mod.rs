@@ -71,12 +71,16 @@ pub const TIME_RANGE: &str = "timeRange";
 /// `range % step == 0`), not a versioned limit: it is part of what makes a
 /// transform well-formed at all.
 pub const MAX_TIME_RANGE_PHASE_SECONDS: u64 = 31_536_000;
-/// Index-level keyword naming the property whose value is the index entry's
-/// **member key** on an `indexOnly` document type — the docId-analog terminal
-/// key stored under the `0` storage marker, where a normal index stores the
-/// document id. `"$ownerId"` (the default) or a refersTo-typed identifier
-/// property (identity, contract, token, or permanent document — the permanent
-/// kinds `refersTo` targets). Only allowed on indexOnly document types; the
+/// Index-level keyword naming the property — or the ordered list of
+/// properties, for a composite terminal — whose encoded value(s),
+/// concatenated, are the index entry's **member key** on an `indexOnly`
+/// document type: the docId-analog terminal key stored under the `0` storage
+/// marker, where a normal index stores the document id. Each component is
+/// `"$ownerId"` (the default) or any schema property a prefix position could
+/// carry (identifiers with or without a `refersTo`, bounded byte arrays and
+/// strings, integers, booleans, dates), every component but the last fixed
+/// width. An index with no `properties` is a flat index keyed by its
+/// terminal alone. Only allowed on indexOnly document types; the
 /// doc-type-level validation rejects it elsewhere. Meta-schema v3+ (protocol
 /// version 14).
 pub const TERMINAL: &str = "terminal";
@@ -117,7 +121,14 @@ pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum ContestedIndexResolution {
+    /// Masternodes and evonodes vote for a contender, abstain, or lock the value so nobody
+    /// gets it. This is the DPNS rule.
     MasternodeVote = 0,
+    /// Masternodes and evonodes vote for a contender or abstain; there is no Lock choice,
+    /// so the contest always ends with a winner. A contest whose join window closes with a
+    /// single contender is awarded at once, without the vote window. Meta-schema v3+
+    /// (protocol version 14).
+    MasternodeVoteNoLocking = 1,
 }
 
 impl TryFrom<u8> for ContestedIndexResolution {
@@ -126,6 +137,7 @@ impl TryFrom<u8> for ContestedIndexResolution {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(MasternodeVote),
+            1 => Ok(ContestedIndexResolution::MasternodeVoteNoLocking),
             value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
                 "contested index resolution unknown: {}",
                 value
@@ -429,6 +441,70 @@ where
     )
 }
 
+/// Deserializer for [`Index::terminal`] accepting `null`, a bare property
+/// name (the single-component form, and the only spelling the field had
+/// while it was an `Option<String>`) and an array of names (the composite
+/// form). Serialization always emits the array form.
+#[cfg(feature = "serde-conversion")]
+fn deserialize_terminal<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TerminalCompat {
+        Many(Vec<String>),
+        One(String),
+    }
+    Ok(match Option::<TerminalCompat>::deserialize(deserializer)? {
+        None => None,
+        Some(TerminalCompat::One(name)) => Some(vec![name]),
+        Some(TerminalCompat::Many(names)) => Some(names),
+    })
+}
+
+/// Whether `fields`, all terminal components, appear in the terminal's
+/// declared order: one member key sorts by its components in that order,
+/// so a walk over member keys can implement no other ordering. The terminal
+/// route additionally requires the run to be contiguous after the
+/// equality-bound components; the matcher only refuses what no index walk
+/// could serve, so another index may still take the query.
+fn follows_component_order(components: &[String], fields: &[&str]) -> bool {
+    let position_of = |field: &str| components.iter().position(|component| component == field);
+    fields
+        .windows(2)
+        .all(|pair| match (position_of(pair[0]), position_of(pair[1])) {
+            (Some(earlier), Some(later)) => earlier < later,
+            _ => false,
+        })
+}
+
+/// The storage key of a flat indexOnly index's level (an index with no
+/// prefix `properties`): a zero byte followed by each terminal component
+/// name, every name preceded by a zero byte. Property names never contain a
+/// zero byte, so a flat level can never collide with a property-name tree:
+/// a flat `["$ownerId"]` terminal keys `"\0$ownerId"`, beside the
+/// `"$ownerId"` property-name tree a prefixed index may own in the same
+/// document type. Every place that turns a flat index into a GroveDB path
+/// segment — contract setup, the document walkers (via `IndexLevel`), the
+/// uniqueness and delete probes, query path derivation, synthesis and proof
+/// verification — derives it through this function.
+pub fn flat_level_key_for(components: &[String]) -> String {
+    let mut key = String::with_capacity(components.iter().map(|c| c.len() + 1).sum());
+    for component in components {
+        key.push('\0');
+        key.push_str(component);
+    }
+    key
+}
+
+/// Whether an index-structure level key names a flat index's level (see
+/// [`flat_level_key_for`]) rather than a property-name or grid-qualified
+/// tree.
+pub fn is_flat_level_key(level_key: &str) -> bool {
+    level_key.starts_with('\0')
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -625,21 +701,31 @@ pub struct Index {
     // JSON must still deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub time_range: Option<TimeRangeTransform>,
-    /// On an `indexOnly` document type, the property whose value is this
-    /// index's member key: the terminal key under the `0` storage marker,
-    /// sitting exactly where a normal index stores the document id — except
-    /// the element is an `Item` instead of a `Reference`, because there is no
-    /// primary-storage row to reference. `"$ownerId"` or a refersTo-typed
-    /// identifier property; the doc-type-level validation
-    /// (`apply_index_only`) normalizes an omitted value to `"$ownerId"` and
+    /// On an `indexOnly` document type, the property — or the ordered list
+    /// of properties, for a composite terminal — whose encoded value(s),
+    /// concatenated, form this index's member key: the terminal key under
+    /// the `0` storage marker, sitting exactly where a normal index stores
+    /// the document id — except the element is an `Item` instead of a
+    /// `Reference`, because there is no primary-storage row to reference.
+    /// Each component is `"$ownerId"` or any schema property a prefix
+    /// position could carry, keyed by its tree-key encoding; every component
+    /// but the last must be fixed width so equality on the leading ones is a
+    /// clean key range. An index with no `properties` at all is a *flat*
+    /// index: its entries live directly under a level keyed by the terminal's
+    /// names ([`flat_level_key_for`]). The doc-type-level validation
+    /// (`apply_index_only`) normalizes an omitted value to `["$ownerId"]` and
     /// rejects the keyword entirely on non-indexOnly document types, so on a
     /// parsed non-indexOnly type this is always `None`.
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still
-    // deserialize.
-    #[cfg_attr(feature = "serde-conversion", serde(default))]
-    pub terminal: Option<String>,
+    // deserialize. The deserializer also accepts the bare-string spelling
+    // the field had while it was an `Option<String>`.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(default, deserialize_with = "deserialize_terminal")
+    )]
+    pub terminal: Option<Vec<String>>,
     /// On an indexOnly document type whose index path is fully determined by
     /// a same-contract `permanentDocument` reference (see [`PREALLOCATED`]):
     /// when `true`, inserting a referenced document also creates this index's
@@ -696,6 +782,9 @@ pub(crate) struct IndexGrammarAdmissions {
     /// generations reject the omission, and their frozen meta-schemas (v1,
     /// v2) carry a `dependentRequired` row that says the same.
     pub(crate) range_countable_implies_countable: bool,
+    /// Whether a contested index may be resolved without a Lock choice
+    /// (`"resolution": 1`, [`ContestedIndexResolution::MasternodeVoteNoLocking`]).
+    pub(crate) no_locking_resolution: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -711,6 +800,7 @@ impl IndexGrammarAdmissions {
             preallocated: generation >= 3,
             skip_if_absent: generation >= 3,
             range_countable_implies_countable: generation >= 3,
+            no_locking_resolution: generation >= 3,
         }
     }
 }
@@ -799,6 +889,43 @@ impl Index {
             }
             _ => property_name.to_string(),
         }
+    }
+
+    /// The terminal's components: one name for a single-property terminal,
+    /// several for a composite one (the member key is their encoded values
+    /// concatenated in this order), none on a non-indexOnly index.
+    pub fn terminal_components(&self) -> &[String] {
+        self.terminal.as_deref().unwrap_or(&[])
+    }
+
+    /// Whether `name` is one of the terminal's components.
+    pub fn terminal_contains(&self, name: &str) -> bool {
+        self.terminal_components()
+            .iter()
+            .any(|component| component == name)
+    }
+
+    /// The terminal's single component; `None` on a composite terminal or a
+    /// non-indexOnly index.
+    pub fn single_terminal(&self) -> Option<&str> {
+        match self.terminal.as_deref() {
+            Some([component]) => Some(component.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Whether this is a flat index: an indexOnly index with no prefix
+    /// properties, whose entries live directly under the level keyed by
+    /// [`Self::flat_level_key`].
+    pub fn is_flat(&self) -> bool {
+        self.properties.is_empty() && self.terminal.is_some()
+    }
+
+    /// The storage key of a flat index's level (see [`flat_level_key_for`]);
+    /// `None` unless [`Self::is_flat`].
+    pub fn flat_level_key(&self) -> Option<String> {
+        self.is_flat()
+            .then(|| flat_level_key_for(self.terminal_components()))
     }
 
     /// Get values
@@ -905,29 +1032,36 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<(u16, bool)> {
-        let Some(terminal) = self.terminal.as_deref() else {
+        let Some(components) = self.terminal.as_deref() else {
             return self
                 .matches(index_names, in_field_name, order_by)
                 .map(|difference| (difference, false));
         };
+        let is_component = |field: &str| components.iter().any(|component| component == field);
 
-        let terminal_used = index_names.contains(&terminal);
+        let terminal_used = index_names.iter().any(|field| is_component(field));
         let prefix_fields: Vec<&str> = index_names
             .iter()
             .copied()
-            .filter(|field| *field != terminal)
+            .filter(|field| !is_component(field))
             .collect();
-        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
-            // Ordering by the terminal is ordering the deepest level —
-            // admissible only as the ordering's last entry.
-            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| is_component(field)) {
+            // Ordering by the terminal (any of its components) is ordering
+            // the deepest level — admissible only as the ordering's
+            // trailing entries.
+            Some(position)
+                if order_by[position..].iter().all(|field| is_component(field))
+                    && follows_component_order(components, &order_by[position..]) =>
+            {
+                &order_by[..position]
+            }
             Some(_) => return None,
             None => order_by,
         };
         let prefix_in_field = match in_field_name {
             // An `in` on the terminal sits at the deepest position by
             // construction; the prefix keeps no `in` constraint.
-            Some(field) if field == terminal => None,
+            Some(field) if is_component(field) => None,
             other => other,
         };
 
@@ -946,6 +1080,14 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<u16> {
+        // A FLAT indexOnly index has no prefix components at all: it
+        // matches exactly the queries that bind none (its terminal
+        // components are matched by the terminal-aware callers, which
+        // strip them before reaching here).
+        if properties.is_empty() {
+            return (index_names.is_empty() && in_field_name.is_none() && order_by.is_empty())
+                .then_some(0);
+        }
         // Here we are trying to figure out if the Index matches the order by
         // To do so we take the index and go backwards as we need the order by clauses to be
         // continuous, but they do not need to be at the end.
@@ -1053,27 +1195,34 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<(u16, bool)> {
-        let Some(terminal) = self.terminal.as_deref() else {
+        let Some(components) = self.terminal.as_deref() else {
             return self
                 .matches_contiguous(equality_fields, range_field, in_field_name, order_by)
                 .map(|difference| (difference, false));
         };
+        let is_component = |field: &str| components.iter().any(|component| component == field);
 
-        let terminal_used = equality_fields.contains(&terminal)
-            || range_field == Some(terminal)
-            || in_field_name == Some(terminal)
-            || order_by.contains(&terminal);
+        let terminal_used = equality_fields.iter().any(|field| is_component(field))
+            || range_field.is_some_and(is_component)
+            || in_field_name.is_some_and(is_component)
+            || order_by.iter().any(|field| is_component(field));
         let prefix_equality_fields: Vec<&str> = equality_fields
             .iter()
             .copied()
-            .filter(|field| *field != terminal)
+            .filter(|field| !is_component(field))
             .collect();
-        let prefix_range_field = range_field.filter(|field| *field != terminal);
-        let prefix_in_field = in_field_name.filter(|field| *field != terminal);
-        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
-            // Ordering by the terminal is ordering the deepest level —
-            // admissible only as the ordering's last entry.
-            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+        let prefix_range_field = range_field.filter(|field| !is_component(field));
+        let prefix_in_field = in_field_name.filter(|field| !is_component(field));
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| is_component(field)) {
+            // Ordering by the terminal (any of its components) is ordering
+            // the deepest level — admissible only as the ordering's
+            // trailing entries.
+            Some(position)
+                if order_by[position..].iter().all(|field| is_component(field))
+                    && follows_component_order(components, &order_by[position..]) =>
+            {
+                &order_by[..position]
+            }
             Some(_) => return None,
             None => order_by,
         };
@@ -1192,6 +1341,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
     }
@@ -1232,6 +1382,7 @@ impl Index {
             preallocated: preallocated_allowed,
             skip_if_absent: skip_if_absent_allowed,
             range_countable_implies_countable,
+            no_locking_resolution: no_locking_resolution_allowed,
         } = admissions;
         // Decouple the map
         // It contains properties and a unique key
@@ -1294,7 +1445,7 @@ impl Index {
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
-        let mut terminal: Option<String> = None;
+        let mut terminal: Option<Vec<String>> = None;
         let mut preallocated = false;
         let mut skip_if_absent = false;
 
@@ -1401,6 +1552,14 @@ impl Index {
                                     resolution_int.try_into().map_err(|e: ProtocolError| {
                                         DataContractError::ValueWrongType(e.to_string())
                                     })?;
+                                if contested_index_information.resolution
+                                    == ContestedIndexResolution::MasternodeVoteNoLocking
+                                    && !no_locking_resolution_allowed
+                                {
+                                    return Err(DataContractError::InvalidContractStructure(
+                                        "contested index resolution 1 (masternode vote without locking) requires document type schema generation 3 (protocol version 14)".to_string(),
+                                    ));
+                                }
                             }
                             "description" => {}
                             key => {
@@ -1731,19 +1890,51 @@ impl Index {
                 // fact this parser cannot see; `apply_index_only` in
                 // `try_from_schema::common` enforces it.
                 TERMINAL if terminal_allowed => {
-                    let terminal_name =
-                        value_value
-                            .as_text()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "terminal value must be a string naming a property".to_string(),
-                            ))?;
-                    if terminal_name.is_empty() {
+                    // A bare name is a single-component terminal; an array
+                    // is a composite one, keyed by the concatenation of its
+                    // components' encoded values in the listed order.
+                    let components: Vec<String> = match value_value {
+                        Value::Text(terminal_name) => vec![terminal_name.clone()],
+                        Value::Array(entries) => entries
+                            .iter()
+                            .map(|entry| {
+                                entry.as_text().map(str::to_owned).ok_or(
+                                    DataContractError::ValueWrongType(
+                                        "every terminal component must be a string naming a \
+                                         property"
+                                            .to_string(),
+                                    ),
+                                )
+                            })
+                            .collect::<Result<_, _>>()?,
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "terminal value must be a property name or an array of \
+                                 property names"
+                                    .to_string(),
+                            ))
+                        }
+                    };
+                    if components.is_empty() {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "terminal must name at least one property".to_string(),
+                        ));
+                    }
+                    if components.iter().any(|component| component.is_empty()) {
                         return Err(DataContractError::InvalidContractStructure(
                             "terminal must name a property; an empty string names nothing"
                                 .to_string(),
                         ));
                     }
-                    terminal = Some(terminal_name.to_owned());
+                    for (position, component) in components.iter().enumerate() {
+                        if components[..position].contains(component) {
+                            return Err(DataContractError::InvalidContractStructure(format!(
+                                "terminal lists property \"{}\" twice",
+                                component
+                            )));
+                        }
+                    }
+                    terminal = Some(components);
                 }
                 // `preallocated` is guarded the same way as `terminal` above:
                 // it joined the grammar at meta-schema v3, so below that the
@@ -2551,6 +2742,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2569,6 +2761,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2587,6 +2780,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2609,6 +2803,7 @@ mod tests {
             preallocated: true,
             skip_if_absent: false,
             range_countable_implies_countable: false,
+            no_locking_resolution: false,
         };
 
         let mut map = index_value_map("postId", None);
@@ -2640,6 +2835,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2672,6 +2868,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2696,6 +2893,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2720,6 +2918,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2745,6 +2944,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2771,6 +2971,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2793,6 +2994,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2820,6 +3022,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2847,6 +3050,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2872,6 +3076,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2902,6 +3107,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("the parser applies structural rules only");
@@ -2927,6 +3133,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2948,6 +3155,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2973,6 +3181,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3029,6 +3238,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3067,6 +3277,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -3098,6 +3309,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3131,6 +3343,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3158,6 +3371,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("a non-unique $updatedAt bucketing stays legal");
@@ -3180,6 +3394,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3197,8 +3412,14 @@ mod tests {
     }
 
     #[test]
+    fn test_contested_index_resolution_try_from_no_locking() {
+        let res = ContestedIndexResolution::try_from(1u8).unwrap();
+        assert_eq!(res, ContestedIndexResolution::MasternodeVoteNoLocking);
+    }
+
+    #[test]
     fn test_contested_index_resolution_try_from_invalid() {
-        let res = ContestedIndexResolution::try_from(1u8);
+        let res = ContestedIndexResolution::try_from(2u8);
         assert!(res.is_err());
     }
 
@@ -3740,10 +3961,54 @@ mod tests {
         );
     }
 
+    /// A composite terminal's components share one member key, so an
+    /// ordering over them is admissible only in declared order.
+    #[test]
+    fn test_matches_including_terminal_contiguous_composite_order() {
+        let mut index = make_index("idx", vec![("hashtag", true)], false);
+        index.terminal = Some(vec!["post".to_string(), "owner".to_string()]);
+
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["post", "owner"]
+            ),
+            Some((0, true)),
+            "declared order is admissible"
+        );
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag", "post"],
+                None,
+                None,
+                &["owner"]
+            ),
+            Some((0, true)),
+            "a later component alone is admissible"
+        );
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["owner", "post"]
+            ),
+            None,
+            "a reversed run cannot be served by any member-key walk"
+        );
+        assert_eq!(
+            index.matches_including_terminal(&["hashtag"], None, &["owner", "post"]),
+            None,
+            "the non-contiguous matcher refuses the same run"
+        );
+    }
+
     #[test]
     fn test_matches_including_terminal_contiguous() {
         let mut index = make_index("idx", vec![("hashtag", true), ("post", true)], false);
-        index.terminal = Some("owner".to_string());
+        index.terminal = Some(vec!["owner".to_string()]);
 
         // Fully determined prefix + terminal equality.
         assert_eq!(
@@ -4370,6 +4635,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("all three ranked keywords must parse when the grammar allows them");
@@ -4398,6 +4664,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("index without ranked keywords must parse");
@@ -4442,6 +4709,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("ranked flags on a compound index must be accepted");
@@ -4474,6 +4742,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4507,6 +4776,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4538,6 +4808,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4566,6 +4837,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4596,6 +4868,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4626,6 +4899,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4658,6 +4932,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("rankedAverageable on the averageable sugar form must parse");
@@ -4696,6 +4971,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("rankedAverageable on the explicit longhand form must parse");
@@ -4724,6 +5000,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
@@ -4758,6 +5035,7 @@ mod tests {
                         preallocated: false,
                         skip_if_absent: false,
                         range_countable_implies_countable: false,
+                        no_locking_resolution: false,
                     },
                 );
                 assert!(
@@ -4831,6 +5109,7 @@ mod tests {
             preallocated: false,
             skip_if_absent: false,
             range_countable_implies_countable: true,
+            no_locking_resolution: true,
         }
     }
 
@@ -5292,6 +5571,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         );
         let msg = format!(
@@ -5356,6 +5636,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             );
             assert!(
@@ -5386,6 +5667,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             )
             .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
@@ -5412,6 +5694,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             )
             .unwrap_or_else(|e| {
@@ -5436,6 +5719,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("nullSearchable: false on a plain index must still parse");
@@ -5455,6 +5739,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("nullSearchable: false on a range-averageable index must still parse");
@@ -5479,6 +5764,47 @@ mod tests {
         ];
         let result = Index::try_from(index_map.as_slice());
         assert!(result.is_err()); // contest supported only for unique indexes
+    }
+
+    fn contested_unique_index_map(resolution: u64) -> Vec<(Value, Value)> {
+        vec![
+            (Value::Text("unique".to_string()), Value::Bool(true)),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("contested".to_string()),
+                Value::Map(vec![(
+                    Value::Text("resolution".to_string()),
+                    Value::U64(resolution),
+                )]),
+            ),
+        ]
+    }
+
+    /// `"resolution": 1` is a generation-3 value: the grammar without the admission
+    /// refuses it, generation 3 parses it as the masternode vote without locking.
+    #[test]
+    fn test_index_contested_resolution_no_locking_needs_the_admission() {
+        let index_map = contested_unique_index_map(1);
+        assert!(Index::try_from(index_map.as_slice()).is_err());
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("generation 3 admits the no-locking resolution");
+        assert_eq!(
+            index.contested_index.expect("contested").resolution,
+            ContestedIndexResolution::MasternodeVoteNoLocking
+        );
+        let index =
+            Index::try_from_value_map(contested_unique_index_map(0).as_slice(), v3_admissions())
+                .expect("the masternode vote resolution parses in every generation");
+        assert_eq!(
+            index.contested_index.expect("contested").resolution,
+            ContestedIndexResolution::MasternodeVote
+        );
     }
 
     #[test]
@@ -5752,6 +6078,7 @@ mod tests {
             preallocated: false,
             skip_if_absent: false,
             range_countable_implies_countable: false,
+            no_locking_resolution: false,
         }
     }
 

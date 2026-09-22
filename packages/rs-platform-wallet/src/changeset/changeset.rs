@@ -934,12 +934,13 @@ impl IdentityEntry {
     /// [`ManagedIdentity::keys_snapshot_changeset`](crate::wallet::identity::ManagedIdentity)
     /// into an [`IdentityKeysChangeSet`].
     pub fn from_managed(managed: &ManagedIdentity) -> Self {
+        let (balance, last_updated_balance_block_time) = managed.balance_snapshot_for_persistence();
         Self {
             id: managed.identity.id(),
-            balance: managed.identity.balance(),
+            balance,
             revision: managed.identity.revision(),
             identity_index: managed.identity_index,
-            last_updated_balance_block_time: managed.last_updated_balance_block_time,
+            last_updated_balance_block_time,
             last_synced_keys_block_time: managed.last_synced_keys_block_time,
             dpns_names: managed.dpns_names.clone(),
             contested_dpns_names: managed.contested_dpns_names.clone(),
@@ -1091,9 +1092,9 @@ impl Merge for IdentityChangeSet {
                     if entry.revision >= existing.revision {
                         existing.balance = entry.balance;
                         existing.revision = entry.revision;
+                        existing.last_updated_balance_block_time =
+                            entry.last_updated_balance_block_time;
                     }
-                    existing.last_updated_balance_block_time =
-                        entry.last_updated_balance_block_time;
                     existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                     existing.status = entry.status;
                     // `wallet_id` is immutable per identity (SHA256 of
@@ -2434,6 +2435,38 @@ mod tests {
             dashpay_payments: BTreeMap::new(),
             contact_profiles: BTreeMap::new(),
             ignored_senders: BTreeSet::new(),
+        }
+    }
+
+    #[test]
+    fn should_merge_balance_and_watermark_under_the_same_revision_gate() {
+        let id = Identifier::from([0x53; 32]);
+        for revision in [6, 7, 8] {
+            let mut old = identity_entry_with_contested(id, &[]);
+            old.revision = 7;
+            old.balance = 100;
+            old.last_updated_balance_block_time = Some(BlockTime::new(10, 42, 1000));
+            let mut incoming = old.clone();
+            incoming.revision = revision;
+            incoming.balance = 200;
+            incoming.last_updated_balance_block_time = Some(BlockTime::new(20, 50, 2000));
+            let expected = if revision >= 7 {
+                incoming.clone()
+            } else {
+                old.clone()
+            };
+            let mut changes = IdentityChangeSet::default();
+            changes.identities.insert(id, old);
+            let mut later = IdentityChangeSet::default();
+            later.identities.insert(id, incoming);
+            changes.merge(later);
+            let merged = &changes.identities[&id];
+            assert_eq!(merged.balance, expected.balance);
+            assert_eq!(merged.revision, expected.revision);
+            assert_eq!(
+                merged.last_updated_balance_block_time,
+                expected.last_updated_balance_block_time
+            );
         }
     }
 

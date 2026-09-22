@@ -1,11 +1,15 @@
 use crate::drive::contract::moderation::types::{
-    ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
+    decode_document_removal, ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
 };
-use crate::drive::contract::paths::contract_document_removals_path;
+use crate::drive::contract::paths::{
+    contract_document_removals_path, contract_document_type_removals_path,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
+use dpp::data_contract::config::moderation::ContractDocumentRemoval;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
@@ -72,5 +76,37 @@ impl Drive {
                 )
             })
             .collect()
+    }
+
+    /// One record, read the way the transform of a moderation reads state: the operations of
+    /// the read are added to `drive_operations` for billing.
+    #[inline(always)]
+    pub(super) fn fetch_contract_document_removal_add_to_operations_v0(
+        &self,
+        contract_id: Identifier,
+        document_type_name: &str,
+        document_id: Identifier,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ContractDocumentRemoval>, Error> {
+        let path = contract_document_type_removals_path(contract_id.as_slice(), document_type_name);
+        self.grove_get_raw_optional_item(
+            (&path).into(),
+            document_id.as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?
+        .map(|value| {
+            decode_document_removal(&value).map_err(|description| {
+                Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "contract {} {} document {} removal is malformed: {}",
+                    contract_id, document_type_name, document_id, description
+                )))
+            })
+        })
+        .transpose()
     }
 }

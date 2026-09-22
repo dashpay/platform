@@ -1,7 +1,7 @@
 //! Contract moderation queries: one identity's status on a moderated contract
-//! (`getContractModerationStatus`), one page of a contract's banlist or suspension list
-//! (`getContractModerationEntries`) and the records of the documents its moderators deleted
-//! (`getContractDocumentRemovals`).
+//! (`getContractModerationStatus`), one page of a contract's banlist, suspension list or
+//! warning list (`getContractModerationEntries`) and the records of the documents its
+//! moderators deleted (`getContractDocumentRemovals`).
 //!
 //! A moderated contract declares in its config which lists it keeps
 //! (`DataContractConfig::moderation`). A status query names the lists to read, and each must be
@@ -45,6 +45,7 @@ pub use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemovals, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
     ContractModerationEntries, ContractModerationEntriesQuery, ContractModerationEntry,
     ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
+    ContractWarning,
 };
 
 /// Query for one identity's status on a moderated contract.

@@ -1,14 +1,16 @@
-//! Ban, unban, suspend and unsuspend identities on a moderated data contract, and delete
-//! documents of the document types that let moderators do so (protocol version 14).
+//! Ban, unban, suspend, unsuspend, warn and clear the warnings of identities on a moderated
+//! data contract, and delete documents of the document types that let moderators do so
+//! (protocol version 14).
 //!
-//! A contract whose config declares moderation keeps a banlist and/or a suspension list. The
-//! contract owner, or a moderator the config names, edits them with a
+//! A contract whose config declares moderation keeps a banlist, a suspension list and/or a
+//! warning list. The contract owner, or a moderator the config names, edits them with a
 //! [`ContractUserModerationTransition`] signed by a CRITICAL authentication key. A banned or
-//! suspended identity cannot act on the contract at the document level.
+//! suspended identity cannot act on the contract at the document level; a warned one can, the
+//! warnings being a record it and everyone else can read.
 //!
 //! The same transition deletes one document of a document type that sets
 //! `canBeDeletedByModerators`, whoever owns it, and leaves a record of the deletion under the
-//! contract.
+//! contract; and it restores such a document, as it was, within a week of its deletion.
 //!
 //! ```ignore
 //! let reason = ContractModerationReason::from_text("spam");
@@ -24,10 +26,13 @@
 
 use crate::platform::Fetch;
 use dash_context_provider::ContextProvider;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractModerationListStatuses, ContractModerationReason,
 };
 use dpp::data_contract::DataContract;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::Document;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -48,10 +53,11 @@ use crate::{Error, Sdk};
 use super::waitable::Waitable;
 
 /// The target identity's status on the lists a moderation touched, as the proof of the
-/// moderation shows it. A ban proves every list the contract keeps (it removes a suspension
-/// too); an unban, a suspend and an unsuspend prove the one list they edit and say nothing
-/// about the other, so an identity shown as no longer suspended may still be banned. Fetch
-/// `ContractModerationListStatuses` over every list the contract keeps for the whole picture.
+/// moderation shows it. A ban proves every barring list the contract keeps (it removes a
+/// suspension too); an unban, a suspend, an unsuspend, a warn and a clearing prove the one
+/// list they edit and say nothing about the others, so an identity shown as no longer
+/// suspended may still be banned. Fetch `ContractModerationListStatuses` over every list the
+/// contract keeps for the whole picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeratedUserStatus {
     /// The moderated contract
@@ -221,13 +227,65 @@ pub trait ModerateContractUser: Waitable {
         .await
     }
 
+    /// Adds a warning for `reason` (as for a ban) to the entry of `identity_id` on the
+    /// warning list of `contract_id`, stamped with the block time. Warnings bar nothing and
+    /// accumulate, at most `SystemLimits::max_contract_warnings_per_identity` at a time:
+    /// past that, the warn is refused until they are cleared.
+    #[allow(clippy::too_many_arguments)]
+    async fn warn_contract_user<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ModeratedUserStatus, Error> {
+        self.moderate_contract_user(
+            sdk,
+            contract_id,
+            ContractUserModerationAction::Warn {
+                identity_id,
+                reason,
+            },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    /// Takes `identity_id` off the warning list of `contract_id`: every warning it carries
+    /// goes.
+    async fn clear_contract_user_warnings<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        identity_id: Identifier,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ModeratedUserStatus, Error> {
+        self.moderate_contract_user(
+            sdk,
+            contract_id,
+            ContractUserModerationAction::ClearWarnings { identity_id },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+    }
+
     /// Deletes document `document_id` of `document_type_name` on `contract_id`, whoever owns
     /// it, for `reason` (as for a ban). The document type must set
     /// `canBeDeletedByModerators`. Resolves with the record the deletion left under the
     /// contract: whose the document was, who removed it, why and when.
     ///
-    /// The document's owner gets no storage refund, and nothing ever deletes the record, so
-    /// the author may create the same document id again without the record going away.
+    /// The document's owner gets no storage refund, and nothing ever deletes the record. The
+    /// record holds a hash of the document as it was: keep the document (or its bytes) if the
+    /// deletion may have to be undone, since `restore_contract_document` needs it.
     #[allow(clippy::too_many_arguments)]
     async fn delete_contract_document<S: Signer<IdentityPublicKey> + Send>(
         &self,
@@ -236,6 +294,28 @@ pub trait ModerateContractUser: Waitable {
         document_type_name: String,
         document_id: Identifier,
         reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ContractDocumentRemoval, Error>;
+
+    /// Brings back `document`, of `document_type_name` on `contract`, that a moderator deleted:
+    /// the document as it was when it was deleted, which must hash to what its removal record
+    /// holds, within `SystemLimits::contract_document_restore_window_ms` (a week) of the
+    /// deletion. Any current moderator or the contract owner may restore, whoever deleted.
+    /// The document goes back through an ordinary insert, so a unique index value another
+    /// document took meanwhile refuses it. Resolves with the record, now marked restored.
+    ///
+    /// The signer pays for the document's storage; the refund of a later deletion stays its
+    /// owner's. `contract` serializes the document and is what the proof of the restore is
+    /// verified against, so it is registered with the SDK's context provider.
+    #[allow(clippy::too_many_arguments)]
+    async fn restore_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract: &DataContract,
+        document_type_name: String,
+        document: &Document,
         signing_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
@@ -253,13 +333,18 @@ impl ModerateContractUser for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ModeratedUserStatus, Error> {
-        // A document deletion is proved by its removal record, not by a status. Refused before
-        // the nonce is taken: sent from here it would execute, be paid for, and then fail to
-        // read its own result.
-        if matches!(action, ContractUserModerationAction::DeleteDocument { .. }) {
+        // A document deletion or restore is proved by its removal record, not by a status.
+        // Refused before the nonce is taken: sent from here it would execute, be paid for, and
+        // then fail to read its own result.
+        if matches!(
+            action,
+            ContractUserModerationAction::DeleteDocument { .. }
+                | ContractUserModerationAction::RestoreDocument { .. }
+        ) {
             return Err(Error::Generic(
-                "a document deletion names no identity to report a status of: send it with \
-                 `delete_contract_document`, which returns the removal record"
+                "a document deletion or restore names no identity to report a status of: send \
+                 it with `delete_contract_document` or `restore_contract_document`, which \
+                 return the removal record"
                     .to_string(),
             ));
         }
@@ -294,6 +379,47 @@ impl ModerateContractUser for Identity {
                 document_type_name,
                 document_id,
                 reason,
+            },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await?;
+        Ok(removal)
+    }
+
+    async fn restore_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract: &DataContract,
+        document_type_name: String,
+        document: &Document,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ContractDocumentRemoval, Error> {
+        let document_type = contract
+            .document_type_for_name(&document_type_name)
+            .map_err(dpp::ProtocolError::from)?;
+        // Serialized under the contract as given, which must be its current version: Drive
+        // decodes the bytes under the type as the contract holds it now and hashes them
+        // against the document as it was serialized when deleted, so a type whose layout
+        // changed inside the restore window leaves the record unrestorable whatever the
+        // caller serializes with.
+        let document_bytes = document.serialize(document_type, contract, sdk.version())?;
+        // The verifier reads the document's id out of the bytes under the contract's document
+        // type, through the context provider: what the caller serialized with is what it must
+        // resolve.
+        if let Some(provider) = sdk.context_provider() {
+            provider.register_data_contract(Arc::new(contract.clone()));
+        }
+        let VerifiedDocumentRemoval(removal) = broadcast_moderation(
+            self,
+            sdk,
+            contract.id(),
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name,
+                document: document_bytes.into(),
             },
             signing_key_to_use,
             signer,
@@ -354,14 +480,19 @@ where
         None => signing_key_for_moderation(identity, &signer)?,
     };
 
-    // The proof of a ban covers every list the contract keeps, which the verifier reads from
-    // the contract through the context provider. A provider that can not resolve the contract
+    // The proof of a ban covers every barring list the contract keeps, which the verifier reads
+    // from the contract through the context provider. A provider that can not resolve the contract
     // would refuse a result the network already accepted, so before the nonce is taken and
     // anything is signed or paid for, the provider is asked, and only when it does not have
     // the contract (the lists never change, so whatever copy it holds will do) is the contract
     // fetched and registered with it. A document deletion is proved by its own removal record
-    // and needs no contract.
-    if matches!(action, ContractUserModerationAction::Ban { .. }) {
+    // and needs no contract; a restore's verifier decodes the document under the contract's
+    // document type, so it needs the contract too.
+    if matches!(
+        action,
+        ContractUserModerationAction::Ban { .. }
+            | ContractUserModerationAction::RestoreDocument { .. }
+    ) {
         ensure_provider_resolves_contract(sdk, contract_id, false).await?;
     }
 

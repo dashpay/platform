@@ -41,7 +41,9 @@ CF_EXTERN_C_BEGIN
 @class CompactedBlockAddressBalanceChanges;
 @class ContractGroupDocumentTypeMember;
 @class ContractGroupTokenMember;
+@class ContractModerationDocument;
 @class ContractModerationReason;
+@class ContractWarning;
 @class GPBBytesValue;
 @class GPBUInt32Value;
 @class GetAddressInfoRequest_GetAddressInfoRequestV0;
@@ -81,6 +83,7 @@ CF_EXTERN_C_BEGIN
 @class GetContractDocumentRemovalsRequest_Page;
 @class GetContractDocumentRemovalsResponse_ContractDocumentRemoval;
 @class GetContractDocumentRemovalsResponse_ContractDocumentRemovals;
+@class GetContractDocumentRemovalsResponse_ContractDocumentRestoration;
 @class GetContractDocumentRemovalsResponse_GetContractDocumentRemovalsResponseV0;
 @class GetContractFeePotsRequest_GetContractFeePotsRequestV0;
 @class GetContractFeePotsResponse_ContractFeePot;
@@ -386,7 +389,7 @@ BOOL KeyPurpose_IsValidValue(int32_t value);
 
 #pragma mark - Enum ContractModerationList
 
-/** One of the two moderation lists a moderated data contract may keep (protocol version 14). */
+/** One of the moderation lists a moderated data contract may keep (protocol version 14). */
 typedef GPB_ENUM(ContractModerationList) {
   /**
    * Value used if any message's field encounters a value that is not defined
@@ -402,6 +405,9 @@ typedef GPB_ENUM(ContractModerationList) {
 
   /** Identities barred until a block time */
   ContractModerationList_ContractModerationListSuspensions = 2,
+
+  /** Identities warned, barred from nothing */
+  ContractModerationList_ContractModerationListWarnings = 3,
 };
 
 GPBEnumDescriptor *ContractModerationList_EnumDescriptor(void);
@@ -2973,16 +2979,38 @@ GPB_FINAL @interface GetContractGroupMembersResponse_GetContractGroupMembersResp
  **/
 void GetContractGroupMembersResponse_GetContractGroupMembersResponseV0_ClearResultOneOfCase(GetContractGroupMembersResponse_GetContractGroupMembersResponseV0 *message);
 
+#pragma mark - ContractModerationDocument
+
+typedef GPB_ENUM(ContractModerationDocument_FieldNumber) {
+  ContractModerationDocument_FieldNumber_DocumentTypeName = 1,
+  ContractModerationDocument_FieldNumber_DocumentId = 2,
+};
+
+/**
+ * A document a moderation reason is about.
+ **/
+GPB_FINAL @interface ContractModerationDocument : GPBMessage
+
+/** The document type, on the moderated contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+/** The 32-byte id of the document */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@end
+
 #pragma mark - ContractModerationReason
 
 typedef GPB_ENUM(ContractModerationReason_FieldNumber) {
   ContractModerationReason_FieldNumber_Code = 1,
   ContractModerationReason_FieldNumber_Text = 2,
+  ContractModerationReason_FieldNumber_DocumentsArray = 3,
 };
 
 /**
- * Why a moderator banned or suspended an identity. Nothing checks what a
- * moderator writes.
+ * Why a moderator banned, suspended or warned an identity, or deleted a
+ * document. Nothing checks what a moderator writes, and the documents cited
+ * are not looked up.
  **/
 GPB_FINAL @interface ContractModerationReason : GPBMessage
 
@@ -2992,6 +3020,33 @@ GPB_FINAL @interface ContractModerationReason : GPBMessage
 @property(nonatomic, readwrite) BOOL hasCode;
 /** protocol version; a u16, expected unset today, never checked */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *text;
+
+/** The documents the reason is about, at most 16, none twice */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractModerationDocument*> *documentsArray;
+/** The number of items in @c documentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+@end
+
+#pragma mark - ContractWarning
+
+typedef GPB_ENUM(ContractWarning_FieldNumber) {
+  ContractWarning_FieldNumber_WarnedAt = 1,
+  ContractWarning_FieldNumber_Reason = 2,
+};
+
+/**
+ * One warning an identity carries on a contract's warning list.
+ **/
+GPB_FINAL @interface ContractWarning : GPBMessage
+
+/** The time of the block that issued it, in milliseconds */
+@property(nonatomic, readwrite) uint64_t warnedAt;
+
+/** Why */
+@property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *reason;
+/** Test to see if @c reason has been set. */
+@property(nonatomic, readwrite) BOOL hasReason;
 
 @end
 
@@ -3079,6 +3134,7 @@ typedef GPB_ENUM(GetContractModerationStatusResponse_ContractModerationStatus_Fi
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_ListsArray = 3,
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_BanReason = 4,
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_SuspensionReason = 5,
+  GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_WarningsArray = 6,
 };
 
 /**
@@ -3113,6 +3169,11 @@ GPB_FINAL @interface GetContractModerationStatusResponse_ContractModerationStatu
 @property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *suspensionReason;
 /** Test to see if @c suspensionReason has been set. */
 @property(nonatomic, readwrite) BOOL hasSuspensionReason;
+
+/** When the warning list was read: the identity's warnings, oldest */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractWarning*> *warningsArray;
+/** The number of items in @c warningsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger warningsArray_Count;
 
 @end
 
@@ -3250,11 +3311,12 @@ typedef GPB_ENUM(GetContractModerationEntriesResponse_ContractModerationEntry_Fi
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_IdentityId = 1,
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_Until = 2,
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_Reason = 3,
+  GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_WarningsArray = 4,
 };
 
 GPB_FINAL @interface GetContractModerationEntriesResponse_ContractModerationEntry : GPBMessage
 
-/** The barred identity */
+/** The identity on the list */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
 
 /** For a suspension list entry: the block time, in milliseconds, at */
@@ -3265,6 +3327,14 @@ GPB_FINAL @interface GetContractModerationEntriesResponse_ContractModerationEntr
 @property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *reason;
 /** Test to see if @c reason has been set. */
 @property(nonatomic, readwrite) BOOL hasReason;
+
+/**
+ * suspension's. Unset for a warning list entry, whose reasons
+ * are its warnings'
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractWarning*> *warningsArray;
+/** The number of items in @c warningsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger warningsArray_Count;
 
 @end
 
@@ -3449,6 +3519,23 @@ GPB_FINAL @interface GetContractDocumentRemovalsResponse : GPBMessage
  **/
 void GetContractDocumentRemovalsResponse_ClearVersionOneOfCase(GetContractDocumentRemovalsResponse *message);
 
+#pragma mark - GetContractDocumentRemovalsResponse_ContractDocumentRestoration
+
+typedef GPB_ENUM(GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber) {
+  GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber_ModeratorId = 1,
+  GetContractDocumentRemovalsResponse_ContractDocumentRestoration_FieldNumber_RestoredAt = 2,
+};
+
+GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRestoration : GPBMessage
+
+/** The contract owner or moderator that restored the document */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *moderatorId;
+
+/** The time of the block that restored it, in milliseconds */
+@property(nonatomic, readwrite) uint64_t restoredAt;
+
+@end
+
 #pragma mark - GetContractDocumentRemovalsResponse_ContractDocumentRemoval
 
 typedef GPB_ENUM(GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber) {
@@ -3457,6 +3544,8 @@ typedef GPB_ENUM(GetContractDocumentRemovalsResponse_ContractDocumentRemoval_Fie
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_ModeratorId = 3,
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_RemovedAt = 4,
   GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Reason = 5,
+  GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_DocumentHash = 6,
+  GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_Restoration = 7,
 };
 
 GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRemoval : GPBMessage
@@ -3477,6 +3566,17 @@ GPB_FINAL @interface GetContractDocumentRemovalsResponse_ContractDocumentRemoval
 @property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *reason;
 /** Test to see if @c reason has been set. */
 @property(nonatomic, readwrite) BOOL hasReason;
+
+/** A 32-byte double SHA-256 of the document as it was serialized */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentHash;
+
+/**
+ * under its document type when it was removed: what a restore must
+ * bring back byte for byte
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetContractDocumentRemovalsResponse_ContractDocumentRestoration *restoration;
+/** Test to see if @c restoration has been set. */
+@property(nonatomic, readwrite) BOOL hasRestoration;
 
 @end
 

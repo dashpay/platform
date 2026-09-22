@@ -730,6 +730,7 @@ mod tests {
                     banlist: true,
                     suspensions: false,
                     moderators: Default::default(),
+                    warnings: false,
                 }),
                 ..DataContractConfigV2::default()
             });
@@ -765,6 +766,7 @@ mod tests {
                     banlist: true,
                     suspensions: false,
                     moderators: Default::default(),
+                    warnings: false,
                 }),
                 ..DataContractConfigV2::default()
             });

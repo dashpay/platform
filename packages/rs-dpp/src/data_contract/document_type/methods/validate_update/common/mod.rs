@@ -390,6 +390,22 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // The entry payload is part of every stored entry's value layout:
+        // adding, dropping or renaming a payload property would leave the
+        // existing entries undecodable (and their commitments unrecomputable).
+        if new_document_type.entry_payload() != self.entry_payload() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    "document type can not change its entryPayload: the listed properties are \
+                     the value layout of every stored entry"
+                        .to_string(),
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 
@@ -1361,6 +1377,118 @@ mod tests {
         }
 
         #[test]
+        fn should_return_invalid_result_when_entry_payload_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "note";
+
+            // Both types are valid indexOnly types over the same properties:
+            // one keeps `body` in every entry's value slot, the other keys
+            // by it as the terminal's last component. Every other config
+            // flag is equal, so `validate_config` reaches the payload check.
+            let payload_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                    },
+                    "body": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 16,
+                        "position": 1,
+                    }
+                },
+                "required": ["postId", "body"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                    }
+                ],
+                "entryPayload": ["body"],
+                "additionalProperties": false,
+            });
+            let keyed_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                    },
+                    "body": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 16,
+                        "position": 1,
+                    }
+                },
+                "required": ["postId", "body"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                        "terminal": ["$ownerId", "body"],
+                    }
+                ],
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let make_document_type = |schema: platform_value::Value| {
+                DocumentType::try_from_schema(
+                    data_contract_id,
+                    1,
+                    config.version(),
+                    document_type_name,
+                    schema,
+                    None,
+                    &BTreeMap::new(),
+                    &config,
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("document type should parse")
+            };
+
+            let old_document_type = make_document_type(payload_schema);
+            let new_document_type = make_document_type(keyed_schema);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message().starts_with("document type can not change its entryPayload")
+            );
+
+            // The unchanged pair passes the same check.
+            let result = old_document_type
+                .as_ref()
+                .validate_config(old_document_type.as_ref());
+            assert!(result.errors.is_empty(), "{:?}", result.errors);
+        }
+
+        #[test]
         fn should_return_invalid_result_when_range_countable_is_changed() {
             // documents_countable must remain equal across old/new so that
             // validate_config reaches the range_countable check below it.
@@ -1865,6 +1993,70 @@ mod tests {
                         BasicError::IncompatibleDocumentTypeSchemaError(e)
                     )] if e.operation() == "replace"
                         && e.property_path() == "/properties/toUserId/refersTo/type"
+                );
+            }
+        }
+        #[test]
+        fn should_return_invalid_result_when_a_contract_reference_requirement_changes() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_fields, new_fields, changed_path) in [
+                (
+                    platform_value!({ "type": "contract" }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "moderation": "elected" } }),
+                    "/properties/toUserId/refersTo/contractRequirements",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "moderation": "elected" } }),
+                    platform_value!({ "type": "contract" }),
+                    "/properties/toUserId/refersTo/contractRequirements",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 7200 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumAgeSeconds",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 60 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 61 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumSecondsSinceUpdate",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "other" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/owner",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": false } }),
+                    "/properties/toUserId/refersTo/contractRequirements/ownerProtected",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "readonly": true } }),
+                    "/properties/toUserId/refersTo/contractRequirements/readonly",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "keepsHistory": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/keepsHistory",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_fields), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_fields), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
                 );
             }
         }

@@ -10,9 +10,14 @@ use platform_serialization_derive::{
 };
 
 use crate::consensus::basic::decode::DecodingError;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::accessors::v1::DataContractV1Getters;
+use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
+use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::property_names;
+use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, OWNER_ID};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
@@ -27,7 +32,7 @@ use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub mod array;
 
@@ -84,6 +89,337 @@ pub struct ByteArrayPropertySizes {
     pub max_size: Option<u16>,
 }
 
+/// What a `contract` reference requires of the contract it points at, beyond its existence.
+///
+/// Declared as `refersTo: { "type": "contract", "contractRequirements": { ... } }`: each key names an
+/// aspect of the referenced contract and its value the requirement on it. Consensus checks the
+/// requirements when the referring document is written, against the contract it has already
+/// fetched for the existence check and the write itself (its owner and block time), so a
+/// requirement costs no further read. An unmet one refuses the write with
+/// `ReferencedContractRequirementNotMetError` (40135).
+#[derive(
+    Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContractReferenceRequirements {
+    /// The moderation the referenced contract must declare.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moderation: Option<ContractReferenceModeration>,
+    /// How long, in seconds, the referenced contract must have existed when the referring
+    /// document is written: its recorded creation time plus this many seconds must not be
+    /// after the block time. A contract that never recorded a creation time does not meet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_age_seconds: Option<u32>,
+    /// How long, in seconds, the referenced contract must have been unchanged when the
+    /// referring document is written: the later of its recorded creation and last update
+    /// times plus this many seconds must not be after the block time. A contract that never
+    /// recorded a creation time does not meet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_seconds_since_update: Option<u32>,
+    /// Who must own the referenced contract, relative to the writer of the referring document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<ContractReferenceOwner>,
+    /// Whether the referenced contract must be read-only (its config's `readonly`), a
+    /// contract that can never be updated again. Only `true` is declarable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readonly: Option<bool>,
+    /// Whether the referenced contract must keep its history (its config's `keepsHistory`).
+    /// Only `true` is declarable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keeps_history: Option<bool>,
+    /// Whether the elected moderation declaration of the referenced contract must protect
+    /// (`true`), or must not protect (`false`), the contract owner from the team, its
+    /// `ownerProtected`. Either value implies elected moderation: a contract with no
+    /// moderation, or with moderation of another kind, meets neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_protected: Option<bool>,
+}
+
+/// The write of a referring document, what a contract reference's requirements are checked
+/// against beside the referenced contract itself.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct ReferringWrite {
+    /// The `$ownerId` of the referring document: the owner of the transition writing it.
+    pub owner_id: Identifier,
+    /// The time of the block writing it.
+    pub block_time_ms: TimestampMillis,
+}
+
+/// Who a `contract` reference may require to own the referenced contract, relative to the
+/// writer of the referring document.
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+pub enum ContractReferenceOwner {
+    /// The writer itself: the contract's owner is the `$ownerId` of the referring document,
+    /// a write gate like the `$ownerId` property agreement of a document reference.
+    #[serde(rename = "self")]
+    Writer,
+    /// Anyone but the writer.
+    #[serde(rename = "other")]
+    Other,
+}
+
+impl ContractReferenceOwner {
+    /// The wire name, the value of `contractRequirements.owner`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ContractReferenceOwner::Writer => "self",
+            ContractReferenceOwner::Other => "other",
+        }
+    }
+
+    /// The owner relation a wire name names, `None` for any other name.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            "self" => Some(ContractReferenceOwner::Writer),
+            "other" => Some(ContractReferenceOwner::Other),
+            _ => None,
+        }
+    }
+
+    /// Whether `contract`, owned as it is, meets this for a referring document owned by
+    /// `writer_id`.
+    pub fn is_met_by(&self, contract: &DataContract, writer_id: &Identifier) -> bool {
+        match self {
+            ContractReferenceOwner::Writer => contract.owner_id() == *writer_id,
+            ContractReferenceOwner::Other => contract.owner_id() != *writer_id,
+        }
+    }
+}
+
+/// The moderation a `contract` reference may require of the referenced contract.
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum ContractReferenceModeration {
+    /// The contract declares an elected moderation team (`ContractModerators::Elected`),
+    /// whatever its interim, whether a team is seated yet and whether its election delay
+    /// has passed. A charter proposal declares this, so teams can form during the notice
+    /// the contract gives before its first election.
+    Elected,
+    /// The contract declares an elected moderation team whose own `electionDelay`, counted
+    /// from the contract's creation, has passed at the block time of the write, or which
+    /// declares no delay. The delay is the contract's, not the reference's: the charter
+    /// that opens the contest declares this and carries no number.
+    ElectionOpen,
+}
+
+impl ContractReferenceModeration {
+    /// The wire name, the value of `contractRequirements.moderation`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ContractReferenceModeration::Elected => "elected",
+            ContractReferenceModeration::ElectionOpen => "electionOpen",
+        }
+    }
+
+    /// The wire names, for the message that refuses another.
+    pub const WIRE_NAMES: &'static [&'static str] = &["elected", "electionOpen"];
+
+    /// The moderation a wire name names, `None` for any other name.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            "elected" => Some(ContractReferenceModeration::Elected),
+            "electionOpen" => Some(ContractReferenceModeration::ElectionOpen),
+            _ => None,
+        }
+    }
+
+    /// How the requirement reads after "a contract with".
+    pub fn describe(&self) -> &'static str {
+        match self {
+            ContractReferenceModeration::Elected => "elected moderation",
+            ContractReferenceModeration::ElectionOpen => "its moderation election open",
+        }
+    }
+
+    /// Whether `contract` declares what this requires at `block_time_ms`, the time of the
+    /// block writing the referring document.
+    pub fn is_met_by(&self, contract: &DataContract, block_time_ms: TimestampMillis) -> bool {
+        let elected = contract
+            .config()
+            .moderation()
+            .and_then(|moderation| moderation.moderators.elected());
+        match self {
+            ContractReferenceModeration::Elected => elected.is_some(),
+            ContractReferenceModeration::ElectionOpen => elected.is_some_and(|elected| {
+                elected.election_is_open(contract.created_at(), block_time_ms)
+            }),
+        }
+    }
+}
+
+/// One requirement of a [`ContractReferenceRequirements`] declaration, named the way the
+/// declaration spells it, for the error that reports it unmet.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ContractReferenceRequirement {
+    Moderation(ContractReferenceModeration),
+    MinimumAgeSeconds(u32),
+    MinimumSecondsSinceUpdate(u32),
+    Owner(ContractReferenceOwner),
+    Readonly(bool),
+    KeepsHistory(bool),
+    OwnerProtected(bool),
+}
+
+impl ContractReferenceRequirement {
+    /// The `contractRequirements` key the requirement was declared under.
+    pub fn field(&self) -> &'static str {
+        match self {
+            ContractReferenceRequirement::Moderation(_) => property_names::MODERATION,
+            ContractReferenceRequirement::MinimumAgeSeconds(_) => {
+                property_names::MINIMUM_AGE_SECONDS
+            }
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(_) => {
+                property_names::MINIMUM_SECONDS_SINCE_UPDATE
+            }
+            ContractReferenceRequirement::Owner(_) => property_names::OWNER,
+            ContractReferenceRequirement::Readonly(_) => property_names::READONLY,
+            ContractReferenceRequirement::KeepsHistory(_) => property_names::KEEPS_HISTORY,
+            ContractReferenceRequirement::OwnerProtected(_) => property_names::OWNER_PROTECTED,
+        }
+    }
+
+    /// The value the declaration requires, as spelled in the schema.
+    pub fn required(&self) -> String {
+        match self {
+            ContractReferenceRequirement::Moderation(moderation) => moderation.as_str().to_string(),
+            ContractReferenceRequirement::MinimumAgeSeconds(seconds)
+            | ContractReferenceRequirement::MinimumSecondsSinceUpdate(seconds) => {
+                seconds.to_string()
+            }
+            ContractReferenceRequirement::Owner(owner) => owner.as_str().to_string(),
+            ContractReferenceRequirement::Readonly(flag)
+            | ContractReferenceRequirement::KeepsHistory(flag)
+            | ContractReferenceRequirement::OwnerProtected(flag) => flag.to_string(),
+        }
+    }
+
+    /// Whether `contract` meets this requirement for `write`, the write of the referring
+    /// document.
+    pub fn is_met_by(&self, contract: &DataContract, write: ReferringWrite) -> bool {
+        match self {
+            ContractReferenceRequirement::Moderation(moderation) => {
+                moderation.is_met_by(contract, write.block_time_ms)
+            }
+            ContractReferenceRequirement::MinimumAgeSeconds(seconds) => {
+                Self::minimum_age_is_met(contract.created_at(), *seconds, write.block_time_ms)
+            }
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(seconds) => {
+                Self::minimum_age_is_met(
+                    Self::last_change_time(contract),
+                    *seconds,
+                    write.block_time_ms,
+                )
+            }
+            ContractReferenceRequirement::Owner(owner) => {
+                owner.is_met_by(contract, &write.owner_id)
+            }
+            ContractReferenceRequirement::Readonly(required) => {
+                contract.config().readonly() == *required
+            }
+            ContractReferenceRequirement::KeepsHistory(required) => {
+                contract.config().keeps_history() == *required
+            }
+            // Either value needs an elected declaration to read the flag from: a contract
+            // without one meets neither
+            ContractReferenceRequirement::OwnerProtected(required) => contract
+                .config()
+                .moderation()
+                .and_then(|moderation| moderation.moderators.elected())
+                .is_some_and(|elected| elected.owner_protected == *required),
+        }
+    }
+
+    /// Whether something that happened at `since` is at least `minimum_seconds` in the past
+    /// at `block_time_ms`. A contract without the recorded time (one created before contracts
+    /// recorded it) is of unknown age and does not meet any minimum.
+    pub fn minimum_age_is_met(
+        since: Option<TimestampMillis>,
+        minimum_seconds: u32,
+        block_time_ms: TimestampMillis,
+    ) -> bool {
+        let Some(since) = since else {
+            return false;
+        };
+        let old_enough_at =
+            since.saturating_add(TimestampMillis::from(minimum_seconds).saturating_mul(1000));
+        block_time_ms >= old_enough_at
+    }
+
+    /// When `contract` last changed: its last update, or its creation for a contract never
+    /// updated. `None` when it recorded neither.
+    pub fn last_change_time(contract: &DataContract) -> Option<TimestampMillis> {
+        match (contract.created_at(), contract.updated_at()) {
+            (Some(created_at), Some(updated_at)) => Some(created_at.max(updated_at)),
+            (created_at, updated_at) => updated_at.or(created_at),
+        }
+    }
+}
+
+impl ContractReferenceRequirements {
+    /// Whether the declaration requires nothing beyond the contract's existence.
+    pub fn is_empty(&self) -> bool {
+        self.moderation.is_none()
+            && self.minimum_age_seconds.is_none()
+            && self.minimum_seconds_since_update.is_none()
+            && self.owner.is_none()
+            && self.readonly.is_none()
+            && self.keeps_history.is_none()
+            && self.owner_protected.is_none()
+    }
+
+    /// The requirements, in declaration order.
+    pub fn requirements(&self) -> impl Iterator<Item = ContractReferenceRequirement> + '_ {
+        self.moderation
+            .into_iter()
+            .map(ContractReferenceRequirement::Moderation)
+            .chain(
+                self.minimum_age_seconds
+                    .into_iter()
+                    .map(ContractReferenceRequirement::MinimumAgeSeconds),
+            )
+            .chain(
+                self.minimum_seconds_since_update
+                    .into_iter()
+                    .map(ContractReferenceRequirement::MinimumSecondsSinceUpdate),
+            )
+            .chain(
+                self.owner
+                    .into_iter()
+                    .map(ContractReferenceRequirement::Owner),
+            )
+            .chain(
+                self.readonly
+                    .into_iter()
+                    .map(ContractReferenceRequirement::Readonly),
+            )
+            .chain(
+                self.keeps_history
+                    .into_iter()
+                    .map(ContractReferenceRequirement::KeepsHistory),
+            )
+            .chain(
+                self.owner_protected
+                    .into_iter()
+                    .map(ContractReferenceRequirement::OwnerProtected),
+            )
+    }
+
+    /// The first requirement `contract` does not meet for `write`, the write of the referring
+    /// document, `None` when it meets them all.
+    pub fn first_unmet_by(
+        &self,
+        contract: &DataContract,
+        write: ReferringWrite,
+    ) -> Option<ContractReferenceRequirement> {
+        self.requirements()
+            .find(|requirement| !requirement.is_met_by(contract, write))
+    }
+}
+
 // This enum is embedded in consensus errors, so it is consensus-serialized.
 // @append_only
 #[derive(
@@ -102,7 +438,15 @@ pub struct ByteArrayPropertySizes {
 #[serde(rename_all = "lowercase")]
 pub enum DocumentPropertyReferenceTarget {
     Identity,
-    Contract,
+    /// A data contract, which must exist when the referring document is written and meet the
+    /// declared [`ContractReferenceRequirements`], if any.
+    Contract {
+        #[serde(
+            default,
+            skip_serializing_if = "ContractReferenceRequirements::is_empty"
+        )]
+        contract_requirements: ContractReferenceRequirements,
+    },
     Token,
     /// A document of a document type whose documents can never be deleted
     /// (`canBeDeleted: false`). Only such document types may be referenced:
@@ -221,7 +565,7 @@ impl DocumentPropertyReferenceTarget {
                 permanent: false,
             }),
             DocumentPropertyReferenceTarget::Identity
-            | DocumentPropertyReferenceTarget::Contract
+            | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
             | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => None,
         }
@@ -267,7 +611,37 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
-            DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements,
+            } => {
+                write!(f, "contract")?;
+                if let Some(moderation) = contract_requirements.moderation {
+                    write!(f, " with {}", moderation.describe())?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_age_seconds {
+                    write!(f, " at least {seconds} seconds old")?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_seconds_since_update {
+                    write!(f, " unchanged for at least {seconds} seconds")?;
+                }
+                match contract_requirements.owner {
+                    Some(ContractReferenceOwner::Writer) => write!(f, " owned by the writer")?,
+                    Some(ContractReferenceOwner::Other) => write!(f, " not owned by the writer")?,
+                    None => {}
+                }
+                if contract_requirements.readonly == Some(true) {
+                    write!(f, " read-only")?;
+                }
+                if contract_requirements.keeps_history == Some(true) {
+                    write!(f, " keeping history")?;
+                }
+                match contract_requirements.owner_protected {
+                    Some(true) => write!(f, " with the owner protected")?,
+                    Some(false) => write!(f, " with the owner unprotected")?,
+                    None => {}
+                }
+                Ok(())
+            }
             DocumentPropertyReferenceTarget::Token => write!(f, "token"),
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
@@ -558,6 +932,39 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Some(32)
             }
+        }
+    }
+
+    /// The width every value of this type encodes to as a tree key
+    /// ([`Self::encode_value_for_tree_keys`]), when that width is fixed:
+    /// the integer, float, boolean, date and identifier encodings, and a
+    /// byte array whose bounds pin one size. `None` for strings (their
+    /// bound counts characters), unbounded or variable-size byte arrays,
+    /// objects and arrays. The one width the composite indexOnly terminal
+    /// rules, the walkers and synthesis all split member keys by.
+    pub fn fixed_tree_key_width(&self) -> Option<u16> {
+        match self {
+            DocumentPropertyType::U128 | DocumentPropertyType::I128 => Some(16),
+            DocumentPropertyType::U64
+            | DocumentPropertyType::I64
+            | DocumentPropertyType::F64
+            | DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::U32 | DocumentPropertyType::I32 => Some(4),
+            DocumentPropertyType::U16 | DocumentPropertyType::I16 => Some(2),
+            DocumentPropertyType::U8 | DocumentPropertyType::I8 | DocumentPropertyType::Boolean => {
+                Some(1)
+            }
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
+                (Some(min), Some(max)) if min == max && min > 0 => Some(min),
+                _ => None,
+            },
+            DocumentPropertyType::String(_)
+            | DocumentPropertyType::Object(_)
+            | DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_) => None,
         }
     }
 
@@ -7478,6 +7885,372 @@ mod tests {
     }
 
     #[test]
+    fn should_meet_a_minimum_age_from_the_recorded_creation_time_at_the_block_time() {
+        let created_at: TimestampMillis = 1_700_000_000_000;
+        let one_hour_ms: TimestampMillis = 3_600_000;
+        // One millisecond short of the minimum is not old enough; the exact minimum is
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            created_at + one_hour_ms - 1
+        ));
+        assert!(ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            created_at + one_hour_ms
+        ));
+        assert!(ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            TimestampMillis::MAX
+        ));
+        // A contract that never recorded its creation time is of unknown age
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            None,
+            1,
+            TimestampMillis::MAX
+        ));
+        // The bound saturates rather than wrapping around into the past
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            Some(TimestampMillis::MAX - 1),
+            u32::MAX,
+            TimestampMillis::MAX - 1
+        ));
+
+        let requirements = ContractReferenceRequirements {
+            moderation: None,
+            minimum_age_seconds: Some(3600),
+            minimum_seconds_since_update: Some(60),
+            owner: None,
+            readonly: None,
+            keeps_history: None,
+            owner_protected: None,
+        };
+        assert_eq!(
+            requirements.requirements().collect::<Vec<_>>(),
+            vec![
+                ContractReferenceRequirement::MinimumAgeSeconds(3600),
+                ContractReferenceRequirement::MinimumSecondsSinceUpdate(60)
+            ]
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumAgeSeconds(3600).field(),
+            "minimumAgeSeconds"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumAgeSeconds(3600).required(),
+            "3600"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(60).field(),
+            "minimumSecondsSinceUpdate"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(60).required(),
+            "60"
+        );
+    }
+
+    #[test]
+    fn should_meet_an_owner_requirement_from_the_referenced_contract_owner_and_the_writer() {
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+
+        let platform_version = PlatformVersion::latest();
+        let contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let owner_id = contract.owner_id();
+        let someone_else = Identifier::from([0x42; 32]);
+        assert_ne!(owner_id, someone_else);
+
+        assert!(ContractReferenceOwner::Writer.is_met_by(&contract, &owner_id));
+        assert!(!ContractReferenceOwner::Writer.is_met_by(&contract, &someone_else));
+        assert!(!ContractReferenceOwner::Other.is_met_by(&contract, &owner_id));
+        assert!(ContractReferenceOwner::Other.is_met_by(&contract, &someone_else));
+
+        assert_eq!(ContractReferenceOwner::Writer.as_str(), "self");
+        assert_eq!(ContractReferenceOwner::Other.as_str(), "other");
+        assert_eq!(
+            ContractReferenceOwner::from_wire_name("self"),
+            Some(ContractReferenceOwner::Writer)
+        );
+        assert_eq!(
+            ContractReferenceOwner::from_wire_name("other"),
+            Some(ContractReferenceOwner::Other)
+        );
+        assert_eq!(ContractReferenceOwner::from_wire_name("owner"), None);
+
+        let requirement = ContractReferenceRequirement::Owner(ContractReferenceOwner::Writer);
+        assert_eq!(requirement.field(), "owner");
+        assert_eq!(requirement.required(), "self");
+        assert_eq!(
+            ContractReferenceRequirement::Owner(ContractReferenceOwner::Other).required(),
+            "other"
+        );
+
+        // The first unmet requirement is reported in declaration order: an owner requirement
+        // is checked after the moderation and duration ones
+        let requirements = ContractReferenceRequirements {
+            owner: Some(ContractReferenceOwner::Other),
+            ..Default::default()
+        };
+        assert_eq!(
+            requirements.requirements().collect::<Vec<_>>(),
+            vec![ContractReferenceRequirement::Owner(
+                ContractReferenceOwner::Other
+            )]
+        );
+        let by_owner = ReferringWrite {
+            owner_id,
+            block_time_ms: 0,
+        };
+        let by_someone_else = ReferringWrite {
+            owner_id: someone_else,
+            block_time_ms: 0,
+        };
+        assert_eq!(
+            requirements.first_unmet_by(&contract, by_owner),
+            Some(ContractReferenceRequirement::Owner(
+                ContractReferenceOwner::Other
+            ))
+        );
+        assert_eq!(
+            requirements.first_unmet_by(&contract, by_someone_else),
+            None
+        );
+        let both = ContractReferenceRequirements {
+            minimum_age_seconds: Some(1),
+            owner: Some(ContractReferenceOwner::Other),
+            ..Default::default()
+        };
+        assert_eq!(
+            both.first_unmet_by(&contract, by_owner),
+            Some(ContractReferenceRequirement::MinimumAgeSeconds(1))
+        );
+    }
+
+    #[test]
+    fn should_meet_a_config_flag_requirement_from_the_referenced_contract_config() {
+        use crate::data_contract::accessors::v0::DataContractV0Setters;
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+            ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        };
+        use crate::data_contract::config::v0::DataContractConfigSettersV0;
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+        use std::collections::BTreeSet;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let write = ReferringWrite {
+            owner_id: Identifier::from([0x42; 32]),
+            block_time_ms: 0,
+        };
+        let readonly = ContractReferenceRequirement::Readonly(true);
+        let keeps_history = ContractReferenceRequirement::KeepsHistory(true);
+        let protected = ContractReferenceRequirement::OwnerProtected(true);
+        let unprotected = ContractReferenceRequirement::OwnerProtected(false);
+
+        // The fixture is neither read-only nor keeping history, and declares no moderation:
+        // it meets none of the flags, whichever value the owner protection requires
+        assert!(!readonly.is_met_by(&contract, write));
+        assert!(!keeps_history.is_met_by(&contract, write));
+        assert!(!protected.is_met_by(&contract, write));
+        assert!(!unprotected.is_met_by(&contract, write));
+
+        let mut config = contract.config().clone();
+        config.set_readonly(true);
+        config.set_keeps_history(true);
+        contract.set_config(config);
+        assert!(readonly.is_met_by(&contract, write));
+        assert!(keeps_history.is_met_by(&contract, write));
+
+        // Appointed moderation still has no owner protection to read
+        contract.set_config(contract.config().clone().with_moderation(Some(
+            ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                warnings: false,
+                moderators: ContractModerators::AppointedModerators(BTreeSet::from([
+                    Identifier::from([0x77; 32]),
+                ])),
+            },
+        )));
+        assert!(!protected.is_met_by(&contract, write));
+        assert!(!unprotected.is_met_by(&contract, write));
+
+        for owner_protected in [true, false] {
+            contract.set_config(contract.config().clone().with_moderation(Some(
+                ContractModerationConfig {
+                    banlist: true,
+                    suspensions: false,
+                    warnings: false,
+                    moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                        join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                        vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                        challenge_cool_down: 1_209_600,
+                        election_delay: None,
+                        moderated_document_types: BTreeMap::from([(
+                            "profile".to_string(),
+                            BTreeSet::from([ModerationAbility::Ban]),
+                        )]),
+                        interim: InterimModerators::ContractOwner,
+                        owner_protected,
+                    })),
+                },
+            )));
+            assert_eq!(protected.is_met_by(&contract, write), owner_protected);
+            assert_eq!(unprotected.is_met_by(&contract, write), !owner_protected);
+        }
+
+        assert_eq!(readonly.field(), "readonly");
+        assert_eq!(readonly.required(), "true");
+        assert_eq!(keeps_history.field(), "keepsHistory");
+        assert_eq!(keeps_history.required(), "true");
+        assert_eq!(protected.field(), "ownerProtected");
+        assert_eq!(protected.required(), "true");
+        assert_eq!(unprotected.required(), "false");
+
+        // The contract is left read-only, keeping history and with its owner unprotected:
+        // requiring the protection is the one requirement it does not meet
+        let requirements = ContractReferenceRequirements {
+            readonly: Some(true),
+            keeps_history: Some(true),
+            owner_protected: Some(true),
+            ..Default::default()
+        };
+        assert!(!requirements.is_empty());
+        assert_eq!(
+            requirements.requirements().collect::<Vec<_>>(),
+            vec![readonly, keeps_history, protected]
+        );
+        assert_eq!(
+            requirements.first_unmet_by(&contract, write),
+            Some(protected)
+        );
+        let met = ContractReferenceRequirements {
+            owner_protected: Some(false),
+            ..requirements
+        };
+        assert_eq!(met.first_unmet_by(&contract, write), None);
+    }
+
+    #[test]
+    fn should_meet_election_open_when_the_contract_declares_no_delay_or_the_delay_passed() {
+        use crate::data_contract::accessors::v0::DataContractV0Setters;
+        use crate::data_contract::accessors::v1::DataContractV1Setters;
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+            ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        };
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+        use std::collections::BTreeSet;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let created_at: TimestampMillis = 1_700_000_000_000;
+        contract.set_created_at(Some(created_at));
+
+        let elected = ContractReferenceModeration::Elected;
+        let open = ContractReferenceModeration::ElectionOpen;
+
+        // No moderation at all: neither is met
+        assert!(!elected.is_met_by(&contract, created_at));
+        assert!(!open.is_met_by(&contract, created_at));
+
+        let declare = |contract: &mut DataContract, election_delay: Option<u32>| {
+            let config =
+                contract
+                    .config()
+                    .clone()
+                    .with_moderation(Some(ContractModerationConfig {
+                        banlist: true,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: 1_209_600,
+                            election_delay,
+                            moderated_document_types: BTreeMap::from([(
+                                "profile".to_string(),
+                                BTreeSet::from([ModerationAbility::Ban]),
+                            )]),
+                            interim: InterimModerators::ContractOwner,
+                            owner_protected: false,
+                        })),
+                    }));
+            contract.set_config(config);
+        };
+
+        // Elected without a delay: open at once
+        declare(&mut contract, None);
+        assert!(elected.is_met_by(&contract, created_at));
+        assert!(open.is_met_by(&contract, created_at));
+
+        // Elected with a delay: elected at once, open once the delay passed
+        declare(&mut contract, Some(3600));
+        assert!(elected.is_met_by(&contract, created_at));
+        assert!(!open.is_met_by(&contract, created_at + 3_599_999));
+        assert!(open.is_met_by(&contract, created_at + 3_600_000));
+
+        // A delay on a contract of unknown age never opens
+        contract.set_created_at(None);
+        assert!(!open.is_met_by(&contract, TimestampMillis::MAX));
+
+        assert_eq!(
+            ContractReferenceModeration::from_wire_name("electionOpen"),
+            Some(ContractReferenceModeration::ElectionOpen)
+        );
+        assert_eq!(
+            ContractReferenceModeration::ElectionOpen.as_str(),
+            "electionOpen"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::Moderation(ContractReferenceModeration::ElectionOpen)
+                .required(),
+            "electionOpen"
+        );
+    }
+
+    #[test]
+    fn should_take_the_last_change_time_from_the_later_of_creation_and_update() {
+        use crate::data_contract::accessors::v1::DataContractV1Setters;
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        contract.set_created_at(None);
+        contract.set_updated_at(None);
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            None
+        );
+
+        contract.set_created_at(Some(1_000));
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(1_000)
+        );
+
+        contract.set_updated_at(Some(5_000));
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(5_000)
+        );
+
+        // A recorded update alone counts as the last change
+        contract.set_created_at(None);
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(5_000)
+        );
+    }
+
+    #[test]
     fn should_display_reference_targets() {
         let contract_id = Identifier::from([7u8; 32]);
 
@@ -7486,8 +8259,115 @@ mod tests {
             "identity"
         );
         assert_eq!(
-            DocumentPropertyReferenceTarget::Contract.to_string(),
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: Default::default()
+            }
+            .to_string(),
             "contract"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    minimum_age_seconds: None,
+                    minimum_seconds_since_update: None,
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
+                },
+            }
+            .to_string(),
+            "contract with elected moderation"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    minimum_age_seconds: Some(604_800),
+                    minimum_seconds_since_update: Some(86_400),
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
+                },
+            }
+            .to_string(),
+            "contract with elected moderation at least 604800 seconds old unchanged for at least 86400 seconds"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: None,
+                    minimum_age_seconds: Some(1),
+                    minimum_seconds_since_update: None,
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
+                },
+            }
+            .to_string(),
+            "contract at least 1 seconds old"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    owner: Some(ContractReferenceOwner::Writer),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract owned by the writer"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    owner: Some(ContractReferenceOwner::Other),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract with elected moderation not owned by the writer"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    readonly: Some(true),
+                    keeps_history: Some(true),
+                    owner_protected: Some(true),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract read-only keeping history with the owner protected"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    owner: Some(ContractReferenceOwner::Other),
+                    owner_protected: Some(false),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract not owned by the writer with the owner unprotected"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::ElectionOpen),
+                    minimum_age_seconds: None,
+                    minimum_seconds_since_update: None,
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
+                },
+            }
+            .to_string(),
+            "contract with its moderation election open"
         );
         assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
         assert_eq!(
@@ -7570,7 +8450,9 @@ mod tests {
     fn reference_targets_are_exhaustively_mirrored() {
         let targets = [
             DocumentPropertyReferenceTarget::Identity,
-            DocumentPropertyReferenceTarget::Contract,
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: Default::default(),
+            },
             DocumentPropertyReferenceTarget::Token,
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
@@ -7591,7 +8473,7 @@ mod tests {
             // No `_ =>` arm: a new variant is a compile error.
             let json_tag = match target {
                 DocumentPropertyReferenceTarget::Identity => "identity",
-                DocumentPropertyReferenceTarget::Contract => "contract",
+                DocumentPropertyReferenceTarget::Contract { .. } => "contract",
                 DocumentPropertyReferenceTarget::Token => "token",
                 DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
                 DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",

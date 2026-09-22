@@ -4,8 +4,9 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    property_names, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentType,
+    property_names, ContractReferenceModeration, ContractReferenceOwner,
+    ContractReferenceRequirements, DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -367,12 +368,25 @@ fn apply_property_reference_v0(
 
     let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
 
-    let target = match refers_to_map
+    let reference_type = refers_to_map
         .get_str(property_names::TYPE)
-        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+
+    // Requirements on the referenced contract belong to contract references alone
+    if reference_type != "contract"
+        && refers_to_map.contains_key(property_names::CONTRACT_REQUIREMENTS)
     {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{} refersTo does not take contractRequirements",
+            reference_type
+        )));
+    }
+
+    let target = match reference_type {
         "identity" => DocumentPropertyReferenceTarget::Identity,
-        "contract" => DocumentPropertyReferenceTarget::Contract,
+        "contract" => DocumentPropertyReferenceTarget::Contract {
+            contract_requirements: parse_contract_reference_requirements(&refers_to_map)?,
+        },
         "token" => DocumentPropertyReferenceTarget::Token,
         // The two document targets share one declaration shape; they differ
         // only in whether the referenced document type must forbid deletion,
@@ -510,6 +524,115 @@ fn apply_property_reference_v0(
     }
 
     Ok(DocumentPropertyType::IdentifierWithReference(target))
+}
+
+/// The `contractRequirements` of a `contract` reference: each key an aspect of the referenced
+/// contract with a closed set of values (`moderation`, `owner`, the config flags), or a bound
+/// on it (`minimumAgeSeconds`), at least one when the object is given at all.
+fn parse_contract_reference_requirements(
+    refers_to_map: &BTreeMap<String, &Value>,
+) -> Result<ContractReferenceRequirements, DataContractError> {
+    let Some(fields_value) = refers_to_map.get(property_names::CONTRACT_REQUIREMENTS) else {
+        return Ok(ContractReferenceRequirements::default());
+    };
+    let fields_map = fields_value.to_btree_ref_string_map()?;
+    if fields_map.is_empty() {
+        return Err(DataContractError::InvalidContractStructure(
+            "contract refersTo contractRequirements must declare at least one requirement"
+                .to_string(),
+        ));
+    }
+    let mut fields = ContractReferenceRequirements::default();
+    for (field, value) in fields_map {
+        match field.as_str() {
+            property_names::MODERATION => {
+                let name = value.as_text().ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(
+                        "contract refersTo contractRequirements moderation must be a string"
+                            .to_string(),
+                    )
+                })?;
+                fields.moderation = Some(ContractReferenceModeration::from_wire_name(name).ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(format!(
+                        "contract refersTo contractRequirements moderation {name:?} is unknown, expected one of {:?}",
+                        ContractReferenceModeration::WIRE_NAMES
+                    ))
+                })?);
+            }
+            property_names::MINIMUM_AGE_SECONDS => {
+                fields.minimum_age_seconds = Some(parse_contract_reference_seconds(&field, value)?);
+            }
+            property_names::MINIMUM_SECONDS_SINCE_UPDATE => {
+                fields.minimum_seconds_since_update =
+                    Some(parse_contract_reference_seconds(&field, value)?);
+            }
+            property_names::OWNER => {
+                let name = value.as_text().ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(
+                        "contract refersTo contractRequirements owner must be a string".to_string(),
+                    )
+                })?;
+                fields.owner = Some(ContractReferenceOwner::from_wire_name(name).ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(format!(
+                        "contract refersTo contractRequirements owner {name:?} is unknown, expected \"self\" or \"other\""
+                    ))
+                })?);
+            }
+            property_names::READONLY => {
+                fields.readonly = Some(parse_contract_reference_true(&field, value)?);
+            }
+            property_names::KEEPS_HISTORY => {
+                fields.keeps_history = Some(parse_contract_reference_true(&field, value)?);
+            }
+            property_names::OWNER_PROTECTED => {
+                fields.owner_protected = Some(parse_contract_reference_bool(&field, value)?);
+            }
+            other => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "contract refersTo contractRequirements {other:?} is unknown"
+                )));
+            }
+        }
+    }
+    Ok(fields)
+}
+
+/// A duration requirement of a `contract` reference (`minimumAgeSeconds`,
+/// `minimumSecondsSinceUpdate`): a whole number of seconds from 1 to `u32::MAX`.
+fn parse_contract_reference_seconds(field: &str, value: &Value) -> Result<u32, DataContractError> {
+    let seconds: u32 = value.to_integer().map_err(|_| {
+        DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be an integer from 1 to 4294967295"
+        ))
+    })?;
+    if seconds == 0 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be at least 1"
+        )));
+    }
+    Ok(seconds)
+}
+
+/// A boolean requirement of a `contract` reference (`ownerProtected`): `true` or `false`.
+fn parse_contract_reference_bool(field: &str, value: &Value) -> Result<bool, DataContractError> {
+    value.as_bool().ok_or_else(|| {
+        DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be a boolean"
+        ))
+    })
+}
+
+/// A flag requirement of a `contract` reference (`readonly`, `keepsHistory`): only `true`
+/// requires anything, so `false` is refused rather than declared as a requirement that
+/// requires nothing.
+fn parse_contract_reference_true(field: &str, value: &Value) -> Result<bool, DataContractError> {
+    if parse_contract_reference_bool(field, value)? {
+        Ok(true)
+    } else {
+        Err(DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be true"
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -984,6 +1107,360 @@ mod tests {
                 }
             )
         );
+    }
+
+    fn contract_reference_schema(refers_to: serde_json::Value) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "targetContractId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": refers_to
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    fn contract_reference_target(refers_to: serde_json::Value) -> DocumentPropertyType {
+        try_document_type_from_schema(contract_reference_schema(refers_to))
+            .expect("should parse")
+            .as_ref()
+            .flattened_properties()
+            .get("targetContractId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present")
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_without_contract_requirements_as_no_requirement() {
+        assert_eq!(
+            contract_reference_target(json!({ "type": "contract" })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements::default(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_elected_moderation() {
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "moderation": "elected" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::Elected),
+                        minimum_age_seconds: None,
+                        minimum_seconds_since_update: None,
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_the_moderation_election_open() {
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "moderation": "electionOpen" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::ElectionOpen),
+                        minimum_age_seconds: None,
+                        minimum_seconds_since_update: None,
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_a_minimum_age_or_time_since_update() {
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "minimumAgeSeconds": 604800 }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: None,
+                        minimum_age_seconds: Some(604_800),
+                        minimum_seconds_since_update: None,
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
+                    },
+                }
+            )
+        );
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "minimumSecondsSinceUpdate": 86400 }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: None,
+                        minimum_age_seconds: None,
+                        minimum_seconds_since_update: Some(86_400),
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
+                    },
+                }
+            )
+        );
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": {
+                    "moderation": "elected",
+                    "minimumAgeSeconds": u32::MAX,
+                    "minimumSecondsSinceUpdate": 1
+                }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::Elected),
+                        minimum_age_seconds: Some(u32::MAX),
+                        minimum_seconds_since_update: Some(1),
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_an_owner_relation() {
+        for (name, owner) in [
+            ("self", ContractReferenceOwner::Writer),
+            ("other", ContractReferenceOwner::Other),
+        ] {
+            assert_eq!(
+                contract_reference_target(json!({
+                    "type": "contract",
+                    "contractRequirements": { "owner": name }
+                })),
+                DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::Contract {
+                        contract_requirements: ContractReferenceRequirements {
+                            owner: Some(owner),
+                            ..Default::default()
+                        },
+                    }
+                )
+            );
+        }
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "moderation": "elected", "owner": "other" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::Elected),
+                        owner: Some(ContractReferenceOwner::Other),
+                        ..Default::default()
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_config_flags() {
+        for (requirements, expected) in [
+            (
+                json!({ "readonly": true }),
+                ContractReferenceRequirements {
+                    readonly: Some(true),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "keepsHistory": true }),
+                ContractReferenceRequirements {
+                    keeps_history: Some(true),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "ownerProtected": true }),
+                ContractReferenceRequirements {
+                    owner_protected: Some(true),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "ownerProtected": false }),
+                ContractReferenceRequirements {
+                    owner_protected: Some(false),
+                    ..Default::default()
+                },
+            ),
+            (
+                json!({ "moderation": "elected", "readonly": true, "keepsHistory": true, "ownerProtected": false }),
+                ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    readonly: Some(true),
+                    keeps_history: Some(true),
+                    owner_protected: Some(false),
+                    ..Default::default()
+                },
+            ),
+        ] {
+            assert_eq!(
+                contract_reference_target(json!({
+                    "type": "contract",
+                    "contractRequirements": requirements
+                })),
+                DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::Contract {
+                        contract_requirements: expected,
+                    }
+                ),
+                "{requirements}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_a_config_flag_requirement_that_is_not_a_boolean_or_requires_nothing() {
+        for (field, value, fragment) in [
+            ("readonly", json!(false), "readonly must be true"),
+            ("readonly", json!("true"), "readonly must be a boolean"),
+            ("readonly", json!(1), "readonly must be a boolean"),
+            ("keepsHistory", json!(false), "keepsHistory must be true"),
+            (
+                "keepsHistory",
+                json!("true"),
+                "keepsHistory must be a boolean",
+            ),
+            (
+                "ownerProtected",
+                json!("true"),
+                "ownerProtected must be a boolean",
+            ),
+            (
+                "ownerProtected",
+                json!(0),
+                "ownerProtected must be a boolean",
+            ),
+            (
+                "ownerProtected",
+                json!(null),
+                "ownerProtected must be a boolean",
+            ),
+        ] {
+            let refers_to = json!({
+                "type": "contract",
+                "contractRequirements": { field: value }
+            });
+            let err = try_document_type_from_schema(contract_reference_schema(refers_to.clone()))
+                .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(fragment),
+                "{refers_to}: expected {fragment:?}, got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_a_duration_requirement_that_is_zero_negative_too_large_or_not_an_integer() {
+        for field in ["minimumAgeSeconds", "minimumSecondsSinceUpdate"] {
+            for (seconds, fragment) in [
+                (json!(0), "must be at least 1"),
+                (json!(-1), "must be an integer"),
+                (json!(u64::from(u32::MAX) + 1), "must be an integer"),
+                (json!(1.5), "must be an integer"),
+                (json!("3600"), "must be an integer"),
+            ] {
+                let refers_to = json!({
+                    "type": "contract",
+                    "contractRequirements": { field: seconds }
+                });
+                let err =
+                    try_document_type_from_schema(contract_reference_schema(refers_to.clone()))
+                        .expect_err("should be refused");
+                assert!(
+                    err.to_string().contains(fragment) && err.to_string().contains(field),
+                    "{refers_to}: expected {fragment:?} naming {field}, got {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_contract_requirements_that_are_empty_unknown_or_on_another_type() {
+        for (refers_to, fragment) in [
+            (
+                json!({ "type": "contract", "contractRequirements": {} }),
+                "at least one requirement",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "moderation": "appointed" } }),
+                "is unknown",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "moderation": 1 } }),
+                "must be a string",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "tokens": "any" } }),
+                "is unknown",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "owner": "anyone" } }),
+                "owner \"anyone\" is unknown, expected \"self\" or \"other\"",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "owner": true } }),
+                "owner must be a string",
+            ),
+            (
+                json!({ "type": "identity", "contractRequirements": { "moderation": "elected" } }),
+                "does not take contractRequirements",
+            ),
+        ] {
+            let err = try_document_type_from_schema(contract_reference_schema(refers_to.clone()))
+                .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(fragment),
+                "{refers_to}: expected {fragment:?}, got {err}"
+            );
+        }
     }
 
     #[test]

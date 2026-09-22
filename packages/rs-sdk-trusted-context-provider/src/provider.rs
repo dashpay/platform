@@ -18,9 +18,12 @@ use dpp::data_contract::TokenConfiguration;
     feature = "token-history-contract",
     feature = "keywords-contract",
     feature = "document-history-contract",
+    feature = "app-connect-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+#[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use lru::LruCache;
@@ -781,6 +784,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "token-history-contract",
             feature = "keywords-contract",
             feature = "document-history-contract",
+            feature = "app-connect-contract",
             feature = "all-system-contracts"
         ))]
         {
@@ -885,6 +889,23 @@ impl ContextProvider for TrustedHttpContextProvider {
                         e
                     ))
                 });
+            }
+
+            #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+            // Below protocol version 14 the app-connect contract is
+            // absent, so the lookup falls through to the fallback provider (or `None`).
+            if *id == SystemDataContract::AppConnect.id()
+                && platform_version.protocol_version
+                    >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
+            {
+                return load_system_data_contract(SystemDataContract::AppConnect, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| {
+                        ContextProviderError::Generic(format!(
+                            "Failed to load AppConnect contract: {}",
+                            e
+                        ))
+                    });
             }
         }
 
@@ -1550,6 +1571,36 @@ mod tests {
 
         // Test that we can use the builder pattern to add known contracts
         // The builder pattern is more appropriate since contracts are only added during initialization
+    }
+
+    /// The app-connect system contract is served only from its activation version on,
+    /// matching Drive's `SystemDataContracts::find_by_id`: below it the contract does not
+    /// exist in state, and its schema would not even parse under the older meta-schema.
+    #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn should_serve_app_connect_only_from_protocol_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::AppConnect.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(13).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::latest())
+            .expect("the lookup must succeed at protocol version 14")
+            .expect("the app-connect contract must be served at protocol version 14");
+        assert_eq!(contract.id(), id);
     }
 
     #[test]

@@ -10,6 +10,9 @@
 '@dashevo/keyword-search-contract':
   - packages/keyword-search-contract/**
 
+'@dashevo/app-connect-contract':
+  - packages/app-connect-contract/**
+
 '@dashevo/dashpay-contract':
   - packages/dashpay-contract/**
 

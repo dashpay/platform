@@ -584,6 +584,21 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     action
                 };
 
+                // Advanced structure validation judged the action fee agreements of a batch on
+                // the first check only. The amounts its contracts declare and the epoch's fee
+                // multiplier can move while it waits, and a block would refuse it; the
+                // transformer read both again, so the agreements are judged again off the
+                // action, and a batch that no longer covers them leaves the mempool.
+                if let StateTransitionAction::BatchAction(batch_action) = &action {
+                    if let Err(error) = batch_action.validate_action_fee_agreements()? {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                vec![error],
+                            ),
+                        );
+                    }
+                }
+
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,
                     maybe_identity,

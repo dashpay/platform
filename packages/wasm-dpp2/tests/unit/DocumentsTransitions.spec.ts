@@ -101,6 +101,81 @@ describe('DocumentsTransitions', () => {
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
       });
+
+      it('should derive the id from the entropy and the nonce and mirror it onto the document', () => {
+        // the document is built with an id that is not the one its create
+        // transition must carry: the constructor replaces it
+        const documentInstance = createDocument();
+        expect(documentInstance.id.toBase58()).to.equal(id);
+
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(7),
+        });
+
+        const derived = wasm.Document.generateId(
+          documentTypeName,
+          ownerId,
+          dataContractId,
+          documentInstance.entropy,
+          BigInt(7),
+        );
+
+        expect(createTransition.base.id.toBytes()).to.deep.equal(derived);
+        expect(documentInstance.id.toBytes()).to.deep.equal(derived);
+        expect(documentInstance.id.toBase58()).to.not.equal(id);
+      });
+
+      it('should derive a different id for another nonce', () => {
+        const documentInstance = createDocument();
+        const { entropy } = documentInstance;
+
+        const first = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+        const second = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(2),
+        });
+
+        expect(first.entropy).to.deep.equal(entropy);
+        expect(second.entropy).to.deep.equal(entropy);
+        expect(first.base.id.toBase58()).to.not.equal(second.base.id.toBase58());
+        // the document follows the transition it was last built into
+        expect(documentInstance.id.toBase58()).to.equal(second.base.id.toBase58());
+      });
+
+      it('should keep the entropy-only id before protocol version 14', () => {
+        const documentInstance = new wasm.Document({
+          properties: document,
+          documentTypeName,
+          dataContractId,
+          ownerId,
+          revision: BigInt(revision),
+        });
+        const placeholder = documentInstance.id.toBase58();
+
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          platformVersion: 13,
+        });
+
+        expect(createTransition.base.id.toBase58()).to.equal(placeholder);
+        expect(documentInstance.id.toBase58()).to.equal(placeholder);
+      });
+
+      it('should refuse a document without entropy', () => {
+        // a document read back from Platform carries none: it exists already
+        const documentInstance = createDocument();
+        documentInstance.entropy = undefined;
+
+        expect(() => new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        })).to.throw(/entropy/);
+      });
     });
 
     describe('toDocumentTransition()', () => {
