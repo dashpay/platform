@@ -119,7 +119,13 @@ fn should_record_a_contract_layer_with_its_documents_on_top() {
     // fixture. Documents are read most and sit at the root of the layer; the
     // contract itself and everything else hang below.
     let contract = &json["layer_shapes"]["contracts.contract"];
-    assert_eq!(contract["origin"], "fixture contracts_with_documents@14");
+    assert_eq!(
+        contract["origin"],
+        format!(
+            "fixture contracts_with_documents@{}",
+            PlatformVersion::latest().protocol_version
+        )
+    );
     assert_eq!(contract["tree"]["hex"], "01");
     assert_eq!(contract["tree"]["left"]["hex"], "00");
     assert_eq!(contract["tree"]["right"]["hex"], "02");
@@ -279,7 +285,7 @@ mod fixtures {
     use crate::structure::shape::shape_at;
     use crate::structure::{KeySpec, NodeId};
     use crate::util::batch::drive_op_batch::{
-        AddressFundsOperationType, ContractFeePotOperationType,
+        AddressFundsOperationType, ContractFeePotOperationType, GroupOperationType,
     };
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::ContractModerationOperationType;
@@ -297,6 +303,8 @@ mod fixtures {
     use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use dpp::block::epoch::Epoch;
     use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use dpp::version::fee::FeeVersion;
     use dpp::contract_group::{
         generate_contract_group_id, ContractGroupMember, ContractGroupMembership,
         ContractGroupRegistration,
@@ -1041,19 +1049,30 @@ mod fixtures {
                 )
                 .expect("expected to propose the action");
             if close {
+                // Closing moves signer-flagged items, so pricing the removal
+                // needs the fee history of the removing block; production
+                // closes actions through `apply_drive_operations`, which
+                // forwards it.
+                let fee_history: CachedEpochIndexFeeVersions =
+                    BTreeMap::from([(0, FeeVersion::first())]);
                 drive
-                    .add_group_action(
-                        contract.id(),
-                        0,
-                        None,
+                    .apply_drive_operations(
+                        vec![DriveOperation::GroupOperation(
+                            GroupOperationType::AddGroupAction {
+                                contract_id: contract.id(),
+                                group_contract_position: 0,
+                                initialize_with_insert_action_info: None,
+                                action_id,
+                                signer_identity_id: member_2,
+                                signer_power: 2,
+                                closes_group_action: true,
+                            },
+                        )],
                         true,
-                        action_id,
-                        member_2,
-                        2,
                         &BlockInfo::default(),
-                        true,
                         None,
                         platform_version,
+                        Some(&fee_history),
                     )
                     .expect("expected to close the action");
             }
