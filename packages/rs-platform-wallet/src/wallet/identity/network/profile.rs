@@ -21,13 +21,15 @@ use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
 // for identity operations and cannot authorize an ordinary document write. A key
 // bound to another contract or document type is skipped, a key without limits is
-// preferred and an expired one is skipped.
-fn profile_signing_key(
-    identity: &Identity,
+// preferred, and an expired one or one the signer cannot sign with is skipped.
+fn profile_signing_key<'a>(
+    identity: &'a Identity,
     dashpay_contract_id: Identifier,
-) -> Option<&IdentityPublicKey> {
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     super::usable_authentication_key(
         identity,
+        signer,
         dashpay_contract_id,
         "profile",
         &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
@@ -130,7 +132,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// is resolved from the identity's active HIGH or CRITICAL ECDSA
     /// authentication keys (full public key or HASH160) — the signer
     /// is responsible for producing a signature for whatever key is
-    /// picked.
+    /// picked. Keys `signer.can_sign_with` rejects are skipped.
     ///
     /// All other behavior — avatar hashing, document construction,
     /// local cache update via the persister — is identical to the
@@ -190,7 +192,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            profile_signing_key(&managed.identity, dashpay_contract.id())
+            let identity = managed.identity.clone();
+            drop(wm);
+            profile_signing_key(&identity, dashpay_contract.id(), signer)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -339,7 +343,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            profile_signing_key(&managed.identity, dashpay_contract.id())
+            let identity = managed.identity.clone();
+            drop(wm);
+            profile_signing_key(&identity, dashpay_contract.id(), signer)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -789,6 +795,7 @@ fn contact_profiles_chunk_query(
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::KeyFilter;
     use super::*;
     use crate::wallet::identity::ProfileUpdate;
     use std::collections::BTreeMap;
@@ -816,7 +823,7 @@ mod tests {
     const DASHPAY: [u8; 32] = [0xDA; 32];
 
     fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
-        profile_signing_key(identity, Identifier::from(DASHPAY))
+        profile_signing_key(identity, Identifier::from(DASHPAY), &KeyFilter(|_| true)).unwrap()
     }
 
     #[test]

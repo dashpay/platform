@@ -68,7 +68,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         signer: &S,
     ) -> Result<dash_sdk::platform::tokens::transitions::UnfreezeResult, PlatformWalletError> {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id).await?;
+        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
 
         self.token_unfreeze_with_signer(
             data_contract,

@@ -16,6 +16,7 @@ use dash_sdk::platform::transition::transfer::TransferToIdentity;
 
 use crate::error::PlatformWalletError;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Local borrowed-signer adapter — mirrors the one in `dpns.rs`. Lets
@@ -101,7 +102,7 @@ impl IdentityWallet {
                 &self.sdk,
                 *to_id,
                 amount,
-                None, // signing_transfer_key_to_use
+                Some(credit_signing_key(&identity, None, signer, false)?),
                 SignerRef(signer),
                 settings,
             )
@@ -158,12 +159,14 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<(u64, u64), dash_sdk::Error> {
+        let signing_key =
+            credit_signing_key(identity, signing_transfer_key_to_use, &signer, false)?;
         identity
             .transfer_credits(
                 &self.sdk,
                 to_id,
                 amount,
-                signing_transfer_key_to_use,
+                Some(signing_key),
                 signer,
                 settings,
             )

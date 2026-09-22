@@ -18,6 +18,7 @@ use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity
 
 use crate::error::PlatformWalletError;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs`/`transfer.rs` for the same
@@ -99,7 +100,7 @@ impl IdentityWallet {
                 Some(to_address.clone()),
                 amount,
                 None, // core_fee_per_byte
-                None, // signing_withdrawal_key_to_use
+                Some(credit_signing_key(&identity, None, signer, true)?),
                 SignerRef(signer),
                 settings,
             )
@@ -158,13 +159,15 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
+        let signing_key =
+            credit_signing_key(identity, signing_withdrawal_key_to_use, &signer, true)?;
         identity
             .withdraw(
                 &self.sdk,
                 to_address,
                 amount,
                 Some(1), // core_fee_per_byte
-                signing_withdrawal_key_to_use,
+                Some(signing_key),
                 signer,
                 settings,
             )

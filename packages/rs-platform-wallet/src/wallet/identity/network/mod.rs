@@ -60,6 +60,7 @@ pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;
+mod signing_key;
 pub use seed_binding::SeedBindingVerification;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).

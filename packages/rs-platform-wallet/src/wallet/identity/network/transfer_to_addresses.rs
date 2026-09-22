@@ -19,6 +19,7 @@ use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the pattern.
@@ -104,7 +105,7 @@ impl IdentityWallet {
             .transfer_credits_to_addresses(
                 &self.sdk,
                 recipient_addresses,
-                None, // signing_transfer_key_to_use
+                Some(credit_signing_key(&identity, None, signer, false)?),
                 &SignerRef(signer),
                 settings,
             )
