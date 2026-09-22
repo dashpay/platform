@@ -243,6 +243,25 @@ What happens to data:
 - **New writes are held to the new schema.** Creates must supply the property; replaces re-supply full content, so replacing a grandfathered document requires the new property and re-stamps the document at the current version — lazy migration, one document at a time.
 - **Indexes are unaffected** because index additions on update remain banned — a newly added required field cannot be indexed retroactively (there is no backfill).
 
+## Bounded Values
+
+A property can restrict its values to a declared set with the JSON Schema `enum` keyword:
+
+```json
+"dressing": {
+  "type": "string",
+  "maxLength": 20,
+  "enum": ["butter", "margarine", "vinaigrette"],
+  "position": 0
+}
+```
+
+Consensus enforces the bound on every document create and replace through the document type's JSON schema validator (`validate_document_properties`): a value outside the set is refused with `JsonSchemaError`. From protocol v14 the document meta-schema (v3) also refuses, on contract create and update, a member of another type than the property's own scalar type, such as a number in a string's set. Earlier meta-schemas admitted such a member even though no value could ever equal it.
+
+The parsed property carries the set, in declared order, as `allowed_values` on `DocumentPropertyType::String`'s `StringPropertySizes`, so tooling can offer a picker or build valid fixtures without re-reading the schema. Random document generation draws from the set. An integer property's `enum` additionally sizes its storage type: `{"type": "integer", "enum": [0, 1, 2]}` is stored as a `u8`.
+
+On update, the set may gain values and the bound may be lifted. Removing or replacing a value, or bounding a property that was unbounded, could invalidate existing documents and is rejected as an incompatible schema change.
+
 ## Rules and Guidelines
 
 **Do:**

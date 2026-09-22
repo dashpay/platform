@@ -140,8 +140,9 @@ mod tests {
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::data_contract::created_data_contract::CreatedDataContract;
+    use crate::data_contract::{DataContract, DataContractFactory};
     use crate::tests::fixtures::get_data_contract_fixture;
-    use platform_value::Value;
+    use platform_value::{platform_value, Identifier, Value};
     use platform_version::version::PlatformVersion;
 
     fn data_contract() -> CreatedDataContract {
@@ -237,6 +238,71 @@ mod tests {
         assert!(
             result.is_valid(),
             "expected valid properties, got {result:?}"
+        );
+    }
+
+    /// A contract whose `salad` document type bounds `dressing` to three
+    /// values with the schema's `enum`, built through the factory so the
+    /// schema passes the document meta-schema on the way in.
+    fn bounded_contract() -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "salad": {
+                "type": "object",
+                "properties": {
+                    "dressing": {
+                        "type": "string",
+                        "maxLength": 20u32,
+                        "enum": ["butter", "margarine", "vinaigrette"],
+                        "position": 0u32
+                    }
+                },
+                "required": ["dressing"],
+                "additionalProperties": false
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("a factory for the latest protocol version")
+            .create(Identifier::new([7; 32]), 1, documents, None, None)
+            .expect("a contract with a bounded string property is valid")
+            .data_contract_owned()
+    }
+
+    fn salad(dressing: &str) -> Value {
+        Value::Map(vec![(
+            Value::Text("dressing".to_owned()),
+            Value::Text(dressing.to_owned()),
+        )])
+    }
+
+    #[test]
+    fn should_accept_a_bounded_string_value_from_the_declared_set() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract = bounded_contract();
+
+        for dressing in ["butter", "margarine", "vinaigrette"] {
+            let result = data_contract
+                .validate_document_properties("salad", salad(dressing), platform_version)
+                .expect("validation should return a consensus result");
+            assert!(result.is_valid(), "{dressing} is allowed, got {result:?}");
+        }
+    }
+
+    #[test]
+    fn should_reject_a_bounded_string_value_outside_the_declared_set() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract = bounded_contract();
+
+        let result = data_contract
+            .validate_document_properties("salad", salad("ketchup"), platform_version)
+            .expect("validation should return a consensus result");
+
+        assert!(
+            matches!(
+                result.first_error(),
+                Some(ConsensusError::BasicError(BasicError::JsonSchemaError(_)))
+            ),
+            "ketchup is not an allowed value, got {result:?}"
         );
     }
 }

@@ -464,6 +464,98 @@
               "additionalProperties"
             ]
           }
+        },
+        {
+          "$comment": "a bounded string's enum members are strings",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "a bounded integer's enum members are integers",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "integer"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "a bounded number's enum members are numbers",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "number"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "a bounded boolean's enum members are booleans",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "enum"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enum": {
+                "items": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
         }
       ]
     },

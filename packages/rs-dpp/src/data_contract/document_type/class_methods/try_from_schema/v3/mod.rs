@@ -2255,4 +2255,134 @@ mod tests {
             "the error must name the missing range flag; got {msg}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Bounded values: a string property's `enum`
+    // -----------------------------------------------------------------------
+
+    /// A doctype with one string property bounded to a declared set of
+    /// values (the schema's `enum`), which the parser carries onto the
+    /// property as `allowed_values` in declared order.
+    fn bounded_string_schema(members: Value) -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "dressing": {
+                    "type": "string",
+                    "maxLength": 20u32,
+                    "enum": members,
+                    "position": 0u32
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    fn allowed_dressings() -> Vec<String> {
+        ["butter", "margarine", "vinaigrette"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn bounded_string_values_carried_onto_the_property_at_pv14() {
+        use crate::data_contract::document_type::property::StringPropertySizes;
+
+        let schema = bounded_string_schema(platform_value!(["butter", "margarine", "vinaigrette"]));
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("meta-schema v3 admits a string bounded to string members");
+        let property = v2
+            .properties
+            .get("dressing")
+            .expect("the bounded property is parsed");
+        assert_eq!(
+            property.property_type,
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: None,
+                max_length: Some(20),
+                allowed_values: Some(allowed_dressings()),
+            })
+        );
+    }
+
+    /// Meta-schema v3 refuses a member of another type on a bounded string.
+    /// Only the meta-schema gates it: the structural path leaves such a member
+    /// out of the typed set, and meta-schema v2 admitted it, which is why the
+    /// parser has to keep loading a contract that carries one.
+    #[test]
+    fn bounded_string_with_a_member_of_another_type_is_refused_by_meta_schema_v3() {
+        let schema = bounded_string_schema(platform_value!(["butter", 1u32]));
+
+        let refused = parse_dispatched(schema.clone(), pv14(), true);
+        assert!(
+            refused.is_err(),
+            "meta-schema v3 must refuse a number among a string property's enum members"
+        );
+
+        let structural = parse_dispatched(schema.clone(), pv14(), false)
+            .expect("without the meta-schema the structural path admits the schema");
+        let DocumentType::V2(structural) = structural else {
+            panic!("generation 3 produces a V2-shaped document type");
+        };
+        let DocumentPropertyType::String(sizes) = &structural
+            .properties
+            .get("dressing")
+            .expect("the bounded property is parsed")
+            .property_type
+        else {
+            panic!("dressing is a string property");
+        };
+        assert_eq!(
+            sizes.allowed_values,
+            Some(vec!["butter".to_string()]),
+            "the member of another type is left out, not refused"
+        );
+
+        assert!(
+            parse_dispatched(schema, pv13(), true).is_ok(),
+            "meta-schema v2 admits the member, so contracts carrying one may exist"
+        );
+    }
+
+    /// The rule holds for every scalar type, not only strings.
+    #[test]
+    fn bounded_integer_with_a_string_member_is_refused_by_meta_schema_v3() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "integer",
+                    "enum": [0u32, "high"],
+                    "position": 0u32
+                }
+            },
+            "additionalProperties": false
+        });
+        assert!(
+            parse_dispatched(schema, pv14(), true).is_err(),
+            "meta-schema v3 must refuse a string among an integer property's enum members"
+        );
+
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "integer",
+                    "enum": [0u32, 1u32, 2u32],
+                    "position": 0u32
+                }
+            },
+            "additionalProperties": false
+        });
+        let v2 = parse_with(schema, pv14(), true).expect("integer members are admitted");
+        assert_eq!(
+            v2.properties
+                .get("level")
+                .expect("the bounded property is parsed")
+                .property_type,
+            DocumentPropertyType::U8,
+            "an integer's enum still sizes its storage type"
+        );
+    }
 }

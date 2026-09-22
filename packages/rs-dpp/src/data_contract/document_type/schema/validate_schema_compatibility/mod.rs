@@ -6,6 +6,8 @@ mod v0;
 mod v1;
 
 #[cfg(test)]
+mod bounded_values_update_tests;
+#[cfg(test)]
 mod byte_array_widen_accepted_tests;
 
 use crate::validation::SimpleValidationResult;

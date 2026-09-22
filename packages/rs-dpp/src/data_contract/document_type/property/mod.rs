@@ -30,6 +30,7 @@ use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -80,6 +81,47 @@ impl DocumentProperty {
 pub struct StringPropertySizes {
     pub min_length: Option<u16>,
     pub max_length: Option<u16>,
+    /// The values a bounded string property may take, in the order the
+    /// contract declares them (the schema's `enum`). `None` for an unbounded
+    /// string. Consensus enforces the bound through the document type's JSON
+    /// schema validator; this copy serves callers that need the set itself,
+    /// such as random document generation and client-side value pickers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_values: Option<Vec<String>>,
+}
+
+impl StringPropertySizes {
+    /// Whether the string is bounded to a declared set of values.
+    pub fn is_bounded(&self) -> bool {
+        self.allowed_values.is_some()
+    }
+
+    /// A uniformly chosen allowed value, or `None` when the string is
+    /// unbounded or the set is empty.
+    pub fn random_allowed_value(&self, rng: &mut StdRng) -> Option<Value> {
+        self.allowed_values
+            .as_deref()
+            .and_then(|values| values.choose(rng))
+            .map(|value| Value::Text(value.clone()))
+    }
+
+    /// The shortest allowed value (the first declared on a tie), or `None`
+    /// when the string is unbounded or the set is empty.
+    pub fn shortest_allowed_value(&self) -> Option<Value> {
+        self.allowed_values
+            .as_deref()
+            .and_then(|values| values.iter().min_by_key(|value| value.len()))
+            .map(|value| Value::Text(value.clone()))
+    }
+
+    /// The longest allowed value (the last declared on a tie), or `None` when
+    /// the string is unbounded or the set is empty.
+    pub fn longest_allowed_value(&self) -> Option<Value> {
+        self.allowed_values
+            .as_deref()
+            .and_then(|values| values.iter().max_by_key(|value| value.len()))
+            .map(|value| Value::Text(value.clone()))
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
@@ -474,6 +516,7 @@ impl DocumentPropertyType {
             "string" => Ok(DocumentPropertyType::String(StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                allowed_values: None,
             })),
             "byteArray" => Ok(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
                 min_size: None,
@@ -793,15 +836,18 @@ impl DocumentPropertyType {
             DocumentPropertyType::U8 => Value::U8(rng.gen::<u8>()),
             DocumentPropertyType::I8 => Value::I8(rng.gen::<i8>()),
             DocumentPropertyType::F64 => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_) => {
-                let size = self.random_size(rng);
-                Value::Text(
-                    rng.sample_iter(Alphanumeric)
-                        .take(size as usize)
-                        .map(char::from)
-                        .collect(),
-                )
-            }
+            DocumentPropertyType::String(sizes) => match sizes.random_allowed_value(rng) {
+                Some(value) => value,
+                None => {
+                    let size = self.random_size(rng);
+                    Value::Text(
+                        rng.sample_iter(Alphanumeric)
+                            .take(size as usize)
+                            .map(char::from)
+                            .collect(),
+                    )
+                }
+            },
             DocumentPropertyType::ByteArray(_) => {
                 let size = self.random_size(rng);
                 if self.min_size() == self.max_size() {
@@ -863,15 +909,18 @@ impl DocumentPropertyType {
             DocumentPropertyType::U8 => Value::U8(rng.gen::<u8>()),
             DocumentPropertyType::I8 => Value::I8(rng.gen::<i8>()),
             DocumentPropertyType::F64 => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_) => {
-                let size = self.min_size().unwrap();
-                Value::Text(
-                    rng.sample_iter(Alphanumeric)
-                        .take(size as usize)
-                        .map(char::from)
-                        .collect(),
-                )
-            }
+            DocumentPropertyType::String(sizes) => match sizes.shortest_allowed_value() {
+                Some(value) => value,
+                None => {
+                    let size = self.min_size().unwrap();
+                    Value::Text(
+                        rng.sample_iter(Alphanumeric)
+                            .take(size as usize)
+                            .map(char::from)
+                            .collect(),
+                    )
+                }
+            },
             DocumentPropertyType::ByteArray(_) => {
                 let size = self.min_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
@@ -914,15 +963,18 @@ impl DocumentPropertyType {
             DocumentPropertyType::U8 => Value::U8(rng.gen::<u8>()),
             DocumentPropertyType::I8 => Value::I8(rng.gen::<i8>()),
             DocumentPropertyType::F64 => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_) => {
-                let size = self.max_size().unwrap();
-                Value::Text(
-                    rng.sample_iter(Alphanumeric)
-                        .take(size as usize)
-                        .map(char::from)
-                        .collect(),
-                )
-            }
+            DocumentPropertyType::String(sizes) => match sizes.longest_allowed_value() {
+                Some(value) => value,
+                None => {
+                    let size = self.max_size().unwrap();
+                    Value::Text(
+                        rng.sample_iter(Alphanumeric)
+                            .take(size as usize)
+                            .map(char::from)
+                            .collect(),
+                    )
+                }
+            },
             DocumentPropertyType::ByteArray(_) => {
                 let size = self.max_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
@@ -2828,6 +2880,7 @@ impl DocumentPropertyType {
             "string" => DocumentPropertyType::String(StringPropertySizes {
                 min_length: value_map.get_optional_integer(property_names::MIN_LENGTH)?,
                 max_length: value_map.get_optional_integer(property_names::MAX_LENGTH)?,
+                allowed_values: string_allowed_values_for_subschema_value(value_map),
             }),
             "array" => {
                 // Only handling bytearrays for v1
@@ -2946,6 +2999,25 @@ fn find_integer_type_for_subschema_value(
     Ok(property_type)
 }
 
+/// The `enum` members of a string property, in declared order. Members that
+/// are not strings are left out: the document meta-schema refuses them from
+/// v3, and on a contract admitted under an earlier meta-schema they can never
+/// equal a string value, so leaving them out changes nothing a document could
+/// satisfy. Never fails, so a stored contract with an odd `enum` still loads.
+fn string_allowed_values_for_subschema_value(
+    value_map: &BTreeMap<String, &Value>,
+) -> Option<Vec<String>> {
+    match value_map.get(property_names::ENUM) {
+        Some(Value::Array(members)) => Some(
+            members
+                .iter()
+                .filter_map(|member| member.as_text().map(str::to_owned))
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
 fn find_unsigned_integer_type_for_max_value(max_value: i64) -> DocumentPropertyType {
     if max_value <= u8::MAX as i64 {
         DocumentPropertyType::U8
@@ -3000,6 +3072,7 @@ mod tests {
                 DocumentPropertyType::String(StringPropertySizes {
                     min_length: None,
                     max_length: None,
+                    allowed_values: None,
                 }),
                 "string",
             ),
@@ -3145,12 +3218,14 @@ mod tests {
         let no_min = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         assert_eq!(no_min.min_size(), Some(0));
 
         let with_min = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(5),
             max_length: None,
+            allowed_values: None,
         });
         assert_eq!(with_min.min_size(), Some(5));
     }
@@ -3231,12 +3306,14 @@ mod tests {
         let no_max = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         assert_eq!(no_max.max_size(), Some(16383));
 
         let with_max = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: Some(100),
+            allowed_values: None,
         });
         assert_eq!(with_max.max_size(), Some(100));
     }
@@ -3329,6 +3406,7 @@ mod tests {
         let s = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(10),
             max_length: None,
+            allowed_values: None,
         });
         // protocol version > 8 => checked_mul(4)
         assert_eq!(s.min_byte_size(pv).unwrap(), Some(40));
@@ -3340,6 +3418,7 @@ mod tests {
         let s = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         assert_eq!(s.min_byte_size(pv).unwrap(), Some(0));
     }
@@ -3350,6 +3429,7 @@ mod tests {
         let s = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: Some(100),
+            allowed_values: None,
         });
         assert_eq!(s.max_byte_size(pv).unwrap(), Some(400));
     }
@@ -3360,6 +3440,7 @@ mod tests {
         let s = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         assert_eq!(s.max_byte_size(pv).unwrap(), Some(u16::MAX));
     }
@@ -3425,6 +3506,7 @@ mod tests {
         let s = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(0),
             max_length: Some(100),
+            allowed_values: None,
         });
         // min_size=0, max_size=100 => (0+100)/2 = 50
         assert_eq!(s.middle_size(pv), Some(50));
@@ -3436,6 +3518,7 @@ mod tests {
         let s = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(0),
             max_length: Some(101),
+            allowed_values: None,
         });
         // min_size=0, max_size=101 => ceil((0+101)/2) = 51
         assert_eq!(s.middle_size_ceil(pv), Some(51));
@@ -3474,6 +3557,7 @@ mod tests {
         let s = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(1),
             max_length: Some(10),
+            allowed_values: None,
         });
         // min_byte_size = 1*4 = 4, max_byte_size = 10*4 = 40
         // ceil((4+40)/2) = 22
@@ -3507,6 +3591,7 @@ mod tests {
         assert!(!DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         })
         .is_integer());
     }
@@ -3697,6 +3782,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop
             .encode_value_for_tree_keys(&Value::Text("".to_string()))
@@ -3709,6 +3795,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop
             .encode_value_for_tree_keys(&Value::Text("hello".to_string()))
@@ -3770,6 +3857,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop.decode_value_for_tree_keys(&[0]).unwrap();
         assert_eq!(result, Value::Text("".to_string()));
@@ -3780,6 +3868,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop.decode_value_for_tree_keys(b"hello").unwrap();
         assert_eq!(result, Value::Text("hello".to_string()));
@@ -3961,6 +4050,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop
             .encode_value_with_size(Value::Text("hi".to_string()), true)
@@ -4146,6 +4236,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop.encode_value_with_size(Value::U64(42), true);
         assert!(result.is_err());
@@ -4167,6 +4258,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let val = Value::Text("test".to_string());
         let result = prop.encode_value_ref_with_size(&val, true).unwrap();
@@ -4341,6 +4433,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop.value_from_string("hello").unwrap();
         assert_eq!(result, Value::Text("hello".to_string()));
@@ -4351,6 +4444,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(10),
             max_length: None,
+            allowed_values: None,
         });
         let result = prop.value_from_string("hi");
         assert!(result.is_err());
@@ -4361,6 +4455,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: Some(3),
+            allowed_values: None,
         });
         let result = prop.value_from_string("hello");
         assert!(result.is_err());
@@ -4573,6 +4668,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         // varint 2^62 followed by two bytes of payload
         let mut data = vec![0xffu8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3f];
@@ -4607,6 +4703,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let mut data = vec![2u8];
         data.extend_from_slice(b"ab");
@@ -4687,6 +4784,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let text = b"hello";
         let mut data = text.len().encode_var_vec();
@@ -5028,6 +5126,7 @@ mod tests {
             DocumentPropertyType::String(StringPropertySizes {
                 min_length: Some(5),
                 max_length: Some(100),
+                allowed_values: None,
             })
         );
     }
@@ -5391,6 +5490,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let decoded = roundtrip_encode_read(&prop, Value::Text("".to_string()), true);
         assert_eq!(decoded, Value::Text("".to_string()));
@@ -5401,6 +5501,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: Some(100),
+            allowed_values: None,
         });
         let decoded = roundtrip_encode_read(&prop, Value::Text("hello world".to_string()), true);
         assert_eq!(decoded, Value::Text("hello world".to_string()));
@@ -5411,6 +5512,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: Some(1000),
+            allowed_values: None,
         });
         let long_string = "a".repeat(500);
         let decoded = roundtrip_encode_read(&prop, Value::Text(long_string.clone()), true);
@@ -5548,6 +5650,7 @@ mod tests {
                 property_type: DocumentPropertyType::String(StringPropertySizes {
                     min_length: None,
                     max_length: Some(100),
+                    allowed_values: None,
                 }),
                 required: true,
                 transient: false,
@@ -5608,6 +5711,7 @@ mod tests {
                 property_type: DocumentPropertyType::String(StringPropertySizes {
                     min_length: None,
                     max_length: Some(100),
+                    allowed_values: None,
                 }),
                 required: true,
                 transient: false,
@@ -5952,6 +6056,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let enc = prop
             .encode_value_for_tree_keys(&Value::Text("".to_string()))
@@ -5967,6 +6072,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let enc = prop
             .encode_value_for_tree_keys(&Value::Text("test".to_string()))
@@ -6323,6 +6429,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(5),
             max_length: Some(10),
+            allowed_values: None,
         });
         // Exercise several random draws
         for _ in 0..5 {
@@ -6473,6 +6580,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(7),
             max_length: Some(20),
+            allowed_values: None,
         });
         if let Value::Text(s) = prop.random_sub_filled_value(&mut rng) {
             assert_eq!(s.len(), 7);
@@ -6568,6 +6676,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(1),
             max_length: Some(12),
+            allowed_values: None,
         });
         if let Value::Text(s) = prop.random_filled_value(&mut rng) {
             assert_eq!(s.len(), 12);
@@ -6697,6 +6806,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(3),
             max_length: Some(6),
+            allowed_values: None,
         });
         for _ in 0..10 {
             let sz = prop.random_size(&mut rng);
@@ -6829,6 +6939,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         // Valid varint length but invalid UTF-8 bytes
         let invalid_bytes = vec![0xFFu8, 0xFEu8, 0xFDu8];
@@ -6844,6 +6955,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         // varint says 10 bytes follow, but only provide 2
         let mut data = 10usize.encode_var_vec();
@@ -6992,6 +7104,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            allowed_values: None,
         });
         let result = prop.encode_value_ref_with_size(&Value::U64(1), true);
         assert!(result.is_err());
@@ -7027,6 +7140,7 @@ mod tests {
                 property_type: DocumentPropertyType::String(StringPropertySizes {
                     min_length: None,
                     max_length: Some(100),
+                    allowed_values: None,
                 }),
                 required: true,
                 transient: false,
@@ -7108,6 +7222,7 @@ mod tests {
             DocumentPropertyType::String(StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                allowed_values: None,
             })
         );
     }
@@ -7210,6 +7325,101 @@ mod tests {
         let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         // 300 => U16
         assert_eq!(result, DocumentPropertyType::U16);
+    }
+
+    #[test]
+    fn test_try_from_value_map_string_with_enum_keeps_allowed_values_in_declared_order() {
+        let type_val = Value::Text("string".to_string());
+        let max_length = Value::U64(20);
+        let enum_val = Value::Array(vec![
+            Value::Text("butter".to_string()),
+            Value::Text("margarine".to_string()),
+            Value::Text("vinaigrette".to_string()),
+        ]);
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("maxLength".to_string(), &max_length);
+        map.insert("enum".to_string(), &enum_val);
+        let result = DocumentPropertyType::try_from_value_map(&map, &Default::default()).unwrap();
+        assert_eq!(
+            result,
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: None,
+                max_length: Some(20),
+                allowed_values: Some(vec![
+                    "butter".to_string(),
+                    "margarine".to_string(),
+                    "vinaigrette".to_string(),
+                ]),
+            })
+        );
+    }
+
+    #[test]
+    fn test_try_from_value_map_string_without_enum_is_unbounded() {
+        let type_val = Value::Text("string".to_string());
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        let result = DocumentPropertyType::try_from_value_map(&map, &Default::default()).unwrap();
+        let DocumentPropertyType::String(sizes) = result else {
+            panic!("expected a string property, got {result:?}");
+        };
+        assert!(!sizes.is_bounded());
+        assert_eq!(sizes.allowed_values, None);
+    }
+
+    #[test]
+    fn test_try_from_value_map_string_enum_leaves_out_members_that_are_not_strings() {
+        // Admitted by the meta-schemas before v3. Such a member can never equal
+        // a string value, so the typed set leaves it out and the contract loads.
+        let type_val = Value::Text("string".to_string());
+        let enum_val = Value::Array(vec![Value::Text("butter".to_string()), Value::U64(1)]);
+        let mut map = BTreeMap::new();
+        map.insert("type".to_string(), &type_val);
+        map.insert("enum".to_string(), &enum_val);
+        let result = DocumentPropertyType::try_from_value_map(&map, &Default::default()).unwrap();
+        let DocumentPropertyType::String(sizes) = result else {
+            panic!("expected a string property, got {result:?}");
+        };
+        assert_eq!(sizes.allowed_values, Some(vec!["butter".to_string()]));
+    }
+
+    #[test]
+    fn test_random_values_of_a_bounded_string_are_members_of_the_set() {
+        use rand::SeedableRng;
+        let property_type = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: Some(20),
+            allowed_values: Some(vec![
+                "butter".to_string(),
+                "margarine".to_string(),
+                "vinaigrette".to_string(),
+            ]),
+        });
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..64 {
+            let value = property_type.random_value(&mut rng);
+            let text = value
+                .as_text()
+                .expect("a bounded string draws a text value");
+            assert!(
+                ["butter", "margarine", "vinaigrette"].contains(&text),
+                "{text} is not an allowed value"
+            );
+            seen.insert(text.to_owned());
+        }
+        assert_eq!(seen.len(), 3, "64 draws should reach every allowed value");
+        assert_eq!(
+            property_type.random_sub_filled_value(&mut rng),
+            Value::Text("butter".to_string()),
+            "the least filled value is the shortest member"
+        );
+        assert_eq!(
+            property_type.random_filled_value(&mut rng),
+            Value::Text("vinaigrette".to_string()),
+            "the most filled value is the longest member"
+        );
     }
 
     #[test]
@@ -7488,6 +7698,7 @@ mod tests {
         let prop = DocumentPropertyType::String(StringPropertySizes {
             min_length: Some(3),
             max_length: Some(5),
+            allowed_values: None,
         });
         // Boundary: exactly min and exactly max
         assert!(prop.value_from_string("abc").is_ok());

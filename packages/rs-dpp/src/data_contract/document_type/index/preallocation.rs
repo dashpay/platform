@@ -196,6 +196,7 @@ mod tests {
             property_type: DocumentPropertyType::String(StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                allowed_values: None,
             }),
             required: true,
             required_since: None,

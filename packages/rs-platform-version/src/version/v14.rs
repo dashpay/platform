@@ -537,6 +537,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
+/// 25. **Bounded values**: a string property may bound its values to a
+///     declared set with the schema's `enum` (`"enum": ["butter",
+///     "margarine", "vinaigrette"]`). The bound itself has always been
+///     enforced on every document create and replace by the document type's
+///     JSON schema validator; this version adds the declaration's grammar and
+///     its typed form. Meta-schema v3 refuses, on contract create and update,
+///     an `enum` member of another type than the property's own scalar type
+///     (a number on a string, a string on an integer, and so on), which the
+///     earlier meta-schemas admitted although no value could ever equal it.
+///     The parsed string property carries the set as
+///     `StringPropertySizes::allowed_values` in declared order (a member of
+///     another type on a contract admitted earlier is left out, so the
+///     contract still loads), random document generation draws from the set,
+///     and an integer property's `enum` keeps sizing its storage type as
+///     before. On update the set may gain values and the bound may be lifted;
+///     removing or replacing a value, or bounding a property that was not, is
+///     an incompatible schema change.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
