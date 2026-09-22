@@ -227,9 +227,14 @@ fn assert_removals(
     let proof = drive
         .prove_contract_document_removals(contract_id, query, None, platform_version)
         .expect("expected a removals proof");
-    let (proved_root, proved) =
-        Drive::verify_contract_document_removals(&proof, contract_id, query, platform_version)
-            .expect("expected the proof to verify");
+    let (proved_root, proved) = Drive::verify_contract_document_removals(
+        &proof,
+        contract_id,
+        query,
+        false,
+        platform_version,
+    )
+    .expect("expected the proof to verify");
     assert_eq!(proved, expected, "proved");
     let root = drive
         .grove

@@ -14,11 +14,15 @@ impl Drive {
         proof: &[u8],
         contract_id: Identifier,
         query: &ContractDocumentRemovalsQuery,
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<ContractDocumentRemovalEntry>), Error> {
         let path_query = Self::contract_document_removals_query(contract_id.to_buffer(), query);
-        let (root_hash, proved_key_values) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        let (root_hash, proved_key_values) = if verify_subset_of_proof {
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
+        } else {
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
+        };
 
         let entries = proved_key_values
             .into_iter()
