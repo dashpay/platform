@@ -25,7 +25,8 @@ jobs:
       || github.event.pull_request.head.repo.full_name == github.repository
       || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # Allow the separate 90-minute build and publication/queue window to finish.
+    timeout-minutes: 135
     permissions:
       contents: read
       pull-requests: read

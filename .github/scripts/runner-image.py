@@ -131,7 +131,7 @@ def main():
     parser.add_argument("--env", default=os.environ.get("GITHUB_ENV"))
     parser.add_argument("--output", default=os.environ.get("GITHUB_OUTPUT"))
     parser.add_argument("--kind", choices=["rust", "kotlin"])
-    parser.add_argument("--wait-seconds", type=int, default=2400)
+    parser.add_argument("--wait-seconds", type=int, default=7200)
     args = parser.parse_args()
     manifest = read_manifest(args.manifest)
     if args.command == "select":
