@@ -1,6 +1,6 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
-use super::signing_key::available_signing_key;
+use super::signing_key::AvailableSigningKey;
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
@@ -214,23 +214,22 @@ impl IdentityWallet {
             // (identity update, key rotation, withdrawal) and is
             // rejected by the protocol on document-side state
             // transitions.
-            let key = available_signing_key(
-                &identity,
-                signer,
-                Purpose::AUTHENTICATION,
-                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-                &[KeyType::ECDSA_SECP256K1],
-                false,
-            )
-            .map_err(dash_sdk::Error::from)?
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "No HIGH or CRITICAL authentication key available to signer on identity \
+            let key = identity
+                .available_signing_key(
+                    signer,
+                    Purpose::AUTHENTICATION,
+                    &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
+                    false,
+                )?
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(
+                        "No HIGH or CRITICAL authentication key found on identity \
                          (required for document state transitions)"
-                        .to_string(),
-                )
-            })?
-            .clone();
+                            .to_string(),
+                    )
+                })?
+                .clone();
             (identity, key)
         };
 

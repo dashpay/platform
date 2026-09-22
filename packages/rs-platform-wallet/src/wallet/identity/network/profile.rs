@@ -12,7 +12,6 @@ use dpp::identity::SecurityLevel;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use dpp::ProtocolError;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -22,13 +21,12 @@ use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
 // for identity operations and cannot authorize an ordinary document write. A key
 // bound to another contract or document type is skipped, a key without limits is
-// preferred, an expired one is skipped, and a key the signer cannot reach is
-// skipped in favor of the next eligible candidate.
+// preferred, and an expired one or one the signer cannot sign with is skipped.
 fn profile_signing_key<'a>(
     identity: &'a Identity,
     dashpay_contract_id: Identifier,
     signer: &impl Signer<IdentityPublicKey>,
-) -> Result<Option<&'a IdentityPublicKey>, ProtocolError> {
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     super::usable_authentication_key(
         identity,
         signer,
@@ -129,11 +127,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Create a DashPay profile document using an externally-supplied
     /// signer.
     ///
-    /// Signing uses the supplied `&S: Signer<IdentityPublicKey>`. The signing key
+    /// Mirrors [`Self::create_profile`] but signing is routed through
+    /// the supplied `&S: Signer<IdentityPublicKey>`. The signing key
     /// is resolved from the identity's active HIGH or CRITICAL ECDSA
-    /// authentication keys (full public key or HASH160), choosing the
-    /// first key available according to `signer.can_sign_with`.
-    /// Signing errors are propagated without trying another key.
+    /// authentication keys (full public key or HASH160) — the signer
+    /// is responsible for producing a signature for whatever key is
+    /// picked. Keys `signer.can_sign_with` rejects are skipped.
+    ///
+    /// All other behavior — avatar hashing, document construction,
+    /// local cache update via the persister — is identical to the
+    /// legacy variant.
     pub async fn create_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -191,12 +194,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             let identity = managed.identity.clone();
             drop(wm);
-            profile_signing_key(&identity, dashpay_contract.id(), signer)
-                .map_err(dash_sdk::Error::from)?
+            profile_signing_key(&identity, dashpay_contract.id(), signer)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
-                        "No HIGH or CRITICAL authentication key available to signer on identity \
+                        "No HIGH or CRITICAL authentication key found on identity \
                          (required for document state transitions)"
                             .to_string(),
                     )
@@ -264,8 +266,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Update an existing DashPay profile document using an
     /// externally-supplied signer.
     ///
-    /// Signing uses the supplied `&S: Signer<IdentityPublicKey>`. Key selection follows
-    /// [`Self::create_profile_with_external_signer`].
+    /// Mirrors [`Self::update_profile`] but signing is routed through
+    /// the supplied `&S: Signer<IdentityPublicKey>`.
     pub async fn update_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -343,12 +345,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             let identity = managed.identity.clone();
             drop(wm);
-            profile_signing_key(&identity, dashpay_contract.id(), signer)
-                .map_err(dash_sdk::Error::from)?
+            profile_signing_key(&identity, dashpay_contract.id(), signer)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
-                        "No HIGH or CRITICAL authentication key available to signer on identity \
+                        "No HIGH or CRITICAL authentication key found on identity \
                          (required for document state transitions)"
                             .to_string(),
                     )
@@ -794,84 +795,13 @@ fn contact_profiles_chunk_query(
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::KeyFilter;
     use super::*;
     use crate::wallet::identity::ProfileUpdate;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use std::collections::BTreeMap;
 
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::version::PlatformVersion;
-
-    use async_trait::async_trait;
-    use dpp::address_funds::AddressWitness;
-    use dpp::platform_value::BinaryData;
-    use dpp::ProtocolError;
-
-    #[derive(Debug)]
-    struct AvailableKeys<'a>(&'a [u32]);
-
-    #[async_trait]
-    impl Signer<IdentityPublicKey> for AvailableKeys<'_> {
-        async fn sign(
-            &self,
-            _key: &IdentityPublicKey,
-            _data: &[u8],
-        ) -> Result<BinaryData, ProtocolError> {
-            panic!("key selection must not sign")
-        }
-
-        async fn sign_create_witness(
-            &self,
-            _key: &IdentityPublicKey,
-            _data: &[u8],
-        ) -> Result<AddressWitness, ProtocolError> {
-            panic!("key selection must not create a witness")
-        }
-
-        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
-            self.0.contains(&key.id())
-        }
-    }
-
-    #[test]
-    fn should_skip_unavailable_profile_keys() {
-        for (first_type, second_type) in [
-            (KeyType::ECDSA_HASH160, KeyType::ECDSA_SECP256K1),
-            (KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160),
-        ] {
-            let mut identity = identity_with_key(profile_key(first_type, SecurityLevel::HIGH));
-            let mut second = profile_key(second_type, SecurityLevel::CRITICAL);
-            second.id = 2;
-            identity.add_public_key(second.into());
-            assert_eq!(
-                profile_signing_key(&identity, Identifier::from(DASHPAY), &AvailableKeys(&[2]))
-                    .unwrap(),
-                identity.public_keys().get(&2),
-                "unavailable {first_type:?} must not shadow available {second_type:?}"
-            );
-            assert_eq!(
-                profile_signing_key(
-                    &identity,
-                    Identifier::from(DASHPAY),
-                    &AvailableKeys(&[1, 2])
-                )
-                .unwrap(),
-                identity.public_keys().get(&1),
-                "select the first available eligible key"
-            );
-        }
-    }
-
-    #[test]
-    fn should_reject_profile_keys_unavailable_to_signer() {
-        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
-            let identity = identity_with_key(profile_key(key_type, SecurityLevel::HIGH));
-            assert!(
-                profile_signing_key(&identity, Identifier::from(DASHPAY), &AvailableKeys(&[]))
-                    .is_err()
-            );
-        }
-    }
 
     fn profile_key(key_type: KeyType, security_level: SecurityLevel) -> IdentityPublicKeyV0 {
         IdentityPublicKeyV0 {
@@ -893,7 +823,7 @@ mod tests {
     const DASHPAY: [u8; 32] = [0xDA; 32];
 
     fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
-        profile_signing_key(identity, Identifier::from(DASHPAY), &AvailableKeys(&[1])).unwrap()
+        profile_signing_key(identity, Identifier::from(DASHPAY), &KeyFilter(|_| true)).unwrap()
     }
 
     #[test]

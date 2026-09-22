@@ -564,10 +564,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             let established_count = managed.dashpay().established_contacts().len();
             let identity_index = managed.identity_index;
-            // Key resolution is deferred until after the wallet-manager lock is
-            // dropped below — `usable_authentication_key` now takes `signer`,
-            // and an external signer callback must never run while holding
-            // this lock (see `should_release_profile_wallet_lock_before_signer_callback`).
+            // The signing key is chosen below, after the lock: signer callbacks must not hold it.
             let identity = managed.identity.clone();
             // Shared own-ECDH-root selector (same policy as the
             // contact-request send path); `Option` preserved — a missing
@@ -606,12 +603,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             "contactInfo",
             &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
             &[KeyType::ECDSA_SECP256K1],
-        )
-        .map_err(dash_sdk::Error::from)?
+        )?
         .cloned()
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
-                "No HIGH or CRITICAL authentication key available to signer on identity \
+                "No HIGH or CRITICAL authentication key found on identity \
                  (required for document state transitions)"
                     .to_string(),
             )

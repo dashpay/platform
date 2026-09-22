@@ -26,7 +26,7 @@
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
-use super::signing_key::available_signing_key;
+use super::signing_key::AvailableSigningKey;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -928,23 +928,22 @@ impl IdentityWallet {
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
-        available_signing_key(
-            &identity,
-            signer,
-            Purpose::AUTHENTICATION,
-            &allowed_levels,
-            &[KeyType::ECDSA_SECP256K1],
-            false,
-        )
-        .map_err(dash_sdk::Error::from)?
-        .cloned()
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "No ECDSA authentication key at a security level satisfying \
-                     {required_level} available to signer on identity {identity_id} \
+        identity
+            .available_signing_key(
+                signer,
+                Purpose::AUTHENTICATION,
+                &allowed_levels,
+                &[KeyType::ECDSA_SECP256K1],
+                false,
+            )?
+            .cloned()
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "No ECDSA authentication key at a security level satisfying \
+                     {required_level} found on identity {identity_id} \
                      (required to sign a DPNS domain state transition)"
-            ))
-        })
+                ))
+            })
     }
 
     // -----------------------------------------------------------------
@@ -2229,12 +2228,11 @@ fn required_purchase_credits(expected_price: Credits) -> Result<Credits, Platfor
 
 #[cfg(test)]
 mod tests {
-    use super::super::signing_key::tests::LockCheckingSigner;
+    use super::super::signing_key::tests::{identity, lock_checking_signer};
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use dpp::identity::accessors::IdentitySettersV0;
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::{Identity, SecurityLevel};
+    use dpp::identity::SecurityLevel;
 
     fn name_state_entry(
         document_id: Identifier,
@@ -3857,20 +3855,12 @@ mod tests {
     async fn should_preserve_unavailable_signer_when_setting_dpns_price() {
         let owner = Identifier::from([0xB2; 32]);
         let wallet = wallet_seeing_listing(Identifier::from([0xB1; 32]), owner, None).await;
-        let mut identity =
-            Identity::default_versioned(dpp::version::PlatformVersion::latest()).unwrap();
-        identity.set_id(owner);
-        identity.add_public_key(
-            IdentityPublicKeyV0 {
-                id: 1,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::CRITICAL,
-                key_type: KeyType::ECDSA_SECP256K1,
-                data: vec![1; 33].into(),
-                ..Default::default()
-            }
-            .into(),
+        let mut identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
         );
+        identity.set_id(owner);
         wallet
             .wallet_manager
             .write()
@@ -3882,7 +3872,7 @@ mod tests {
             .unwrap();
 
         let error = wallet
-            .set_dpns_name_price(&owner, DEPARTED_LABEL, 1000, &LockCheckingSigner(&wallet))
+            .set_dpns_name_price(&owner, DEPARTED_LABEL, 1000, &lock_checking_signer(&wallet))
             .await
             .unwrap_err();
         assert!(

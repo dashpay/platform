@@ -96,15 +96,13 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?
         };
-        let signing_key =
-            credit_signing_key(&identity, None, signer, false).map_err(dash_sdk::Error::from)?;
 
         let (sender_balance, _receiver_balance) = identity
             .transfer_credits(
                 &self.sdk,
                 *to_id,
                 amount,
-                Some(signing_key), // signing_transfer_key_to_use
+                Some(credit_signing_key(&identity, None, signer, false)?),
                 SignerRef(signer),
                 settings,
             )

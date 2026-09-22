@@ -26,7 +26,7 @@
 //!     the rs-sdk-ffi path — classic stack-guard fingerprint, not
 //!     memory unsafety.
 
-use super::signing_key::available_signing_key;
+use super::signing_key::AvailableSigningKey;
 use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
@@ -166,23 +166,22 @@ impl IdentityWallet {
             // ECDSA_SECP256K1 specifically — DPP rejects HIGH /
             // MEDIUM / non-ECDSA keys on this state-transition
             // shape.
-            available_signing_key(
-                &identity,
-                signer,
-                Purpose::AUTHENTICATION,
-                &[SecurityLevel::CRITICAL],
-                &[KeyType::ECDSA_SECP256K1],
-                false,
-            )
-            .map_err(dash_sdk::Error::from)?
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "No CRITICAL authentication key available to signer on owner identity \
+            identity
+                .available_signing_key(
+                    signer,
+                    Purpose::AUTHENTICATION,
+                    &[SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
+                    false,
+                )?
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(
+                        "No CRITICAL authentication key found on owner identity \
                          (required to sign a contract-create state transition)"
-                        .to_string(),
-                )
-            })?
-            .clone()
+                            .to_string(),
+                    )
+                })?
+                .clone()
         };
 
         // Protocol-required config version. Since protocol v12 the
@@ -392,23 +391,22 @@ impl IdentityWallet {
             // AUTHENTICATION + ECDSA_SECP256K1 key as create — DPP
             // rejects HIGH / MEDIUM / non-ECDSA keys on this
             // state-transition shape.
-            available_signing_key(
-                &identity,
-                signer,
-                Purpose::AUTHENTICATION,
-                &[SecurityLevel::CRITICAL],
-                &[KeyType::ECDSA_SECP256K1],
-                false,
-            )
-            .map_err(dash_sdk::Error::from)?
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "No CRITICAL authentication key available to signer on owner identity \
+            identity
+                .available_signing_key(
+                    signer,
+                    Purpose::AUTHENTICATION,
+                    &[SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
+                    false,
+                )?
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(
+                        "No CRITICAL authentication key found on owner identity \
                          (required to sign a contract-update state transition)"
-                        .to_string(),
-                )
-            })?
-            .clone()
+                            .to_string(),
+                    )
+                })?
+                .clone()
         };
 
         // 2. Fetch the live contract. We seed the update payload from

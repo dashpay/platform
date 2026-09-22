@@ -8,9 +8,8 @@ use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
-use dpp::ProtocolError;
 
-use super::signing_key::signing_key_unavailable;
+use super::signing_key::first_available;
 use crate::util::now_ms;
 
 /// The first AUTHENTICATION key of `identity` at one of `security_levels`, of one of
@@ -25,8 +24,7 @@ use crate::util::now_ms;
 /// is refused by Platform.
 ///
 /// `Ok(None)` means no key is eligible at all; `Err` means at least one eligible key exists
-/// but the signer cannot reach any of them (see [`super::signing_key::available_signing_key`]
-/// for the same distinction on the non-contract-bound selectors).
+/// but the signer cannot reach any of them.
 pub(crate) fn usable_authentication_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -34,7 +32,7 @@ pub(crate) fn usable_authentication_key<'a>(
     document_type_name: &str,
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
-) -> Result<Option<&'a IdentityPublicKey>, ProtocolError> {
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let now = now_ms();
     let qualifies = |key: &IdentityPublicKey| {
         key.purpose() == Purpose::AUTHENTICATION
@@ -45,25 +43,13 @@ pub(crate) fn usable_authentication_key<'a>(
             && !key.is_expired_at(now)
     };
     let keys = identity.public_keys();
-    // Unlimited-qualifying keys first, then limited ones — same preference order as before,
-    // now also gated on signer availability within each tier.
     let unlimited = keys
         .values()
         .filter(|key| qualifies(key) && !key.has_limits());
     let limited = keys
         .values()
         .filter(|key| qualifies(key) && key.has_limits());
-    let mut unavailable = None;
-    for key in unlimited.chain(limited) {
-        if signer.can_sign_with(key) {
-            return Ok(Some(key));
-        }
-        unavailable.get_or_insert(key);
-    }
-    match unavailable {
-        Some(key) => Err(signing_key_unavailable(key)),
-        None => Ok(None),
-    }
+    first_available(unlimited.chain(limited), signer)
 }
 
 /// Whether a key carrying `bounds` may sign a `document_type_name` document of `contract_id`.
@@ -89,10 +75,9 @@ fn bounds_cover(
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::{available, KeyFilter};
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
-    use async_trait::async_trait;
-    use dpp::address_funds::AddressWitness;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::KeyID;
@@ -102,49 +87,6 @@ mod tests {
     const CONTRACT: [u8; 32] = [0xDA; 32];
     const OTHER_CONTRACT: [u8; 32] = [0x0E; 32];
     const DOCUMENT_TYPE: &str = "profile";
-
-    /// A signer that reports every key as available — the tests inherited from before
-    /// the signer parameter existed assert on eligibility, not availability.
-    #[derive(Debug)]
-    struct AllKeys;
-
-    #[async_trait]
-    impl Signer<IdentityPublicKey> for AllKeys {
-        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
-            panic!("key selection must not sign")
-        }
-        async fn sign_create_witness(
-            &self,
-            _: &IdentityPublicKey,
-            _: &[u8],
-        ) -> Result<AddressWitness, ProtocolError> {
-            panic!("key selection must not create a witness")
-        }
-        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
-            true
-        }
-    }
-
-    /// A signer available only for the listed key ids.
-    #[derive(Debug)]
-    struct AvailableKeys(Vec<u32>);
-
-    #[async_trait]
-    impl Signer<IdentityPublicKey> for AvailableKeys {
-        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
-            panic!("key selection must not sign")
-        }
-        async fn sign_create_witness(
-            &self,
-            _: &IdentityPublicKey,
-            _: &[u8],
-        ) -> Result<AddressWitness, ProtocolError> {
-            panic!("key selection must not create a witness")
-        }
-        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
-            self.0.contains(&key.id())
-        }
-    }
 
     fn key(id: KeyID, security_level: SecurityLevel) -> IdentityPublicKey {
         bound_key(id, security_level, None)
@@ -183,7 +125,7 @@ mod tests {
     fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
         usable_authentication_key(
             identity,
-            &AllKeys,
+            &KeyFilter(|_| true),
             Identifier::from(CONTRACT),
             DOCUMENT_TYPE,
             &LEVELS,
@@ -309,11 +251,11 @@ mod tests {
 
     fn pick_with_signer(
         identity: &Identity,
-        available: &[KeyID],
-    ) -> Result<Option<KeyID>, ProtocolError> {
+        ids: &[KeyID],
+    ) -> Result<Option<KeyID>, dash_sdk::Error> {
         usable_authentication_key(
             identity,
-            &AvailableKeys(available.to_vec()),
+            &available(ids),
             Identifier::from(CONTRACT),
             DOCUMENT_TYPE,
             &LEVELS,

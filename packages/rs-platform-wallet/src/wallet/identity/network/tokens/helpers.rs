@@ -12,7 +12,7 @@
 //! all rejected by Drive. See
 //! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
-use super::super::signing_key::available_signing_key;
+use super::super::signing_key::AvailableSigningKey;
 use std::sync::Arc;
 
 use dpp::data_contract::DataContract;
@@ -52,22 +52,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
 
-        let signing_key = available_signing_key(
-            &identity,
-            signer,
-            Purpose::AUTHENTICATION,
-            &[SecurityLevel::CRITICAL],
-            &[KeyType::ECDSA_SECP256K1],
-            false,
-        )
-        .map_err(dash_sdk::Error::from)?
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level \
-                     available to signer on identity {identity_id}"
-            ))
-        })?
-        .clone();
+        let signing_key = identity
+            .available_signing_key(
+                signer,
+                Purpose::AUTHENTICATION,
+                &[SecurityLevel::CRITICAL],
+                &[KeyType::ECDSA_SECP256K1],
+                false,
+            )?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level on identity {} — \
+                     identities registered before this fix may need an IdentityUpdate to add a CRITICAL key, \
+                     or re-registration",
+                    identity_id
+                ))
+            })?
+            .clone();
 
         Ok(signing_key)
     }
@@ -109,13 +110,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 mod signing_tests {
     use super::*;
     use crate::wallet::identity::network::signing_key::tests::{
-        wallet_with_signing_keys, LockCheckingSigner,
+        lock_checking_signer, wallet_with_signing_keys,
     };
 
     #[tokio::test]
     async fn should_check_token_key_availability_outside_wallet_lock() {
         let wallet = wallet_with_signing_keys().await;
-        let signer = LockCheckingSigner(wallet.identity());
+        let signer = lock_checking_signer(wallet.identity());
         let error = wallet
             .identity()
             .token_resolve_signing_key(&Identifier::default(), &signer)

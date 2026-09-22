@@ -93,16 +93,14 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
-        let signing_key =
-            credit_signing_key(&identity, None, signer, true).map_err(dash_sdk::Error::from)?;
 
         let new_balance = identity
             .withdraw(
                 &self.sdk,
                 Some(to_address.clone()),
                 amount,
-                None,              // core_fee_per_byte
-                Some(signing_key), // signing_withdrawal_key_to_use
+                None, // core_fee_per_byte
+                Some(credit_signing_key(&identity, None, signer, true)?),
                 SignerRef(signer),
                 settings,
             )
