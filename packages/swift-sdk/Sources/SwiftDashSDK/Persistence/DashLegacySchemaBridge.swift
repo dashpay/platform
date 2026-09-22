@@ -3,13 +3,13 @@ import Darwin
 import Foundation
 import SwiftData
 
-/// One-time, local-store bridge into the fixed V2 schema. The ordinary migration
+/// One-time, local-store bridge into the fixed V3 schema. The ordinary migration
 /// plan owns recognized versions. This path accepts only an older 1.0.0 graph
 /// whose complete existing SQLite data survives an inferred migration unchanged.
 /// Call before publishing any container/context for the same URL.
 enum DashLegacySchemaBridge {
     typealias SQLite = DashLegacyStoreSQLite
-    enum Phase { case afterSnapshot, afterMigration, beforeInstall, writeLocked, afterCommit }
+    enum Phase: String { case afterSnapshot, afterMigration, beforeInstall, writeLocked, afterCommit }
     struct Hooks {
         var visit: (Phase, URL) throws -> Void = { _, _ in }
         var availableCapacity: (URL) throws -> Int64 = DashLegacySchemaBridge.availableCapacity(at:)
@@ -30,8 +30,16 @@ enum DashLegacySchemaBridge {
     static func open(configuration: ModelConfiguration, schema: Schema,
                      plan: any SchemaMigrationPlan.Type, hooks: Hooks = Hooks()) throws -> ModelContainer {
         let url = configuration.url
+        func visit(_ phase: Phase, _ candidate: URL) throws {
+            SDKLogger.event("legacy_migration_phase", category: .persistence,
+                            fields: ["phase": .publicText(phase.rawValue)])
+            try hooks.visit(phase, candidate)
+        }
         func ordinary() throws -> ModelContainer {
-            try ModelContainer(for: schema, migrationPlan: plan, configurations: [configuration])
+            let selectedPlan = configuration.isStoredInMemoryOnly ? plan :
+                try DashModelContainer.migrationPlan(at: url, defaultPlan: plan)
+            return try ModelContainer(for: schema, migrationPlan: selectedPlan,
+                                      configurations: [configuration])
         }
         guard !configuration.isStoredInMemoryOnly else { return try ordinary() }
         let root = backupDirectory(for: url)
@@ -41,7 +49,7 @@ enum DashLegacySchemaBridge {
         if !FileManager.default.fileExists(atPath: marker.path) {
             // Detection must not impose bridge-specific metadata or locking
             // requirements on stores handled by SwiftData's ordinary path.
-            let needsMigration = (try? identity(at: url)).flatMap { try? needsBridge($0, plan: plan) } ?? false
+            let needsMigration = (try? identity(at: url)).flatMap { try? needsBridge($0) } ?? false
             // Recheck after reading identity: a concurrent bridge publishes its
             // journal before the store can change to the destination schema.
             if !needsMigration && !FileManager.default.fileExists(atPath: marker.path) {
@@ -59,12 +67,19 @@ enum DashLegacySchemaBridge {
             throw SQLite.Failure.unsupported(
                 "The original database is missing while migration recovery is pending. Recovery files remain at \(root.path). Restore the original database from a verified backup with the app closed, or contact support for deliberate recovery. Do not delete the journal or create an empty database.")
         }
+        SDKLogger.event("legacy_migration_phase", category: .persistence,
+                        fields: ["phase": .publicText("recovery")])
         try SQLite.recoverRollbackJournal(at: url)
         try recoverIfNeeded(at: url, root: root)
         // Another opener may have finished migration before this lock was
         // acquired. Recovery errors above remain fatal; ordinary detection does not.
         guard let source = try? identity(at: url),
-              (try? needsBridge(source, plan: plan)) == true else { return try ordinary() }
+              (try? needsBridge(source)) == true else { return try ordinary() }
+        SDKLogger.event("store_migration_route", category: .persistence, fields: [
+            "source_version": .publicText("1.0.0"),
+            "source_checksum": .publicText(Data(base64Encoded: source.checksum)?.count == 32 ? source.checksum : "unavailable"),
+            "route": .publicText("legacy-v1-bridge-to-v3"),
+            "target_version": .publicText("3.0.0")])
         guard configuration.allowsSave else { throw SQLite.Failure.unsupported("The store is read-only") }
         let permitted = Set(Schema(versionedSchema: DashSchemaV1.self).entities.map(\.name))
         let required: Set<String> = ["PersistentWallet", "PersistentAccount", "PersistentTransaction", "PersistentTxo"]
@@ -108,23 +123,23 @@ enum DashLegacySchemaBridge {
         guard try SQLite.rawDigest(url) == rawSource else { throw SQLite.Failure.sourceChanged }
         try SQLite.integrityCheck(backup)
         guard try identity(at: backup) == source else { throw SQLite.Failure.sourceChanged }
-        try hooks.visit(.afterSnapshot, url)
+        try visit(.afterSnapshot, url)
         try createProtectedFile(candidate, like: url)
         try SQLite.copy(from: backup, to: candidate)
         // Never replace this with `schema` or the latest version. Users can skip
-        // the V2 app; later releases must keep V2's frozen graph as this target.
+        // the V3 app; later releases must keep V3's frozen graph as this target.
         try autoreleasepool {
-            let bridgeSchema = Schema(versionedSchema: DashSchemaV2.self)
+            let bridgeSchema = Schema(versionedSchema: DashSchemaV3.self)
             _ = try ModelContainer(for: bridgeSchema, configurations: [
                 ModelConfiguration(schema: bridgeSchema, url: candidate, cloudKitDatabase: .none)
             ])
         }
         try SQLite.checkpoint(candidate)
-        try hooks.visit(.afterMigration, candidate)
+        try visit(.afterMigration, candidate)
         try rejectExternalStorage(at: candidate)
         try SQLite.integrityCheck(candidate)
         try SQLite.validatePreservation(from: backup, to: candidate)
-        // The normal plan must accept the fixed V2 result. In a future release
+        // The normal plan must accept the fixed V3 result. In a future release
         // it may continue through additional explicitly registered stages here.
         try autoreleasepool {
             _ = try ModelContainer(for: schema, migrationPlan: plan, configurations: [
@@ -146,16 +161,16 @@ enum DashLegacySchemaBridge {
         }
         try synchronizeDirectory(directory)
         try writeJournal(journal, at: root)
-        try hooks.visit(.beforeInstall, url)
+        try visit(.beforeInstall, url)
         try SQLite.copy(from: candidate, to: url) {
             // backup_step(0) owns SQLite's write lock, closing the race between
             // comparison and commit. Main/WAL bytes must still be the snapshot's
             // bytes; unrelated or concurrent writes cause a safe retry.
             guard try SQLite.rawDigest(url) == rawSource else { throw SQLite.Failure.sourceChanged }
-            try hooks.visit(.writeLocked, url)
+            try visit(.writeLocked, url)
         }
         committed = true
-        try hooks.visit(.afterCommit, url)
+        try visit(.afterCommit, url)
         let container = try ordinary()
         // This container has not escaped to the app, so no application writes
         // are permitted yet. Clearing must succeed before returning it: a stale
@@ -215,11 +230,11 @@ enum DashLegacySchemaBridge {
         return max(0, try fileSystem())
     }
 
-    private static func needsBridge(_ source: Identity, plan: any SchemaMigrationPlan.Type) throws -> Bool {
+    private static func needsBridge(_ source: Identity) throws -> Bool {
         guard source.versions == ["1.0.0"] else { return false }
-        for registered in plan.schemas where version(registered.versionIdentifier) == "1.0.0" {
-            if source == (try identity(for: registered)) { return false }
-        }
+        // Accepted V1 has its own direct route to V3, independent of the
+        // primary historical V2 migration plan.
+        if source == (try identity(for: DashSchemaV1.self)) { return false }
         return true
     }
 
@@ -325,7 +340,7 @@ enum DashLegacySchemaBridge {
         }
     }
 
-    private static func identity(at url: URL) throws -> Identity {
+    static func identity(at url: URL) throws -> Identity {
         let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
         guard let versions = metadata[NSStoreModelVersionIdentifiersKey] as? [String],
               let checksum = metadata["NSStoreModelVersionChecksumKey"] as? String,
@@ -336,7 +351,16 @@ enum DashLegacySchemaBridge {
         return Identity(versions: versions, checksum: checksum, hashes: hashes)
     }
 
-    private static func identity(for type: any VersionedSchema.Type) throws -> Identity {
+    /// The identity Core Data records for a versioned schema. It is a pure
+    /// function of the frozen model graph, but computing it writes a complete
+    /// temporary store, so each successful result is kept for the process.
+    static func identity(for type: any VersionedSchema.Type) throws -> Identity {
+        try identityCache.identity(for: type) { try computeIdentity(for: type) }
+    }
+
+    private static let identityCache = SchemaIdentityCache()
+
+    private static func computeIdentity(for type: any VersionedSchema.Type) throws -> Identity {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -348,6 +372,23 @@ enum DashLegacySchemaBridge {
             ])
         }
         return try identity(at: url)
+    }
+
+    /// Process-lifetime memo of schema identities. Only successful
+    /// computations are stored: a failed probe (for example a full disk) is
+    /// retried on the next request rather than remembered.
+    final class SchemaIdentityCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var identities: [ObjectIdentifier: Identity] = [:]
+
+        func identity(for type: any VersionedSchema.Type,
+                      compute: () throws -> Identity) throws -> Identity {
+            let key = ObjectIdentifier(type)
+            if let cached = lock.withLock({ identities[key] }) { return cached }
+            let computed = try compute()
+            lock.withLock { identities[key] = computed }
+            return computed
+        }
     }
 
     private static func rejectExternalStorage(at url: URL) throws {
@@ -393,10 +434,6 @@ enum DashLegacySchemaBridge {
         defer { Darwin.close(descriptor) }
         guard fsync(descriptor) == 0 else { throw SQLite.Failure.database("Cannot persist migration journal") }
     }
-    private static func version(_ value: Schema.Version) -> String {
-        "\(value.major).\(value.minor).\(value.patch)"
-    }
-
     private final class StoreLock {
         private var descriptor: Int32
         init(url: URL) throws {
