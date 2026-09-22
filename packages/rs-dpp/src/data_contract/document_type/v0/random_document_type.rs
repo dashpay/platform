@@ -199,6 +199,7 @@ impl DocumentTypeV0 {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             }
         };
 
@@ -592,6 +593,7 @@ impl DocumentTypeV0 {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             }
         };
 

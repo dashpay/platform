@@ -6,7 +6,7 @@ use dpp::consensus::state::document::document_contest_not_required_error::Docume
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::identifier::Identifier;
@@ -161,8 +161,18 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
         // property or from the writer's `$ownerId`. Both are on the transition, so
         // this is a structure check; it runs after the schema validation above so
         // every value it compares is already known to be a 32-byte identifier.
-        document_type
+        let result = document_type
             .validate_distinct_from_properties(self.data(), owner_id, platform_version)
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // The schema validation above established every supplied value is a byte array
+        // where the type says so; what is left is whether an `encryptedFor` property has
+        // the shape its scheme produces, which is all consensus can tell about a ciphertext.
+        document_type
+            .validate_encrypted_property_shapes(self.data(), platform_version)
             .map_err(Error::Protocol)
         // -->> End Introduced in V1 <<--
     }

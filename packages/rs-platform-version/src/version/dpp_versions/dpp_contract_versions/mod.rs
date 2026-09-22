@@ -79,6 +79,11 @@ pub struct DocumentTypeMethodVersions {
     /// property equals the value it must differ from. `None` on versions that
     /// predate the keyword, where no parsed property carries it.
     pub validate_distinct_from: OptionalFeatureVersion,
+    /// `validate_encrypted_property_shapes`: refuses a document whose `encryptedFor`
+    /// property does not have the shape its scheme produces. `None` on versions
+    /// that predate the keyword: the method returns an empty result there, so the
+    /// shipped create and replace structure validations that call it are inert.
+    pub validate_encrypted_property_shapes: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -102,6 +107,12 @@ pub struct DocumentTypeSchemaVersions {
     /// predate the keyword: they ignore it entirely, exactly as they parsed
     /// before it existed.
     pub apply_distinct_from: OptionalFeatureVersion,
+    /// Parses the `encryptedFor` property keyword (how a byte array property's
+    /// ciphertext was produced: recipient, key ids and scheme) onto the
+    /// property, and checks the properties it names at contract registration.
+    /// `None` on versions that predate the keyword: they ignore it entirely,
+    /// exactly as they parsed before it existed.
+    pub apply_encrypted_for: OptionalFeatureVersion,
     /// Parses a typed array property (`type: "array"` with an `items`
     /// element schema instead of `byteArray`). `None` on versions that
     /// predate typed arrays: they leave such a property to the scalar
