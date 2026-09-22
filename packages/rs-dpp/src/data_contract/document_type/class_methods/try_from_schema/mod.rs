@@ -526,7 +526,8 @@ fn apply_property_reference_v0(
 }
 
 /// The `contractRequirements` of a `contract` reference: each key an aspect of the referenced
-/// contract with a closed set of values, at least one when the object is given at all.
+/// contract with a closed set of values (`moderation`), or a bound on it (`minimumAgeSeconds`),
+/// at least one when the object is given at all.
 fn parse_contract_reference_requirements(
     refers_to_map: &BTreeMap<String, &Value>,
 ) -> Result<ContractReferenceRequirements, DataContractError> {
@@ -555,6 +556,21 @@ fn parse_contract_reference_requirements(
                         "contract refersTo contractRequirements moderation {name:?} is unknown, expected \"elected\""
                     ))
                 })?);
+            }
+            property_names::MINIMUM_AGE_SECONDS => {
+                let seconds: u32 = value.to_integer().map_err(|_| {
+                    DataContractError::InvalidContractStructure(
+                        "contract refersTo contractRequirements minimumAgeSeconds must be an integer from 1 to 4294967295"
+                            .to_string(),
+                    )
+                })?;
+                if seconds == 0 {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "contract refersTo contractRequirements minimumAgeSeconds must be at least 1"
+                            .to_string(),
+                    ));
+                }
+                fields.minimum_age_seconds = Some(seconds);
             }
             other => {
                 return Err(DataContractError::InvalidContractStructure(format!(
@@ -1092,10 +1108,68 @@ mod tests {
                 DocumentPropertyReferenceTarget::Contract {
                     contract_requirements: ContractReferenceRequirements {
                         moderation: Some(ContractReferenceModeration::Elected),
+                        minimum_age_seconds: None,
                     },
                 }
             )
         );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_a_minimum_age() {
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "minimumAgeSeconds": 604800 }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: None,
+                        minimum_age_seconds: Some(604_800),
+                    },
+                }
+            )
+        );
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": {
+                    "moderation": "elected",
+                    "minimumAgeSeconds": u32::MAX
+                }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::Elected),
+                        minimum_age_seconds: Some(u32::MAX),
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_a_minimum_age_that_is_zero_negative_too_large_or_not_an_integer() {
+        for (seconds, fragment) in [
+            (json!(0), "must be at least 1"),
+            (json!(-1), "must be an integer"),
+            (json!(u64::from(u32::MAX) + 1), "must be an integer"),
+            (json!(1.5), "must be an integer"),
+            (json!("3600"), "must be an integer"),
+        ] {
+            let refers_to = json!({
+                "type": "contract",
+                "contractRequirements": { "minimumAgeSeconds": seconds }
+            });
+            let err = try_document_type_from_schema(contract_reference_schema(refers_to.clone()))
+                .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(fragment),
+                "{refers_to}: expected {fragment:?}, got {err}"
+            );
+        }
     }
 
     #[test]

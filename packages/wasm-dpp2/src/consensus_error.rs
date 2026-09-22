@@ -51,9 +51,9 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// reference; a `permanentDocument` reference is the one for a type
     /// declaring `canBeDeleted: false`.
     ReferencedDocumentTypeNotDeletable = 40131,
-    /// The referenced contract exists but does not declare what the
-    /// reference's `contractRequirements` require of it, elected moderation for
-    /// one.
+    /// The referenced contract exists but does not meet what the reference's
+    /// `contractRequirements` require of it: elected moderation, or a minimum
+    /// age at the block time of the write.
     ReferencedContractRequirementNotMet = 40135,
 }
 

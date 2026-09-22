@@ -37,11 +37,14 @@ export type DocumentPropertyReferenceTarget =
       /**
        * What the referenced contract must declare beyond existing, checked
        * by consensus when the referring document is written against the
-       * contract fetched for the existence check: `moderation: 'elected'`
-       * requires an elected moderation team (code 40135 when unmet).
-       * Absent when the declaration carries no requirement.
+       * contract fetched for the existence check and the block time:
+       * `moderation: 'elected'` requires an elected moderation team, and
+       * `minimumAgeSeconds` requires the contract's recorded creation time
+       * to be at least that many seconds before the block time of the write
+       * (code 40135 when either is unmet). Absent when the declaration
+       * carries no requirement.
        */
-      contractRequirements?: { moderation?: 'elected' };
+      contractRequirements?: { moderation?: 'elected'; minimumAgeSeconds?: number };
     }
   | { type: 'token' }
   | {
@@ -181,14 +184,24 @@ fn reference_to_js(
         } => {
             // Absent, not `{}`-valued, when the declaration requires nothing,
             // matching the schema's own omission.
-            if let Some(moderation) = contract_requirements.moderation {
+            if !contract_requirements.is_empty() {
                 let fields = Object::new();
-                set_field(
-                    &fields,
-                    "moderation",
-                    &JsValue::from_str(moderation.as_str()),
-                    path,
-                )?;
+                if let Some(moderation) = contract_requirements.moderation {
+                    set_field(
+                        &fields,
+                        "moderation",
+                        &JsValue::from_str(moderation.as_str()),
+                        path,
+                    )?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_age_seconds {
+                    set_field(
+                        &fields,
+                        "minimumAgeSeconds",
+                        &JsValue::from_f64(f64::from(seconds)),
+                        path,
+                    )?;
+                }
                 set_field(&object, "contractRequirements", &fields, path)?;
             }
         }

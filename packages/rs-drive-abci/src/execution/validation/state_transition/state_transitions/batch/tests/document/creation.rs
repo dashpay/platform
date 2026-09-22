@@ -5303,6 +5303,16 @@ mod creation_tests {
     /// tests, and one that declares no moderation, so a reference to it is unmet.
     const REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_ID: &str =
         "9k3RE6kHNTsDmyXFwEPpiFQ3ipXfp5FuXGXpQ1rDHDJb";
+    const REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-aged-contract-ref.json";
+    /// The `id` of the aged-contract-reference fixture (`minimumAgeSeconds: 3600`): written to
+    /// state without a creation time, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_ID: &str =
+        "GbYWKJSr6P7fJqkAdSCNM5kuN2eBewAgYfrMJ22rfhrD";
+    /// The block time the aged-contract-reference tests write the referring document at
+    const AGED_REFERENCE_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+    /// The minimum age the aged-contract-reference fixture declares, in milliseconds
+    const AGED_REFERENCE_MINIMUM_AGE_MS: u64 = 3_600_000;
     const REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-token-ref.json";
     const REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH: &str =
@@ -5326,6 +5336,7 @@ mod creation_tests {
     {
         run_reference_validation_creation_with_setup_and_mutator(
             contract_path,
+            BlockInfo::default(),
             |_, _| Identifier::default(),
             |document, targets, _| mutator(document, targets),
         )
@@ -5334,9 +5345,10 @@ mod creation_tests {
 
     /// Like `run_reference_validation_creation_with_mutator`, with a `setup` step that writes
     /// whatever else the test needs into state before the contract, and hands the mutator an
-    /// id it produced (a contract's, say).
+    /// id it produced (a contract's, say). The document is written in a block of `block_info`.
     async fn run_reference_validation_creation_with_setup_and_mutator<S, F>(
         contract_path: &str,
+        block_info: BlockInfo,
         setup: S,
         mutator: F,
     ) -> StateTransitionExecutionResult
@@ -5434,7 +5446,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &[documents_batch_create_serialized_transition],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_info,
                 &transaction,
                 platform_version,
                 false,
@@ -5700,9 +5712,121 @@ mod creation_tests {
     async fn should_document_creation_succeed_when_referenced_contract_is_elected_moderated() {
         let result = run_reference_validation_creation_with_setup_and_mutator(
             REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
             insert_elected_contract,
             |document, _, elected_contract_id| {
                 document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A contract created at `created_at`, for a reference that requires a minimum age. It is
+    /// written to state directly, the way the fixtures are, with the creation time a contract
+    /// create transition would have recorded.
+    fn insert_contract_created_at(
+        created_at: Option<u64>,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &PlatformVersion) -> Identifier {
+        move |platform, _platform_version| {
+            use dpp::data_contract::accessors::v1::DataContractV1Setters;
+
+            let contract = setup_contract(
+                &platform.drive,
+                REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+                Some([0xA6; 32]),
+                None,
+                Some(|contract: &mut DataContract| {
+                    contract.set_created_at(created_at);
+                }),
+                None,
+                None,
+            );
+            contract.id()
+        }
+    }
+
+    fn aged_reference_block_info() -> BlockInfo {
+        BlockInfo {
+            time_ms: AGED_REFERENCE_BLOCK_TIME_MS,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_is_too_young() {
+        // Created one millisecond less than the minimum age before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_created_at(Some(
+                AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS + 1,
+            )),
+            |document, _, young_contract_id| {
+                document.set("refContractId", young_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xA6; 32])
+                && e.field() == "minimumAgeSeconds"
+                && e.required() == "3600"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_has_no_creation_time() {
+        // The fixture contract itself exists in state, written without a creation time, as a
+        // contract created before contracts recorded one would be: its age is unknown
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            |_, _| Identifier::default(),
+            |document, _, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "minimumAgeSeconds"
+                && e.required() == "3600"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_contract_is_old_enough() {
+        // Created exactly the minimum age before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_created_at(Some(
+                AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS,
+            )),
+            |document, _, old_contract_id| {
+                document.set("refContractId", old_contract_id.into());
             },
         )
         .await;
