@@ -152,7 +152,8 @@ jobs:
         run: cargo llvm-cov --version | grep -qx 'cargo-llvm-cov 0.9.1'
 
       - name: Verify cargo-nextest v0.9.144
-        run: cargo nextest --version | grep -qx 'cargo-nextest 0.9.144'
+        # Release binaries include commit/host metadata after the version.
+        run: cargo nextest --version | sed -n '1p' | grep -Eq '^cargo-nextest 0[.]9[.]144( |$)'
 
       - name: Check formatting
         run: cargo fmt --check --all
@@ -178,7 +179,7 @@ jobs:
 
       - name: Find unused dependencies
         run: |
-          cargo machete --version | grep -qx 'cargo-machete 0.9.2'
+          cargo machete --version | grep -Eq '^(cargo-machete )?0[.]9[.]2$'
           cargo machete
 
       # The transport-free cuts are how embedders with their own networking
