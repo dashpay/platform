@@ -149,6 +149,41 @@ impl DocumentDistinctFromErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by `encryptedFor` validation, which runs
+/// from protocol version 14 onward on every document create and replace.
+///
+/// Branch on an error's `code` against these instead of matching its
+/// message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentEncryptionErrorCode.InvalidEncryptedPropertyShape) {
+///     // the bytes are not the shape the declared scheme produces
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentEncryptionErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentEncryptionErrorCodeWasm {
+    /// A property the document type declares `encryptedFor` was supplied
+    /// with bytes that are not a ciphertext of the declared scheme: shorter
+    /// than the IV plus one block, or not a multiple of the block length.
+    /// The shape is all consensus checks about a ciphertext.
+    InvalidEncryptedPropertyShape = 10420,
+}
+
+impl DocumentEncryptionErrorCodeWasm {
+    /// The encryption error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10420 => Some(Self::InvalidEncryptedPropertyShape),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -195,6 +230,12 @@ impl ConsensusErrorWasm {
     #[wasm_bindgen(getter = "documentDistinctFromErrorCode")]
     pub fn document_distinct_from_error_code(&self) -> Option<DocumentDistinctFromErrorCodeWasm> {
         DocumentDistinctFromErrorCodeWasm::from_code(self.0.code())
+    }
+    /// The encrypted-property error this is, or `undefined` when it is not
+    /// code 10420.
+    #[wasm_bindgen(getter = "documentEncryptionErrorCode")]
+    pub fn document_encryption_error_code(&self) -> Option<DocumentEncryptionErrorCodeWasm> {
+        DocumentEncryptionErrorCodeWasm::from_code(self.0.code())
     }
 }
 
@@ -279,6 +320,40 @@ mod tests {
         );
         // A neighbouring code is not claimed.
         assert_eq!(DocumentDistinctFromErrorCodeWasm::from_code(10418), None);
+    }
+
+    /// Built from the real DPP error rather than a code literal, like the
+    /// immutability test above.
+    #[test]
+    fn encryption_error_code_mirrors_the_dpp_error() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::InvalidEncryptedPropertyShapeError;
+
+        let error: ConsensusError = BasicError::InvalidEncryptedPropertyShapeError(
+            InvalidEncryptedPropertyShapeError::new(
+                "encryptedMessage".to_string(),
+                "ecdh-secp256k1-aes256-cbc".to_string(),
+                47,
+                32,
+                16,
+            ),
+        )
+        .into();
+
+        assert_eq!(
+            DocumentEncryptionErrorCodeWasm::from_code(error.code()),
+            Some(DocumentEncryptionErrorCodeWasm::InvalidEncryptedPropertyShape)
+        );
+        assert_eq!(
+            DocumentEncryptionErrorCodeWasm::InvalidEncryptedPropertyShape as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_encryption_error_code(),
+            Some(DocumentEncryptionErrorCodeWasm::InvalidEncryptedPropertyShape)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentEncryptionErrorCodeWasm::from_code(10419), None);
     }
 
     /// The six reference-validation errors, paired with the JS enum variant

@@ -9,7 +9,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // PROTOCOL_VERSION_14: bump `document_create_transition_structure_validation` to
 // 1, which cross-checks the index named by a document create transition's
 // prefunded voting balance against the contested index the document itself
-// resolves to. Also bump document create state validation to 2, adding
+// resolves to, and checks the ciphertext shape of every `encryptedFor`
+// property (replace structure validation 0 gained the same shape check in
+// place, inert before this version). Also bump document create state validation to 2, adding
 // `refersTo` document reference validation (referenced identities and
 // contracts must exist) and rejecting a non-contested create whose id is
 // already held by a live contested document. Document replace state

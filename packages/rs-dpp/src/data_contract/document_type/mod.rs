@@ -118,6 +118,20 @@ pub(crate) mod property_names {
     pub const READONLY: &str = "readonly";
     pub const KEEPS_HISTORY: &str = "keepsHistory";
     pub const OWNER_PROTECTED: &str = "ownerProtected";
+    /// Property-level object on a byte array declaring how its ciphertext was
+    /// produced: the [`RECIPIENT`], the [`RECIPIENT_KEY`] and [`SENDER_KEY`]
+    /// properties carrying the key ids, and the [`SCHEME`]. Meta-schema v3+
+    /// (protocol version 14). See `apply_encrypted_for` in `try_from_schema`.
+    pub const ENCRYPTED_FOR: &str = "encryptedFor";
+    /// `encryptedFor`: the identifier property naming the recipient identity,
+    /// or `$ownerId` for the writer's own.
+    pub const RECIPIENT: &str = "recipient";
+    /// `encryptedFor`: the integer property carrying the recipient's key id.
+    pub const RECIPIENT_KEY: &str = "recipientKey";
+    /// `encryptedFor`: the integer property carrying the sender's key id.
+    pub const SENDER_KEY: &str = "senderKey";
+    /// `encryptedFor`: the scheme name, one of `EncryptionScheme::ALL`.
+    pub const SCHEME: &str = "scheme";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";

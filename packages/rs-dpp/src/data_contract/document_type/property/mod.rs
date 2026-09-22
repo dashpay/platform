@@ -39,6 +39,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 pub mod array;
+pub mod encrypted_for;
+
+pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 
 #[cfg(test)]
 mod byte_array_encoding_flip_tests;
@@ -62,6 +65,11 @@ pub struct DocumentProperty {
     /// is every property parsed before protocol version 14.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub distinct_from: Option<DistinctFrom>,
+    /// How the property's bytes were encrypted (`encryptedFor`): the recipient,
+    /// the key ids and the scheme. Only ever `Some` on a byte array property,
+    /// and only on contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted_for: Option<EncryptedFor>,
 }
 
 /// What a `distinctFrom` identifier property must differ from.
@@ -3807,6 +3815,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -3817,6 +3826,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -6507,6 +6517,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         inner_fields.insert(
@@ -6517,6 +6528,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6569,6 +6581,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6590,6 +6603,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         inner_fields.insert(
@@ -6600,6 +6614,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7034,6 +7049,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7070,6 +7086,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -7080,6 +7097,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -7099,6 +7117,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -7109,6 +7128,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -7402,6 +7422,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -7412,6 +7433,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7473,6 +7495,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -7483,6 +7506,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7570,6 +7594,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -7580,6 +7605,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7847,6 +7873,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7877,6 +7904,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         // Second field is required
@@ -7888,6 +7916,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8005,6 +8034,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8024,6 +8054,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8331,6 +8362,7 @@ mod tests {
                 transient: false,
                 required_since: None,
                 distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8595,6 +8627,7 @@ mod tests {
             transient: false,
             required_since: None,
             distinct_from: None,
+            encrypted_for: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
