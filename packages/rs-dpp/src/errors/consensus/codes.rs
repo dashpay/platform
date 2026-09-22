@@ -391,6 +391,7 @@ impl ErrorWithCode for StateError {
             Self::MasternodeVoteAlreadyPresentError(_) => 40304,
             Self::MasternodeIncorrectVotingAddressError(_) => 40305,
             Self::MasternodeIncorrectVoterIdentityIdError(_) => 40306,
+            Self::VoteChoiceNotAllowedForVotePollError(_) => 40307,
 
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,

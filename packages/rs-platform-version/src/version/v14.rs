@@ -512,6 +512,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     of a moderated type (`ContractModeratedDocumentTypeNotYetUsableError`,
 ///     41200). No election exists yet.
 ///
+/// 23. **Contested indexes without a Lock choice, and ties to the earliest
+///     contender**: a contested unique index may declare `"resolution": 1`,
+///     `ContestedIndexResolution::MasternodeVoteNoLocking` (meta-schema v3,
+///     parser generation 3). Such a contest offers no Lock choice
+///     (`VoteChoiceNotAllowedForVotePollError`, 40307, from `validate_state` 1
+///     of the masternode vote) and always ends with a winner. Its end date is
+///     the end of the join window until a second contender joins, when
+///     `add_contested_document_for_contract_operations` 1 moves it to the full
+///     poll duration, so a contest with a single contender is awarded without
+///     the vote window. `check_for_ended_vote_polls` 1 awards a tie to the
+///     **earliest** contender (creation time, block height, core height,
+///     document id) for every resolution, where the shipped rule awarded the
+///     latest; DPNS contests ending from this version on follow the new rule.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -682,6 +696,66 @@ mod tests {
 
     /// The ranked index keywords are gated by the meta-schema version, so v14
     /// must select meta-schema v3 while v13 stays on v2.
+    /// Contested indexes without a Lock choice (item 23): the three method
+    /// versions that read the resolution are selected by v14 only, so a v13
+    /// replay keeps the shipped rules (a full poll for every contest, ties to
+    /// the latest contender, a Lock vote accepted on any contest).
+    #[test]
+    fn no_locking_contests_are_selected_by_v14_only() {
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .methods
+                .voting
+                .check_for_ended_vote_polls,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .methods
+                .voting
+                .check_for_ended_vote_polls,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .masternode_vote_state_transition
+                .state,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .masternode_vote_state_transition
+                .state,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_document_for_contract_operations,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_document_for_contract_operations,
+            1
+        );
+    }
+
     #[test]
     fn ranked_index_keywords_are_gated_by_meta_schema_v3() {
         assert_eq!(

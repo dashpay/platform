@@ -121,7 +121,14 @@ pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum ContestedIndexResolution {
+    /// Masternodes and evonodes vote for a contender, abstain, or lock the value so nobody
+    /// gets it. This is the DPNS rule.
     MasternodeVote = 0,
+    /// Masternodes and evonodes vote for a contender or abstain; there is no Lock choice,
+    /// so the contest always ends with a winner. A contest whose join window closes with a
+    /// single contender is awarded at once, without the vote window. Meta-schema v3+
+    /// (protocol version 14).
+    MasternodeVoteNoLocking = 1,
 }
 
 impl TryFrom<u8> for ContestedIndexResolution {
@@ -130,6 +137,7 @@ impl TryFrom<u8> for ContestedIndexResolution {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(MasternodeVote),
+            1 => Ok(ContestedIndexResolution::MasternodeVoteNoLocking),
             value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
                 "contested index resolution unknown: {}",
                 value
@@ -774,6 +782,9 @@ pub(crate) struct IndexGrammarAdmissions {
     /// generations reject the omission, and their frozen meta-schemas (v1,
     /// v2) carry a `dependentRequired` row that says the same.
     pub(crate) range_countable_implies_countable: bool,
+    /// Whether a contested index may be resolved without a Lock choice
+    /// (`"resolution": 1`, [`ContestedIndexResolution::MasternodeVoteNoLocking`]).
+    pub(crate) no_locking_resolution: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -789,6 +800,7 @@ impl IndexGrammarAdmissions {
             preallocated: generation >= 3,
             skip_if_absent: generation >= 3,
             range_countable_implies_countable: generation >= 3,
+            no_locking_resolution: generation >= 3,
         }
     }
 }
@@ -1329,6 +1341,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
     }
@@ -1369,6 +1382,7 @@ impl Index {
             preallocated: preallocated_allowed,
             skip_if_absent: skip_if_absent_allowed,
             range_countable_implies_countable,
+            no_locking_resolution: no_locking_resolution_allowed,
         } = admissions;
         // Decouple the map
         // It contains properties and a unique key
@@ -1538,6 +1552,14 @@ impl Index {
                                     resolution_int.try_into().map_err(|e: ProtocolError| {
                                         DataContractError::ValueWrongType(e.to_string())
                                     })?;
+                                if contested_index_information.resolution
+                                    == ContestedIndexResolution::MasternodeVoteNoLocking
+                                    && !no_locking_resolution_allowed
+                                {
+                                    return Err(DataContractError::InvalidContractStructure(
+                                        "contested index resolution 1 (masternode vote without locking) requires document type schema generation 3 (protocol version 14)".to_string(),
+                                    ));
+                                }
                             }
                             "description" => {}
                             key => {
@@ -2720,6 +2742,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2738,6 +2761,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2756,6 +2780,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2778,6 +2803,7 @@ mod tests {
             preallocated: true,
             skip_if_absent: false,
             range_countable_implies_countable: false,
+            no_locking_resolution: false,
         };
 
         let mut map = index_value_map("postId", None);
@@ -2809,6 +2835,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2841,6 +2868,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2865,6 +2893,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2889,6 +2918,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2914,6 +2944,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -2940,6 +2971,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2962,6 +2994,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -2989,6 +3022,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -3016,6 +3050,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3041,6 +3076,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3071,6 +3107,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("the parser applies structural rules only");
@@ -3096,6 +3133,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3117,6 +3155,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3142,6 +3181,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3198,6 +3238,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3236,6 +3277,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("should parse");
@@ -3267,6 +3309,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3300,6 +3343,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3327,6 +3371,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         )
         .expect("a non-unique $updatedAt bucketing stays legal");
@@ -3349,6 +3394,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .unwrap_err();
@@ -3366,8 +3412,14 @@ mod tests {
     }
 
     #[test]
+    fn test_contested_index_resolution_try_from_no_locking() {
+        let res = ContestedIndexResolution::try_from(1u8).unwrap();
+        assert_eq!(res, ContestedIndexResolution::MasternodeVoteNoLocking);
+    }
+
+    #[test]
     fn test_contested_index_resolution_try_from_invalid() {
-        let res = ContestedIndexResolution::try_from(1u8);
+        let res = ContestedIndexResolution::try_from(2u8);
         assert!(res.is_err());
     }
 
@@ -4583,6 +4635,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("all three ranked keywords must parse when the grammar allows them");
@@ -4611,6 +4664,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("index without ranked keywords must parse");
@@ -4655,6 +4709,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("ranked flags on a compound index must be accepted");
@@ -4687,6 +4742,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4720,6 +4776,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4751,6 +4808,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4779,6 +4837,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4809,6 +4868,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4839,6 +4899,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         );
         assert!(
@@ -4871,6 +4932,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("rankedAverageable on the averageable sugar form must parse");
@@ -4909,6 +4971,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("rankedAverageable on the explicit longhand form must parse");
@@ -4937,6 +5000,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
@@ -4971,6 +5035,7 @@ mod tests {
                         preallocated: false,
                         skip_if_absent: false,
                         range_countable_implies_countable: false,
+                        no_locking_resolution: false,
                     },
                 );
                 assert!(
@@ -5044,6 +5109,7 @@ mod tests {
             preallocated: false,
             skip_if_absent: false,
             range_countable_implies_countable: true,
+            no_locking_resolution: true,
         }
     }
 
@@ -5505,6 +5571,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: false,
+                no_locking_resolution: false,
             },
         );
         let msg = format!(
@@ -5569,6 +5636,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             );
             assert!(
@@ -5599,6 +5667,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             )
             .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
@@ -5625,6 +5694,7 @@ mod tests {
                     preallocated: false,
                     skip_if_absent: false,
                     range_countable_implies_countable: true,
+                    no_locking_resolution: false,
                 },
             )
             .unwrap_or_else(|e| {
@@ -5649,6 +5719,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("nullSearchable: false on a plain index must still parse");
@@ -5668,6 +5739,7 @@ mod tests {
                 preallocated: false,
                 skip_if_absent: false,
                 range_countable_implies_countable: true,
+                no_locking_resolution: false,
             },
         )
         .expect("nullSearchable: false on a range-averageable index must still parse");
@@ -5692,6 +5764,47 @@ mod tests {
         ];
         let result = Index::try_from(index_map.as_slice());
         assert!(result.is_err()); // contest supported only for unique indexes
+    }
+
+    fn contested_unique_index_map(resolution: u64) -> Vec<(Value, Value)> {
+        vec![
+            (Value::Text("unique".to_string()), Value::Bool(true)),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("contested".to_string()),
+                Value::Map(vec![(
+                    Value::Text("resolution".to_string()),
+                    Value::U64(resolution),
+                )]),
+            ),
+        ]
+    }
+
+    /// `"resolution": 1` is a generation-3 value: the grammar without the admission
+    /// refuses it, generation 3 parses it as the masternode vote without locking.
+    #[test]
+    fn test_index_contested_resolution_no_locking_needs_the_admission() {
+        let index_map = contested_unique_index_map(1);
+        assert!(Index::try_from(index_map.as_slice()).is_err());
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("generation 3 admits the no-locking resolution");
+        assert_eq!(
+            index.contested_index.expect("contested").resolution,
+            ContestedIndexResolution::MasternodeVoteNoLocking
+        );
+        let index =
+            Index::try_from_value_map(contested_unique_index_map(0).as_slice(), v3_admissions())
+                .expect("the masternode vote resolution parses in every generation");
+        assert_eq!(
+            index.contested_index.expect("contested").resolution,
+            ContestedIndexResolution::MasternodeVote
+        );
     }
 
     #[test]
@@ -5965,6 +6078,7 @@ mod tests {
             preallocated: false,
             skip_if_absent: false,
             range_countable_implies_countable: false,
+            no_locking_resolution: false,
         }
     }
 
