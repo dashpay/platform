@@ -2,7 +2,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::masternode_vote::balance::v0::MasternodeVoteTransitionBalanceValidationV0;
-use crate::execution::validation::state_transition::masternode_vote::balance::v1::MasternodeVoteTransitionBalanceValidationV1;
 use crate::execution::validation::state_transition::processor::prefunded_specialized_balance::StateTransitionPrefundedSpecializedBalanceValidationV0;
 use dpp::fee::Credits;
 use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
@@ -14,7 +13,6 @@ use drive::grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 pub(crate) mod v0;
-pub(crate) mod v1;
 
 impl StateTransitionPrefundedSpecializedBalanceValidationV0 for MasternodeVoteTransition {
     fn validate_minimum_prefunded_specialized_balance_pre_check(
@@ -39,15 +37,9 @@ impl StateTransitionPrefundedSpecializedBalanceValidationV0 for MasternodeVoteTr
                 execution_context,
                 platform_version,
             ),
-            1 => self.validate_advanced_minimum_balance_pre_check_v1(
-                drive,
-                tx,
-                execution_context,
-                platform_version,
-            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode vote transition: validate_balance".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

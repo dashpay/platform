@@ -318,15 +318,13 @@ Not all transitions need state validation. `IdentityTopUp`, `IdentityCreditWithd
 by the earlier stages.
 
 A `MasternodeVote` is paid by its vote poll's prefunded specialized balance, not by
-the voter, so its balance check comes here rather than in stage 7. From protocol
-version 14 (`process_state_transition` v1), once state validation has found the poll
-and seen it open, the processor checks that fund: a vote on a poll with no fund, or
-one below the single vote cost, is refused unpaid with
+the voter, so its balance check comes here rather than in stage 7. Once state
+validation has found the poll and seen it open, the processor checks that fund: a vote
+on a poll with no fund, or one below the single vote cost, is refused unpaid with
 `PrefundedSpecializedBalanceNotFoundError` or
 `PrefundedSpecializedBalanceInsufficientError`. The fund is checked after the poll's
 status because settling a poll deletes its fund; a vote that arrives late is told the
-poll's status, not that its fund is missing. Earlier versions ran the same pre-check
-but ignored its result, and such a vote failed inside execution as an internal error.
+poll's status, not that its fund is missing.
 
 ## ConsensusValidationResult: How Errors Accumulate
 
