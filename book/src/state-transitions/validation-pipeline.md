@@ -231,6 +231,12 @@ if state_transition.has_identity_minimum_balance_pre_check_validation() {
 }
 ```
 
+A `MasternodeVote` is paid by its vote poll's prefunded specialized balance, not by
+the voter, so its pre-check is on that pot: a vote on a poll whose pot does not exist,
+or holds less than the single vote cost, is refused unpaid with
+`PrefundedSpecializedBalanceNotFoundError` or
+`PrefundedSpecializedBalanceInsufficientError`.
+
 ## Stage 8: Advanced Structure Validation (without State)
 
 Some transitions need structural validation that goes beyond basic checks but does not
@@ -316,15 +322,6 @@ let result = if state_transition.has_state_validation() {
 Not all transitions need state validation. `IdentityTopUp`, `IdentityCreditWithdrawal`,
 `AddressFundsTransfer`, and several others skip it -- their validation is fully covered
 by the earlier stages.
-
-A `MasternodeVote` is paid by its vote poll's prefunded specialized balance, not by
-the voter, so its balance check comes here rather than in stage 7. Once state
-validation has found the poll and seen it open, the processor checks that fund: a vote
-on a poll with no fund, or one below the single vote cost, is refused unpaid with
-`PrefundedSpecializedBalanceNotFoundError` or
-`PrefundedSpecializedBalanceInsufficientError`. The fund is checked after the poll's
-status because settling a poll deletes its fund; a vote that arrives late is told the
-poll's status, not that its fund is missing.
 
 ## ConsensusValidationResult: How Errors Accumulate
 

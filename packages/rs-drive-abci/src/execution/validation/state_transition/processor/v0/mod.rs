@@ -204,6 +204,26 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
+    // A masternode vote is paid by its vote poll's prefunded specialized balance, never by the
+    // voter. When that fund does not exist or cannot cover the vote, nobody can be charged for
+    // the vote, so it is refused unpaid: proposers strip it from their block and other
+    // validators reject a block that carries it, exactly like a vote that fails its nonce check.
+    // Until 4.2 the pre-check ran here but its result was never read, and such a vote failed
+    // inside execution, when its cost was deducted, as an internal error; both outcomes keep the
+    // vote out of every block and no chain ever held one, so acting on it is not versioned.
+    if state_transition.uses_prefunded_specialized_balance_for_payment() {
+        let result = state_transition.validate_minimum_prefunded_specialized_balance_pre_check(
+            platform.drive,
+            transaction,
+            &mut state_transition_execution_context,
+            platform_version,
+        )?;
+
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+    }
+
     // Validate minimum fee for shielded spending transitions (stateless, uses public value_balance).
     // This is cheaper than proof verification so we check it first.
     // Only applies to ShieldedTransfer/Unshield/ShieldedWithdrawal — Shield pays from address
@@ -329,42 +349,6 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         )?
     };
 
-    // A masternode vote is paid by its vote poll's prefunded specialized balance, never by the
-    // voter. When that fund does not exist or cannot cover the vote, nobody can be charged
-    // for the vote, so it is refused unpaid: proposers strip it from their block and other
-    // validators reject a block that carries it, exactly like a vote that fails its nonce
-    // check. Until 4.2 the pre-check ran but its result was ignored, and such a vote failed
-    // inside execution, when its cost was deducted, as an internal error. Both outcomes keep
-    // the vote out of every block, so no block can hold one and acting on the pre-check is
-    // not versioned.
-    //
-    // The fund is checked last, once state validation has found the poll and seen it open.
-    // Settling a poll deletes its fund, so a check ahead of state validation would report a
-    // missing fund for every vote that arrives after the poll ended and hide the poll's real
-    // status from the voter. The price of that order is the transform's and state validation's
-    // reads, spent before an unpaid refusal where a check ahead of them would spend one balance
-    // read; the signature check, which dominates, is spent on every refused vote either way.
-    if result.is_valid() && state_transition.uses_prefunded_specialized_balance_for_payment() {
-        let fund_result = state_transition
-            .validate_minimum_prefunded_specialized_balance_pre_check(
-                platform.drive,
-                transaction,
-                &mut state_transition_execution_context,
-                platform_version,
-            )?;
-
-        if !fund_result.is_valid() {
-            return Ok(
-                ConsensusValidationResult::<ExecutionEvent>::new_with_errors(fund_result.errors),
-            );
-        }
-    }
-
-    // A result that carries errors together with an action becomes a paid-invalid event. For a
-    // masternode vote that event is a `PaidFixedCost` with errors, which execution does not pay
-    // and the block reports as an internal error, so a vote's transform and state validation
-    // return their errors without an action, and any later generation of them must keep doing
-    // so.
     result.map_result(|action| {
         ExecutionEvent::create_from_state_transition_action(
             action,
@@ -678,24 +662,6 @@ mod tests {
         assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(1));
         assert_eq!(contest.nonce_of(&second_voter, platform_version), Some(0));
         assert_eq!(contest.fund(platform_version), Some(0));
-    }
-
-    /// A poll that never opened has no fund either; the voter is told about the poll, which is
-    /// what state validation checks, not about the fund, which is checked after it.
-    #[tokio::test]
-    async fn should_report_a_missing_poll_rather_than_its_missing_fund() {
-        let platform_version = PlatformVersion::latest();
-        let mut contest = contest_at(platform_version).await;
-
-        let result = contest.vote_on("nowhere", platform_version).await;
-
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
-                StateError::VotePollNotFoundError(_)
-            ))
-        );
-        assert_eq!(contest.nonce_of(&contest.voter, platform_version), Some(0));
     }
 
     /// The refusal is not versioned: a chain still on protocol version 13 refuses the vote the
