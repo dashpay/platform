@@ -90,6 +90,7 @@ fn bounds_cover(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -306,55 +307,75 @@ mod tests {
         );
     }
 
-    #[test]
-    fn skips_an_eligible_key_unavailable_to_the_signer() {
-        let subject = identity(vec![
-            key(1, SecurityLevel::CRITICAL),
-            key(2, SecurityLevel::HIGH),
-        ]);
-        let chosen = usable_authentication_key(
-            &subject,
-            &AvailableKeys(vec![2]),
+    fn pick_with_signer(
+        identity: &Identity,
+        available: &[KeyID],
+    ) -> Result<Option<KeyID>, ProtocolError> {
+        usable_authentication_key(
+            identity,
+            &AvailableKeys(available.to_vec()),
             Identifier::from(CONTRACT),
             DOCUMENT_TYPE,
             &LEVELS,
             &TYPES,
         )
-        .unwrap()
-        .expect("key 2 is eligible and available");
+        .map(|key| key.map(|k| k.id()))
+    }
+
+    fn bound_elsewhere(id: KeyID) -> IdentityPublicKey {
+        bound_key(
+            id,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from(OTHER_CONTRACT),
+            }),
+        )
+    }
+
+    #[test]
+    fn falls_back_past_an_unavailable_unlimited_key_to_an_available_limited_one() {
+        let subject = identity(vec![
+            key(1, SecurityLevel::CRITICAL),
+            bound_elsewhere(2),
+            key(3, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+        ]);
         assert_eq!(
-            chosen.id(),
-            2,
-            "unavailable key 1 must not shadow available key 2"
+            pick_with_signer(&subject, &[2, 3]).unwrap(),
+            Some(3),
+            "unavailable key 1 is skipped, and key 2 is not usable here even though \
+             the signer holds it"
         );
     }
 
     #[test]
-    fn errs_when_every_eligible_key_is_unavailable_to_the_signer() {
-        let subject = identity(vec![key(1, SecurityLevel::CRITICAL)]);
-        assert!(usable_authentication_key(
-            &subject,
-            &AvailableKeys(vec![]),
-            Identifier::from(CONTRACT),
-            DOCUMENT_TYPE,
-            &LEVELS,
-            &TYPES,
-        )
-        .is_err());
+    fn errs_naming_the_eligible_key_when_only_ineligible_keys_are_available() {
+        let subject = identity(vec![
+            bound_elsewhere(1),
+            key(2, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+            key(3, SecurityLevel::CRITICAL).with_limits(None, Some(1)),
+        ]);
+        let err = pick_with_signer(&subject, &[1, 3]).unwrap_err().to_string();
+        assert!(
+            err.contains(SIGNER_KEY_UNAVAILABLE_PREFIX),
+            "must surface as signer-unavailable: {err}"
+        );
+        assert!(
+            err.contains("Signing key 2 "),
+            "only key 2 is eligible, so it is the one reported: {err}"
+        );
     }
 
     #[test]
     fn answers_none_rather_than_err_when_no_key_is_eligible_at_all() {
-        let empty = identity(vec![]);
-        assert!(usable_authentication_key(
-            &empty,
-            &AvailableKeys(vec![]),
-            Identifier::from(CONTRACT),
-            DOCUMENT_TYPE,
-            &LEVELS,
-            &TYPES,
-        )
-        .unwrap()
-        .is_none());
+        let subject = identity(vec![
+            key(0, SecurityLevel::MASTER),
+            bound_elsewhere(1),
+            key(2, SecurityLevel::HIGH).with_limits(None, Some(1)),
+        ]);
+        assert_eq!(
+            pick_with_signer(&subject, &[]).unwrap(),
+            None,
+            "unavailable but ineligible keys must not turn `None` into a signer error"
+        );
     }
 }
