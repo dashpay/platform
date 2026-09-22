@@ -112,7 +112,8 @@ export type DocumentPropertyReferenceTarget =
        * written against the key fetched for the existence check:
        * `purpose` requires the key's purpose to be the named one, and
        * `boundTo` requires the key's contract bounds to be exactly the
-       * declaring contract and the named document type of it (code 40136
+       * declaring contract and the named document type of it; a
+       * whole-contract or contract group bound never meets it (code 40136
        * when either is unmet). Absent when the declaration carries no
        * requirement.
        */

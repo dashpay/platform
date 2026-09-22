@@ -3135,7 +3135,7 @@ mod replacement_tests {
 
         assert_matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError {
+            PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
                 ..
             }
@@ -3184,7 +3184,7 @@ mod replacement_tests {
 
         assert_matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError {
+            PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
                 ..
             }
@@ -3221,7 +3221,7 @@ mod replacement_tests {
 
         assert_matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError {
+            PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
                 ..
             }
@@ -3597,7 +3597,7 @@ mod replacement_tests {
 
         assert_matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError {
+            PaidConsensusError {
                 error: ConsensusError::StateError(
                     StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
                 ),
@@ -3661,7 +3661,7 @@ mod replacement_tests {
 
         assert_matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError {
+            PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
                     _
                 )),
@@ -3685,7 +3685,7 @@ mod replacement_tests {
 
         assert_matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError {
+            PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
                     _
                 )),

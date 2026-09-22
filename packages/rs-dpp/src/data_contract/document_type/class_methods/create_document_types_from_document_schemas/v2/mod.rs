@@ -7,6 +7,7 @@ use crate::data_contract::document_type::{
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
+use crate::identity::Purpose;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -14,12 +15,18 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 impl DocumentType {
-    /// Generation 2: generation 1 (contracts with only tokens) plus the check that an
+    /// Generation 2: generation 1 (contracts with only tokens) plus the checks that an
     /// `identityPublicKey` reference's `keyRequirements.boundTo` names a document type of the
-    /// same contract. A document type's parse sees only its own schema, so the check runs here,
-    /// once every document type of the contract is parsed. It holds the reference's promise that
-    /// the write-time check never needs a second contract fetch: the bound the key must carry
-    /// names the declaring contract and one of its own document types.
+    /// same contract, and that a key meeting the declaration can exist at all: a key carries a
+    /// document type bound only with an authentication, encryption or decryption purpose, and
+    /// an encryption or decryption key is bound to a document type only when that type
+    /// declares `requiresIdentityEncryptionBoundedKey` or `requiresIdentityDecryptionBoundedKey`.
+    /// A document type's parse sees only its own schema, so the checks run here, once every
+    /// document type of the contract is parsed, and only under full validation (registration),
+    /// like the meta-schema: a contract read back from state passed them when it was written.
+    /// They hold the reference's promise that the write-time check never needs a second
+    /// contract fetch: the bound the key must carry names the declaring contract and one of
+    /// its own document types.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::data_contract) fn create_document_types_from_document_schemas_v2(
         data_contract_id: Identifier,
@@ -75,6 +82,10 @@ impl DocumentType {
             contract_document_types.insert(name.to_string(), document_type);
         }
 
+        if !full_validation {
+            return Ok(contract_document_types);
+        }
+
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
                 let DocumentPropertyType::IdentifierWithReference(
@@ -88,10 +99,36 @@ impl DocumentType {
                 let Some(bound_to) = &key_requirements.bound_to else {
                     continue;
                 };
-                if !contract_document_types.contains_key(bound_to) {
+                let Some(bound_document_type) = contract_document_types.get(bound_to) else {
                     return Err(consensus_or_protocol_data_contract_error(
                         DataContractError::InvalidContractStructure(format!(
                             "{name}.{path} refersTo keyRequirements boundTo {bound_to:?} names no document type of this contract"
+                        )),
+                    ));
+                };
+                // Only these purposes carry a document type bound, and the two encryption
+                // purposes only where the bound type declares that it takes such keys;
+                // any other pairing is a requirement no key could ever meet
+                let bound_type_takes_the_key = match key_requirements.purpose {
+                    None | Some(Purpose::AUTHENTICATION) => true,
+                    Some(Purpose::ENCRYPTION) => bound_document_type
+                        .as_ref()
+                        .requires_identity_encryption_bounded_key()
+                        .is_some(),
+                    Some(Purpose::DECRYPTION) => bound_document_type
+                        .as_ref()
+                        .requires_identity_decryption_bounded_key()
+                        .is_some(),
+                    Some(_) => false,
+                };
+                if !bound_type_takes_the_key {
+                    let purpose = key_requirements
+                        .purpose
+                        .map(|purpose| purpose.wire_name())
+                        .unwrap_or_default();
+                    return Err(consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "{name}.{path} refersTo keyRequirements requires a {purpose} key bound to document type {bound_to:?}, which no key can be: only authentication, encryption and decryption keys carry a document type bound, and an encryption or decryption key only where the type declares requiresIdentityEncryptionBoundedKey or requiresIdentityDecryptionBoundedKey"
                         )),
                     ));
                 }
@@ -121,9 +158,15 @@ mod tests {
     use std::ops::Deref;
 
     /// A contract with a `joinRequest` type whose `recipientId` references an identity key
-    /// with `refers_to`, and a `submittedCharter` type for a bound to name.
+    /// with `refers_to`, and a `submittedCharter` type for a bound to name. Both types declare
+    /// that they take bound encryption and decryption keys.
     fn contract_value(refers_to: Value) -> Value {
-        platform_value!({
+        contract_value_taking_bound_keys(refers_to, true)
+    }
+
+    /// [`contract_value`], with or without the two bound key keywords on both types.
+    fn contract_value_taking_bound_keys(refers_to: Value, takes_bound_keys: bool) -> Value {
+        let mut value = platform_value!({
             "$formatVersion": "1",
             "id": Identifier::from_string("4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd", Encoding::Base58).expect("a valid id"),
             "ownerId": Identifier::from_string("2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU", Encoding::Base58).expect("a valid id"),
@@ -163,7 +206,24 @@ mod tests {
                     "additionalProperties": false
                 }
             }
-        })
+        });
+        if takes_bound_keys {
+            for document_type_name in ["joinRequest", "submittedCharter"] {
+                let path = format!("documentSchemas.{document_type_name}");
+                let document_schema = value
+                    .get_mut_value_at_path(&path)
+                    .expect("the document schema");
+                for keyword in [
+                    "requiresIdentityEncryptionBoundedKey",
+                    "requiresIdentityDecryptionBoundedKey",
+                ] {
+                    document_schema
+                        .insert(keyword.to_string(), Value::U8(2))
+                        .expect("the keyword inserts");
+                }
+            }
+        }
+        value
     }
 
     fn recipient_id_target(contract: &DataContract) -> DocumentPropertyType {
@@ -207,35 +267,93 @@ mod tests {
         }
     }
 
-    #[test]
-    fn should_reject_bound_to_naming_a_document_type_the_contract_does_not_have() {
+    /// The invalid contract structure message a contract value is refused with under full
+    /// validation; without full validation (a contract read back from state) it parses.
+    fn refusal_message(value: Value) -> String {
         let platform_version = PlatformVersion::latest();
 
-        for full_validation in [true, false] {
-            let error = DataContract::from_value(
-                contract_value(platform_value!({
+        DataContract::from_value(value.clone(), false, platform_version)
+            .expect("a contract read back from state is not re-checked");
+
+        let error = DataContract::from_value(value, true, platform_version)
+            .expect_err("the contract should be refused");
+        let ProtocolError::ConsensusError(consensus_error) = &error else {
+            panic!("expected a consensus error, got {error}");
+        };
+        let ConsensusError::BasicError(BasicError::ContractError(
+            DataContractError::InvalidContractStructure(message),
+        )) = consensus_error.deref()
+        else {
+            panic!("expected an invalid contract structure error, got {consensus_error}");
+        };
+        message.clone()
+    }
+
+    #[test]
+    fn should_reject_bound_to_naming_a_document_type_the_contract_does_not_have() {
+        assert_eq!(
+            refusal_message(contract_value(platform_value!({
+                "type": "identityPublicKey",
+                "keyIdProperty": "recipientKeyId",
+                "keyRequirements": { "purpose": "decryption", "boundTo": "electedCharter" }
+            }))),
+            "joinRequest.recipientId refersTo keyRequirements boundTo \"electedCharter\" names no document type of this contract"
+        );
+    }
+
+    #[test]
+    fn should_reject_a_bound_to_no_key_could_ever_carry() {
+        // Only authentication, encryption and decryption keys carry a document type bound
+        for purpose in ["transfer", "voting", "owner"] {
+            let message = refusal_message(contract_value(platform_value!({
+                "type": "identityPublicKey",
+                "keyIdProperty": "recipientKeyId",
+                "keyRequirements": { "purpose": purpose, "boundTo": "submittedCharter" }
+            })));
+            assert!(
+                message.starts_with(&format!(
+                    "joinRequest.recipientId refersTo keyRequirements requires a {purpose} key bound to document type \"submittedCharter\", which no key can be"
+                )),
+                "{purpose}: {message}"
+            );
+        }
+
+        // An encryption or decryption key is bound to a document type only where the type
+        // declares that it takes such keys
+        for purpose in ["encryption", "decryption"] {
+            let message = refusal_message(contract_value_taking_bound_keys(
+                platform_value!({
                     "type": "identityPublicKey",
                     "keyIdProperty": "recipientKeyId",
-                    "keyRequirements": { "purpose": "decryption", "boundTo": "electedCharter" }
-                })),
-                full_validation,
-                platform_version,
-            )
-            .expect_err("the contract should be refused");
-
-            let ProtocolError::ConsensusError(consensus_error) = &error else {
-                panic!("expected a consensus error, got {error}");
-            };
-            let ConsensusError::BasicError(BasicError::ContractError(
-                DataContractError::InvalidContractStructure(message),
-            )) = consensus_error.deref()
-            else {
-                panic!("expected an invalid contract structure error, got {consensus_error}");
-            };
-            assert_eq!(
-                message,
-                "joinRequest.recipientId refersTo keyRequirements boundTo \"electedCharter\" names no document type of this contract"
+                    "keyRequirements": { "purpose": purpose, "boundTo": "submittedCharter" }
+                }),
+                false,
+            ));
+            assert!(
+                message.contains("which no key can be"),
+                "{purpose}: {message}"
             );
+        }
+
+        // Whereas an authentication key, or a key of any purpose, can be bound to a type that
+        // declares nothing
+        for requirements in [
+            platform_value!({ "purpose": "authentication", "boundTo": "submittedCharter" }),
+            platform_value!({ "boundTo": "submittedCharter" }),
+        ] {
+            DataContract::from_value(
+                contract_value_taking_bound_keys(
+                    platform_value!({
+                        "type": "identityPublicKey",
+                        "keyIdProperty": "recipientKeyId",
+                        "keyRequirements": requirements
+                    }),
+                    false,
+                ),
+                true,
+                PlatformVersion::latest(),
+            )
+            .expect("an authentication key can carry any document type bound");
         }
     }
 

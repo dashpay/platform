@@ -448,8 +448,11 @@ pub struct IdentityKeyReferenceRequirements {
     pub purpose: Option<Purpose>,
     /// The document type of the declaring contract the referenced key must be bound to: its
     /// contract bounds must be `SingleContractDocumentType` naming the declaring contract and
-    /// exactly this type. Validated to name a document type of the declaring contract when the
-    /// contract is registered, so the check never needs a second contract fetch.
+    /// exactly this type. A whole-contract bound or a contract group bound never meets it, even
+    /// where the group holds the type: the check reads nothing beyond the key. Validated when
+    /// the contract is registered to name a document type of the declaring contract that a key
+    /// of the required purpose can be bound to, so the check never needs a second contract
+    /// fetch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bound_to: Option<String>,
 }
@@ -532,12 +535,16 @@ impl IdentityKeyReferenceRequirement<'_> {
             IdentityKeyReferenceRequirement::Purpose(_) => key.purpose().wire_name().to_string(),
             IdentityKeyReferenceRequirement::BoundTo(_) => match key.contract_bounds() {
                 None => "no contract bounds".to_string(),
-                Some(ContractBounds::SingleContract { id }) => format!("contract {id}"),
+                Some(ContractBounds::SingleContract { id }) => {
+                    format!("whole contract {id}, not a document type")
+                }
                 Some(ContractBounds::SingleContractDocumentType {
                     id,
                     document_type_name,
                 }) => format!("contract {id} document type {document_type_name}"),
-                Some(ContractBounds::ContractGroup { id }) => format!("contract group {id}"),
+                Some(ContractBounds::ContractGroup { id }) => {
+                    format!("contract group {id}, which never meets a document type bound")
+                }
             },
         }
     }
@@ -3401,6 +3408,9 @@ fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPrope
 #[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{KeyType, SecurityLevel};
+    use platform_value::BinaryData;
     use platform_version::version::PlatformVersion;
 
     // -----------------------------------------------------------------------
@@ -8609,10 +8619,6 @@ mod tests {
     }
 
     fn key_with(purpose: Purpose, contract_bounds: Option<ContractBounds>) -> IdentityPublicKey {
-        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-        use crate::identity::{KeyType, SecurityLevel};
-        use platform_value::BinaryData;
-
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 2,
             purpose,
@@ -8665,7 +8671,7 @@ mod tests {
                     Purpose::DECRYPTION,
                     Some(ContractBounds::SingleContract { id: contract_id }),
                 ),
-                &format!("contract {contract_id}"),
+                &format!("whole contract {contract_id}, not a document type"),
             ),
             (
                 key_with(
@@ -8689,7 +8695,7 @@ mod tests {
                     Purpose::DECRYPTION,
                     Some(ContractBounds::ContractGroup { id: contract_id }),
                 ),
-                &format!("contract group {contract_id}"),
+                &format!("contract group {contract_id}, which never meets a document type bound"),
             ),
         ] {
             let unmet = requirements

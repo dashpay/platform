@@ -48,6 +48,9 @@ const schemas = {
     // A `permanentDocument` target must not be deletable, and `note`
     // references itself below.
     canBeDeleted: false,
+    // `recipientKey` below requires a decryption key bound to `note`, which
+    // only a type taking bound decryption keys can be.
+    requiresIdentityDecryptionBoundedKey: 2,
     properties: {
       author: identifierProperty(0, { type: 'identity' }),
       sourceContract: identifierProperty(1, { type: 'contract' }),
@@ -78,6 +81,14 @@ const schemas = {
         },
         additionalProperties: false,
       },
+      // `keyRequirements`: the referenced key must have this purpose and be
+      // bound to this contract's `note` type (PV14 #4918).
+      recipientKey: identifierProperty(8, {
+        type: 'identityPublicKey',
+        keyIdProperty: 'recipientKeyId',
+        keyRequirements: { purpose: 'decryption', boundTo: 'note' },
+      }),
+      recipientKeyId: { type: 'integer', position: 9, minimum: 0 },
     },
     additionalProperties: false,
   },
@@ -107,6 +118,7 @@ type Reference = {
   contractId?: { toBase58(): string };
   documentType?: string;
   keyIdProperty?: string;
+  keyRequirements?: { purpose?: string; boundTo?: string };
   propertyAgreement?: Record<string, string>;
 };
 
@@ -124,6 +136,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
         'otherDoc',
         'signerKey',
         'meta.ownerRef',
+        'recipientKey',
       ]);
     });
 
@@ -139,6 +152,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(byPath.get('otherDoc')!.type).to.equal('permanentDocument');
       expect(byPath.get('signerKey')!.type).to.equal('identityPublicKey');
       expect(byPath.get('meta.ownerRef')!.type).to.equal('identity');
+      expect(byPath.get('recipientKey')!.type).to.equal('identityPublicKey');
     });
 
     it('should carry no target fields for the bare kinds', () => {
@@ -200,6 +214,22 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const signerKey = references.find((reference) => reference.path === 'signerKey')!;
 
       expect(signerKey.keyIdProperty).to.equal('signerKeyId');
+    });
+
+    it('should carry keyRequirements when declared and omit them otherwise', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const recipientKey = references.find((reference) => reference.path === 'recipientKey')!;
+      const signerKey = references.find((reference) => reference.path === 'signerKey')!;
+
+      expect(recipientKey).to.deep.equal({
+        path: 'recipientKey',
+        type: 'identityPublicKey',
+        keyIdProperty: 'recipientKeyId',
+        keyRequirements: { purpose: 'decryption', boundTo: 'note' },
+      });
+      // Absent, not `{}`-valued, like the schema's own omission.
+      expect(signerKey).to.not.have.property('keyRequirements');
     });
 
     it('should return an empty array for a document type declaring none', () => {
@@ -275,6 +305,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyNotFound).to.equal(40123);
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyDisabled).to.equal(40124);
       expect(wasm.DocumentReferenceErrorCode.ReferencedKeyIdPropertyInvalid).to.equal(40125);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotDeletable).to.equal(40131);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedContractRequirementNotMet).to.equal(40135);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
     });
 
     it('should resolve a code back to its name', () => {
@@ -282,6 +315,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
 
       expect(codes[40123]).to.equal('ReferencedIdentityKeyNotFound');
       expect(codes[40125]).to.equal('ReferencedKeyIdPropertyInvalid');
+      expect(codes[40136]).to.equal('ReferencedIdentityKeyRequirementNotMet');
     });
   });
 });
