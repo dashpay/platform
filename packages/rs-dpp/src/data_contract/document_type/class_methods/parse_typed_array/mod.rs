@@ -70,6 +70,7 @@ mod tests {
                     min_length: None,
                     max_length: Some(16),
                 })),
+                item_constraints: Default::default(),
                 min_items: Some(1),
                 max_items: 8,
                 unique_items: true,

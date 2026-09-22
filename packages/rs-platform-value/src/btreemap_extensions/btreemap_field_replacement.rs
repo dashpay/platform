@@ -121,8 +121,13 @@ pub trait BTreeValueMapReplacementPathHelper {
 
 /// Replaces one value in place with its `replacement_type` form. The
 /// fixed-size byte values keep their width; anything else is read as the
-/// bytes it holds in whatever encoding it currently has.
-fn replace_leaf(value: &mut Value, replacement_type: ReplacementType) -> Result<(), Error> {
+/// bytes it holds in whatever encoding it currently has. Shared by the
+/// `Value` and the `BTreeMap<String, Value>` path replacers, so both give
+/// the same value kind for the same input.
+pub(crate) fn replace_leaf(
+    value: &mut Value,
+    replacement_type: ReplacementType,
+) -> Result<(), Error> {
     match value {
         Value::Bytes20(bytes) => {
             *value = replacement_type.replace_for_bytes_20(*bytes)?;
@@ -276,8 +281,9 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::string_encoding::Encoding;
     use crate::value_map::ValueMapHelper;
-    use crate::{Error, Value};
+    use crate::{Error, Identifier, Value};
     use base64::prelude::BASE64_STANDARD;
     use base64::Engine;
     use std::collections::BTreeMap;
@@ -715,9 +721,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn base58_id(seed: u8) -> Value {
-        Value::Text(
-            crate::Identifier::from([seed; 32]).to_string(crate::string_encoding::Encoding::Base58),
-        )
+        Value::Text(Identifier::from([seed; 32]).to_string(Encoding::Base58))
     }
 
     #[test]

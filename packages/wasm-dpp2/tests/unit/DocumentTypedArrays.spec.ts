@@ -45,8 +45,16 @@ const schemas = {
       labels: {
         type: 'array',
         maxItems: 5,
-        items: { type: 'string', minLength: 1, maxLength: 20 },
+        items: {
+          type: 'string', minLength: 1, maxLength: 20, enum: ['spam', 'abuse', 'offTopic'],
+        },
         position: 1,
+      },
+      scores: {
+        type: 'array',
+        maxItems: 4,
+        items: { type: 'integer', minimum: 0, maximum: 100 },
+        position: 3,
       },
       team: {
         type: 'object',
@@ -102,7 +110,9 @@ describe('DataContract: typed arrays (v14)', () => {
         },
         {
           path: 'labels',
-          items: { type: 'string', minLength: 1, maxLength: 20 },
+          items: {
+            type: 'string', minLength: 1, maxLength: 20, enum: ['spam', 'abuse', 'offTopic'],
+          },
           maxItems: 5,
           uniqueItems: false,
         },
@@ -110,6 +120,12 @@ describe('DataContract: typed arrays (v14)', () => {
           path: 'team.digests',
           items: { type: 'byteArray', minItems: 4, maxItems: 8 },
           maxItems: 3,
+          uniqueItems: false,
+        },
+        {
+          path: 'scores',
+          items: { type: 'integer', minimum: 0, maximum: 100 },
+          maxItems: 4,
           uniqueItems: false,
         },
       ]);

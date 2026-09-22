@@ -13,7 +13,7 @@ use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::array::TypedArrayProperty;
+use crate::data_contract::document_type::array::{ArrayItemConstraints, TypedArrayProperty};
 use crate::data_contract::document_type::{
     ByteArrayPropertySizes, DocumentPropertyType, StringPropertySizes,
 };
@@ -134,6 +134,7 @@ fn should_parse_a_typed_identifier_array() {
         list_property_type(&document_type),
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type: Box::new(DocumentPropertyType::Identifier),
+            item_constraints: Default::default(),
             min_items: Some(0),
             max_items: 64,
             unique_items: true,
@@ -162,6 +163,12 @@ fn should_parse_a_typed_integer_array_with_bounds() {
         property_type,
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type: Box::new(DocumentPropertyType::U8),
+            // The bounds keep the value kinds the schema literal gave them
+            item_constraints: ArrayItemConstraints {
+                allowed_values: None,
+                minimum: Some(Value::I32(0)),
+                maximum: Some(Value::I32(100)),
+            },
             min_items: Some(1),
             max_items: 10,
             unique_items: false,
@@ -473,6 +480,13 @@ fn expect_structure_error_or_json_schema_error<T: std::fmt::Debug>(
     }
 }
 
+/// The `uniqueItems` refusal on identifiers is safe for every stored
+/// contract: a census on 2026-09-23 of every data contract create and update
+/// transition on mainnet (72) and testnet (4593), decoded from the raw bytes
+/// with dpp (see `reference_mainnet_explorer_transition_audit` for the
+/// method), found no `uniqueItems` on any property of any contract, and the
+/// only `items` keywords on 22 testnet creates that were refused. Nothing a
+/// node ever stored has to drop a keyword to update at protocol version 14.
 #[test]
 fn should_refuse_items_on_a_byte_array_and_unique_items_on_an_identifier() {
     let byte_array = platform_value!({
@@ -632,6 +646,26 @@ fn charter_contract(platform_version: &PlatformVersion) -> DataContract {
                 "maxItems": 3,
                 "items": { "type": "number" },
                 "position": 5
+            },
+            "tags": {
+                "type": "array",
+                "maxItems": 3,
+                "uniqueItems": true,
+                "items": { "type": "string", "maxLength": 20, "enum": ["spam", "abuse", "offTopic"] },
+                "position": 6
+            },
+            "scores": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "position": 7
+            },
+            "ratios": {
+                "type": "array",
+                "maxItems": 2,
+                "items": { "type": "number", "minimum": 0, "maximum": 1 },
+                "position": 8
             }
         },
         "required": ["reasons", "counts"],
@@ -653,6 +687,62 @@ fn charter_contract(platform_version: &PlatformVersion) -> DataContract {
         platform_version,
     )
     .expect("the charter contract registers")
+}
+
+/// A contract whose `note` type nests typed arrays inside an object: a list
+/// of identifiers and a list of byte arrays under `team`.
+fn nested_lists_contract(platform_version: &PlatformVersion) -> DataContract {
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available on this platform version");
+    let note = platform_value!({
+        "type": "object",
+        "properties": {
+            "reasons": reasons_list(),
+            "team": {
+                "type": "object",
+                "position": 1,
+                "properties": {
+                    "leads": {
+                        "type": "array",
+                        "maxItems": 4,
+                        "items": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier"
+                        },
+                        "position": 0
+                    },
+                    "digests": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": { "type": "array", "byteArray": true, "minItems": 4, "maxItems": 8 },
+                        "position": 1
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "required": ["reasons"],
+        "additionalProperties": false
+    });
+
+    DataContract::try_from_platform_versioned(
+        DataContractInSerializationFormatV0 {
+            id: Identifier::new([7; 32]),
+            config,
+            version: 1,
+            owner_id: Identifier::new([8; 32]),
+            schema_defs: None,
+            document_schemas: BTreeMap::from([("note".to_string(), note)]),
+        }
+        .into(),
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("the nested lists contract registers")
 }
 
 /// Built by hand: `platform_value!` would store the identifiers as bytes,
@@ -716,6 +806,7 @@ fn should_round_trip_a_contract_with_typed_arrays_through_platform_serialization
         reasons,
         Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type: Box::new(DocumentPropertyType::Identifier),
+            item_constraints: Default::default(),
             min_items: Some(0),
             max_items: 64,
             unique_items: true,
@@ -779,7 +870,9 @@ fn should_round_trip_a_document_with_typed_arrays_through_serialization() {
 #[test]
 fn should_convert_the_elements_of_typed_arrays_when_creating_a_document_from_data() {
     use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
     use crate::document::DocumentV0Getters;
+    use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use platform_value::string_encoding::Encoding;
 
     let platform_version = PlatformVersion::latest();
@@ -817,6 +910,157 @@ fn should_convert_the_elements_of_typed_arrays_when_creating_a_document_from_dat
         document.properties().get("reasons"),
         Some(&Value::Array(vec![Value::Identifier([5; 32])]))
     );
+    let result = contract
+        .validate_document("charter", &document, platform_version)
+        .expect("validation runs");
+    assert!(result.is_valid(), "{result:?}");
+
+    // A list nested in an object converts through its dotted list path
+    let contract = nested_lists_contract(platform_version);
+    let document_type = contract.document_type_for_name("note").expect("note type");
+    assert!(document_type.identifier_paths().contains("team.leads[]"));
+    assert!(document_type.binary_paths().contains("team.digests[]"));
+    let lead = Identifier::new([9; 32]);
+    let data = Value::Map(vec![
+        (
+            Value::Text("reasons".to_string()),
+            Value::Array(vec![Value::Text(reason.to_string(Encoding::Base58))]),
+        ),
+        (
+            Value::Text("team".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("leads".to_string()),
+                    Value::Array(vec![Value::Text(lead.to_string(Encoding::Base58))]),
+                ),
+                (
+                    Value::Text("digests".to_string()),
+                    Value::Array(vec![Value::Bytes(vec![1, 2, 3, 4])]),
+                ),
+            ]),
+        ),
+    ]);
+    let document = document_type
+        .create_document_from_data(
+            data,
+            Identifier::new([2; 32]),
+            1,
+            1,
+            [3; 32],
+            platform_version,
+        )
+        .expect("the document is created");
+    assert_eq!(
+        document
+            .properties()
+            .get_optional_at_path("team.leads")
+            .expect("a nested list is reachable"),
+        Some(&Value::Array(vec![Value::Identifier([9; 32])]))
+    );
+    let result = contract
+        .validate_document("note", &document, platform_version)
+        .expect("validation runs");
+    assert!(result.is_valid(), "{result:?}");
+}
+
+#[test]
+fn should_convert_the_members_of_a_typed_array_set_on_an_extended_document() {
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::document::extended_document::v0::ExtendedDocumentV0;
+    use crate::document::DocumentV0Getters;
+    use platform_value::string_encoding::Encoding;
+
+    let platform_version = PlatformVersion::latest();
+    let contract = charter_contract(platform_version);
+    let document = contract
+        .document_type_for_name("charter")
+        .expect("charter type")
+        .random_document(Some(21), platform_version)
+        .expect("a random document");
+    let mut extended = ExtendedDocumentV0::from_document_with_additional_info(
+        document,
+        contract,
+        "charter".to_string(),
+        None,
+    );
+
+    let reason = Identifier::new([7; 32]);
+    extended
+        .set_untrusted(
+            "reasons",
+            Value::Array(vec![Value::Text(reason.to_string(Encoding::Base58))]),
+        )
+        .expect("a list of base58 identifiers is set");
+    assert_eq!(
+        extended.document.properties().get("reasons"),
+        Some(&Value::Array(vec![Value::Identifier([7; 32])]))
+    );
+
+    extended
+        .set_untrusted(
+            "digests",
+            Value::Array(vec![Value::Text("AQIDBA==".to_string())]),
+        )
+        .expect("a list of base64 byte arrays is set");
+    assert_eq!(
+        extended.document.properties().get("digests"),
+        Some(&Value::Array(vec![Value::Bytes(vec![1, 2, 3, 4])]))
+    );
+
+    assert!(extended
+        .set_untrusted("reasons", Value::Text("not a list".to_string()))
+        .is_err());
+}
+
+#[test]
+fn should_refuse_element_constraints_no_element_could_satisfy_on_both_paths() {
+    for (items, needle) in [
+        (
+            platform_value!({ "type": "integer", "enum": ["a"] }),
+            "must be a",
+        ),
+        (
+            platform_value!({ "type": "string", "enum": [] }),
+            "at least one value",
+        ),
+        (
+            platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "enum": [[1]]
+            }),
+            "not supported on byte array or identifier",
+        ),
+        (
+            platform_value!({ "type": "integer", "minimum": 5, "maximum": 4 }),
+            "may not exceed their maximum",
+        ),
+        (
+            platform_value!({ "type": "number", "minimum": "low" }),
+            "minimum of a typed array's elements must be a",
+        ),
+    ] {
+        let list = platform_value!({
+            "type": "array",
+            "maxItems": 4,
+            "items": items,
+            "position": 0
+        });
+        for full_validation in [true, false] {
+            expect_structure_error_or_json_schema_error(
+                parse_dispatched(
+                    schema_with_list(list.clone()),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                full_validation,
+                needle,
+            );
+        }
+    }
 }
 
 #[test]

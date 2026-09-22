@@ -5382,6 +5382,7 @@ mod tests {
     fn typed_array(item_type: DocumentPropertyType) -> DocumentPropertyType {
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type: Box::new(item_type),
+            item_constraints: Default::default(),
             min_items: None,
             max_items: 8,
             unique_items: false,
@@ -5644,6 +5645,7 @@ mod tests {
         let bounded = |item_type, min_items, max_items| {
             DocumentPropertyType::TypedArray(TypedArrayProperty {
                 item_type: Box::new(item_type),
+                item_constraints: Default::default(),
                 min_items,
                 max_items,
                 unique_items: true,
