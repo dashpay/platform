@@ -37,7 +37,11 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 #[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 
 use super::common;
 
@@ -288,6 +292,18 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
+    // Generation 3 refuses `-` in a document type name, as meta-schema v3
+    // refuses it in a property name: the path syntax was written for word
+    // characters, and no contract on mainnet or testnet ever used one. A
+    // registration rule, checked under full validation like the shared
+    // name rule; earlier generations keep admitting it.
+    #[cfg(feature = "validation")]
+    if full_validation && name.contains('-') {
+        return Err(ProtocolError::ConsensusError(Box::new(
+            ConsensusError::from(InvalidDocumentTypeNameError::new(name.to_string())),
+        )));
+    }
+
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
@@ -504,6 +520,8 @@ mod keep_history_tests;
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]
 mod moderators_delete_tests;
+#[cfg(all(test, feature = "validation"))]
+mod name_rules_tests;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
 

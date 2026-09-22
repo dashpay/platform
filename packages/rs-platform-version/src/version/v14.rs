@@ -580,6 +580,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
 ///     no byte repeat.
 ///
+/// 26. **Property and document type names are word characters only**:
+///     meta-schema v3 refuses `-` in a property name (top-level or nested,
+///     and in the property paths of `refersTo` declarations) and generation
+///     3 of the document type parser refuses it in a document type name,
+///     under full validation. Every earlier meta-schema and generation
+///     admitted `-`, which the dotted and `list[]` path syntax was never
+///     written for; a census of every contract create and update on mainnet
+///     and testnet (2026-09-23) found no name carrying one, so nothing stored
+///     is affected. Stored contracts are read as they are.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

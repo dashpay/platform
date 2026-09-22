@@ -725,18 +725,6 @@ mod tests {
     }
 
     #[test]
-    fn should_replace_the_members_of_a_list_whose_name_carries_a_hyphen() {
-        let mut map = BTreeMap::new();
-        map.insert("member-ids".to_string(), Value::Array(vec![base58_id(6)]));
-        map.replace_at_path("member-ids[]", ReplacementType::Identifier)
-            .unwrap();
-        assert_eq!(
-            map.get("member-ids").unwrap(),
-            &Value::Array(vec![Value::Identifier([6u8; 32])])
-        );
-    }
-
-    #[test]
     fn should_replace_the_members_of_a_top_level_list() {
         let mut map = BTreeMap::new();
         map.insert(

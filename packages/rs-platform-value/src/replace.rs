@@ -689,22 +689,6 @@ mod tests {
     }
 
     #[test]
-    fn should_replace_the_members_of_a_list_whose_name_carries_a_hyphen() {
-        // A property name may carry `-`, and so may the list path built from it
-        let b58 = base58_of_32_bytes(6);
-        let list = Value::Array(vec![Value::Text(b58)]);
-        let mut value = Value::Map(vec![(Value::Text("member-ids".into()), list)]);
-
-        value
-            .replace_at_path("member-ids[]", ReplacementType::Identifier)
-            .unwrap();
-        assert_eq!(
-            value.get_value_at_path("member-ids").unwrap(),
-            &Value::Array(vec![Value::Identifier([6u8; 32])])
-        );
-    }
-
-    #[test]
     fn should_keep_the_fixed_size_kind_of_a_replaced_member() {
         // The same helper serves the map replacer: a 32-byte value replaced
         // as binary bytes stays `Bytes32` on both paths

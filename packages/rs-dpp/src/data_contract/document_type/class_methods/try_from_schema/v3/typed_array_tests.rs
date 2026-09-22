@@ -666,18 +666,6 @@ fn charter_contract(platform_version: &PlatformVersion) -> DataContract {
                 "maxItems": 2,
                 "items": { "type": "number", "minimum": 0, "maximum": 1 },
                 "position": 8
-            },
-            "member-ids": {
-                "type": "array",
-                "maxItems": 4,
-                "items": {
-                    "type": "array",
-                    "byteArray": true,
-                    "minItems": 32,
-                    "maxItems": 32,
-                    "contentMediaType": "application/x.dash.dpp.identifier"
-                },
-                "position": 9
             }
         },
         "required": ["reasons", "counts"],
@@ -895,11 +883,8 @@ fn should_convert_the_elements_of_typed_arrays_when_creating_a_document_from_dat
 
     assert!(document_type.identifier_paths().contains("reasons[]"));
     assert!(document_type.binary_paths().contains("digests[]"));
-    // A property name may carry `-`, and so may the list path built from it
-    assert!(document_type.identifier_paths().contains("member-ids[]"));
 
     let reason = Identifier::new([5; 32]);
-    let member = Identifier::new([6; 32]);
     let data = Value::Map(vec![
         (
             Value::Text("reasons".to_string()),
@@ -908,10 +893,6 @@ fn should_convert_the_elements_of_typed_arrays_when_creating_a_document_from_dat
         (
             Value::Text("counts".to_string()),
             Value::Array(vec![Value::I64(1)]),
-        ),
-        (
-            Value::Text("member-ids".to_string()),
-            Value::Array(vec![Value::Text(member.to_string(Encoding::Base58))]),
         ),
     ]);
     let document = document_type
@@ -928,10 +909,6 @@ fn should_convert_the_elements_of_typed_arrays_when_creating_a_document_from_dat
     assert_eq!(
         document.properties().get("reasons"),
         Some(&Value::Array(vec![Value::Identifier([5; 32])]))
-    );
-    assert_eq!(
-        document.properties().get("member-ids"),
-        Some(&Value::Array(vec![Value::Identifier([6; 32])]))
     );
     let result = contract
         .validate_document("charter", &document, platform_version)
