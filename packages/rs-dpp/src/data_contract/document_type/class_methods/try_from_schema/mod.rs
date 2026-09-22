@@ -554,7 +554,8 @@ fn parse_contract_reference_requirements(
                 })?;
                 fields.moderation = Some(ContractReferenceModeration::from_wire_name(name).ok_or_else(|| {
                     DataContractError::InvalidContractStructure(format!(
-                        "contract refersTo contractRequirements moderation {name:?} is unknown, expected \"elected\""
+                        "contract refersTo contractRequirements moderation {name:?} is unknown, expected one of {:?}",
+                        ContractReferenceModeration::WIRE_NAMES
                     ))
                 })?);
             }
@@ -1160,6 +1161,29 @@ mod tests {
                 DocumentPropertyReferenceTarget::Contract {
                     contract_requirements: ContractReferenceRequirements {
                         moderation: Some(ContractReferenceModeration::Elected),
+                        minimum_age_seconds: None,
+                        minimum_seconds_since_update: None,
+                        owner: None,
+                        readonly: None,
+                        keeps_history: None,
+                        owner_protected: None,
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_contract_refers_to_requiring_the_moderation_election_open() {
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "moderation": "electionOpen" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: Some(ContractReferenceModeration::ElectionOpen),
                         minimum_age_seconds: None,
                         minimum_seconds_since_update: None,
                         owner: None,

@@ -38,7 +38,9 @@ export type DocumentPropertyReferenceTarget =
        * What the referenced contract must declare beyond existing, checked
        * by consensus when the referring document is written against the
        * contract fetched for the existence check and the block time:
-       * `moderation: 'elected'` requires an elected moderation team,
+       * `moderation: 'elected'` requires an elected moderation team and
+       * `'electionOpen'` one whose own `electionDelay` has passed since the
+       * contract's creation (or which declares none),
        * `minimumAgeSeconds` requires the contract's recorded creation time
        * to be at least that many seconds before the block time of the write,
        * and `minimumSecondsSinceUpdate` the same of the later of its creation
@@ -52,7 +54,7 @@ export type DocumentPropertyReferenceTarget =
        * requirement.
        */
       contractRequirements?: {
-        moderation?: 'elected';
+        moderation?: 'elected' | 'electionOpen';
         minimumAgeSeconds?: number;
         minimumSecondsSinceUpdate?: number;
         owner?: 'self' | 'other';

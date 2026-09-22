@@ -5305,6 +5305,12 @@ mod creation_tests {
     /// tests, and one that declares no moderation, so a reference to it is unmet.
     const REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_ID: &str =
         "9k3RE6kHNTsDmyXFwEPpiFQ3ipXfp5FuXGXpQ1rDHDJb";
+    const REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-election-open-contract-ref.json";
+    /// The `id` of the election-open-contract-reference fixture: in state in its tests, and
+    /// one that declares no moderation, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_ID: &str =
+        "FutvNUuQYthkyfNtaEsdJEFsnCQshBohD9GP7NrSUwR";
     const REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-aged-contract-ref.json";
     /// The `id` of the aged-contract-reference fixture (`minimumAgeSeconds: 3600`): written to
@@ -5662,32 +5668,58 @@ mod creation_tests {
         owner_protected: bool,
     ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
     {
-        use dpp::data_contract::config::moderation::{
-            ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
-            ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
-        };
-        use std::collections::{BTreeMap, BTreeSet};
+        insert_elected_contract_with(None, None, owner_protected)
+    }
 
-        insert_contract_configured([0xE1; 32], move |config| {
-            *config = config
-                .clone()
-                .with_moderation(Some(ContractModerationConfig {
-                    banlist: true,
-                    suspensions: true,
-                    warnings: false,
-                    moderators: ContractModerators::Elected(Box::new(ElectedModerators {
-                        join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                        vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                        challenge_cool_down: 1_209_600,
-                        moderated_document_types: BTreeMap::from([(
-                            "message".to_string(),
-                            BTreeSet::from([ModerationAbility::Ban]),
-                        )]),
-                        interim: InterimModerators::ContractOwner,
-                        owner_protected,
-                    })),
-                }));
-        })
+    /// An elected contract with the given election delay, recorded creation time and owner
+    /// protection, written to state directly, the way the fixtures are.
+    fn insert_elected_contract_with(
+        election_delay: Option<u32>,
+        created_at: Option<u64>,
+        owner_protected: bool,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        move |platform, _targets, _platform_version| {
+            use dpp::data_contract::accessors::v0::DataContractV0Getters;
+            use dpp::data_contract::accessors::v1::DataContractV1Setters;
+            use dpp::data_contract::config::moderation::{
+                ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+                ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+            };
+            use std::collections::{BTreeMap, BTreeSet};
+
+            let contract = setup_contract(
+                &platform.drive,
+                REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+                Some([0xE1; 32]),
+                None,
+                Some(|contract: &mut DataContract| {
+                    contract.set_created_at(created_at);
+                    contract.set_config(contract.config().clone().with_moderation(Some(
+                        ContractModerationConfig {
+                            banlist: true,
+                            suspensions: true,
+                            warnings: false,
+                            moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                                join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                                vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                                challenge_cool_down: 1_209_600,
+                                election_delay,
+                                moderated_document_types: BTreeMap::from([(
+                                    "message".to_string(),
+                                    BTreeSet::from([ModerationAbility::Ban]),
+                                )]),
+                                interim: InterimModerators::ContractOwner,
+                                owner_protected,
+                            })),
+                        },
+                    )));
+                }),
+                None,
+                None,
+            );
+            contract.id()
+        }
     }
 
     /// A contract with the id `contract_id` whose config `configure` adjusts, for a reference
@@ -5716,6 +5748,128 @@ mod creation_tests {
             );
             contract.id()
         }
+    }
+    #[tokio::test]
+    async fn should_document_creation_fail_when_election_open_contract_is_not_elected() {
+        // The fixture contract itself exists in state and declares no moderation at all
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "moderation"
+                && e.required() == "electionOpen"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_elected_contract_declares_no_election_delay() {
+        // No delay: the election is open from the contract's creation, whether or not the
+        // creation time is recorded
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_elected_contract_with(None, None, false),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_the_election_delay_has_not_passed() {
+        // Created one millisecond less than its own delay before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_elected_contract_with(
+                Some(3600),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS + 1),
+                false,
+            ),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xE1; 32])
+                && e.field() == "moderation"
+                && e.required() == "electionOpen"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_a_delayed_contract_has_no_creation_time() {
+        // A delay on a contract of unknown age never opens
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_elected_contract_with(Some(1), None, false),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.field() == "moderation" && e.required() == "electionOpen"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_the_election_delay_has_passed() {
+        // Created exactly its own delay before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_elected_contract_with(
+                Some(3600),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS),
+                false,
+            ),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
     }
 
     #[tokio::test]

@@ -52,11 +52,11 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// declaring `canBeDeleted: false`.
     ReferencedDocumentTypeNotDeletable = 40131,
     /// The referenced contract exists but does not meet what the reference's
-    /// `contractRequirements` require of it: elected moderation, a minimum age
-    /// or a minimum time since its last update at the block time of the write,
-    /// an owner relation to the writer of the referring document, or a config
-    /// flag (read-only, keeping history, the owner protection of its elected
-    /// moderation declaration).
+    /// `contractRequirements` require of it: elected moderation, its election
+    /// open, a minimum age or a minimum time since its last update at the block
+    /// time of the write, an owner relation to the writer of the referring
+    /// document, or a config flag (read-only, keeping history, the owner
+    /// protection of its elected moderation declaration).
     ReferencedContractRequirementNotMet = 40135,
 }
 
