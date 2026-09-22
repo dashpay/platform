@@ -7,6 +7,8 @@
     "message": {
       "type": "object",
       "documentsMutable": true,
+      "requiresIdentityEncryptionBoundedKey": 2,
+      "requiresIdentityDecryptionBoundedKey": 2,
       "properties": {
         "recipientId": {
           "type": "array",
@@ -40,6 +42,8 @@
     },
     "inbox": {
       "type": "object",
+      "requiresIdentityEncryptionBoundedKey": 2,
+      "requiresIdentityDecryptionBoundedKey": 2,
       "properties": {
         "label": {
           "type": "string",

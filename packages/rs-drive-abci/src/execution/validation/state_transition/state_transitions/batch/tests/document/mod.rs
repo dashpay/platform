@@ -35,7 +35,9 @@ pub(super) const REFERENCE_VALIDATION_IDENTITY_KEY_REQUIREMENTS_CONTRACT_PATH: &
 
 /// The keys of the test identity the key-requirement tests can point at. The fixture's
 /// `message.recipientId` requires a decryption key bound to the fixture contract's
-/// `inbox` document type.
+/// `inbox` document type. Both fixture types declare
+/// `requiresIdentityEncryptionBoundedKey` and `requiresIdentityDecryptionBoundedKey`,
+/// without which Drive registers no encryption or decryption key bound to them.
 pub(super) struct IdentityKeyRequirementTargets {
     pub(super) identity_id: Identifier,
     /// The critical authentication key the identity registered with: the wrong purpose
