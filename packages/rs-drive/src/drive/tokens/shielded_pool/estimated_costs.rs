@@ -14,7 +14,7 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
-use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees, SomeSumTrees};
+use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, SomeSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
@@ -26,13 +26,36 @@ impl Drive {
         token_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-        // Root level: [] — the Tokens tree sits on layer 2 like the balances estimation assumes.
+        // Root level: []. This MUST stay identical to the credit pool's root registration in
+        // `crate::drive::shielded::estimated_costs`, because the three identity-less token pool
+        // transitions write both into one estimation map under this one key, and the later write
+        // wins. A divergence would make the surviving estimate depend on the order the operations
+        // happen to be converted in.
+        //
+        // `NoSumTrees` was also untrue of the root, whoever is asking: `Balances`, `Tokens` and
+        // `PreFundedSpecializedBalances` are sum trees directly under it. Of the two descriptions
+        // this one is the larger, which is the safe direction — `validate_fees_of_event` prices a
+        // batch with this estimated model during block execution and requires `estimated >= actual`.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                estimated_layer_count: EstimatedLevel(2, false),
-                estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
+                estimated_layer_count: EstimatedLevel(3, false),
+                estimated_layer_sizes: AllSubtrees(
+                    1,
+                    SomeSumTrees {
+                        sum_trees_weight: 2,
+                        big_sum_trees_weight: 0,
+                        count_trees_weight: 0,
+                        count_sum_trees_weight: 0,
+                        non_sum_trees_weight: 2,
+                        provable_sum_trees_weight: 0,
+                        provable_count_trees_weight: 0,
+                        provable_count_sum_trees_weight: 0,
+                        provable_count_provable_sum_trees_weight: 0,
+                    },
+                    None,
+                ),
             },
         );
 
