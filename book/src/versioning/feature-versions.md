@@ -385,7 +385,7 @@ fields are `0` in every version. Larger, frequently-changing structs like
 `DRIVE_CONTRACT_METHOD_VERSIONS_V1` get their own named constant so they can
 be reused or overridden in later versions.
 
-When `DRIVE_VERSION_V6` (used in `PLATFORM_V12`) needs to change contract
+When `DRIVE_VERSION_V6` (used in `PLATFORM_V11`) needs to change contract
 methods, it simply references `DRIVE_CONTRACT_METHOD_VERSIONS_V2` instead of
 `V1`:
 
