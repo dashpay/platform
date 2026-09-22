@@ -10,11 +10,9 @@ use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::state_v0::DocumentPurchaseTransitionActionStateValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::advanced_structure_v0::DocumentPurchaseTransitionActionStructureValidationV0;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::advanced_structure_v1::DocumentPurchaseTransitionActionStructureValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
-mod advanced_structure_v1;
 mod state_v0;
 
 pub trait DocumentPurchaseTransitionActionValidation {
@@ -47,12 +45,9 @@ impl DocumentPurchaseTransitionActionValidation for DocumentPurchaseTransitionAc
             .document_purchase_transition_structure_validation
         {
             0 => self.validate_structure_v0(platform_version),
-            // V1 judges the stored document's `distinctFrom: $ownerId` properties against
-            // the new owner
-            1 => self.validate_structure_v1(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentPurchaseTransitionAction::validate_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

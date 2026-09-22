@@ -19,7 +19,11 @@ mod distinct_from_tests {
     use dpp::fee::Credits;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::{DocumentPurchaseTransitionAction, DocumentPurchaseTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionV0};
     use std::collections::{BTreeMap, BTreeSet};
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
@@ -546,6 +550,97 @@ mod distinct_from_tests {
             [ConsensusError::BasicError(BasicError::DocumentPropertyNotDistinctError(e))]
                 if e.property() == "delegateId" && e.distinct_from() == "$ownerId"
         );
+    }
+
+    /// Transfer and purchase structure validation v0 gained the `distinctFrom`
+    /// judgement in place. At protocol version 13 the same module must still
+    /// accept the action, as no property parsed there carries the keyword and
+    /// the dpp gate is `None`; at 14 it refuses the equal pair.
+    #[tokio::test]
+    async fn should_not_judge_distinct_from_on_transfer_or_purchase_before_protocol_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let platform_version_13 =
+            PlatformVersion::get(13).expect("platform version 13 should exist");
+        let mut fixture = DelegationFixture::new();
+        let recipient = Identifier::from([0xEE; 32]);
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("delegateId", Value::Identifier(recipient.to_buffer()))
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // The transformer hands the validators the stored document already
+        // re-owned by the recipient
+        let mut transferred = fixture
+            .document
+            .clone()
+            .expect("the delegation was created");
+        transferred.set_owner_id(recipient);
+
+        let (_, contract_fetch_info) = fixture
+            .platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                fixture.contract.id().to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract");
+        let contract_fetch_info = contract_fetch_info.expect("the contract is in state");
+        let base = || {
+            DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+                id: transferred.id(),
+                identity_contract_nonce: 2,
+                document_type_name: "delegation".to_string(),
+                data_contract: contract_fetch_info.clone(),
+                token_cost: None,
+                gas_fees_paid_by: GasFeesPaidBy::default(),
+                contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                declared_action_fee: None,
+            })
+        };
+
+        let transfer = DocumentTransferTransitionAction::V0(DocumentTransferTransitionActionV0 {
+            base: base(),
+            document: transferred.clone(),
+        });
+        let purchase = DocumentPurchaseTransitionAction::V0(DocumentPurchaseTransitionActionV0 {
+            base: base(),
+            document: transferred.clone(),
+            original_owner_id: fixture.identity.id(),
+            price: 1,
+        });
+
+        for (name, before, at) in [
+            (
+                "transfer",
+                transfer.validate_structure(platform_version_13),
+                transfer.validate_structure(platform_version),
+            ),
+            (
+                "purchase",
+                purchase.validate_structure(platform_version_13),
+                purchase.validate_structure(platform_version),
+            ),
+        ] {
+            let before = before.expect("structure validation should run");
+            assert!(
+                before.is_valid(),
+                "{name}: v0 must not judge distinctFrom before protocol version 14: {:?}",
+                before.errors
+            );
+            let at = at.expect("structure validation should run");
+            assert_matches!(
+                at.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::DocumentPropertyNotDistinctError(e))]
+                    if e.property() == "delegateId" && e.distinct_from() == "$ownerId",
+                "{name}"
+            );
+        }
     }
 
     #[tokio::test]
