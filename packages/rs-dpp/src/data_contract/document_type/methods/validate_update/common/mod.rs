@@ -2110,6 +2110,106 @@ mod tests {
                 );
             }
         }
+
+        /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
+        /// `delegateId` as given.
+        fn distinct_from_document_type(
+            distinct_from: Option<&str>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut delegate_id = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 1
+            });
+            if let Some(distinct_from) = distinct_from {
+                delegate_id
+                    .insert("distinctFrom".to_string(), distinct_from.into())
+                    .expect("should insert distinctFrom");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "delegateId": delegate_id
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_distinct_from_is_added_changed_or_removed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_distinct_from, new_distinct_from) in [
+                (None, Some("$ownerId")),
+                (Some("$ownerId"), Some("toUserId")),
+                (Some("toUserId"), None),
+            ] {
+                let old_document_type =
+                    distinct_from_document_type(old_distinct_from, platform_version);
+                let new_document_type =
+                    distinct_from_document_type(new_distinct_from, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == "/properties/delegateId/distinctFrom",
+                    "{old_distinct_from:?} -> {new_distinct_from:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_distinct_from_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
+            let new_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
     }
 
     mod validate_byte_array_encoding {

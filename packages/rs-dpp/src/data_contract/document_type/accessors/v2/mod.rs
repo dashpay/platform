@@ -59,6 +59,11 @@ pub trait DocumentTypeV2Getters {
     /// mutable, where every property is already immutable.
     fn immutable_fields(&self) -> &BTreeSet<String>;
 
+    /// The dotted paths of the properties that declare `distinctFrom`
+    /// (protocol version 14), in schema order. Empty on generations that
+    /// predate the keyword.
+    fn distinct_from_fields(&self) -> &[String];
+
     /// The subset of [`Self::immutable_fields`] a replace may still set while
     /// the stored document has no value for them (the
     /// `immutableAllowSetting` keyword, protocol version 14). Once present

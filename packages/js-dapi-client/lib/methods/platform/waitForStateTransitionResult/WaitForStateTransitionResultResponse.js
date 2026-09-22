@@ -8,11 +8,13 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    * @param {ErrorResult} [error]
+   * @param {bigint} [ownerBalance]
    */
-  constructor(metadata, proof = undefined, error = undefined) {
+  constructor(metadata, proof = undefined, error = undefined, ownerBalance = undefined) {
     super(metadata, proof);
 
     this.error = error;
+    this.ownerBalance = ownerBalance;
   }
 
   /**
@@ -20,6 +22,18 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
    */
   getError() {
     return this.error;
+  }
+
+  /**
+   * The credit balance of the transition's owner after it executed, as DAPI
+   * read it without a proof. Set when the request asked for the user's
+   * balance and for no proof; a proved response of an owned, fee-paying
+   * transition carries the balance inside the proof.
+   *
+   * @returns {bigint|undefined}
+   */
+  getOwnerBalance() {
+    return this.ownerBalance;
   }
 
   /**
@@ -51,10 +65,17 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
     const metadata = proto.getV0().getMetadata()
       ? new Metadata(proto.getV0().getMetadata().toObject()) : null;
 
+    let ownerBalance;
+    const successWithOwnerBalance = proto.getV0().getSuccessWithOwnerBalance();
+    if (successWithOwnerBalance) {
+      ownerBalance = BigInt(successWithOwnerBalance.getOwnerBalance());
+    }
+
     return new WaitForStateTransitionResultResponse(
       metadata,
       proof,
       error,
+      ownerBalance,
     );
   }
 }

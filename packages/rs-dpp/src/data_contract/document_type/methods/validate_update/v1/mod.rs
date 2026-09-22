@@ -80,6 +80,13 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that no integer property changes its width or signedness
+        let result = self.validate_integer_encoding_stability(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that no typed array changes how its elements are encoded
         let result = self.validate_typed_array_element_encoding_stability(new_document_type);
 
@@ -116,6 +123,60 @@ impl DocumentTypeRef<'_> {
         self.validate_schema_with_options(new_document_type, platform_version, &options)
     }
 
+    /// An integer property is stored at the width and signedness of its type,
+    /// in the document and in every index key on it, and the type comes from
+    /// the property's `minimum` and `maximum`, or from its `enum` values when
+    /// it has no bounds (with `sizedIntegerTypes` on; off, every integer is an
+    /// i64). The schema compatibility rules allow each change that moves it:
+    /// raising `maximum`, lowering `minimum`, removing either, adding `enum`
+    /// values, and so does turning `sizedIntegerTypes` on. Documents already
+    /// stored then no longer decode, or decode to other values, and their
+    /// index entries sit under keys of the old width. So the type is held
+    /// here, as `validate_byte_array_encoding_stability` holds a byte array
+    /// property's; a bound change that keeps the type is still allowed. The
+    /// signedness is held with the width, even where the old bounds keep every
+    /// stored value readable both ways (a u8 capped at 100 read as an i8):
+    /// nothing bounds a u64 that becomes an i64, and one comparison is the
+    /// whole rule. A change to a non-integer type is the schema compatibility
+    /// check's to refuse.
+    fn validate_integer_encoding_stability(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let new_properties = new_document_type.flattened_properties();
+
+        for (path, old_property) in self.flattened_properties() {
+            if !old_property.property_type.is_integer() {
+                continue;
+            }
+            let Some(new_property) = new_properties.get(path) else {
+                continue;
+            };
+            if !new_property.property_type.is_integer() {
+                continue;
+            }
+
+            let old_encoding = old_property.property_type.stored_encoding();
+            let new_encoding = new_property.property_type.stored_encoding();
+            if old_encoding != new_encoding {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "document type can not change the integer encoding of property \
+                             '{}': its values are stored as {} and would be read as {}",
+                            path, old_encoding, new_encoding,
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        SimpleConsensusValidationResult::new()
+    }
+
     /// A typed array stores each element exactly as a required scalar property
     /// of its element type is stored, so an update that changes how an
     /// element encodes would misread every element already stored: an
@@ -131,17 +192,6 @@ impl DocumentTypeRef<'_> {
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
-        /// How an element of this type is laid out, in the words the error uses
-        fn element_encoding(element_type: &DocumentPropertyType) -> String {
-            match element_type {
-                DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
-                    (Some(min), Some(max)) if min == max => format!("a fixed {min}-byte array"),
-                    _ => "a length-prefixed byte array".to_string(),
-                },
-                other => other.name(),
-            }
-        }
-
         let new_properties = new_document_type.flattened_properties();
 
         for (path, old_property) in self.flattened_properties() {
@@ -155,8 +205,8 @@ impl DocumentTypeRef<'_> {
                 continue;
             };
 
-            let old_encoding = element_encoding(&old_array.item_type);
-            let new_encoding = element_encoding(&new_array.item_type);
+            let old_encoding = old_array.item_type.stored_encoding();
+            let new_encoding = new_array.item_type.stored_encoding();
             if old_encoding != new_encoding {
                 return SimpleConsensusValidationResult::new_with_error(
                     DocumentTypeUpdateError::new(
@@ -1697,6 +1747,301 @@ mod tests {
                     result.errors
                 );
             }
+        }
+    }
+
+    // ================================================================
+    //  Integer encoding (width and signedness)
+    // ================================================================
+
+    mod integer_encoding_update {
+        use super::*;
+        use crate::data_contract::config::v1::DataContractConfigSettersV1;
+        use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use crate::data_contract::document_type::DocumentPropertyType;
+        use crate::validation::SimpleConsensusValidationResult;
+        use std::io::BufReader;
+
+        fn doc_type_with(
+            properties: Value,
+            sized_integer_types: bool,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let schema = platform_value!({
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": false,
+            });
+            let mut config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            config.set_sized_integer_types_enabled(sized_integer_types);
+            DocumentType::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// A document type whose one property, `score`, has the given schema.
+        fn doc_type_with_score(score: Value, platform_version: &PlatformVersion) -> DocumentType {
+            doc_type_with(platform_value!({ "score": score }), true, platform_version)
+        }
+
+        fn validate_update(
+            old: &DocumentType,
+            new: &DocumentType,
+            platform_version: &PlatformVersion,
+        ) -> SimpleConsensusValidationResult {
+            old.as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("validate_update should not error")
+        }
+
+        fn assert_rejected(
+            result: SimpleConsensusValidationResult,
+            path: &str,
+            old: &str,
+            new: &str,
+        ) {
+            let expected =
+                format!("'{path}': its values are stored as {old} and would be read as {new}");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message().contains(&expected),
+                "expected the integer encoding change {old} -> {new} of '{path}' to be refused"
+            );
+        }
+
+        #[test]
+        fn should_not_read_a_stored_u8_back_as_the_u16_a_raised_maximum_gives() {
+            // Why the type is held: the bounds choose it, and a value stored
+            // at the old width does not read back at the new one.
+            let platform_version = PlatformVersion::latest();
+            let old = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 100, "position": 0}),
+                platform_version,
+            );
+            let new = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 1000, "position": 0}),
+                platform_version,
+            );
+            let old_type = &old.flattened_properties()["score"].property_type;
+            let new_type = &new.flattened_properties()["score"].property_type;
+            assert_eq!(old_type, &DocumentPropertyType::U8);
+            assert_eq!(new_type, &DocumentPropertyType::U16);
+
+            let stored = old_type
+                .encode_value_ref_with_size(&Value::U8(7), true)
+                .expect("should encode a u8");
+            assert_eq!(stored, vec![7]);
+
+            let read_back =
+                new_type.read_optionally_from(&mut BufReader::new(stored.as_slice()), true);
+            assert!(
+                read_back.is_err(),
+                "a stored u8 must not read back as a u16, got {read_back:?}"
+            );
+        }
+
+        #[test]
+        fn should_reject_raising_maximum_past_the_width_of_the_type() {
+            let platform_version = PlatformVersion::latest();
+            let old = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 100, "position": 0}),
+                platform_version,
+            );
+            let new = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 1000, "position": 0}),
+                platform_version,
+            );
+
+            assert_rejected(
+                validate_update(&old, &new, platform_version),
+                "score",
+                "u8",
+                "u16",
+            );
+        }
+
+        #[test]
+        fn should_reject_lowering_minimum_below_zero() {
+            // The same width with the other signedness: a stored u64 above
+            // i64::MAX would read back negative
+            let platform_version = PlatformVersion::latest();
+            let old = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "position": 0}),
+                platform_version,
+            );
+            let new = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": -1, "position": 0}),
+                platform_version,
+            );
+
+            assert_rejected(
+                validate_update(&old, &new, platform_version),
+                "score",
+                "u64",
+                "i64",
+            );
+        }
+
+        #[test]
+        fn should_reject_removing_the_bounds() {
+            let platform_version = PlatformVersion::latest();
+            let old = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 100, "position": 0}),
+                platform_version,
+            );
+            let new = doc_type_with_score(
+                platform_value!({"type": "integer", "position": 0}),
+                platform_version,
+            );
+
+            assert_rejected(
+                validate_update(&old, &new, platform_version),
+                "score",
+                "u8",
+                "i64",
+            );
+        }
+
+        #[test]
+        fn should_reject_adding_an_enum_value_past_the_width_of_the_type() {
+            let platform_version = PlatformVersion::latest();
+            let old = doc_type_with_score(
+                platform_value!({"type": "integer", "enum": [1, 2, 3], "position": 0}),
+                platform_version,
+            );
+            let new = doc_type_with_score(
+                platform_value!({"type": "integer", "enum": [1, 2, 3, 300], "position": 0}),
+                platform_version,
+            );
+
+            assert_rejected(
+                validate_update(&old, &new, platform_version),
+                "score",
+                "u8",
+                "u16",
+            );
+        }
+
+        #[test]
+        fn should_reject_a_width_change_of_a_nested_integer_property() {
+            let platform_version = PlatformVersion::latest();
+            let stats = |maximum: u32| {
+                platform_value!({
+                    "stats": {
+                        "type": "object",
+                        "position": 0,
+                        "properties": {
+                            "level": {"type": "integer", "minimum": 0, "maximum": maximum, "position": 0},
+                        },
+                        "additionalProperties": false,
+                    },
+                })
+            };
+            let old = doc_type_with(stats(100), true, platform_version);
+            let new = doc_type_with(stats(1000), true, platform_version);
+
+            assert_rejected(
+                validate_update(&old, &new, platform_version),
+                "stats.level",
+                "u8",
+                "u16",
+            );
+        }
+
+        #[test]
+        fn should_reject_turning_sized_integer_types_on() {
+            // Off, every integer is an i64; on, the bounds make this one a u8.
+            // The contract config check only refuses turning them off.
+            let platform_version = PlatformVersion::latest();
+            let properties = platform_value!({
+                "score": {"type": "integer", "minimum": 0, "maximum": 100, "position": 0},
+            });
+            let old = doc_type_with(properties.clone(), false, platform_version);
+            let new = doc_type_with(properties, true, platform_version);
+
+            assert_rejected(
+                validate_update(&old, &new, platform_version),
+                "score",
+                "i64",
+                "u8",
+            );
+        }
+
+        #[test]
+        fn should_accept_a_bound_change_that_keeps_the_type() {
+            let platform_version = PlatformVersion::latest();
+            let old = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 100, "position": 0}),
+                platform_version,
+            );
+            let new = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 200, "position": 0}),
+                platform_version,
+            );
+
+            let result = validate_update(&old, &new, platform_version);
+            assert!(
+                result.is_valid(),
+                "a u8 that stays a u8 must be accepted, got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_accept_raising_maximum_without_sized_integer_types() {
+            // Without sized integer types every integer is an i64 whatever
+            // its bounds, so raising one changes nothing stored
+            let platform_version = PlatformVersion::latest();
+            let score = |maximum: u32| {
+                platform_value!({
+                    "score": {"type": "integer", "minimum": 0, "maximum": maximum, "position": 0},
+                })
+            };
+            let old = doc_type_with(score(100), false, platform_version);
+            let new = doc_type_with(score(1000), false, platform_version);
+
+            let result = validate_update(&old, &new, platform_version);
+            assert!(
+                result.is_valid(),
+                "an i64 that stays an i64 must be accepted, got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_still_accept_a_width_change_at_protocol_version_13() {
+            // validate_update v0 is frozen for replay of protocol versions up
+            // to 13, which let the width move
+            let platform_version =
+                PlatformVersion::get(13).expect("protocol version 13 must exist");
+            let old = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 100, "position": 0}),
+                platform_version,
+            );
+            let new = doc_type_with_score(
+                platform_value!({"type": "integer", "minimum": 0, "maximum": 1000, "position": 0}),
+                platform_version,
+            );
+
+            let result = validate_update(&old, &new, platform_version);
+            assert!(
+                result.is_valid(),
+                "protocol version 13 must keep accepting the width change, got {:?}",
+                result.errors
+            );
         }
     }
 }
