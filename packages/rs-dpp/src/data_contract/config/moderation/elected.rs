@@ -15,6 +15,7 @@ use crate::data_contract::config::moderation::{
     document_schema_lets_moderators_delete, ContractModerationConfig,
 };
 use crate::data_contract::DocumentName;
+use crate::prelude::TimestampMillis;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -35,6 +36,8 @@ pub mod property_names {
     pub const VOTE_WINDOW: &str = "voteWindow";
     /// The challenge cool-down, in seconds
     pub const CHALLENGE_COOL_DOWN: &str = "challengeCoolDown";
+    /// The election delay, in seconds after the contract's creation
+    pub const ELECTION_DELAY: &str = "electionDelay";
     /// The moderated document types, each with the abilities a charter may claim on it
     pub const MODERATED_DOCUMENT_TYPES: &str = "moderatedDocumentTypes";
     /// The interim moderators
@@ -314,6 +317,12 @@ pub struct ElectedModerators {
     /// `SystemLimits::max_contract_moderation_challenge_cool_down_seconds` (two weeks to
     /// three years), always declared.
     pub challenge_cool_down: u32,
+    /// How long, in seconds after the contract's creation, before the first charter may be
+    /// filed against the contract: the notice the contract gives before its first election
+    /// can be called. Unbounded, and `None` when the declaration leaves it out, in which
+    /// case the election may be called at once. A reference declaring
+    /// `contractRequirements: { "moderation": "electionOpen" }` is what reads it.
+    pub election_delay: Option<u32>,
     /// The document types the team moderates, each with the abilities a charter may claim
     /// on it: non-empty, each type a document type of the contract, each ability set
     /// non-empty and backed by the contract (`Ban`, `Suspend` and `Warn` by the list the
@@ -334,6 +343,26 @@ pub struct ElectedModerators {
 }
 
 impl ElectedModerators {
+    /// Whether the first election may be called at `block_time_ms` on a contract created at
+    /// `contract_created_at`: the declaration has no election delay, or the delay has passed
+    /// since the creation. An elected declaration is made at the contract's creation and
+    /// never changes, so the creation is the declaration's own time. A contract without a
+    /// recorded creation time and with a delay is of unknown age, and its election is not
+    /// open.
+    pub fn election_is_open(
+        &self,
+        contract_created_at: Option<TimestampMillis>,
+        block_time_ms: TimestampMillis,
+    ) -> bool {
+        match self.election_delay {
+            None => true,
+            Some(delay) => contract_created_at.is_some_and(|created_at| {
+                block_time_ms
+                    >= created_at.saturating_add(TimestampMillis::from(delay).saturating_mul(1000))
+            }),
+        }
+    }
+
     /// Whether the team moderates the document type
     pub fn moderates_document_type(&self, document_type_name: &str) -> bool {
         self.moderated_document_types
@@ -440,7 +469,14 @@ impl fmt::Display for ElectedModerators {
             f,
             "an elected moderation team, in its interim moderated by {}",
             self.interim
-        )
+        )?;
+        if let Some(delay) = self.election_delay {
+            write!(
+                f,
+                ", its first election open {delay} seconds after the contract's creation"
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -485,6 +521,7 @@ mod tests {
                 moderated(&[ModerationAbility::Ban, ModerationAbility::Suspend]),
             )]),
             interim: InterimModerators::ContractOwner,
+            election_delay: None,
             owner_protected: false,
         }
     }
@@ -714,11 +751,13 @@ mod tests {
         let mut declaration = elected();
         declaration.interim = InterimModerators::AppointedModerators(set(&[1, 2]));
         declaration.owner_protected = true;
+        declaration.election_delay = Some(86_400);
         let moderators = ContractModerators::Elected(Box::new(declaration));
 
         let json = serde_json::to_value(&moderators).expect("serialize");
         assert_eq!(json["$type"], "elected");
         assert_eq!(json["joinWindow"], 604_800);
+        assert_eq!(json["electionDelay"], 86_400);
         assert_eq!(
             json["moderatedDocumentTypes"],
             serde_json::json!({ "post": ["ban", "suspend"] })
@@ -758,6 +797,12 @@ mod tests {
         let parsed: ContractModerators = serde_json::from_value(minimal).expect("deserialize");
         let elected = parsed.elected().expect("elected");
         assert_eq!(elected.join_window, DEFAULT_ELECTION_WINDOW_SECONDS);
+        assert_eq!(elected.election_delay, None);
+        let json = serde_json::to_value(&parsed).expect("serialize");
+        assert!(
+            json.get("electionDelay").is_none(),
+            "a declaration without a delay serializes none: {json}"
+        );
         assert_eq!(elected.vote_window, DEFAULT_ELECTION_WINDOW_SECONDS);
         assert!(!elected.owner_protected);
         assert_eq!(elected.interim, InterimModerators::NotYetUsable);
@@ -840,12 +885,41 @@ mod tests {
     }
 
     #[test]
+    fn should_open_the_election_after_the_delay_from_the_contract_creation() {
+        let created_at: TimestampMillis = 1_700_000_000_000;
+        let mut declaration = elected();
+
+        // No delay: open at once, whether or not the creation time is recorded
+        assert!(declaration.election_is_open(Some(created_at), created_at));
+        assert!(declaration.election_is_open(None, 0));
+
+        declaration.election_delay = Some(3600);
+        assert!(!declaration.election_is_open(Some(created_at), created_at + 3_599_999));
+        assert!(declaration.election_is_open(Some(created_at), created_at + 3_600_000));
+        assert!(declaration.election_is_open(Some(created_at), TimestampMillis::MAX));
+        // A delay on a contract of unknown age never opens
+        assert!(!declaration.election_is_open(None, TimestampMillis::MAX));
+        // The bound saturates rather than wrapping around into the past
+        declaration.election_delay = Some(u32::MAX);
+        assert!(
+            !declaration.election_is_open(Some(TimestampMillis::MAX - 1), TimestampMillis::MAX - 1)
+        );
+    }
+
+    #[test]
     fn should_describe_itself() {
         let mut declaration = elected();
         assert_eq!(
             ContractModerators::Elected(Box::new(declaration.clone())).to_string(),
             "an elected moderation team, in its interim moderated by the contract owner"
         );
+        declaration.election_delay = Some(86_400);
+        assert_eq!(
+            declaration.to_string(),
+            "an elected moderation team, in its interim moderated by the contract owner, its \
+             first election open 86400 seconds after the contract's creation"
+        );
+        declaration.election_delay = None;
         declaration.interim = InterimModerators::NotYetUsable;
         assert_eq!(
             declaration.to_string(),

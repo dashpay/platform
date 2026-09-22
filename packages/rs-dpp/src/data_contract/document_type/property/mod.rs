@@ -12,7 +12,6 @@ use platform_serialization_derive::{
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::accessors::v1::DataContractV1Getters;
-use crate::data_contract::config::moderation::ContractModerators;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
@@ -127,6 +126,11 @@ pub enum ContractReferenceModeration {
     /// The contract declares an elected moderation team (`ContractModerators::Elected`),
     /// whatever its interim and whether a team is seated yet.
     Elected,
+    /// The contract declares an elected moderation team whose own `electionDelay`, counted
+    /// from the contract's creation, has passed at the block time of the write, or which
+    /// declares no delay. The delay is the contract's, not the reference's: the charter
+    /// contract's `targetContractId` declares this and carries no number.
+    ElectionOpen,
 }
 
 impl ContractReferenceModeration {
@@ -134,25 +138,42 @@ impl ContractReferenceModeration {
     pub fn as_str(&self) -> &'static str {
         match self {
             ContractReferenceModeration::Elected => "elected",
+            ContractReferenceModeration::ElectionOpen => "electionOpen",
         }
     }
+
+    /// The wire names, for the message that refuses another.
+    pub const WIRE_NAMES: &'static [&'static str] = &["elected", "electionOpen"];
 
     /// The moderation a wire name names, `None` for any other name.
     pub fn from_wire_name(name: &str) -> Option<Self> {
         match name {
             "elected" => Some(ContractReferenceModeration::Elected),
+            "electionOpen" => Some(ContractReferenceModeration::ElectionOpen),
             _ => None,
         }
     }
 
-    /// Whether `contract` declares what this requires.
-    pub fn is_met_by(&self, contract: &DataContract) -> bool {
+    /// How the requirement reads after "a contract with".
+    pub fn describe(&self) -> &'static str {
         match self {
-            ContractReferenceModeration::Elected => {
-                contract.config().moderation().is_some_and(|moderation| {
-                    matches!(moderation.moderators, ContractModerators::Elected(_))
-                })
-            }
+            ContractReferenceModeration::Elected => "elected moderation",
+            ContractReferenceModeration::ElectionOpen => "its moderation election open",
+        }
+    }
+
+    /// Whether `contract` declares what this requires at `block_time_ms`, the time of the
+    /// block writing the referring document.
+    pub fn is_met_by(&self, contract: &DataContract, block_time_ms: TimestampMillis) -> bool {
+        let elected = contract
+            .config()
+            .moderation()
+            .and_then(|moderation| moderation.moderators.elected());
+        match self {
+            ContractReferenceModeration::Elected => elected.is_some(),
+            ContractReferenceModeration::ElectionOpen => elected.is_some_and(|elected| {
+                elected.election_is_open(contract.created_at(), block_time_ms)
+            }),
         }
     }
 }
@@ -195,7 +216,9 @@ impl ContractReferenceRequirement {
     /// writing the referring document.
     pub fn is_met_by(&self, contract: &DataContract, block_time_ms: TimestampMillis) -> bool {
         match self {
-            ContractReferenceRequirement::Moderation(moderation) => moderation.is_met_by(contract),
+            ContractReferenceRequirement::Moderation(moderation) => {
+                moderation.is_met_by(contract, block_time_ms)
+            }
             ContractReferenceRequirement::MinimumAgeSeconds(seconds) => {
                 Self::minimum_age_is_met(contract.created_at(), *seconds, block_time_ms)
             }
@@ -464,7 +487,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             } => {
                 write!(f, "contract")?;
                 if let Some(moderation) = contract_requirements.moderation {
-                    write!(f, " with {} moderation", moderation.as_str())?;
+                    write!(f, " with {}", moderation.describe())?;
                 }
                 if let Some(seconds) = contract_requirements.minimum_age_seconds {
                     write!(f, " at least {seconds} seconds old")?;
@@ -7780,6 +7803,85 @@ mod tests {
     }
 
     #[test]
+    fn should_meet_election_open_when_the_contract_declares_no_delay_or_the_delay_passed() {
+        use crate::data_contract::accessors::v0::DataContractV0Setters;
+        use crate::data_contract::accessors::v1::DataContractV1Setters;
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+            ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        };
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+        use std::collections::BTreeSet;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let created_at: TimestampMillis = 1_700_000_000_000;
+        contract.set_created_at(Some(created_at));
+
+        let elected = ContractReferenceModeration::Elected;
+        let open = ContractReferenceModeration::ElectionOpen;
+
+        // No moderation at all: neither is met
+        assert!(!elected.is_met_by(&contract, created_at));
+        assert!(!open.is_met_by(&contract, created_at));
+
+        let declare = |contract: &mut DataContract, election_delay: Option<u32>| {
+            let config =
+                contract
+                    .config()
+                    .clone()
+                    .with_moderation(Some(ContractModerationConfig {
+                        banlist: true,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: 1_209_600,
+                            election_delay,
+                            moderated_document_types: BTreeMap::from([(
+                                "profile".to_string(),
+                                BTreeSet::from([ModerationAbility::Ban]),
+                            )]),
+                            interim: InterimModerators::ContractOwner,
+                            owner_protected: false,
+                        })),
+                    }));
+            contract.set_config(config);
+        };
+
+        // Elected without a delay: open at once
+        declare(&mut contract, None);
+        assert!(elected.is_met_by(&contract, created_at));
+        assert!(open.is_met_by(&contract, created_at));
+
+        // Elected with a delay: elected at once, open once the delay passed
+        declare(&mut contract, Some(3600));
+        assert!(elected.is_met_by(&contract, created_at));
+        assert!(!open.is_met_by(&contract, created_at + 3_599_999));
+        assert!(open.is_met_by(&contract, created_at + 3_600_000));
+
+        // A delay on a contract of unknown age never opens
+        contract.set_created_at(None);
+        assert!(!open.is_met_by(&contract, TimestampMillis::MAX));
+
+        assert_eq!(
+            ContractReferenceModeration::from_wire_name("electionOpen"),
+            Some(ContractReferenceModeration::ElectionOpen)
+        );
+        assert_eq!(
+            ContractReferenceModeration::ElectionOpen.as_str(),
+            "electionOpen"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::Moderation(ContractReferenceModeration::ElectionOpen)
+                .required(),
+            "electionOpen"
+        );
+    }
+
+    #[test]
     fn should_take_the_last_change_time_from_the_later_of_creation_and_update() {
         use crate::data_contract::accessors::v1::DataContractV1Setters;
         use crate::tests::fixtures::get_dashpay_contract_fixture;
@@ -7862,6 +7964,17 @@ mod tests {
             }
             .to_string(),
             "contract at least 1 seconds old"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::ElectionOpen),
+                    minimum_age_seconds: None,
+                    minimum_seconds_since_update: None,
+                },
+            }
+            .to_string(),
+            "contract with its moderation election open"
         );
         assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
         assert_eq!(

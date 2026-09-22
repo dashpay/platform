@@ -496,7 +496,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     beside the owner and an appointed set, in the same config V2). The
 ///     declaration is frozen: the join and vote windows (one day to four weeks,
 ///     one week by default) and the challenge cool-down (two weeks to three
-///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; the document
+///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; an optional,
+///     unbounded election delay in seconds after the contract's creation
+///     before the first charter may be filed (`electionDelay`, read by the
+///     `moderation: "electionOpen"` reference requirement of item 24); the document
 ///     types the team moderates, each with the abilities a charter may claim on
 ///     it; who moderates until the first team is seated (the owner, an
 ///     appointed set, or nobody, with the moderated types not yet usable or
@@ -529,7 +532,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 24. **Contract references may require elected moderation, a minimum age or
 ///     a minimum time since the last update**: a `contract` `refersTo`
 ///     declaration may carry `contractRequirements`, what the referenced
-///     contract must declare beyond existing, with `moderation: "elected"`,
+///     contract must declare beyond existing, with `moderation: "elected"` or
+///     `"electionOpen"` (elected, and the contract's own `electionDelay` since
+///     its creation has passed, or it declares none),
 ///     `minimumAgeSeconds` (the contract's recorded creation time must be at
 ///     least that many seconds before the block time of the write) and
 ///     `minimumSecondsSinceUpdate` (the same of the later of its creation and
