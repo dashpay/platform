@@ -358,6 +358,10 @@ fn try_from_schema_generation_3(
                 3,
             )
             .range_countable_implies_countable,
+            // NO LOCKING RESOLUTION: a contested index resolved without a Lock
+            // choice, a generation-3 value from the same shared mapping.
+            admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
+                .no_locking_resolution,
         },
         platform_version,
     )?;

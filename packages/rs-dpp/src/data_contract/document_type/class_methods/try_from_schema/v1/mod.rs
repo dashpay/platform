@@ -117,6 +117,8 @@ impl DocumentTypeV1 {
                 // the parser demands an explicit countable `countable`, as the frozen
                 // v1 and v2 meta-schemas do.
                 admit_range_countable_implies_countable: false,
+                // NO LOCKING RESOLUTION: a generation-3 value; not in this grammar.
+                admit_index_no_locking_resolution: false,
             },
             platform_version,
         )

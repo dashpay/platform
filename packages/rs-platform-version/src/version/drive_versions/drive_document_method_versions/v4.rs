@@ -128,7 +128,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_contested_document: 0,
             add_contested_document_for_contract: 0,
             add_contested_document_for_contract_apply_and_add_to_operations: 0,
-            add_contested_document_for_contract_operations: 0,
+            add_contested_document_for_contract_operations: 1, // changed in v14: no-locking contests end at the join window until a second contender joins
             add_contested_document_to_primary_storage: 0,
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,

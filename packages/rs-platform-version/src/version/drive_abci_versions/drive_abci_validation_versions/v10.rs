@@ -103,7 +103,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: None,
                 nonce: Some(1),
-                state: 0,
+                state: 1, // changed in v14: refuses a Lock vote on a contested index resolved without locking
                 transform_into_action: 0,
             },
             masternode_vote_state_transition_balance_pre_check: 0,

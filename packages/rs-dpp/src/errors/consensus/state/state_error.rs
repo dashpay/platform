@@ -99,6 +99,7 @@ use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFo
 use crate::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use crate::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
@@ -577,6 +578,10 @@ pub enum StateError {
     // Elected moderation teams (protocol version 14).
     #[error(transparent)]
     ContractModeratedDocumentTypeNotYetUsableError(ContractModeratedDocumentTypeNotYetUsableError),
+
+    // Contested indexes resolved without a Lock choice (protocol version 14).
+    #[error(transparent)]
+    VoteChoiceNotAllowedForVotePollError(VoteChoiceNotAllowedForVotePollError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -598,6 +603,9 @@ mod tests {
         ActionFeePricing, ContractFeePot, DocumentActionFee,
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::vote_polls::VotePoll;
     use platform_value::Identifier;
 
     /// `StateError` is encoded by variant position, so inserting a variant
@@ -1055,6 +1063,23 @@ mod tests {
                 ContractModeratedDocumentTypeNotYetUsableError::new(group_id, "post".to_string())
             )),
             141
+        );
+        // Contested indexes without a Lock choice (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::VoteChoiceNotAllowedForVotePollError(
+                VoteChoiceNotAllowedForVotePollError::new(
+                    VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: Identifier::new([7; 32]),
+                            document_type_name: "domain".to_string(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![],
+                        }
+                    ),
+                    ResourceVoteChoice::Lock,
+                )
+            )),
+            142
         );
     }
 }

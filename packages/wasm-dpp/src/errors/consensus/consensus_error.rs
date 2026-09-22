@@ -164,6 +164,7 @@ use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoun
 use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
 use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
@@ -678,6 +679,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ContractModeratedDocumentTypeNotYetUsableError(e) => {
             generic_consensus_error!(ContractModeratedDocumentTypeNotYetUsableError, e).into()
+        }
+        StateError::VoteChoiceNotAllowedForVotePollError(e) => {
+            generic_consensus_error!(VoteChoiceNotAllowedForVotePollError, e).into()
         }
     }
 }

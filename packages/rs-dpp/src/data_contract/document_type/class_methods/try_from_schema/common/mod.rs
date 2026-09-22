@@ -225,6 +225,10 @@ pub(super) struct ParserGeneration {
     /// `rangeCountable` has always implied `documentsCountable`. Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_range_countable_implies_countable: bool,
+    /// Whether a contested index may declare `"resolution": 1`, the masternode
+    /// vote without a Lock choice. Forwarded to [`Index::try_from_value_map`]
+    /// exactly like the admissions above.
+    pub admit_index_no_locking_resolution: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -869,6 +873,7 @@ fn parse_indices(
                             range_countable_implies_countable: ctx
                                 .generation
                                 .admit_range_countable_implies_countable,
+                            no_locking_resolution: ctx.generation.admit_index_no_locking_resolution,
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;

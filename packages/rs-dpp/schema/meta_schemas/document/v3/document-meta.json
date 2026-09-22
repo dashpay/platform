@@ -587,9 +587,10 @@
               "resolution": {
                 "type": "integer",
                 "enum": [
-                  0
+                  0,
+                  1
                 ],
-                "description": "Resolution. 0 - Masternode Vote"
+                "description": "Resolution. 0 - Masternode Vote. 1 - Masternode Vote without a Lock choice: the contest always ends with a winner, a tie goes to the earliest contender, and a contest with a single contender at the end of the join window is awarded at once"
               },
               "description": {
                 "type": "string",
