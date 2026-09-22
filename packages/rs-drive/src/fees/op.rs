@@ -373,7 +373,8 @@ impl LowLevelDriveOperation {
     /// that removes the bytes.
     ///
     /// This is the generation `Drive::calculate_fee` v1 selects. It differs
-    /// from `consume_to_fees_v0` in one arm: a `SectionedStorageRemoval`
+    /// from `consume_to_fees_v0` in one arm (the ephemeral TTL'd-subtree
+    /// arm is the same): a `SectionedStorageRemoval`
     /// always consults `previous_fee_versions` and returns
     /// `CorruptedCodeExecution` when none is given, on every fee version
     /// number. v0 priced fee version number 1 against an empty history, so a
@@ -395,6 +396,45 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
+                CalculatedEphemeralCostOperation(cost) => {
+                    // TTL'd-subtree bytes: the added bytes bill to
+                    // PROCESSING at the ephemeral rate instead of to
+                    // storage, exactly as in v0. TTL elements carry no
+                    // storage flags, so their removal can only ever be
+                    // basic and needs no fee history; a sectioned removal
+                    // here is a corrupted batch, not a missing history.
+                    let ephemeral_bytes_fee = (cost.storage_cost.added_bytes as u64)
+                        .checked_mul(
+                            fee_version
+                                .storage
+                                .ttl_ephemeral_disk_usage_credit_per_byte,
+                        )
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow pricing ephemeral bytes",
+                        )))?;
+                    let processing_fee = cost
+                        .ephemeral_cost(fee_version)?
+                        .checked_add(ephemeral_bytes_fee)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow adding ephemeral bytes fee",
+                        )))?;
+                    let removed_bytes_from_system = match cost.storage_cost.removed_bytes {
+                        NoStorageRemoval => 0,
+                        BasicStorageRemoval(amount) => amount,
+                        SectionedStorageRemoval(_) => {
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "TTL'd subtrees carry no storage flags, so an ephemeral \
+                                 batch cannot produce sectioned (refundable) removal",
+                            )))
+                        }
+                    };
+                    Ok(FeeResult {
+                        storage_fee: 0,
+                        processing_fee,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system,
+                    })
+                }
                 _ => {
                     let cost = operation.operation_cost()?;
                     // There is no need for a checked multiply here because added bytes are u64 and
@@ -3165,6 +3205,95 @@ mod tests {
                     );
                     assert_eq!(v1_results[0].removed_bytes_from_system, 700);
                 }
+            }
+        }
+
+        #[test]
+        fn should_price_ephemeral_bytes_to_processing_without_fee_history_in_v1() {
+            // TTL'd index bytes bill to processing at the ephemeral rate and
+            // their removal is never sectioned, so the arm is the same in both
+            // generations and needs no history even under the strict rule.
+            let ephemeral = |added: u32, removed: u32| {
+                LowLevelDriveOperation::CalculatedEphemeralCostOperation(OperationCost {
+                    seek_count: 2,
+                    storage_cost: StorageCost {
+                        added_bytes: added,
+                        replaced_bytes: 0,
+                        removed_bytes: StorageRemovedBytes::BasicStorageRemoval(removed),
+                    },
+                    storage_loaded_bytes: 10,
+                    hash_node_calls: 1,
+                    sinsemilla_hash_calls: 0,
+                })
+            };
+
+            let v0_results = LowLevelDriveOperation::consume_to_fees_v0(
+                vec![ephemeral(500, 40)],
+                &epoch(5),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            )
+            .expect("v0 prices ephemeral bytes");
+            let v1_results = LowLevelDriveOperation::consume_to_fees_v1(
+                vec![ephemeral(500, 40)],
+                &epoch(5),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            )
+            .expect("v1 prices ephemeral bytes without a history");
+
+            assert_eq!(v0_results, v1_results);
+            assert_eq!(
+                v1_results[0].storage_fee, 0,
+                "TTL'd bytes never bill storage"
+            );
+            assert_eq!(
+                v1_results[0].processing_fee,
+                ephemeral(500, 40)
+                    .operation_cost()
+                    .expect("cost")
+                    .ephemeral_cost(&FEE_VERSION1)
+                    .expect("ephemeral cost")
+                    + 500
+                        * FEE_VERSION1
+                            .storage
+                            .ttl_ephemeral_disk_usage_credit_per_byte
+            );
+            assert_eq!(v1_results[0].removed_bytes_from_system, 40);
+            assert_eq!(v1_results[0].fee_refunds, FeeRefunds::default());
+
+            // A sectioned removal inside an ephemeral batch is corrupted state in
+            // both generations, with or without a history.
+            let corrupted = || {
+                let mut removal = StorageRemovalPerEpochByIdentifier::default();
+                removal.entry(OWNER).or_default().insert(3, 100);
+                LowLevelDriveOperation::CalculatedEphemeralCostOperation(OperationCost {
+                    seek_count: 0,
+                    storage_cost: StorageCost {
+                        added_bytes: 0,
+                        replaced_bytes: 0,
+                        removed_bytes: StorageRemovedBytes::SectionedStorageRemoval(removal),
+                    },
+                    storage_loaded_bytes: 0,
+                    hash_node_calls: 0,
+                    sinsemilla_hash_calls: 0,
+                })
+            };
+            let history: CachedEpochIndexFeeVersions =
+                BTreeMap::from([(0u16, FeeVersion::first())]);
+            for previous_fee_versions in [None, Some(&history)] {
+                assert!(matches!(
+                    LowLevelDriveOperation::consume_to_fees_v1(
+                        vec![corrupted()],
+                        &epoch(5),
+                        DEFAULT_EPOCHS_PER_ERA,
+                        &FEE_VERSION1,
+                        previous_fee_versions,
+                    ),
+                    Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+                ));
             }
         }
 
