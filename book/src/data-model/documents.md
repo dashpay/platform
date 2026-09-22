@@ -305,6 +305,33 @@ Enforcement lives in the replace action's state validation (generation 1). The a
 
 In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`. Earlier document type generations return empty sets.
 
+## Typed Arrays
+
+Up to protocol version 13 a `type: "array"` property had to be a byte array (`byteArray: true`). Protocol version 14 adds typed arrays: a list whose `items` schema says what every element is.
+
+```json
+"reasons": {
+  "type": "array",
+  "minItems": 0,
+  "maxItems": 64,
+  "uniqueItems": true,
+  "items": {
+    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+    "contentMediaType": "application/x.dash.dpp.identifier"
+  },
+  "position": 2
+}
+```
+
+- An element is a scalar: an integer, a number, a string (with `minLength` / `maxLength`), a boolean, a byte array (`byteArray: true`, whose `minItems` / `maxItems` count bytes) or an identifier. Objects and arrays of arrays are refused, and so is `refersTo` on an element for now. An element may be limited to allowed values with `enum`; `const` is refused on elements, since a one-value `enum` does the same and a contract update can still widen it.
+- On the array itself `minItems` and `maxItems` count elements, not bytes. `maxItems` is required, `minItems` may not exceed it and `contentMediaType` belongs on the items; these hold on every parse. Contract registration also caps `maxItems` at `SystemLimits::max_typed_array_items` (1024), so a typed array's worst-case size, which fee estimation charges by, stays small. `uniqueItems: true` refuses a document that repeats an element.
+- A byte array keeps its form and takes no `items`. On a plain byte array `uniqueItems` keeps its old meaning, no repeated byte, but an identifier (a byte array with the identifier `contentMediaType`) refuses it: an identifier is one value, and "no repeated byte" would refuse most of them.
+- The document is validated against the JSON schema as always, so a list that is too long, too short, repeats an element under `uniqueItems` or holds a wrong-typed element fails with the usual `JsonSchemaError`.
+
+The array is stored inline in the document, like any other property: a varint element count followed by each element in its own encoding (see [Document Serialization](../serialization/document-serialization.md)). Identifier and byte array elements are conversion paths (`reasons[]`, `find_identifier_and_binary_paths` 1), so a document built from JSON or a value map converts every element, as it converts a scalar identifier. Nothing is written per element, so a typed array cannot be an index property (`InvalidIndexPropertyTypeError`), an indexOnly terminal or entry payload property, or one side of a `propertyAgreement`.
+
+In Rust a typed array parses to `DocumentPropertyType::TypedArray(TypedArrayProperty)`, with the element type as an `ArrayItemType`. The parse is the versioned `parse_typed_array` (`None` before protocol version 14, where an array that is not a byte array is refused as it always was). The older `DocumentPropertyType::Array` variant has the same encoding without the count bounds, and the parser never produces it.
+
 ## Distinct Identifier Properties
 
 Protocol version 14 adds the property-level `distinctFrom` keyword, a pure structure rule on identifier properties: the property's value must differ from the value of a named property of the same document, or from the document's `$ownerId`. It sits next to the reference keywords (`refersTo` and its `propertyAgreement`, which bind a property to another document's values) but reads nothing beyond the transition being written.

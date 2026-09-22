@@ -184,7 +184,7 @@ All numeric values use **big-endian** byte order.
 | `byteArray` (variable size) | varint length prefix + raw bytes |
 | `identifier` | 32 bytes raw |
 | `date` | 8 bytes big-endian f64 (when optional: `0xff` prefix + 8 bytes) |
-| `array` | varint element count + each element encoded in sequence |
+| `array` (typed array, protocol v14) | varint element count + each element in sequence: integer or number 8 bytes, boolean 1 byte, string, byte array or identifier a varint length prefix + the bytes (an identifier element is always 33 bytes) |
 | `object` | Nested fields serialized recursively in their schema position order |
 
 **Note on date types**: User-property `date` fields are encoded as **f64** (8 bytes). System timestamps (`$createdAt`, `$updatedAt`, `$transferredAt`) are **u64** milliseconds. Both are 8 bytes big-endian but use different numeric representations.

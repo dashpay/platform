@@ -561,7 +561,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
-/// 25. **Distinct identifier properties**: the `distinctFrom` property
+/// 25. **Typed arrays of scalars in document schemas**: a document property
+///     may be `type: "array"` with an `items` element schema instead of
+///     `byteArray` (meta-schema v3, `parse_typed_array` 0,
+///     `DocumentPropertyType::TypedArray`). An element is an integer, a
+///     number, a string, a boolean, a byte array or an identifier; objects
+///     and arrays of arrays are refused. On the array `minItems` and
+///     `maxItems` count elements, `maxItems` is required (with `minItems`
+///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
+///     (1024), and `uniqueItems` refuses a document repeating an element.
+///     The array is stored inline, a varint element count followed by the
+///     elements, and cannot be an index property or one side of a
+///     `propertyAgreement`. Its identifier and byte array elements are
+///     conversion paths (`find_identifier_and_binary_paths` 1). A byte array
+///     refuses `items`, and an identifier (a byte array with the identifier
+///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
+///     no byte repeat.
+///
+/// 26. **Distinct identifier properties**: the `distinctFrom` property
 ///     keyword (meta-schema v3, `apply_distinct_from` 0, `DistinctFrom` on
 ///     `DocumentProperty`) requires an identifier property's value to differ
 ///     from the value of a named property of the same document, or from the

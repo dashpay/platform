@@ -369,6 +369,47 @@ impl DocumentTypeV0 {
                         "byteArray": true,
                     })
                 },
+                DocumentPropertyType::TypedArray(typed_array) => {
+                    // Bounds are only written when declared: a `null` bound is no schema
+                    fn with_bounds(mut schema: serde_json::Value, bounds: [(&str, Option<usize>); 2]) -> serde_json::Value {
+                        if let serde_json::Value::Object(ref mut map) = schema {
+                            for (keyword, bound) in bounds {
+                                if let Some(bound) = bound {
+                                    map.insert(keyword.to_string(), json!(bound));
+                                }
+                            }
+                        }
+                        schema
+                    }
+                    let items_schema = match &typed_array.item_type {
+                        ArrayItemType::String(min, max) => with_bounds(json!({"type": "string"}), [("minLength", *min), ("maxLength", *max)]),
+                        ArrayItemType::Integer => json!({"type": "integer"}),
+                        ArrayItemType::Number => json!({"type": "number"}),
+                        ArrayItemType::ByteArray(min, max) => with_bounds(json!({"type": "array", "byteArray": true}), [("minItems", *min), ("maxItems", *max)]),
+                        ArrayItemType::Identifier => json!({
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                        }),
+                        ArrayItemType::Boolean => json!({"type": "boolean"}),
+                        // No element schema parses to a date
+                        ArrayItemType::Date => json!({"type": "number"}),
+                    };
+
+                    with_bounds(
+                        json!({
+                            "type": "array",
+                            "items": items_schema,
+                            "uniqueItems": typed_array.unique_items,
+                        }),
+                        [
+                            ("minItems", typed_array.min_items.map(usize::from)),
+                            ("maxItems", Some(usize::from(typed_array.max_items))),
+                        ],
+                    )
+                },
                 DocumentPropertyType::VariableTypeArray(types) => {
                     let types_schema = types.iter().map(|t| {
                         match t {

@@ -1329,20 +1329,21 @@ fn check_indexable_property_shape(
     property_type: &DocumentPropertyType,
 ) -> Result<(), ProtocolError> {
     match property_type {
-        // Array and objects aren't supported for indexing yet
+        // Array and objects aren't supported for indexing yet. A typed array
+        // is stored inline in the document, with no index entry per element
+        // and no query operator (see Drive's `allowed_ops_for_type`).
         DocumentPropertyType::Array(_)
         | DocumentPropertyType::Object(_)
-        | DocumentPropertyType::VariableTypeArray(_) => {
-            Err(ProtocolError::ConsensusError(Box::new(
-                InvalidIndexPropertyTypeError::new(
-                    document_type_name.to_owned(),
-                    index_name.to_owned(),
-                    property_name.to_owned(),
-                    property_type.name(),
-                )
-                .into(),
-            )))
-        }
+        | DocumentPropertyType::VariableTypeArray(_)
+        | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::ConsensusError(Box::new(
+            InvalidIndexPropertyTypeError::new(
+                document_type_name.to_owned(),
+                index_name.to_owned(),
+                property_name.to_owned(),
+                property_type.name(),
+            )
+            .into(),
+        ))),
         // Indexed byte array size must be limited
         DocumentPropertyType::ByteArray(sizes)
             if sizes
@@ -2550,6 +2551,7 @@ pub(super) fn apply_index_only(
             DocumentPropertyType::Object(_)
                 | DocumentPropertyType::Array(_)
                 | DocumentPropertyType::VariableTypeArray(_)
+                | DocumentPropertyType::TypedArray(_)
         ) {
             return Err(structure_error(format!(
                 "entryPayload property \"{}\" of indexOnly document type \"{}\" must be a \

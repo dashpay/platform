@@ -79,10 +79,11 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             document_type_schema: 3, // changed: v3 document meta-schema — v2 plus the ranked index keywords, and the gate the index parser reads
             should_add_creator_id: 1,
             enrich_with_base_schema: 1,
-            find_identifier_and_binary_paths: 0,
+            find_identifier_and_binary_paths: 1, // changed: a typed array's identifier and byte array elements are registered as `path[]` conversion paths
             apply_property_reference: Some(0), // changed: the meta-schema v3 `refersTo` keyword is folded into the parsed property type; None before this version means the keyword is ignored, as it was before it existed
             apply_required_since: Some(0), // changed: the meta-schema v3 `requiredSince` keyword (contract version a property is required from) is parsed onto the property; None before this version means the keyword is ignored, as it was before it existed
             apply_distinct_from: Some(0), // changed: the meta-schema v3 `distinctFrom` keyword (an identifier property whose value must differ from a named sibling property or the document's `$ownerId`) is parsed onto the property; None before this version means the keyword is ignored, as it was before it existed
+            parse_typed_array: Some(0), // changed: a meta-schema v3 typed array (`type: "array"` with an `items` element schema) parses to `DocumentPropertyType::TypedArray`; None before this version leaves it to the scalar parser, which refuses an array that is not a byte array
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {

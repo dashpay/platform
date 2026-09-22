@@ -46,6 +46,7 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
             apply_property_reference: None,
             apply_required_since: None,
             apply_distinct_from: None,
+            parse_typed_array: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
