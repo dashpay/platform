@@ -37,7 +37,7 @@ export interface TokenPaymentInfoOptions {
     gasFeesPaidBy?: GasFeesPaidByLike;
     /**
      * Pay the token cost out of the token's shielded pool with this spend bundle instead of
-     * the document owner's token balance (format version 1, protocol version 15+).
+     * the document owner's token balance (format version 1, protocol version 14+).
      */
     shieldedPayment?: TokenShieldedPayment;
 }

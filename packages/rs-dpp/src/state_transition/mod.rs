@@ -1135,11 +1135,10 @@ impl StateTransition {
             | StateTransition::IdentityTopUpFromShieldedPool(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_)
-            | StateTransition::ContractFeeClaim(_) => 14..=LATEST_VERSION,
-
-            StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::ContractFeeClaim(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
             | StateTransition::TokenUnshieldWithShieldedFee(_)
-            | StateTransition::TokenPurchaseFromShieldedPool(_) => 15..=LATEST_VERSION,
+            | StateTransition::TokenPurchaseFromShieldedPool(_) => 14..=LATEST_VERSION,
         }
     }
 

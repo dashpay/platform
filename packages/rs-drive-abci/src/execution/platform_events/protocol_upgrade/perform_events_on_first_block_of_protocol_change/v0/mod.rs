@@ -119,10 +119,6 @@ impl<C> Platform<C> {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
         }
 
-        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
-            self.transition_to_version_15(transaction, platform_version)?;
-        }
-
         Ok(())
     }
 
@@ -815,21 +811,14 @@ impl<C> Platform<C> {
         // exists, so both node populations build the same prefunded balances Merk.
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
-        Ok(())
-    }
-    /// When transitioning to version 15 we insert the token shielded pools root: the BigSumTree
-    /// under the Tokens tree that holds one Orchard pool per token opting in
-    /// (`TokenConfigurationV1::has_shielded_pool`). CONSENSUS-CRITICAL: the genesis-v15 path
-    /// (`Drive::create_initial_state_structure_v5`) calls the same helper, so a chain born at v15
-    /// and one upgraded to it build a byte-identical `[Tokens]` subtree.
-    fn transition_to_version_15(
-        &self,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+
+        // Token shielded pools root: the BigSumTree under the Tokens tree that holds one Orchard
+        // pool per token opting in (`TokenConfigurationV1::has_shielded_pool`).
+        // CONSENSUS-CRITICAL: the genesis path (`Drive::create_initial_state_structure_v4`) calls
+        // the same helper, so a chain born at this version and one upgraded to it build a
+        // byte-identical `[Tokens]` subtree.
         self.drive
             .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
-
         Ok(())
     }
 }
@@ -3112,23 +3101,23 @@ mod tests {
     /// because both paths now call the shared
     /// `Drive::insert_shielded_pool_structure`).
     /// The token shielded pools root is built by two paths that must coincide byte for byte:
-    /// `Drive::create_initial_state_structure_v5` at a v15 genesis and
-    /// `transition_to_version_15` on a chain upgraded from v14.
+    /// `Drive::create_initial_state_structure_v4` at a v14 genesis and
+    /// `transition_to_version_14` on a chain upgraded from v13.
     #[test]
-    fn test_genesis_v15_and_upgrade_to_v15_build_identical_token_shielded_pools_root() {
-        let platform_version_15 = PlatformVersion::get(15).expect("expected v15");
+    fn test_genesis_v14_and_upgrade_to_v14_build_identical_token_shielded_pools_root() {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected v14");
 
         let platform_a = TestPlatformBuilder::new()
-            .with_initial_protocol_version(15)
-            .build_with_mock_rpc()
-            .set_genesis_state();
-
-        let platform_b = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        // A genuine v14 genesis must not contain the pools root yet.
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A genuine v13 genesis must not contain the pools root yet.
         {
             let txn = platform_b.drive.grove.start_transaction();
             let tokens_path: [&[u8]; 1] = [&[RootTree::Tokens as u8]];
@@ -3136,19 +3125,19 @@ mod tests {
                 SubtreePath::from(&tokens_path[..]),
                 &[TOKEN_SHIELDED_POOLS_KEY],
                 Some(&txn),
-                &platform_version_15.drive.grove_version,
+                &platform_version_14.drive.grove_version,
             );
             assert!(
                 pools_root_pre.value.is_err(),
-                "v14 genesis must not contain the token shielded pools root before the upgrade; got {:?}",
+                "v13 genesis must not contain the token shielded pools root before the upgrade; got {:?}",
                 pools_root_pre.value
             );
         }
 
         let txn_b = platform_b.drive.grove.start_transaction();
         platform_b
-            .transition_to_version_15(&txn_b, platform_version_15)
-            .expect("upgrade: transition_to_version_15 should succeed");
+            .transition_to_version_14(&BlockInfo::default(), &txn_b, platform_version_14)
+            .expect("upgrade: transition_to_version_14 should succeed");
 
         let diffs = collect_subtree_diffs(
             &platform_a,
@@ -3158,8 +3147,8 @@ mod tests {
         );
         assert!(
             diffs.is_empty(),
-            "CONSENSUS FORK: the [Tokens] subtree differs between a fresh genesis-v15 node and an \
-             in-place-upgraded v15 node.\n{}",
+            "CONSENSUS FORK: the [Tokens] subtree differs between a fresh genesis-v14 node and an \
+             in-place-upgraded v14 node.\n{}",
             diffs.join("\n"),
         );
     }

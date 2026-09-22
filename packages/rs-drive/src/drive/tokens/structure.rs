@@ -372,7 +372,7 @@ fn distributions() -> StructureNode {
     ])
 }
 
-/// One Orchard pool per token that enables shielded balances in protocol 15.
+/// One Orchard pool per token that enables shielded balances in protocol 14.
 fn shielded_pools() -> StructureNode {
     StructureNode::fixed(
         "shielded_pools",
@@ -381,7 +381,7 @@ fn shielded_pools() -> StructureNode {
         "TOKEN_SHIELDED_POOLS_KEY",
     )
     .kind(ElementKind::BigSumTree)
-    .since(15)
+    .since(14)
     .source(SOURCE)
     .book("data-model/token-shielded-pools.md")
     .describe("The shielded balances of tokens that enable an Orchard pool.")

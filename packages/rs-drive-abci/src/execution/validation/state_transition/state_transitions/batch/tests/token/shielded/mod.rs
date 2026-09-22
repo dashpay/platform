@@ -1061,7 +1061,7 @@ mod token_shielded_pool_tests {
     #[tokio::test]
     async fn should_gate_new_shielded_tokens_and_validate_their_rules_on_contract_update() {
         for (platform_version, incompatible_rules) in [
-            (PlatformVersion::get(14).unwrap(), false),
+            (PlatformVersion::get(13).unwrap(), false),
             (PlatformVersion::latest(), true),
             (PlatformVersion::latest(), false),
         ] {
@@ -1132,7 +1132,7 @@ mod token_shielded_pool_tests {
                 )
                 .expect("process contract update");
 
-            if platform_version.protocol_version < 15 {
+            if platform_version.protocol_version < 14 {
                 assert_matches!(
                     result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::UnpaidConsensusError(

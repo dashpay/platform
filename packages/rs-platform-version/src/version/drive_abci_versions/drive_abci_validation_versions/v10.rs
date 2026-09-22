@@ -228,7 +228,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
                 document_update_price_transition_structure_validation: 0,
-                document_base_transition_state_validation: 0,
+                document_base_transition_state_validation: 1, // changed: a document token cost may be paid from the token shielded pool
                 document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
@@ -387,7 +387,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 },
             token_shielded_transfer_with_shielded_fee_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    basic_structure: None,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: None,
@@ -396,7 +396,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 },
             token_unshield_with_shielded_fee_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    basic_structure: None,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: None,
@@ -405,7 +405,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 },
             token_purchase_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    basic_structure: None,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: None,

@@ -19,6 +19,7 @@ use crate::version::drive_versions::drive_token_method_versions::{
 /// default node; the processing fee drops by the existence read the later
 /// tokens no longer make.
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V2: DriveTokenMethodVersions = DriveTokenMethodVersions {
+    calculate_total_tokens_balance: 1,
     distribution: DriveTokenDistributionMethodVersions {
         add_pre_programmed_distributions: 1,
         ..DRIVE_TOKEN_METHOD_VERSIONS_V1.distribution

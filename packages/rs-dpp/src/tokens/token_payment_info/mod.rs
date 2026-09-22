@@ -8,7 +8,7 @@
 //! The enum is versioned to allow future evolution without breaking callers.
 //! [`v0::TokenPaymentInfoV0`] pays from the identity's token balance; [`v1::TokenPaymentInfoV1`]
 //! adds a [`v1::TokenShieldedPayment`], a spend bundle that pays the cost out of the token's
-//! shielded pool instead (protocol version 15 and up). Accessors are provided via
+//! shielded pool instead (protocol version 14 and up). Accessors are provided via
 //! [`v0::v0_accessors::TokenPaymentInfoAccessorsV0`], and convenience methods (such
 //! as `token_id()` and `is_valid_for_required_cost()`) are available through
 //! [`methods::v0::TokenPaymentInfoMethodsV0`].

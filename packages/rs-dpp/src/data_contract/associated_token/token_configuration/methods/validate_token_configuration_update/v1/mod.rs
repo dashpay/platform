@@ -61,7 +61,7 @@ mod tests {
         let mut shielded = plain.clone();
         shielded.set_has_shielded_pool(true);
 
-        for platform_version in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+        for platform_version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
             for (old, new) in [
                 (&plain, &shielded),
                 (&shielded, &plain),
@@ -79,7 +79,7 @@ mod tests {
                     .expect("validate token configuration update");
                 assert_eq!(
                     result.is_valid(),
-                    platform_version.protocol_version < 15
+                    platform_version.protocol_version < 14
                         || old.has_shielded_pool() == new.has_shielded_pool(),
                     "unexpected update validation on protocol {}: {:?}",
                     platform_version.protocol_version,

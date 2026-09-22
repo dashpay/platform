@@ -6,7 +6,6 @@ mod v1;
 mod v2;
 mod v3;
 mod v4;
-mod v5;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -33,10 +32,9 @@ impl Drive {
             2 => self.create_initial_state_structure_v2(transaction, platform_version),
             3 => self.create_initial_state_structure_v3(transaction, platform_version),
             4 => self.create_initial_state_structure_v4(transaction, platform_version),
-            5 => self.create_initial_state_structure_v5(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "create_initial_state_structure".to_string(),
-                known_versions: vec![0, 1, 2, 3, 4, 5],
+                known_versions: vec![0, 1, 2, 3, 4],
                 received: version,
             })),
         }

@@ -11,6 +11,7 @@ use dpp::consensus::ConsensusError;
 use dpp::contract_group::ContractGroupMember;
 use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::validate_token_configurations;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::action_fees::DocumentActionFees;
@@ -154,7 +155,13 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
             }
         }
 
-        Ok(SimpleConsensusValidationResult::new())
+        // The token configurations the contract declares: a token that opts into a shielded
+        // pool must leave its freeze, unfreeze and destroy-frozen-funds rules unassigned,
+        // since notes in a pool have no owner to freeze.
+        Ok(validate_token_configurations(
+            self.data_contract().tokens(),
+            platform_version,
+        ))
     }
 }
 

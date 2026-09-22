@@ -104,6 +104,13 @@ impl Drive {
         // sequence of inserts on both node populations.
         self.insert_contract_fee_pot_trees(transaction, platform_version)?;
 
+        // Token shielded pools root tree (protocol version 14): the BigSumTree under the Tokens
+        // tree that holds one Orchard pool per token opting in
+        // (`TokenConfigurationV1::has_shielded_pool`). The upgrade path
+        // (`Platform::transition_to_version_14`) calls the same helper, so a chain born at
+        // version 14 and one upgraded to it build a byte-identical `[Tokens]` subtree.
+        self.insert_token_shielded_pools_root_tree(transaction, platform_version)?;
+
         Ok(())
     }
 }

@@ -34,7 +34,7 @@ pub mod v1;
 pub enum TokenConfiguration {
     #[serde(rename = "0")]
     V0(TokenConfigurationV0),
-    /// V0 plus the per-token shielded pool opt-in. Admitted from protocol version 15
+    /// V0 plus the per-token shielded pool opt-in. Admitted from protocol version 14
     /// (`token_versions.token_configuration_format`).
     #[serde(rename = "1")]
     V1(TokenConfigurationV1),

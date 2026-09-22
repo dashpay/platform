@@ -12759,7 +12759,7 @@ typedef GPB_ENUM(GetShieldedEncryptedNotesRequest_Version_OneOfCase) {
 
 /**
  * Every shielded pool query below targets the credit shielded pool unless `token_id` is set,
- * in which case it targets that token's own shielded pool (protocol version 15+; the 32-byte
+ * in which case it targets that token's own shielded pool (protocol version 14+; the 32-byte
  * token id). Responses have the same shape for both pools.
  **/
 GPB_FINAL @interface GetShieldedEncryptedNotesRequest : GPBMessage

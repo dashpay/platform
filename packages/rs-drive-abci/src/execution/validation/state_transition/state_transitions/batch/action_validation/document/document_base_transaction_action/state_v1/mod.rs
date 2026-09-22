@@ -24,7 +24,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 }
 
 impl DocumentBaseTransitionActionStateValidationV1 for DocumentBaseTransitionAction {
-    /// Version 1 (protocol version 15): a token cost paid out of the token's shielded pool
+    /// Version 1 (protocol version 14): a token cost paid out of the token's shielded pool
     /// (`TokenPaymentInfo::V1`) does not touch the owner's token balance, so the balance and
     /// frozen-account checks of v0 do not apply; the pool side (pool exists, token not paused,
     /// anchor, unspent nullifiers, pool balance and the proof) is validated by

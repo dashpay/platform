@@ -708,24 +708,10 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
             .validate_shielded_proof
         {
             0 => validate_shielded_proof_v0(self, platform_version),
-            1 => {
-                // v1 refuses, in `IdentityCreateFromShieldedPool`, the keys the v0 Orchard sighash
-                // preimage cannot bind, before that preimage is built: a key bound to a contract
-                // group (the layout predates group bounds, and an error out of the preimage
-                // builder would be an internal error rather than a rejection) and a key that
-                // carries a budget or an expiry (they are not in the layout, so nothing would
-                // stop a relay from altering them when no key has a proof of possession). A
-                // version 1 key without limits is fine: everything it holds is in the layout.
-                // Everything else is v0.
-                if let Some(error) = key_not_allowed_in_shielded_creation(self) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(error));
-                }
-                validate_shielded_proof_v0(self, platform_version)
-            }
-            2 => validate_shielded_proof_v2(self, platform_version),
+            1 => validate_shielded_proof_v1(self, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::validate_shielded_proof".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -1078,8 +1064,16 @@ fn validate_batch_token_shielded_proofs(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// Protocol 15 proof validation adds token pools while retaining the identity key restrictions.
-fn validate_shielded_proof_v2(
+/// Generation 1 (protocol version 14): the credit pool rules of v0, the token shielded pools,
+/// and the identity key restrictions v0 cannot express.
+///
+/// In `IdentityCreateFromShieldedPool` it refuses the keys the v0 Orchard sighash preimage cannot
+/// bind, before that preimage is built: a key bound to a contract group (the layout predates group
+/// bounds, and an error out of the preimage builder would be an internal error rather than a
+/// rejection) and a key that carries a budget or an expiry (they are not in the layout, so nothing
+/// would stop a relay from altering them when no key has a proof of possession). A version 1 key
+/// without limits is fine: everything it holds is in the layout.
+fn validate_shielded_proof_v1(
     state_transition: &StateTransition,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {

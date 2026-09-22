@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "latest_protocol_version": 15,
+  "latest_protocol_version": 14,
   "element_kinds": [
     {
       "name": "Item",
@@ -956,7 +956,7 @@
             "kinds": [
               "BigSumTree"
             ],
-            "since": 15,
+            "since": 14,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/tokens/paths.rs",
             "book": "data-model/token-shielded-pools.md",
@@ -977,7 +977,7 @@
                 "kinds": [
                   "SumTree"
                 ],
-                "since": 15,
+                "since": 14,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                 "description": "The Orchard pool for one token.",
@@ -994,7 +994,7 @@
                       "SumItem"
                     ],
                     "value": "token amount",
-                    "since": 15,
+                    "since": 14,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                     "description": "Every token in the pool.",
@@ -1011,7 +1011,7 @@
                     "kinds": [
                       "ProvableCountTree"
                     ],
-                    "since": 15,
+                    "since": 14,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                     "description": "The nullifier of every spent note, so none is spent twice.",
@@ -1032,7 +1032,7 @@
                           "Item"
                         ],
                         "value": "empty",
-                        "since": 15,
+                        "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                         "description": "One spent note.",
@@ -1051,7 +1051,7 @@
                     "kinds": [
                       "Tree"
                     ],
-                    "since": 15,
+                    "since": 14,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                     "description": "The commitment tree anchor after each block that added notes, for pruning old anchors.",
@@ -1072,7 +1072,7 @@
                           "Item"
                         ],
                         "value": "the anchor, 32 bytes",
-                        "since": 15,
+                        "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                         "description": "The anchor at that height.",
@@ -1091,7 +1091,7 @@
                     "kinds": [
                       "CommitmentTree"
                     ],
-                    "since": 15,
+                    "since": 14,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                     "description": "Every note ever added to the pool. Read by every wallet sync.",
@@ -1109,7 +1109,7 @@
                     "kinds": [
                       "Tree"
                     ],
-                    "since": 15,
+                    "since": 14,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                     "description": "The anchors a spend may still prove against.",
@@ -1130,7 +1130,7 @@
                           "Item"
                         ],
                         "value": "the block height, u64 big endian",
-                        "since": 15,
+                        "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/shielded/paths.rs",
                         "description": "One valid anchor.",
@@ -5247,7 +5247,7 @@
   },
   "layer_shapes": {
     "contract_groups": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "00",
         "right": {
@@ -5256,7 +5256,7 @@
       }
     },
     "contract_groups.groups.group": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@14",
       "tree": {
         "hex": "02",
         "left": {
@@ -5271,7 +5271,7 @@
       }
     },
     "contract_groups.members.contract": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@14",
       "tree": {
         "hex": "01",
         "left": {
@@ -5283,7 +5283,7 @@
       }
     },
     "contracts.contract": {
-      "origin": "fixture contracts_with_documents@15",
+      "origin": "fixture contracts_with_documents@14",
       "tree": {
         "hex": "01",
         "left": {
@@ -5295,7 +5295,7 @@
       }
     },
     "contracts.contract.other": {
-      "origin": "fixture moderated_contract@15",
+      "origin": "fixture moderated_contract@14",
       "tree": {
         "hex": "80",
         "left": {
@@ -5313,7 +5313,7 @@
       }
     },
     "group_actions.contract.group": {
-      "origin": "fixture tokens_and_group_actions@15",
+      "origin": "fixture tokens_and_group_actions@14",
       "tree": {
         "hex": "4d",
         "left": {
@@ -5325,7 +5325,7 @@
       }
     },
     "group_actions.contract.group.active.action": {
-      "origin": "fixture tokens_and_group_actions@15",
+      "origin": "fixture tokens_and_group_actions@14",
       "tree": {
         "hex": "53",
         "left": {
@@ -5334,7 +5334,7 @@
       }
     },
     "group_actions.contract.group.closed.action": {
-      "origin": "fixture tokens_and_group_actions@15",
+      "origin": "fixture tokens_and_group_actions@14",
       "tree": {
         "hex": "53",
         "left": {
@@ -5343,7 +5343,7 @@
       }
     },
     "identities.identity": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@14",
       "tree": {
         "hex": "80",
         "left": {
@@ -5368,7 +5368,7 @@
       "states": [
         {
           "state": "created",
-          "origin": "fixture identities@15",
+          "origin": "fixture identities@14",
           "tree": {
             "hex": "80",
             "left": {
@@ -5387,7 +5387,7 @@
         },
         {
           "state": "used_with_a_contract",
-          "origin": "fixture identities@15",
+          "origin": "fixture identities@14",
           "tree": {
             "hex": "80",
             "left": {
@@ -5409,7 +5409,7 @@
         },
         {
           "state": "budgeted_key_and_contract",
-          "origin": "fixture contract_groups_and_bound_keys@15",
+          "origin": "fixture contract_groups_and_bound_keys@14",
           "tree": {
             "hex": "80",
             "left": {
@@ -5435,7 +5435,7 @@
       ]
     },
     "identities.identity.contract_info.bound": {
-      "origin": "fixture contract_groups_and_bound_keys@15",
+      "origin": "fixture contract_groups_and_bound_keys@14",
       "tree": {
         "hex": "01",
         "left": {
@@ -5444,7 +5444,7 @@
       }
     },
     "identities.identity.key_references": {
-      "origin": "fixture identities@15",
+      "origin": "fixture identities@14",
       "tree": {
         "hex": "03",
         "left": {
@@ -5456,7 +5456,7 @@
       }
     },
     "identities.identity.key_references.authentication": {
-      "origin": "fixture identities@15",
+      "origin": "fixture identities@14",
       "tree": {
         "hex": "02",
         "left": {
@@ -5471,7 +5471,7 @@
       }
     },
     "misc": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "54",
         "left": {
@@ -5480,7 +5480,7 @@
       }
     },
     "pools.epoch": {
-      "origin": "fixture current_epoch@15",
+      "origin": "fixture current_epoch@14",
       "tree": {
         "hex": "6d",
         "left": {
@@ -5508,14 +5508,14 @@
       "states": [
         {
           "state": "future",
-          "origin": "fixture current_epoch@15",
+          "origin": "fixture current_epoch@14",
           "tree": {
             "hex": "73"
           }
         },
         {
           "state": "running",
-          "origin": "fixture current_epoch@15",
+          "origin": "fixture current_epoch@14",
           "tree": {
             "hex": "6d",
             "left": {
@@ -5543,7 +5543,7 @@
         },
         {
           "state": "paid",
-          "origin": "fixture paid_epoch@15",
+          "origin": "fixture paid_epoch@14",
           "tree": {
             "hex": "74",
             "left": {
@@ -5566,7 +5566,7 @@
       ]
     },
     "prefunded_balances": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "80",
         "left": {
@@ -5578,7 +5578,7 @@
       }
     },
     "root": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "40",
         "left": {
@@ -5635,7 +5635,7 @@
       }
     },
     "saved_block_transactions": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "65",
         "left": {
@@ -5647,7 +5647,7 @@
       }
     },
     "shielded_balances.main_pool": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "80",
         "left": {
@@ -5665,7 +5665,7 @@
       }
     },
     "tokens": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "80",
         "left": {
@@ -5689,7 +5689,7 @@
       }
     },
     "tokens.distributions": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "80",
         "left": {
@@ -5704,7 +5704,7 @@
       }
     },
     "tokens.distributions.perpetual.token": {
-      "origin": "fixture token_distributions_unclaimed@15",
+      "origin": "fixture token_distributions_unclaimed@14",
       "tree": {
         "hex": "c0",
         "left": {
@@ -5713,7 +5713,7 @@
       }
     },
     "tokens.distributions.timed": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "80",
         "left": {
@@ -5725,7 +5725,7 @@
       }
     },
     "tokens.shielded_pools.token": {
-      "origin": "fixture token_shielded_pool@15",
+      "origin": "fixture token_shielded_pool@14",
       "tree": {
         "hex": "60",
         "left": {
@@ -5743,7 +5743,7 @@
       }
     },
     "versions": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "01",
         "left": {
@@ -5752,7 +5752,7 @@
       }
     },
     "votes": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "64",
         "left": {
@@ -5764,7 +5764,7 @@
       }
     },
     "votes.contested_resource": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "70",
         "left": {
@@ -5773,7 +5773,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type": {
-      "origin": "fixture contested_documents@15",
+      "origin": "fixture contested_documents@14",
       "tree": {
         "hex": "01",
         "left": {
@@ -5782,7 +5782,7 @@
       }
     },
     "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
-      "origin": "fixture contested_documents@15",
+      "origin": "fixture contested_documents@14",
       "tree": {
         "hex": "01",
         "left": {
@@ -5791,7 +5791,7 @@
       }
     },
     "withdrawals": {
-      "origin": "genesis@15",
+      "origin": "genesis@14",
       "tree": {
         "hex": "03",
         "left": {
