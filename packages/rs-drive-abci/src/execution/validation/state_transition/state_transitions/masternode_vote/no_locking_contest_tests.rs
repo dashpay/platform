@@ -442,6 +442,13 @@ async fn should_refuse_a_lock_vote_and_accept_the_other_choices() {
         platform_version,
     )
     .await;
+    let (abstaining, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(abstaining, Some(1));
+    assert_eq!(locking, Some(0));
+    assert!(tallies.contains(&(alice.0.id(), Some(0))));
+    assert!(tallies.contains(&(bob.0.id(), Some(0))));
+
+    // The same masternode changes its vote: a changed vote replaces the previous one
     perform_vote(
         &mut platform,
         &platform_state,
@@ -457,10 +464,25 @@ async fn should_refuse_a_lock_vote_and_accept_the_other_choices() {
     )
     .await;
 
+    // The masternode changed its vote, so its abstain vote is gone and alice has it
+    let (abstaining, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(0));
+    assert!(tallies.contains(&(alice.0.id(), Some(1))));
+    assert!(tallies.contains(&(bob.0.id(), Some(0))));
+}
+
+/// The abstain and lock tallies and every contender's tally of the still-running contest.
+fn tallies_of(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    platform_version: &PlatformVersion,
+) -> (Option<u32>, Option<u32>, Vec<(Identifier, Option<u32>)>) {
+    let platform_state = platform.state.load();
     let (contenders, abstaining, locking, finished) = get_vote_states(
-        &platform,
+        platform,
         &platform_state,
-        &contract,
+        contract,
         NAME,
         None,
         true,
@@ -469,14 +491,11 @@ async fn should_refuse_a_lock_vote_and_accept_the_other_choices() {
         platform_version,
     );
     assert!(finished.is_none());
-    assert_eq!(abstaining, Some(0));
-    assert_eq!(locking, Some(0));
-    let tallies: Vec<(Identifier, Option<u32>)> = contenders
+    let tallies = contenders
         .iter()
         .map(|contender| (contender.identity_id(), contender.vote_tally()))
         .collect();
-    assert!(tallies.contains(&(alice.0.id(), Some(1))));
-    assert!(tallies.contains(&(bob.0.id(), Some(0))));
+    (abstaining, locking, tallies)
 }
 
 #[tokio::test]
