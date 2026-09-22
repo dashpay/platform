@@ -2011,6 +2011,16 @@ mod tests {
                     platform_value!({ "type": "contract" }),
                     "/properties/toUserId/refersTo/contractRequirements",
                 ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 7200 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumAgeSeconds",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 60 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 61 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumSecondsSinceUpdate",
+                ),
             ] {
                 let old_document_type =
                     identifier_document_type(Some(old_fields), platform_version);

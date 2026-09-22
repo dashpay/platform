@@ -304,16 +304,16 @@ fn validate_document_type_references_v0(
                     None => false,
                     Some(fetch_info) => {
                         // The declaration's requirements are checked against the contract
-                        // just fetched, so they cost no further read; the first unmet one
-                        // refuses the write
-                        if let Some(requirement) =
-                            contract_requirements.first_unmet_by(&fetch_info.contract)
+                        // just fetched and the block time, so they cost no further read;
+                        // the first unmet one refuses the write
+                        if let Some(requirement) = contract_requirements
+                            .first_unmet_by(&fetch_info.contract, block_info.time_ms)
                         {
                             return Ok(SimpleConsensusValidationResult::new_with_error(
                                 ReferencedContractRequirementNotMetError::new(
                                     Identifier::from(referenced_id),
                                     requirement.field().to_string(),
-                                    requirement.required().to_string(),
+                                    requirement.required(),
                                     path.to_string(),
                                 )
                                 .into(),

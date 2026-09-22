@@ -11,6 +11,7 @@ use platform_serialization_derive::{
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::config::moderation::ContractModerators;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
@@ -93,8 +94,9 @@ pub struct ByteArrayPropertySizes {
 /// Declared as `refersTo: { "type": "contract", "contractRequirements": { ... } }`: each key names an
 /// aspect of the referenced contract and its value the requirement on it. Consensus checks the
 /// requirements when the referring document is written, against the contract it has already
-/// fetched for the existence check, so a requirement costs no further read. An unmet one
-/// refuses the write with `ReferencedContractRequirementNotMetError` (40135).
+/// fetched for the existence check and the block time of the write, so a requirement costs no
+/// further read. An unmet one refuses the write with `ReferencedContractRequirementNotMetError`
+/// (40135).
 #[derive(
     Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
 )]
@@ -103,6 +105,17 @@ pub struct ContractReferenceRequirements {
     /// The moderation the referenced contract must declare.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moderation: Option<ContractReferenceModeration>,
+    /// How long, in seconds, the referenced contract must have existed when the referring
+    /// document is written: its recorded creation time plus this many seconds must not be
+    /// after the block time. A contract that never recorded a creation time does not meet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_age_seconds: Option<u32>,
+    /// How long, in seconds, the referenced contract must have been unchanged when the
+    /// referring document is written: the later of its recorded creation and last update
+    /// times plus this many seconds must not be after the block time. A contract that never
+    /// recorded a creation time does not meet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_seconds_since_update: Option<u32>,
 }
 
 /// The moderation a `contract` reference may require of the referenced contract.
@@ -149,6 +162,8 @@ impl ContractReferenceModeration {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ContractReferenceRequirement {
     Moderation(ContractReferenceModeration),
+    MinimumAgeSeconds(u32),
+    MinimumSecondsSinceUpdate(u32),
 }
 
 impl ContractReferenceRequirement {
@@ -156,13 +171,62 @@ impl ContractReferenceRequirement {
     pub fn field(&self) -> &'static str {
         match self {
             ContractReferenceRequirement::Moderation(_) => property_names::MODERATION,
+            ContractReferenceRequirement::MinimumAgeSeconds(_) => {
+                property_names::MINIMUM_AGE_SECONDS
+            }
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(_) => {
+                property_names::MINIMUM_SECONDS_SINCE_UPDATE
+            }
         }
     }
 
     /// The value the declaration requires, as spelled in the schema.
-    pub fn required(&self) -> &'static str {
+    pub fn required(&self) -> String {
         match self {
-            ContractReferenceRequirement::Moderation(moderation) => moderation.as_str(),
+            ContractReferenceRequirement::Moderation(moderation) => moderation.as_str().to_string(),
+            ContractReferenceRequirement::MinimumAgeSeconds(seconds)
+            | ContractReferenceRequirement::MinimumSecondsSinceUpdate(seconds) => {
+                seconds.to_string()
+            }
+        }
+    }
+
+    /// Whether `contract` meets this requirement at `block_time_ms`, the time of the block
+    /// writing the referring document.
+    pub fn is_met_by(&self, contract: &DataContract, block_time_ms: TimestampMillis) -> bool {
+        match self {
+            ContractReferenceRequirement::Moderation(moderation) => moderation.is_met_by(contract),
+            ContractReferenceRequirement::MinimumAgeSeconds(seconds) => {
+                Self::minimum_age_is_met(contract.created_at(), *seconds, block_time_ms)
+            }
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(seconds) => {
+                Self::minimum_age_is_met(Self::last_change_time(contract), *seconds, block_time_ms)
+            }
+        }
+    }
+
+    /// Whether something that happened at `since` is at least `minimum_seconds` in the past
+    /// at `block_time_ms`. A contract without the recorded time (one created before contracts
+    /// recorded it) is of unknown age and does not meet any minimum.
+    pub fn minimum_age_is_met(
+        since: Option<TimestampMillis>,
+        minimum_seconds: u32,
+        block_time_ms: TimestampMillis,
+    ) -> bool {
+        let Some(since) = since else {
+            return false;
+        };
+        let old_enough_at =
+            since.saturating_add(TimestampMillis::from(minimum_seconds).saturating_mul(1000));
+        block_time_ms >= old_enough_at
+    }
+
+    /// When `contract` last changed: its last update, or its creation for a contract never
+    /// updated. `None` when it recorded neither.
+    pub fn last_change_time(contract: &DataContract) -> Option<TimestampMillis> {
+        match (contract.created_at(), contract.updated_at()) {
+            (Some(created_at), Some(updated_at)) => Some(created_at.max(updated_at)),
+            (created_at, updated_at) => updated_at.or(created_at),
         }
     }
 }
@@ -171,6 +235,8 @@ impl ContractReferenceRequirements {
     /// Whether the declaration requires nothing beyond the contract's existence.
     pub fn is_empty(&self) -> bool {
         self.moderation.is_none()
+            && self.minimum_age_seconds.is_none()
+            && self.minimum_seconds_since_update.is_none()
     }
 
     /// The requirements, in declaration order.
@@ -178,13 +244,27 @@ impl ContractReferenceRequirements {
         self.moderation
             .into_iter()
             .map(ContractReferenceRequirement::Moderation)
+            .chain(
+                self.minimum_age_seconds
+                    .into_iter()
+                    .map(ContractReferenceRequirement::MinimumAgeSeconds),
+            )
+            .chain(
+                self.minimum_seconds_since_update
+                    .into_iter()
+                    .map(ContractReferenceRequirement::MinimumSecondsSinceUpdate),
+            )
     }
 
-    /// The first requirement `contract` does not meet, `None` when it meets them all.
-    pub fn first_unmet_by(&self, contract: &DataContract) -> Option<ContractReferenceRequirement> {
-        self.requirements().find(|requirement| match requirement {
-            ContractReferenceRequirement::Moderation(moderation) => !moderation.is_met_by(contract),
-        })
+    /// The first requirement `contract` does not meet at `block_time_ms`, the time of the
+    /// block writing the referring document, `None` when it meets them all.
+    pub fn first_unmet_by(
+        &self,
+        contract: &DataContract,
+        block_time_ms: TimestampMillis,
+    ) -> Option<ContractReferenceRequirement> {
+        self.requirements()
+            .find(|requirement| !requirement.is_met_by(contract, block_time_ms))
     }
 }
 
@@ -385,6 +465,12 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 write!(f, "contract")?;
                 if let Some(moderation) = contract_requirements.moderation {
                     write!(f, " with {} moderation", moderation.as_str())?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_age_seconds {
+                    write!(f, " at least {seconds} seconds old")?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_seconds_since_update {
+                    write!(f, " unchanged for at least {seconds} seconds")?;
                 }
                 Ok(())
             }
@@ -7631,6 +7717,105 @@ mod tests {
     }
 
     #[test]
+    fn should_meet_a_minimum_age_from_the_recorded_creation_time_at_the_block_time() {
+        let created_at: TimestampMillis = 1_700_000_000_000;
+        let one_hour_ms: TimestampMillis = 3_600_000;
+        // One millisecond short of the minimum is not old enough; the exact minimum is
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            created_at + one_hour_ms - 1
+        ));
+        assert!(ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            created_at + one_hour_ms
+        ));
+        assert!(ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            TimestampMillis::MAX
+        ));
+        // A contract that never recorded its creation time is of unknown age
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            None,
+            1,
+            TimestampMillis::MAX
+        ));
+        // The bound saturates rather than wrapping around into the past
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            Some(TimestampMillis::MAX - 1),
+            u32::MAX,
+            TimestampMillis::MAX - 1
+        ));
+
+        let requirements = ContractReferenceRequirements {
+            moderation: None,
+            minimum_age_seconds: Some(3600),
+            minimum_seconds_since_update: Some(60),
+        };
+        assert_eq!(
+            requirements.requirements().collect::<Vec<_>>(),
+            vec![
+                ContractReferenceRequirement::MinimumAgeSeconds(3600),
+                ContractReferenceRequirement::MinimumSecondsSinceUpdate(60)
+            ]
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumAgeSeconds(3600).field(),
+            "minimumAgeSeconds"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumAgeSeconds(3600).required(),
+            "3600"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(60).field(),
+            "minimumSecondsSinceUpdate"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(60).required(),
+            "60"
+        );
+    }
+
+    #[test]
+    fn should_take_the_last_change_time_from_the_later_of_creation_and_update() {
+        use crate::data_contract::accessors::v1::DataContractV1Setters;
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        contract.set_created_at(None);
+        contract.set_updated_at(None);
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            None
+        );
+
+        contract.set_created_at(Some(1_000));
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(1_000)
+        );
+
+        contract.set_updated_at(Some(5_000));
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(5_000)
+        );
+
+        // A recorded update alone counts as the last change
+        contract.set_created_at(None);
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(5_000)
+        );
+    }
+
+    #[test]
     fn should_display_reference_targets() {
         let contract_id = Identifier::from([7u8; 32]);
 
@@ -7649,10 +7834,34 @@ mod tests {
             DocumentPropertyReferenceTarget::Contract {
                 contract_requirements: ContractReferenceRequirements {
                     moderation: Some(ContractReferenceModeration::Elected),
+                    minimum_age_seconds: None,
+                    minimum_seconds_since_update: None,
                 },
             }
             .to_string(),
             "contract with elected moderation"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    minimum_age_seconds: Some(604_800),
+                    minimum_seconds_since_update: Some(86_400),
+                },
+            }
+            .to_string(),
+            "contract with elected moderation at least 604800 seconds old unchanged for at least 86400 seconds"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: None,
+                    minimum_age_seconds: Some(1),
+                    minimum_seconds_since_update: None,
+                },
+            }
+            .to_string(),
+            "contract at least 1 seconds old"
         );
         assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
         assert_eq!(
