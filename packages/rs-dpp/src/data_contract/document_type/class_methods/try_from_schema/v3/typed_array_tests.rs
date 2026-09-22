@@ -420,17 +420,32 @@ fn expect_structure_error_or_json_schema_error<T: std::fmt::Debug>(
 }
 
 #[test]
-fn should_keep_the_byte_array_form_free_of_items_and_unique_items() {
-    for (keyword, value) in [
-        ("uniqueItems", Value::Bool(true)),
-        ("items", platform_value!({ "type": "integer" })),
+fn should_refuse_items_on_a_byte_array_and_unique_items_on_an_identifier() {
+    let byte_array = platform_value!({
+        "type": "array",
+        "byteArray": true,
+        "maxItems": 16,
+        "position": 0
+    });
+    let identifier = platform_value!({
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": 0
+    });
+
+    for (mut list, keyword, value) in [
+        (
+            byte_array.clone(),
+            "items",
+            platform_value!({ "type": "integer" }),
+        ),
+        // An identifier is one value: "no repeated byte" would refuse most
+        // identifiers
+        (identifier.clone(), "uniqueItems", Value::Bool(true)),
     ] {
-        let mut list = platform_value!({
-            "type": "array",
-            "byteArray": true,
-            "maxItems": 16,
-            "position": 0
-        });
         list.set_value(keyword, value).expect("keyword applies");
 
         let error = expect_json_schema_error(parse_dispatched(
@@ -440,10 +455,17 @@ fn should_keep_the_byte_array_form_free_of_items_and_unique_items() {
         ));
         assert!(
             error.instance_path().ends_with(&format!("/list/{keyword}")),
-            "{keyword} on a byte array should be refused, got {}",
+            "{keyword} should be refused, got {}",
             error.instance_path()
         );
     }
+
+    // On a plain byte array uniqueItems keeps its meaning, no repeated byte
+    let mut list = byte_array;
+    list.set_value("uniqueItems", Value::Bool(true))
+        .expect("keyword applies");
+    parse_dispatched(schema_with_list(list), PlatformVersion::latest(), true)
+        .expect("uniqueItems on a plain byte array parses");
 }
 
 #[test]

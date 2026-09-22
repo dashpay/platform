@@ -569,7 +569,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     elements, and cannot be an index property or one side of a
 ///     `propertyAgreement`. Its identifier and byte array elements are
 ///     conversion paths (`find_identifier_and_binary_paths` 1). A byte array
-///     now refuses `uniqueItems`, as it refuses `items`.
+///     refuses `items`, and an identifier (a byte array with the identifier
+///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
+///     no byte repeat.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

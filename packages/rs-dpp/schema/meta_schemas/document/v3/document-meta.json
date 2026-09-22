@@ -352,6 +352,7 @@
             }
           },
           "then": {
+            "$comment": "an identifier is one value, not a list of bytes: uniqueItems would refuse every identifier that repeats a byte, most of them",
             "properties": {
               "byteArray": {
                 "const": true
@@ -361,7 +362,8 @@
               },
               "maxItems": {
                 "const": 32
-              }
+              },
+              "uniqueItems": false
             },
             "required": [
               "byteArray",
@@ -455,7 +457,7 @@
           }
         },
         {
-          "$comment": "an array is a byte array or a typed array. A byte array declares byteArray: true, its minItems and maxItems count bytes, and it takes no items and no uniqueItems. A typed array declares items, the schema of every element, instead; its minItems and maxItems count elements, and maxItems is required",
+          "$comment": "an array is a byte array or a typed array. A byte array declares byteArray: true, its minItems and maxItems count bytes, and it takes no items (an identifier byte array takes no uniqueItems either, see contentMediaType). A typed array declares items, the schema of every element, instead; its minItems and maxItems count elements, and maxItems is required",
           "if": {
             "properties": {
               "type": {
@@ -474,8 +476,7 @@
             },
             "then": {
               "properties": {
-                "items": false,
-                "uniqueItems": false
+                "items": false
               }
             },
             "else": {
