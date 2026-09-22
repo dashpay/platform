@@ -23,8 +23,10 @@
 //! it: the mobile CI jobs replay this file.
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::config::v0::{DataContractConfigGettersV0, DataContractConfigV0};
 use crate::data_contract::config::v1::{DataContractConfigGettersV1, DataContractConfigV1};
+use crate::data_contract::config::v2::{DataContractConfigGettersV2, DataContractConfigV2};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
@@ -62,11 +64,17 @@ const MIRROR_SURFACES: &str = "\
     and the entity projection in the example app's ContractDownloader.kt
   - docs/sdk/sdk-parity-manifest.json (capability contract.config_mirror)";
 
-/// The protocol version the V1-envelope cases are generated at. The V1
+/// The protocol version the V1-configuration cases are generated at: the
+/// last version whose tables create a V1 configuration by default (the V1
 /// contract envelope and the V1 configuration have been the defaults since
-/// protocol version 9; pinning one version keeps the corpus stable across
+/// protocol version 9). Pinning one version keeps the corpus stable across
 /// protocol bumps, while the generation guard below walks every version.
-const V1_ENVELOPE_PROTOCOL_VERSION: u32 = 14;
+const V1_CONFIG_PROTOCOL_VERSION: u32 = 13;
+
+/// The protocol version the V2-configuration cases are generated at: the
+/// first version whose tables create a V2 configuration (the optional
+/// contract moderation declaration) by default.
+const V2_CONFIG_PROTOCOL_VERSION: u32 = 14;
 
 /// The protocol version the historic V0-envelope case is generated at and
 /// replayed by every mirror: the last version whose tables still select the
@@ -127,29 +135,44 @@ fn v1_all_set() -> DataContractConfigV1 {
     }
 }
 
+/// A V2 configuration declaring moderation: both lists kept by the owner
+/// alone. The moderators are the owner (no appointed identities) so the
+/// case carries no identifier, which every mirror renders differently in
+/// object form and in JSON form.
+fn v2_moderated() -> DataContractConfigV2 {
+    DataContractConfigV2 {
+        moderation: Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: true,
+            moderators: ContractModerators::ContractOwner,
+        }),
+        ..v1_all_set().into()
+    }
+}
+
 fn specs() -> Vec<CaseSpec> {
     vec![
         CaseSpec {
             name: "v1_defaults",
-            platform_version: V1_ENVELOPE_PROTOCOL_VERSION,
+            platform_version: V1_CONFIG_PROTOCOL_VERSION,
             config: DataContractConfigV1::default().into(),
             unknown_config_keys: vec![],
         },
         CaseSpec {
             name: "v1_all_set",
-            platform_version: V1_ENVELOPE_PROTOCOL_VERSION,
+            platform_version: V1_CONFIG_PROTOCOL_VERSION,
             config: v1_all_set().into(),
             unknown_config_keys: vec![],
         },
         CaseSpec {
             name: "v0_defaults_in_v1_envelope",
-            platform_version: V1_ENVELOPE_PROTOCOL_VERSION,
+            platform_version: V1_CONFIG_PROTOCOL_VERSION,
             config: DataContractConfigV0::default().into(),
             unknown_config_keys: vec![],
         },
         CaseSpec {
             name: "v0_key_requirements",
-            platform_version: V1_ENVELOPE_PROTOCOL_VERSION,
+            platform_version: V1_CONFIG_PROTOCOL_VERSION,
             config: DataContractConfigV0 {
                 requires_identity_encryption_bounded_key: Some(StorageKeyRequirements::Multiple),
                 requires_identity_decryption_bounded_key: Some(StorageKeyRequirements::Unique),
@@ -166,9 +189,21 @@ fn specs() -> Vec<CaseSpec> {
         },
         CaseSpec {
             name: "v1_unknown_field_is_ignored",
-            platform_version: V1_ENVELOPE_PROTOCOL_VERSION,
+            platform_version: V1_CONFIG_PROTOCOL_VERSION,
             config: v1_all_set().into(),
             unknown_config_keys: vec![("futurePolicy", json!({ "kind": 1 }))],
+        },
+        CaseSpec {
+            name: "v2_defaults",
+            platform_version: V2_CONFIG_PROTOCOL_VERSION,
+            config: DataContractConfigV2::default().into(),
+            unknown_config_keys: vec![],
+        },
+        CaseSpec {
+            name: "v2_moderated",
+            platform_version: V2_CONFIG_PROTOCOL_VERSION,
+            config: v2_moderated().into(),
+            unknown_config_keys: vec![],
         },
     ]
 }
@@ -206,7 +241,7 @@ fn envelope(spec: &CaseSpec) -> DataContractInSerializationFormat {
     match format_version {
         0 => DataContractInSerializationFormatV0 {
             id: Identifier::new(CONTRACT_ID),
-            config: spec.config,
+            config: spec.config.clone(),
             version: 1,
             owner_id: Identifier::new(OWNER_ID),
             schema_defs: None,
@@ -215,7 +250,7 @@ fn envelope(spec: &CaseSpec) -> DataContractInSerializationFormat {
         .into(),
         1 => DataContractInSerializationFormatV1 {
             id: Identifier::new(CONTRACT_ID),
-            config: spec.config,
+            config: spec.config.clone(),
             version: 1,
             owner_id: Identifier::new(OWNER_ID),
             schema_defs: None,
@@ -277,12 +312,25 @@ fn expected_config(config: &DataContractConfig) -> JsonValue {
             .requires_identity_decryption_bounded_key()
             .map(|requirement| requirement as u8)),
     );
-    if matches!(config, DataContractConfig::V1(_)) {
+    if matches!(
+        config,
+        DataContractConfig::V1(_) | DataContractConfig::V2(_)
+    ) {
         // The V0 wire carries no `sizedIntegerTypes`; the enum getter reports
         // `false` for it, which is a Rust convenience, not a field.
         expect.insert(
             "sizedIntegerTypes".to_string(),
             json!(config.sized_integer_types()),
+        );
+    }
+    if let Some(moderation) = config.moderation() {
+        // Only a V2 wire carries `moderation`, and only when the contract
+        // declares it: an unmoderated V2 configuration has no such key, so a
+        // mirror must not invent one. The enum getter reports `None` below
+        // V2, a Rust convenience like `sized_integer_types` above.
+        expect.insert(
+            "moderation".to_string(),
+            serde_json::to_value(moderation).expect("the moderation declaration serializes"),
         );
     }
     JsonValue::Object(expect)
@@ -491,7 +539,7 @@ fn should_cover_every_default_config_generation_with_a_vector() {
 }
 
 #[test]
-fn should_pin_the_v0_and_v1_config_key_sets() {
+fn should_pin_the_v0_v1_and_v2_config_key_sets() {
     let v0: BTreeSet<String> = [
         "$formatVersion",
         "canBeDeleted",
@@ -529,5 +577,39 @@ fn should_pin_the_v0_and_v1_config_key_sets() {
             "the V1 configuration keys changed to {:?}",
             keys(&v1_wire)
         ))
+    );
+
+    // An unmoderated V2 configuration carries the V1 keys under the "2"
+    // tag; the `moderation` key appears only when the contract declares it.
+    let v2_wire = serde_json::to_value(DataContractConfig::V2(DataContractConfigV2::default()))
+        .expect("a V2 configuration serializes");
+    assert!(
+        keys(&v2_wire) == v1,
+        "{}",
+        mirror_notice(&format!(
+            "the unmoderated V2 configuration keys changed to {:?}",
+            keys(&v2_wire)
+        ))
+    );
+    let mut v2_moderated_keys = v1.clone();
+    v2_moderated_keys.insert("moderation".to_string());
+    let v2_moderated_wire = serde_json::to_value(DataContractConfig::V2(v2_moderated()))
+        .expect("a moderated V2 configuration serializes");
+    assert!(
+        keys(&v2_moderated_wire) == v2_moderated_keys,
+        "{}",
+        mirror_notice(&format!(
+            "the moderated V2 configuration keys changed to {:?}",
+            keys(&v2_moderated_wire)
+        ))
+    );
+    assert_eq!(
+        keys(&v2_moderated_wire["moderation"]),
+        ["banlist", "suspensions", "moderators"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<BTreeSet<String>>(),
+        "{}",
+        mirror_notice("the moderation declaration keys changed")
     );
 }

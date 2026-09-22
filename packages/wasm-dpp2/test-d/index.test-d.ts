@@ -3,7 +3,14 @@
 // that stops compiling, or a `@ts-expect-error` line that starts
 // compiling, fails the check.
 import type {
-  DataContract, DataContractConfig, DataContractConfigLike, DataContractConfigV0, DataContractConfigV1,
+  ContractModerationConfig,
+  ContractModerators,
+  DataContract,
+  DataContractConfig,
+  DataContractConfigLike,
+  DataContractConfigV0,
+  DataContractConfigV1,
+  DataContractConfigV2,
 } from '@dashevo/wasm-dpp2';
 // The canonical corpus rs-dpp generates and pins; its `expect` blocks carry
 // every configuration key a mirror must model.
@@ -15,10 +22,11 @@ type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type Check<T extends true> = T;
 
 // The declarations mirror the corpus key sets exactly. `expect` is written in
-// JSON form: `sizedIntegerTypes` is absent from the V0 cases, so it is the
-// only optional corpus key, and an absent key requirement is `null` where
-// object form carries `undefined`. A key added to the corpus without a
-// declaration, or a declaration key the corpus never carries, fails here.
+// JSON form: `sizedIntegerTypes` is absent from the V0 cases and `moderation`
+// from every case but the moderated V2 one, so those are the only optional
+// corpus keys, and an absent key requirement is `null` where object form
+// carries `undefined`. A key added to the corpus without a declaration, or a
+// declaration key the corpus never carries, fails here.
 type CorpusExpect = (typeof vectors)['cases'][number]['expect'];
 type CorpusKeys = Exclude<keyof CorpusExpect, '$formatVersion'>;
 // Every key required, `undefined` (the object-form spelling of an absent
@@ -26,13 +34,32 @@ type CorpusKeys = Exclude<keyof CorpusExpect, '$formatVersion'>;
 // JSON-form types the corpus carries, `null` included.
 type Shape<T> = { [K in keyof T]-?: Exclude<T[K], undefined> };
 type CorpusShape = Shape<Pick<CorpusExpect, CorpusKeys>>;
-type V1Shape = Shape<Omit<DataContractConfigV1, '$formatVersion'>>;
-type V0Shape = Shape<Omit<DataContractConfigV0, '$formatVersion'>>;
-type FlagsShape = Shape<Omit<DataContractConfigLike, '$formatVersion'>>;
-export type V1MirrorsCorpus = Check<Equal<V1Shape, CorpusShape>>;
-export type V0MirrorsCorpus = Check<Equal<V0Shape, Omit<CorpusShape, 'sizedIntegerTypes'>>>;
-export type SetterInputMirrorsCorpus = Check<Equal<FlagsShape, CorpusShape>>;
+// The moderation declaration is compared by key set below: the corpus
+// carries one concrete `$type`, the declaration the union of both.
+type Flat<T> = Omit<T, '$formatVersion' | 'moderation'>;
+type V2Shape = Shape<Flat<DataContractConfigV2>>;
+type V1Shape = Shape<Flat<DataContractConfigV1>>;
+type V0Shape = Shape<Flat<DataContractConfigV0>>;
+type FlagsShape = Shape<Flat<DataContractConfigLike>>;
+export type V2MirrorsCorpus = Check<Equal<V2Shape, Omit<CorpusShape, 'moderation'>>>;
+export type V1MirrorsCorpus = Check<Equal<V1Shape, Omit<CorpusShape, 'moderation'>>>;
+export type V0MirrorsCorpus = Check<Equal<V0Shape, Omit<CorpusShape, 'moderation' | 'sizedIntegerTypes'>>>;
+export type SetterInputMirrorsCorpus = Check<Equal<FlagsShape, Omit<CorpusShape, 'moderation'>>>;
 export type TagMirrorsCorpus = Check<DataContractConfig['$formatVersion'] extends CorpusExpect['$formatVersion'] ? true : false>;
+
+// `moderation` is declared on V2 and on the setter input, optional on both
+// (an unmoderated contract has no such key), on no other generation, and its
+// keys and the discriminator of `moderators` mirror the corpus.
+type CorpusModeration = NonNullable<CorpusExpect['moderation']>;
+export type ModerationOnV2 = Check<Equal<keyof CorpusShape, keyof Shape<Omit<DataContractConfigV2, '$formatVersion'>>>>;
+export type ModerationOnSetterInput = Check<Equal<keyof CorpusShape, keyof Shape<Omit<DataContractConfigLike, '$formatVersion'>>>>;
+export type ModerationOptionalOnV2 = Check<undefined extends DataContractConfigV2['moderation'] ? true : false>;
+export type ModerationOptionalOnSetterInput = Check<undefined extends DataContractConfigLike['moderation'] ? true : false>;
+export type ModerationNotOnV1 = Check<'moderation' extends keyof DataContractConfigV1 ? false : true>;
+export type ModerationNotOnV0 = Check<'moderation' extends keyof DataContractConfigV0 ? false : true>;
+export type ModerationMirrorsCorpus = Check<Equal<keyof ContractModerationConfig, keyof CorpusModeration>>;
+export type ModerationListsAreFlags = Check<Equal<Pick<ContractModerationConfig, 'banlist' | 'suspensions'>, Pick<CorpusModeration, 'banlist' | 'suspensions'>>>;
+export type ModeratorsMirrorCorpus = Check<Equal<keyof ContractModerators, keyof CorpusModeration['moderators']>>;
 
 function expectAssignable<T>(value: T): T {
   return value;
@@ -61,14 +88,37 @@ const config: DataContractConfig = dataContract.config;
 dataContract.setConfig(config, 1);
 dataContract.setConfig({ ...config, canBeDeleted: !config.canBeDeleted }, 1);
 
-// Narrowing on the tag exposes `sizedIntegerTypes` on format version 1 only.
+// Narrowing on the tag exposes `sizedIntegerTypes` on format versions 1 and
+// 2 only, and `moderation` on format version 2 only.
 if (config.$formatVersion === '1') {
   expectAssignable<boolean>(config.sizedIntegerTypes);
+  // @ts-expect-error moderation is not a V1 field
+  expectAssignable<unknown>(config.moderation);
+}
+if (config.$formatVersion === '2') {
+  expectAssignable<boolean>(config.sizedIntegerTypes);
+  expectAssignable<ContractModerationConfig | undefined>(config.moderation);
 }
 if (config.$formatVersion === '0') {
   // @ts-expect-error sizedIntegerTypes is not a V0 field
   expectAssignable<unknown>(config.sizedIntegerTypes);
 }
+
+// A moderation declaration rides along on the setter input, as the bare
+// flags or on top of the getter's output.
+const moderation: ContractModerationConfig = {
+  banlist: true,
+  suspensions: false,
+  moderators: { $type: 'contractOwner' },
+};
+dataContract.setConfig({ ...flags, moderation }, 14);
+dataContract.setConfig({ ...config, moderation }, 14);
+dataContract.setConfig({
+  ...flags,
+  moderation: { ...moderation, moderators: { $type: 'appointedModerators', identities: ['11111111111111111111111111111111'] } },
+}, 14);
+// @ts-expect-error appointed moderators name their identities
+dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { $type: 'appointedModerators' } } }, 14);
 
 // A tag read back from JSON is a plain string; `setConfig` still accepts it.
 const fromJson: { $formatVersion: string } & typeof flags = { $formatVersion: '1', ...flags };
