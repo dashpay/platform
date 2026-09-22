@@ -379,9 +379,14 @@ impl ArrayItemType {
             "integer" => ArrayItemType::Integer,
             "number" => ArrayItemType::Number,
             "boolean" => ArrayItemType::Boolean,
+            // Bounds are read at the width a scalar property's bounds have
             "string" => ArrayItemType::String(
-                item_schema.get_optional_integer(property_names::MIN_LENGTH)?,
-                item_schema.get_optional_integer(property_names::MAX_LENGTH)?,
+                item_schema
+                    .get_optional_integer::<u16>(property_names::MIN_LENGTH)?
+                    .map(usize::from),
+                item_schema
+                    .get_optional_integer::<u16>(property_names::MAX_LENGTH)?
+                    .map(usize::from),
             ),
             "array" => {
                 match item_schema.get_optional_bool(property_names::BYTE_ARRAY)? {
@@ -402,8 +407,12 @@ impl ArrayItemType {
                 match item_schema.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
                     Some(IDENTIFIER_CONTENT_MEDIA_TYPE) => ArrayItemType::Identifier,
                     Some(_) | None => ArrayItemType::ByteArray(
-                        item_schema.get_optional_integer(property_names::MIN_ITEMS)?,
-                        item_schema.get_optional_integer(property_names::MAX_ITEMS)?,
+                        item_schema
+                            .get_optional_integer::<u16>(property_names::MIN_ITEMS)?
+                            .map(usize::from),
+                        item_schema
+                            .get_optional_integer::<u16>(property_names::MAX_ITEMS)?
+                            .map(usize::from),
                     ),
                 }
             }
@@ -480,9 +489,9 @@ impl ArrayItemType {
                 })?;
                 Ok(Value::I64(value))
             }
-            ArrayItemType::ByteArray(_, _) => {
+            ArrayItemType::ByteArray(min_size, max_size) => {
                 let bytes = DocumentPropertyType::read_varint_value(buf)?;
-                Ok(Value::Bytes(bytes))
+                Ok(Self::fixed_size_bytes_value(*min_size, *max_size, bytes))
             }
             ArrayItemType::Identifier => {
                 let bytes = DocumentPropertyType::read_varint_value(buf)?;
@@ -494,14 +503,39 @@ impl ArrayItemType {
                 })?;
                 Ok(Value::Identifier(id))
             }
-            ArrayItemType::Boolean => {
-                let value = buf.read_u8().map_err(|_| {
-                    DataContractError::CorruptedSerialization(
-                        "error reading boolean array item from serialized document".to_string(),
-                    )
-                })?;
-                Ok(Value::Bool(value != 0))
-            }
+            // The encoder writes 0 or 1; anything else is a corrupted element
+            ArrayItemType::Boolean => match buf.read_u8() {
+                Ok(0) => Ok(Value::Bool(false)),
+                Ok(1) => Ok(Value::Bool(true)),
+                _ => Err(DataContractError::CorruptedSerialization(
+                    "error reading boolean array item from serialized document".to_string(),
+                )),
+            },
+        }
+    }
+
+    /// The value a byte array item reads back as: `Bytes20`, `Bytes32` or
+    /// `Bytes36` when the item's bounds pin one of those sizes, as a
+    /// fixed-size scalar byte array reads back, and `Bytes` otherwise.
+    fn fixed_size_bytes_value(
+        min_size: Option<usize>,
+        max_size: Option<usize>,
+        bytes: Vec<u8>,
+    ) -> Value {
+        if min_size.is_none() || min_size != max_size {
+            return Value::Bytes(bytes);
+        }
+        let bytes = match <[u8; 20]>::try_from(bytes) {
+            Ok(bytes) => return Value::Bytes20(bytes),
+            Err(bytes) => bytes,
+        };
+        let bytes = match <[u8; 32]>::try_from(bytes) {
+            Ok(bytes) => return Value::Bytes32(bytes),
+            Err(bytes) => bytes,
+        };
+        match <[u8; 36]>::try_from(bytes) {
+            Ok(bytes) => Value::Bytes36(bytes),
+            Err(bytes) => Value::Bytes(bytes),
         }
     }
 
@@ -742,6 +776,23 @@ mod tests {
                 Value::Bytes(vec![1, 2, 3]),
             ),
             (ArrayItemType::ByteArray(None, None), Value::Bytes(vec![])),
+            // an item whose bounds pin a size reads back in that size's value kind
+            (
+                ArrayItemType::ByteArray(Some(20), Some(20)),
+                Value::Bytes20([4u8; 20]),
+            ),
+            (
+                ArrayItemType::ByteArray(Some(32), Some(32)),
+                Value::Bytes32([5u8; 32]),
+            ),
+            (
+                ArrayItemType::ByteArray(Some(36), Some(36)),
+                Value::Bytes36([6u8; 36]),
+            ),
+            (
+                ArrayItemType::ByteArray(Some(3), Some(3)),
+                Value::Bytes(vec![1, 2, 3]),
+            ),
             (ArrayItemType::Identifier, Value::Identifier([7u8; 32])),
         ] {
             let bytes = item_type
@@ -773,6 +824,12 @@ mod tests {
         let mut reader = BufReader::new(not_an_id.as_slice());
         assert!(ArrayItemType::Identifier
             .read_value_from(&mut reader)
+            .is_err());
+
+        // a boolean item is 0 or 1
+        let mut not_a_bool = BufReader::new(&[2u8][..]);
+        assert!(ArrayItemType::Boolean
+            .read_value_from(&mut not_a_bool)
             .is_err());
     }
 

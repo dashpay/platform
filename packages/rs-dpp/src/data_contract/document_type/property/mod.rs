@@ -90,77 +90,25 @@ pub struct ByteArrayPropertySizes {
 }
 
 /// A typed scalar array: `type: array` with an `items` schema (meta-schema v3,
-/// protocol version 14). Its value is a list of `items` elements stored inline
-/// in the document as a varint element count followed by the elements, each
-/// encoded by its [`ArrayItemType`]; no per-element index entry, subtree or
-/// reference exists. `minItems` and `maxItems` count elements (`maxItems` is
-/// required and capped by `SystemLimits::max_typed_array_items`) and
-/// `uniqueItems` refuses a repeated element; the JSON schema validator enforces
-/// all three on the document, and they are read here to size the property for
-/// fee estimation and to generate random documents within the bounds.
+/// protocol version 14), parsed by `parse_typed_array`. Its value is a list of
+/// `items` elements stored inline in the document as a varint element count
+/// followed by the elements, each encoded by its [`ArrayItemType`]; no
+/// per-element index entry, subtree or reference exists. `minItems` and
+/// `maxItems` count elements and `uniqueItems` refuses a repeated element; the
+/// JSON schema validator enforces all three on the document, and they are
+/// read here to size the property for fee estimation and to generate random
+/// documents within the bounds. Registration requires `maxItems`, at most
+/// `SystemLimits::max_typed_array_items`, under full validation, so it is
+/// only absent on a contract parsed without validation.
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct TypedArrayProperty {
     pub items: ArrayItemType,
     pub min_items: Option<u16>,
-    pub max_items: u16,
+    pub max_items: Option<u16>,
     pub unique_items: bool,
 }
 
 impl TypedArrayProperty {
-    /// Parses the typed form of an array property, generation 0: the `items`
-    /// schema through [`ArrayItemType::try_from_item_schema`], `minItems` /
-    /// `maxItems` as element counts (`maxItems` required and at most
-    /// `max_items_cap`, `minItems` not above it) and `uniqueItems`.
-    /// `contentMediaType` belongs on the items and is refused on the array.
-    /// Every rule holds on the validating and the stored path alike.
-    pub fn try_from_value_map_v0(
-        value_map: &BTreeMap<String, &Value>,
-        max_items_cap: u16,
-    ) -> Result<Self, DataContractError> {
-        let Some(items_value) = value_map.get(property_names::ITEMS) else {
-            return Err(DataContractError::InvalidContractStructure(
-                "an array property must be a byte array (byteArray: true) or declare an \
-                 items schema"
-                    .to_string(),
-            ));
-        };
-        if value_map.contains_key(property_names::CONTENT_MEDIA_TYPE) {
-            return Err(DataContractError::InvalidContractStructure(
-                "contentMediaType belongs on the items of a typed array, not on the array"
-                    .to_string(),
-            ));
-        }
-        let items = ArrayItemType::try_from(*items_value)?;
-        let min_items: Option<u16> = value_map.get_optional_integer(property_names::MIN_ITEMS)?;
-        let Some(max_items) = value_map.get_optional_integer::<u16>(property_names::MAX_ITEMS)?
-        else {
-            return Err(DataContractError::InvalidContractStructure(
-                "a typed array must declare maxItems: its inline encoding is sized for fees \
-                 by its bound"
-                    .to_string(),
-            ));
-        };
-        if max_items > max_items_cap {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "typed array maxItems {max_items} exceeds the maximum of {max_items_cap} elements"
-            )));
-        }
-        if min_items.is_some_and(|min| min > max_items) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "typed array minItems exceeds its maxItems {max_items}"
-            )));
-        }
-        let unique_items = value_map
-            .get_optional_bool(property_names::UNIQUE_ITEMS)?
-            .unwrap_or(false);
-        Ok(Self {
-            items,
-            min_items,
-            max_items,
-            unique_items,
-        })
-    }
-
     /// The fewest bytes the array encodes to: the count prefix plus
     /// `minItems` elements at their smallest.
     pub fn min_byte_size(&self) -> u16 {
@@ -170,31 +118,44 @@ impl TypedArrayProperty {
     }
 
     /// The most bytes the array encodes to: the count prefix plus `maxItems`
-    /// elements at their largest, `u16::MAX` once that saturates (an
-    /// unbounded item makes the array unbounded).
+    /// elements at their largest, `u16::MAX` once that saturates or when
+    /// `maxItems` or the item is unbounded.
     pub fn max_byte_size(&self) -> u16 {
-        (self.max_items.required_space() as u16)
-            .saturating_add(self.max_items.saturating_mul(self.items.max_byte_size()))
+        let Some(max_items) = self.max_items else {
+            return u16::MAX;
+        };
+        (max_items.required_space() as u16)
+            .saturating_add(max_items.saturating_mul(self.items.max_byte_size()))
+    }
+
+    /// How many elements a random list holds: between `minItems` and
+    /// `maxItems`, and eight more than `minItems` when `maxItems` is absent.
+    fn random_count_range(&self) -> (u16, u16) {
+        let min_items = self.min_items.unwrap_or(0);
+        let max_items = self
+            .max_items
+            .unwrap_or(min_items.saturating_add(8))
+            .max(min_items);
+        (min_items, max_items)
     }
 
     /// A random list of any length within the bounds, elements of any size.
     pub fn random_value(&self, rng: &mut StdRng) -> Value {
-        let count = rng.gen_range(self.min_items.unwrap_or(0)..=self.max_items);
+        let (min_items, max_items) = self.random_count_range();
+        let count = rng.gen_range(min_items..=max_items);
         self.random_list(rng, count, |items, rng| items.random_value(rng))
     }
 
     /// A random list of `minItems` elements at their smallest size.
     pub fn random_min_value(&self, rng: &mut StdRng) -> Value {
-        self.random_list(rng, self.min_items.unwrap_or(0), |items, rng| {
-            items.random_min_value(rng)
-        })
+        let (min_items, _) = self.random_count_range();
+        self.random_list(rng, min_items, |items, rng| items.random_min_value(rng))
     }
 
     /// A random list of `maxItems` elements at their largest size.
     pub fn random_max_value(&self, rng: &mut StdRng) -> Value {
-        self.random_list(rng, self.max_items, |items, rng| {
-            items.random_max_value(rng)
-        })
+        let (_, max_items) = self.random_count_range();
+        self.random_list(rng, max_items, |items, rng| items.random_max_value(rng))
     }
 
     /// Fills a list of `count` elements. Under `uniqueItems` a repeated
@@ -3269,15 +3230,9 @@ impl DocumentPropertyType {
         }
     }
 
-    /// Parses one property schema into its type. An array is a byte array
-    /// when it declares `byteArray: true`; otherwise, from the version that
-    /// parses typed arrays (`parse_typed_array`, protocol version 14), it is a
-    /// typed scalar array declared by its `items` schema, and before that
-    /// version it is refused exactly as it always was.
     pub fn try_from_value_map(
         value_map: &BTreeMap<String, &Value>,
         options: &DocumentPropertyTypeParsingOptions,
-        platform_version: &PlatformVersion,
     ) -> Result<Self, DataContractError> {
         let type_value = value_map.get_str(property_names::TYPE)?;
 
@@ -3294,39 +3249,14 @@ impl DocumentPropertyType {
                 max_length: value_map.get_optional_integer(property_names::MAX_LENGTH)?,
             }),
             "array" => {
+                // Only handling bytearrays for v1
+                // Return an error if it is not a byte array
                 let Some(is_byte_array) =
                     value_map.get_optional_bool(property_names::BYTE_ARRAY)?
                 else {
-                    // Not a byte array: a typed scalar array where the version
-                    // parses one, the historical refusal before that.
-                    return match platform_version
-                        .dpp
-                        .contract_versions
-                        .document_type_versions
-                        .schema
-                        .parse_typed_array
-                    {
-                        None => Err(DataContractError::InvalidContractStructure(
-                            "only byte arrays are supported now".to_string(),
-                        )),
-                        Some(0) => {
-                            let max_items_cap = platform_version
-                                .system_limits
-                                .max_typed_array_items
-                                .ok_or_else(|| {
-                                    DataContractError::Unsupported(
-                                        "typed arrays have no element cap at this protocol \
-                                         version"
-                                            .to_string(),
-                                    )
-                                })?;
-                            TypedArrayProperty::try_from_value_map_v0(value_map, max_items_cap)
-                                .map(DocumentPropertyType::TypedArray)
-                        }
-                        Some(version) => Err(DataContractError::Unsupported(format!(
-                            "parse_typed_array version {version} is not supported"
-                        ))),
-                    };
+                    return Err(DataContractError::InvalidContractStructure(
+                        "only byte arrays are supported now".to_string(),
+                    ));
                 };
 
                 if !is_byte_array {
@@ -5524,9 +5454,7 @@ mod tests {
         map.insert("minLength".to_string(), &min_val);
         map.insert("maxLength".to_string(), &max_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(
             result,
             DocumentPropertyType::String(StringPropertySizes {
@@ -5542,9 +5470,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("type".to_string(), &type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::Boolean);
     }
 
@@ -5554,9 +5480,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("type".to_string(), &type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::F64);
     }
 
@@ -5572,9 +5496,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: true,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::U8);
     }
 
@@ -5586,9 +5508,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: false,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::I64);
     }
 
@@ -5598,50 +5518,8 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("type".to_string(), &type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest());
+        let result = DocumentPropertyType::try_from_value_map(&map, &options);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn should_parse_a_typed_array_from_its_items_schema() {
-        let schema = platform_value::platform_value!({
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 8,
-            "uniqueItems": true,
-            "items": { "type": "string", "maxLength": 16 }
-        });
-        let map = schema.to_btree_ref_string_map().unwrap();
-        let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
-        assert_eq!(
-            result,
-            DocumentPropertyType::TypedArray(TypedArrayProperty {
-                items: ArrayItemType::String(None, Some(16)),
-                min_items: Some(1),
-                max_items: 8,
-                unique_items: true,
-            })
-        );
-    }
-
-    #[test]
-    fn should_refuse_a_typed_array_where_the_version_does_not_parse_one() {
-        let schema = platform_value::platform_value!({
-            "type": "array",
-            "maxItems": 8,
-            "items": { "type": "string" }
-        });
-        let map = schema.to_btree_ref_string_map().unwrap();
-        let options = DocumentPropertyTypeParsingOptions::default();
-        let v13 = PlatformVersion::get(13).unwrap();
-        let error = DocumentPropertyType::try_from_value_map(&map, &options, v13)
-            .expect_err("protocol version 13 admits only byte arrays")
-            .to_string();
-        assert!(error.contains("only byte arrays"), "{error}");
     }
 
     #[test]
@@ -5650,7 +5528,7 @@ mod tests {
         let prop = DocumentPropertyType::TypedArray(TypedArrayProperty {
             items: ArrayItemType::Identifier,
             min_items: None,
-            max_items: 4,
+            max_items: Some(4),
             unique_items: false,
         });
         let value = Value::Array(vec![
@@ -5688,7 +5566,7 @@ mod tests {
         let prop = DocumentPropertyType::TypedArray(TypedArrayProperty {
             items: ArrayItemType::Boolean,
             min_items: Some(1),
-            max_items: 3,
+            max_items: Some(3),
             unique_items: true,
         });
         let mut rng = StdRng::seed_from_u64(7);
@@ -5720,9 +5598,7 @@ mod tests {
         map.insert("byteArray".to_string(), &byte_array_val);
         map.insert("contentMediaType".to_string(), &media_type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::Identifier);
     }
 
@@ -5738,9 +5614,7 @@ mod tests {
         map.insert("minItems".to_string(), &min_items_val);
         map.insert("maxItems".to_string(), &max_items_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(
             result,
             DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
@@ -5758,8 +5632,7 @@ mod tests {
         map.insert("type".to_string(), &type_val);
         map.insert("byteArray".to_string(), &byte_array_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest());
+        let result = DocumentPropertyType::try_from_value_map(&map, &options);
         assert!(result.is_err());
     }
 
@@ -5769,8 +5642,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("type".to_string(), &type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest());
+        let result = DocumentPropertyType::try_from_value_map(&map, &options);
         assert!(result.is_err());
     }
 
@@ -7728,9 +7600,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("type".to_string(), &type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(
             result,
             DocumentPropertyType::String(StringPropertySizes {
@@ -7746,9 +7616,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("type".to_string(), &type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert!(matches!(result, DocumentPropertyType::Object(_)));
     }
 
@@ -7763,9 +7631,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: true,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::U64);
     }
 
@@ -7780,9 +7646,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: true,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::I64);
     }
 
@@ -7797,9 +7661,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: true,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::U8);
     }
 
@@ -7812,9 +7674,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: true,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert_eq!(result, DocumentPropertyType::I64);
     }
 
@@ -7829,9 +7689,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: true,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         // min=0, max=255 => U8
         assert_eq!(result, DocumentPropertyType::U8);
     }
@@ -7847,9 +7705,7 @@ mod tests {
         let options = DocumentPropertyTypeParsingOptions {
             sized_integer_types: true,
         };
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         // 300 => U16
         assert_eq!(result, DocumentPropertyType::U16);
     }
@@ -7865,9 +7721,7 @@ mod tests {
         map.insert("byteArray".to_string(), &byte_array_val);
         map.insert("contentMediaType".to_string(), &media_type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
-        let result =
-            DocumentPropertyType::try_from_value_map(&map, &options, PlatformVersion::latest())
-                .unwrap();
+        let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
         assert!(matches!(result, DocumentPropertyType::ByteArray(_)));
     }
 

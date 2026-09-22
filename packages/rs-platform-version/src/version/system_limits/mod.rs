@@ -179,7 +179,10 @@ pub struct SystemLimits {
     pub max_time_range_ttl_seconds: Option<u64>,
     /// Maximum `maxItems` a typed scalar array property (`type: array` with an
     /// `items` schema, protocol version 14) may declare, enforced at contract
-    /// registration by the property parser (`parse_typed_array` 0).
+    /// registration under full validation by document type parser generation
+    /// 3, which also requires the bound to be declared. Full validation only,
+    /// like the other registration limits: a stored contract is never
+    /// re-judged by a later, lower cap.
     ///
     /// A typed array is stored inline in the document as a count followed by
     /// its elements, and every size-sensitive path (fee estimation, the

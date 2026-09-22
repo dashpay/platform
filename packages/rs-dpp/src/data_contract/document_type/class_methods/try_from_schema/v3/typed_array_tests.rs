@@ -184,7 +184,7 @@ fn should_parse_a_typed_identifier_array() {
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             items: ArrayItemType::Identifier,
             min_items: Some(0),
-            max_items: 64,
+            max_items: Some(64),
             unique_items: true,
         })
     );
@@ -197,7 +197,7 @@ fn should_parse_a_typed_integer_array_with_bounds() {
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             items: ArrayItemType::Integer,
             min_items: Some(1),
-            max_items: 4,
+            max_items: Some(4),
             unique_items: false,
         })
     );
@@ -229,7 +229,7 @@ fn should_parse_every_scalar_item_type_with_its_bounds() {
             DocumentPropertyType::TypedArray(TypedArrayProperty {
                 items: expected,
                 min_items: None,
-                max_items: 3,
+                max_items: Some(3),
                 unique_items: false,
             })
         );
@@ -279,15 +279,39 @@ fn should_refuse_an_array_of_arrays() {
 }
 
 #[test]
-fn should_refuse_a_typed_array_without_max_items() {
-    // The meta-schema refuses it first, as the array form matching neither branch; the
-    // parser's own "must declare maxItems" message is pinned on the stored path below
-    let error = refusal(json!({
+fn should_refuse_a_typed_array_without_max_items_at_registration_only() {
+    let schema = json!({
         "type": "array",
         "items": { "type": "integer" },
         "position": 0
-    }));
+    });
+    // The meta-schema refuses it, as the array form matching neither branch
+    let error = refusal(schema.clone());
     assert!(error.contains("oneOf"), "unexpected refusal: {error}");
+
+    // The stored path parses it: the bound is a registration limit, checked
+    // under full validation only, so a stored contract is never re-judged
+    let contract = DataContract::from_json(
+        contract_json(json!({ "list": schema }), json!([]), json!([])),
+        false,
+        PlatformVersion::latest(),
+    )
+    .expect("the stored path admits a typed array without maxItems");
+    assert_eq!(
+        contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("the document type parses")
+            .properties()
+            .get("list")
+            .expect("the property parses")
+            .property_type,
+        DocumentPropertyType::TypedArray(TypedArrayProperty {
+            items: ArrayItemType::Integer,
+            min_items: None,
+            max_items: None,
+            unique_items: false,
+        })
+    );
 }
 
 #[test]
@@ -336,10 +360,6 @@ fn should_refuse_an_index_on_a_typed_array_property() {
 #[test]
 fn should_hold_the_parser_rules_without_the_meta_schema() {
     for (schema, fragment) in [
-        (
-            json!({ "type": "array", "items": { "type": "integer" }, "position": 0 }),
-            "maxItems",
-        ),
         (
             json!({
                 "type": "array",
@@ -415,14 +435,20 @@ fn should_refuse_a_typed_array_over_the_element_cap() {
         .system_limits
         .max_typed_array_items
         .expect("protocol version 14 caps typed arrays");
-    let error = refusal(json!({
+    let over_the_cap = json!({
         "type": "array",
         "maxItems": cap + 1,
         "items": { "type": "boolean" },
         "position": 0
-    }));
+    });
+    let error = parse(contract_json(
+        json!({ "list": over_the_cap.clone() }),
+        json!([]),
+        json!([]),
+    ))
+    .expect_err("registration refuses a bound over the cap");
     assert!(
-        error.contains("exceeds the maximum"),
+        matches!(error, ProtocolError::ConsensusError(_)) && error.to_string().contains("at most"),
         "unexpected refusal: {error}"
     );
 
@@ -433,6 +459,39 @@ fn should_refuse_a_typed_array_over_the_element_cap() {
         "position": 0
     }))
     .expect("the cap itself is admitted");
+
+    // The stored path never applies the cap: a later, lower cap must not make
+    // a registered contract unreadable
+    DataContract::from_json(
+        contract_json(json!({ "list": over_the_cap }), json!([]), json!([])),
+        false,
+        PlatformVersion::latest(),
+    )
+    .expect("the stored path admits a bound over the cap");
+}
+
+#[test]
+fn should_refuse_a_typed_array_in_an_index_with_a_ranked_axis() {
+    let error = parse(contract_json(
+        json!({ "reasons": identifier_list_schema(0) }),
+        json!([]),
+        json!([{
+            "name": "byReasons",
+            "properties": [{ "reasons": "asc" }],
+            "rangeCountable": true,
+            "rankedCountable": true
+        }]),
+    ))
+    .expect_err("a ranked index on an array property should be refused");
+    // The type error, not the ranked key-length error, is the one reported
+    assert!(
+        matches!(
+            error,
+            ProtocolError::ConsensusError(ref boxed)
+                if matches!(**boxed, ConsensusError::BasicError(BasicError::InvalidIndexPropertyTypeError(_)))
+        ),
+        "expected InvalidIndexPropertyTypeError, got {error}"
+    );
 }
 
 // ---------------------------------------------------------------------------

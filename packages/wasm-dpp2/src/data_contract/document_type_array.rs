@@ -65,8 +65,11 @@ export type DocumentTypedArrayProperty = {
    * none, which consensus reads as zero.
    */
   minItems?: number;
-  /** Most elements a document may carry. Always declared. */
-  maxItems: number;
+  /**
+   * Most elements a document may carry. Contract registration requires it,
+   * so it is only absent on a contract parsed without validation.
+   */
+  maxItems?: number;
   /** Whether consensus refuses a repeated element. */
   uniqueItems: boolean;
 };
@@ -146,12 +149,14 @@ fn typed_array_to_js(path: &str, array: &TypedArrayProperty) -> WasmDppResult<Js
             path,
         )?;
     }
-    set_field(
-        &object,
-        "maxItems",
-        &JsValue::from_f64(f64::from(array.max_items)),
-        path,
-    )?;
+    if let Some(max_items) = array.max_items {
+        set_field(
+            &object,
+            "maxItems",
+            &JsValue::from_f64(f64::from(max_items)),
+            path,
+        )?;
+    }
     set_field(
         &object,
         "uniqueItems",

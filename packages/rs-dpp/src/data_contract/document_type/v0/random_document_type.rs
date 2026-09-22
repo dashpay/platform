@@ -390,11 +390,13 @@ impl DocumentTypeV0 {
                     let mut schema = json!({
                         "type": "array",
                         "items": items_schema,
-                        "maxItems": array.max_items,
                         "uniqueItems": array.unique_items,
                     });
                     if let Some(min_items) = array.min_items {
                         schema["minItems"] = json!(min_items);
+                    }
+                    if let Some(max_items) = array.max_items {
+                        schema["maxItems"] = json!(max_items);
                     }
                     schema
                 },

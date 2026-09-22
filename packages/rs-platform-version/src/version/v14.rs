@@ -562,12 +562,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     of one scalar type (integer, number, string, boolean, byte array or
 ///     identifier) stored inline in the document as a varint element count
 ///     followed by the elements, with no per-element index entry, subtree or
-///     reference. `minItems` and `maxItems` count elements; `maxItems` is
-///     required and capped by `SYSTEM_LIMITS_V4.max_typed_array_items`
-///     (1024); `uniqueItems` refuses a repeated element. The JSON schema
-///     validator enforces them and the item bounds on every document write.
-///     Arrays of objects, arrays of arrays, `refersTo` on the items and an
-///     index on an array property are refused at registration.
+///     reference. `minItems` and `maxItems` count elements; registration
+///     (full validation) requires `maxItems`, at most
+///     `SYSTEM_LIMITS_V4.max_typed_array_items` (1024); `uniqueItems` refuses
+///     a repeated element. The JSON schema validator enforces them and the
+///     item bounds on every document write. Arrays of objects, arrays of
+///     arrays, `refersTo` on the items, an index on an array property and a
+///     `propertyAgreement` on one (its write-time check compares index key
+///     encodings, which a list does not have) are refused at registration.
 ///     `find_identifier_and_binary_paths` 1 registers identifier and byte
 ///     array items as `path[]` conversion paths.
 ///

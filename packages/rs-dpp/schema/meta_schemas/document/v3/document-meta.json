@@ -480,6 +480,18 @@
             }
           }
         },
+        "items": {
+          "description": "should be used only with array type",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "array"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
         "contentMediaType": {
           "if": {
             "properties": {

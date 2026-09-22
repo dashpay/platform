@@ -1,5 +1,6 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
+use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
@@ -154,11 +155,14 @@ fn insert_values(
             platform_version,
         )?;
 
-        match DocumentPropertyType::try_from_value_map(
-            &inner_properties,
-            &config.into(),
-            platform_version,
-        )? {
+        // A typed array parses through its own versioned method; everything
+        // else, byte arrays included, through the scalar parser as before
+        let property_type = match parse_typed_array(&inner_properties, platform_version)? {
+            Some(typed_array) => typed_array,
+            None => DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())?,
+        };
+
+        match property_type {
             DocumentPropertyType::Object(_) => {
                 if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
                 {
@@ -235,11 +239,12 @@ fn insert_values_nested(
         platform_version,
     )?;
 
-    let property_type = match DocumentPropertyType::try_from_value_map(
-        &inner_properties,
-        &config.into(),
-        platform_version,
-    )? {
+    let property_type = match parse_typed_array(&inner_properties, platform_version)? {
+        Some(typed_array) => typed_array,
+        None => DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())?,
+    };
+
+    let property_type = match property_type {
         DocumentPropertyType::Object(_) => {
             let mut nested_properties = IndexMap::new();
             if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
