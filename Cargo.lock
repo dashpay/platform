@@ -1759,7 +1759,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk-contract"
-version = "4.2.0-dev.11"
+version = "4.2.0-beta.3"
 dependencies = [
  "thiserror 2.0.18",
 ]
