@@ -1,5 +1,4 @@
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -392,7 +391,10 @@ fn apply_distinct_from_v0(
         let Some(distinct_from_value) = items_map.get(property_names::DISTINCT_FROM) else {
             return Ok(None);
         };
-        if typed_array.item_type != ArrayItemType::Identifier {
+        if !matches!(
+            *typed_array.item_type,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        ) {
             return Err(DataContractError::InvalidContractStructure(
                 "distinctFrom is only allowed on identifier elements of a typed array".to_string(),
             ));
