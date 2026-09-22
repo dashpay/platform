@@ -3,7 +3,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentReferenceDeclaration,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
@@ -116,6 +117,22 @@ pub(super) fn validate_data_contract_references_v0(
                                 key_id_property.clone(),
                                 declaration_path,
                                 "the property must be an integer".to_string(),
+                            )
+                            .into(),
+                        ));
+                    }
+                    // A key id that already names whose key it is (the writer's)
+                    // can not also be a key of the referenced identity
+                    Some(DocumentProperty {
+                        property_type: DocumentPropertyType::KeyIdWithReference(_),
+                        ..
+                    }) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedKeyIdPropertyInvalidError::new(
+                                key_id_property.clone(),
+                                declaration_path,
+                                "the property carries its own identityPublicKey reference"
+                                    .to_string(),
                             )
                             .into(),
                         ));

@@ -3498,7 +3498,7 @@ mod replacement_tests {
     /// success), then, when `disable_master_key_between` is set, disables the
     /// test identity's master key (key 0) in state, replaces the document
     /// shaped by `replace_mutator` and returns the replace execution result.
-    /// Key 0 is enabled at create time, so a create may reference it; whether
+    /// Key 0 is enabled at create time, so a create may reference it; that
     /// the replace refetches it is then observable.
     async fn run_owner_key_reference_create_then_replace<C, R>(
         create_mutator: C,
@@ -3726,15 +3726,43 @@ mod replacement_tests {
         );
     }
 
-    /// An untouched key id is not refetched: the document was created naming
-    /// the master key while it was enabled, the key is disabled before the
-    /// replace, and a replace of another property still passes. Had the
-    /// replace refetched the key it would have been refused as disabled.
+    /// An untouched key id is re-validated on every replace, as the writer
+    /// gate is: the identity is the writer, which is transition metadata and
+    /// never among the changed fields. The document was created naming the
+    /// master key while it was enabled, the key is disabled before the
+    /// replace, and a replace of another property is refused.
     #[tokio::test]
-    async fn should_document_replace_succeed_without_refetching_an_untouched_owner_key_id() {
+    async fn should_document_replace_fail_when_untouched_owner_key_id_names_a_now_disabled_key() {
         let result = run_owner_key_reference_create_then_replace(
             |document, targets| {
                 document.set("senderKeyId", (targets.disabled_key_id as i64).into());
+            },
+            true,
+            |document, _| {
+                document.set("note", "changed".into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    /// The same untouched replace passes while the key stays enabled: the
+    /// refetch is a check, not a change.
+    #[tokio::test]
+    async fn should_document_replace_succeed_when_untouched_owner_key_id_still_names_an_enabled_key(
+    ) {
+        let result = run_owner_key_reference_create_then_replace(
+            |document, targets| {
+                document.set("senderKeyId", (targets.enabled_key_id as i64).into());
             },
             true,
             |document, _| {
@@ -3957,11 +3985,10 @@ mod replacement_tests {
             .clone()
     }
 
-    /// On a transferable type the owner may have changed since the key id
-    /// was written, so a replace re-validates the reference against the
-    /// writer whether or not the key id changed: the stored key id names
-    /// the receiver's disabled master key, and a replace of another
-    /// property is refused.
+    /// After a transfer the writer is the receiver, and the replace
+    /// re-validates the reference against it whether or not the key id
+    /// changed: the stored key id names the receiver's disabled master key,
+    /// and a replace of another property is refused.
     #[tokio::test]
     async fn should_document_replace_fail_after_transfer_when_untouched_owner_key_id_is_not_the_new_owners_key(
     ) {

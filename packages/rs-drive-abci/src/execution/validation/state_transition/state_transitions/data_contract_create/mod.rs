@@ -5935,6 +5935,44 @@ mod tests {
             );
         }
 
+        /// The key id form: `senderKeyId` names the writer's own key. Nothing
+        /// is checked at registration beyond the parse and the meta-schema,
+        /// which a real create runs, unlike the fixture insertion the
+        /// document tests use.
+        #[tokio::test]
+        async fn should_register_contract_with_owner_key_reference() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// A key id that already names whose key it is (the writer's) can not
+        /// also be named as a key of a referenced identity: one value would
+        /// have to be a key of two identities.
+        #[tokio::test]
+        async fn should_reject_contract_whose_key_id_property_carries_its_own_key_reference() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-key-id-with-reference.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(e)
+                    ),
+                    ..
+                } if e.key_id_property() == "senderKeyId"
+            );
+        }
+
         #[tokio::test]
         async fn should_reject_contract_referencing_missing_contract() {
             let result = run_contract_create(

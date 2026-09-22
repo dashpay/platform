@@ -22,6 +22,23 @@
           "type": "string",
           "position": 1,
           "maxLength": 64
+        },
+        "meta": {
+          "type": "object",
+          "position": 2,
+          "properties": {
+            "senderKeyId": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295,
+              "position": 0,
+              "refersTo": {
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId"
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [],

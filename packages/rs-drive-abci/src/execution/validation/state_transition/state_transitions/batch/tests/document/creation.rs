@@ -7174,6 +7174,29 @@ mod creation_tests {
         );
     }
 
+    /// The form on a nested property is validated at its dotted path, the
+    /// same path the flattened properties and the error report.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_nested_owner_key_reference_names_a_missing_key() {
+        let result = run_owner_key_reference_creation(|document, _| {
+            document.set(
+                "meta",
+                dpp::platform_value::platform_value!({ "senderKeyId": 99u32 }),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99 && e.path() == "meta.senderKeyId"
+        );
+    }
+
     /// An unset key id is not a reference to validate; whether the property
     /// may be absent is the document type's required list (it is optional
     /// in the fixture).

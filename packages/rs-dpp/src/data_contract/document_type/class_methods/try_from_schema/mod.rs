@@ -375,11 +375,24 @@ fn apply_property_reference_v0(
         )));
     }
 
+    // `propertyAgreement` compares against a referenced DOCUMENT's values;
+    // no other target kind has a document body to agree with
+    if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
+        && !matches!(reference_type, "permanentDocument" | "deletableDocument")
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "propertyAgreement is only allowed on permanentDocument and deletableDocument \
+             references"
+                .to_string(),
+        ));
+    }
+
     // A key reference declared on the key id property itself names whose key
     // it is through `identityProperty`; it is the one form that sits on a
     // non-identifier property
     if let Some(identity_property_value) = refers_to_map.get(property_names::IDENTITY_PROPERTY) {
         return apply_owner_key_reference_v0(
+            inner_properties,
             &refers_to_map,
             reference_type,
             identity_property_value,
@@ -527,26 +540,17 @@ fn apply_property_reference_v0(
         }
     };
 
-    // `propertyAgreement` compares against a referenced DOCUMENT's values —
-    // no other target kind has a document body to agree with.
-    if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
-        && target.as_document_reference().is_none()
-    {
-        return Err(DataContractError::InvalidContractStructure(
-            "propertyAgreement is only allowed on permanentDocument and deletableDocument \
-             references"
-                .to_string(),
-        ));
-    }
-
     Ok(DocumentPropertyType::IdentifierWithReference(target))
 }
 
 /// An `identityPublicKey` declaration on the KEY ID property: `identityProperty` names
 /// whose key the value is (`$ownerId`, the writer, for now), so the declaration takes
-/// no `keyIdProperty`, nothing a document reference takes, and sits on a `u32` integer
-/// property (`minimum` 0, `maximum` 4294967295), the range of a key id.
+/// no `keyIdProperty` and sits on an integer property declaring exactly the range of a
+/// key id (`minimum` 0, `maximum` 4294967295), the bounds the meta-schema pins, read
+/// from the schema rather than the inferred type so that the rule does not depend on
+/// the contract's sized integer types setting.
 fn apply_owner_key_reference_v0(
+    inner_properties: &BTreeMap<String, &Value>,
     refers_to_map: &BTreeMap<String, &Value>,
     reference_type: &str,
     identity_property_value: &Value,
@@ -564,13 +568,6 @@ fn apply_owner_key_reference_v0(
                 .to_string(),
         ));
     }
-    if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT) {
-        return Err(DataContractError::InvalidContractStructure(
-            "propertyAgreement is only allowed on permanentDocument and deletableDocument \
-             references"
-                .to_string(),
-        ));
-    }
     let identity_property_name = identity_property_value.as_text().ok_or_else(|| {
         DataContractError::InvalidContractStructure(
             "identityPublicKey refersTo identityProperty must be a string".to_string(),
@@ -584,10 +581,10 @@ fn apply_owner_key_reference_v0(
                 KeyReferenceIdentityProperty::WIRE_NAMES
             ))
         })?;
-    if !matches!(
-        property_type,
-        DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_)
-    ) {
+    let minimum = inner_properties.get_optional_integer::<i64>(property_names::MINIMUM)?;
+    let maximum = inner_properties.get_optional_integer::<i64>(property_names::MAXIMUM)?;
+    let is_key_id_range = minimum == Some(0) && maximum == Some(i64::from(u32::MAX));
+    if !property_type.is_integer() || !is_key_id_range {
         return Err(DataContractError::InvalidContractStructure(
             "identityPublicKey refersTo with identityProperty is only allowed on a key id \
              property: an integer with minimum 0 and maximum 4294967295"
@@ -1879,6 +1876,42 @@ mod tests {
         }
     }
 
+    /// The form sits on a nested property too, under the meta-schema and in
+    /// the flattened properties consensus walks, at its dotted path.
+    #[test]
+    fn should_parse_identity_public_key_refers_to_on_a_nested_key_id_property() {
+        let mut sender_key_id = u32_key_id_schema();
+        sender_key_id["position"] = json!(0);
+        sender_key_id["refersTo"] = owner_key_refers_to();
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "position": 0,
+                    "properties": { "senderKeyId": sender_key_id },
+                    "additionalProperties": false
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        });
+
+        let document_type = try_document_type_from_schema_full_validation(schema)
+            .expect("should parse under the meta-schema");
+
+        assert_eq!(
+            document_type
+                .as_ref()
+                .flattened_properties()
+                .get("meta.senderKeyId")
+                .map(|p| p.property_type.clone()),
+            Some(DocumentPropertyType::KeyIdWithReference(
+                KeyReferenceIdentityProperty::OwnerId
+            ))
+        );
+    }
+
     #[test]
     fn should_reject_identity_property_on_an_identifier_property() {
         let schema = key_id_reference_schema(
@@ -1909,6 +1942,9 @@ mod tests {
             // Wider than a key id
             json!({ "type": "integer", "minimum": 0 }),
             json!({ "type": "integer", "minimum": -1, "maximum": 4294967295u64 }),
+            // Narrower at the bottom: the rule is the exact range, as the
+            // meta-schema pins it, not the inferred u32
+            json!({ "type": "integer", "minimum": 1, "maximum": 4294967295u64 }),
             // Not an integer at all
             json!({ "type": "string", "maxLength": 10 }),
         ] {

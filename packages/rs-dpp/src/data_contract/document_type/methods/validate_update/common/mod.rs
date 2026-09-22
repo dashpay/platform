@@ -1723,6 +1723,7 @@ mod tests {
     mod validate_schema {
         use super::*;
         use crate::consensus::basic::BasicError;
+        use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
         use std::collections::BTreeMap;
 
         #[test]
@@ -2113,8 +2114,6 @@ mod tests {
         /// checking a stored key id against the owner's keys.
         #[test]
         fn should_return_invalid_result_when_a_key_id_reference_is_added_removed_or_changed() {
-            use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
-
             let platform_version = PlatformVersion::latest();
             let owner_key = platform_value!({
                 "type": "identityPublicKey",
