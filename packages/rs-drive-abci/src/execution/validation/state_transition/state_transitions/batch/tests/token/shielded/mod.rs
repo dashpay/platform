@@ -337,6 +337,39 @@ mod token_shielded_pool_tests {
         );
     }
 
+    /// The counterpart of [`assert_check_tx_accepts`] for an identity that cannot pay.
+    ///
+    /// The shielded compute fee is charged when the action is built, which happens inside
+    /// CheckTx, so an identity that cannot cover it is refused at admission rather than after
+    /// the node has already run the Halo 2 verification the batch asks for.
+    pub(super) fn assert_check_tx_rejects(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        transition: &StateTransition,
+    ) -> Vec<ConsensusError> {
+        let state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let result = platform
+            .check_tx(
+                &transition
+                    .serialize_to_bytes()
+                    .expect("serialize transition"),
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                PlatformVersion::latest(),
+            )
+            .expect("check tx");
+        assert!(
+            !result.is_valid(),
+            "CheckTx admitted a transition the identity cannot pay for"
+        );
+        result.errors
+    }
+
     pub(super) fn platform_with_latest_version() -> TempPlatform<MockCoreRPCLike> {
         TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -618,6 +651,15 @@ mod token_shielded_pool_tests {
             identity_token_balance(&platform, token_id, identity.id()),
             Some(OWNER_INITIAL_BALANCE)
         );
+        // The token owns no pool, so its id must not reach the block-end anchor recorder:
+        // recording an anchor for a pool that was never created fails the read, and that error
+        // propagates out of `run_block_proposal` and aborts the whole proposal. A paid rejection
+        // writes to no pool, so only a successful execution may register one.
+        assert!(
+            result.token_shielded_pools_touched().is_empty(),
+            "a paid rejection must register no pool for anchor recording, got {:?}",
+            result.token_shielded_pools_touched()
+        );
     }
 
     #[tokio::test]
@@ -664,6 +706,69 @@ mod token_shielded_pool_tests {
                 ),
                 ..
             }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), 0);
+    }
+
+    /// CheckTx must price the Orchard bundle before it agrees to verify it.
+    ///
+    /// The flat shielded compute fee is charged where the action is built, and CheckTx builds
+    /// the action, so an identity whose credits cannot cover that fee is refused at admission.
+    /// If the fee were only added during batch state validation — which CheckTx skips — the
+    /// mempool would accept the batch, run the Halo 2 verification it asks for, and only the
+    /// block would discover the identity could never pay.
+    #[tokio::test]
+    async fn test_token_shield_rejected_by_check_tx_when_credits_cannot_cover_the_compute_fee() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9004);
+
+        let bundle = build_shield_bundle(SHIELD_AMOUNT, 13);
+        let compute_fee = dpp::shielded::compute_shielded_verification_fee(
+            bundle.actions.len(),
+            platform_version,
+        )
+        .expect("shielded compute fee");
+
+        // Funded well past the preliminary batch minimum — which has no Orchard component — so
+        // the rejection has to come from the full fee estimate, and exactly one compute fee
+        // short of affording the batch.
+        let (identity, signer, key) = setup_identity(&mut platform, rng.gen(), compute_fee);
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            SHIELD_AMOUNT,
+            bundle,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+
+        // The balance CheckTx demands must already contain the compute fee. If the fee were
+        // only added later, during batch state validation, the figure here would cover the
+        // metered storage alone and an identity funded for it would pass admission.
+        let errors = assert_check_tx_rejects(&platform, &shield);
+        assert_matches!(
+            errors.as_slice(),
+            [ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(error))]
+                if error.required_balance() >= compute_fee
         );
         assert_eq!(pool_balance(&platform, token_id), 0);
     }
@@ -847,7 +952,7 @@ mod token_shielded_pool_tests {
     }
 
     #[tokio::test]
-    async fn test_token_shield_rejected_before_protocol_version_15() {
+    async fn test_token_shield_rejected_before_protocol_version_14() {
         let platform_version =
             PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
                 .expect("previous protocol version");
@@ -965,7 +1070,7 @@ mod token_shielded_pool_tests {
     }
 
     #[tokio::test]
-    async fn test_contract_create_with_shielded_pool_token_rejected_before_protocol_version_15() {
+    async fn test_contract_create_with_shielded_pool_token_rejected_before_protocol_version_14() {
         let platform_version =
             PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
                 .expect("previous protocol version");
@@ -2836,7 +2941,7 @@ mod document_shielded_token_payment_tests {
     }
 
     #[tokio::test]
-    async fn test_document_shielded_payment_rejected_before_protocol_version_15() {
+    async fn test_document_shielded_payment_rejected_before_protocol_version_14() {
         let platform_version =
             PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
                 .expect("previous protocol version");
@@ -3343,7 +3448,7 @@ mod token_pool_paid_transitions_tests {
     }
 
     #[tokio::test]
-    async fn test_token_pool_paid_transitions_rejected_before_protocol_version_15() {
+    async fn test_token_pool_paid_transitions_rejected_before_protocol_version_14() {
         let platform_version =
             PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
                 .expect("previous protocol version");
