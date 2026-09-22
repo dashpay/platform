@@ -13,8 +13,10 @@ use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::array::{ArrayItemType, TypedArrayProperty};
-use crate::data_contract::document_type::DocumentPropertyType;
+use crate::data_contract::document_type::array::TypedArrayProperty;
+use crate::data_contract::document_type::{
+    ByteArrayPropertySizes, DocumentPropertyType, StringPropertySizes,
+};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::DataContract;
@@ -131,7 +133,7 @@ fn should_parse_a_typed_identifier_array() {
     assert_eq!(
         list_property_type(&document_type),
         DocumentPropertyType::TypedArray(TypedArrayProperty {
-            item_type: ArrayItemType::Identifier,
+            item_type: Box::new(DocumentPropertyType::Identifier),
             min_items: Some(0),
             max_items: 64,
             unique_items: true,
@@ -159,42 +161,60 @@ fn should_parse_a_typed_integer_array_with_bounds() {
     assert_eq!(
         property_type,
         DocumentPropertyType::TypedArray(TypedArrayProperty {
-            item_type: ArrayItemType::Integer,
+            item_type: Box::new(DocumentPropertyType::U8),
             min_items: Some(1),
             max_items: 10,
             unique_items: false,
         })
     );
-    // A one-byte element count, then 1 to 10 elements of 8 bytes each
+    // A one-byte element count, then 1 to 10 elements of one byte each: the
+    // element takes the width a scalar property bounded 0 to 100 takes
     assert_eq!(
         property_type
             .min_byte_size(platform_version)
             .expect("sized"),
-        Some(9)
+        Some(2)
     );
     assert_eq!(
         property_type
             .max_byte_size(platform_version)
             .expect("sized"),
-        Some(81)
+        Some(11)
     );
 }
 
 #[test]
 fn should_parse_every_scalar_element_type() {
     for (items, expected) in [
-        (platform_value!({ "type": "number" }), ArrayItemType::Number),
+        (
+            platform_value!({ "type": "number" }),
+            DocumentPropertyType::F64,
+        ),
         (
             platform_value!({ "type": "boolean" }),
-            ArrayItemType::Boolean,
+            DocumentPropertyType::Boolean,
         ),
         (
             platform_value!({ "type": "string", "minLength": 1, "maxLength": 20 }),
-            ArrayItemType::String(Some(1), Some(20)),
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(1),
+                max_length: Some(20),
+            }),
         ),
         (
             platform_value!({ "type": "array", "byteArray": true, "minItems": 4, "maxItems": 8 }),
-            ArrayItemType::ByteArray(Some(4), Some(8)),
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(4),
+                max_size: Some(8),
+            }),
+        ),
+        (
+            platform_value!({ "type": "integer", "minimum": -5, "maximum": 5 }),
+            DocumentPropertyType::I8,
+        ),
+        (
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 70000 }),
+            DocumentPropertyType::U32,
         ),
     ] {
         let document_type = parse_dispatched(
@@ -213,7 +233,7 @@ fn should_parse_every_scalar_element_type() {
         else {
             panic!("{items:?} should parse to a typed array");
         };
-        assert_eq!(typed_array.item_type, expected, "{items:?}");
+        assert_eq!(*typed_array.item_type, expected, "{items:?}");
     }
 }
 
@@ -695,7 +715,7 @@ fn should_round_trip_a_contract_with_typed_arrays_through_platform_serialization
     assert_eq!(
         reasons,
         Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
-            item_type: ArrayItemType::Identifier,
+            item_type: Box::new(DocumentPropertyType::Identifier),
             min_items: Some(0),
             max_items: 64,
             unique_items: true,
