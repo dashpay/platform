@@ -600,6 +600,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     passes. The parser checks the target at contract
 ///     registration and update (it must exist, be an identifier and not be
 ///     the declaring property), and a changed `distinctFrom` is an
+///
+/// 27. **`encryptedFor` on byte array properties**: a byte array property may
+///     declare how its ciphertext was produced, so wallets read the recipe
+///     from the contract instead of a side channel: `recipient` (an identifier
+///     property of the same document type, or `$ownerId`), `recipientKey` and
+///     `senderKey` (integer properties of the same type bounded to u32,
+///     carrying key ids) and `scheme` (`ecdh-secp256k1-aes256-cbc`, the
+///     dashpay contact request scheme: a 16-byte IV followed by AES-256-CBC
+///     with PKCS7 padding under the ECDH shared key). Meta-schema v3 admits it
+///     on byte arrays that are not identifiers, `apply_encrypted_for` 0 parses
+///     it onto `DocumentProperty::encrypted_for` and checks the three named
+///     properties exist with the right types at registration. Document create
+///     structure validation 1 and replace structure validation 0 (extended in
+///     place, inert before this version) call
+///     `validate_encrypted_property_shapes` (`validate_encrypted_property_shapes`
+///     0, `None` before this version) to check the ciphertext shape of every declared property a transition supplies,
+///     at least the IV plus one block and a multiple of the block, and refuse
+///     it with `InvalidEncryptedPropertyShapeError` (10420). Nothing else about
+///     the ciphertext is verifiable on chain. A changed `encryptedFor` is an
 ///     incompatible schema change on update.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)

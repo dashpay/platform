@@ -3,11 +3,13 @@ use crate::data_contract::document_type::class_methods::apply_required_since::ap
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
+use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentType,
+    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentType, EncryptedFor,
+    EncryptedForRecipient, EncryptionScheme,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -27,6 +29,11 @@ mod v2;
 mod v3;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
+
+/// The longest property path a keyword may name: `keyIdProperty`, the
+/// `propertyAgreement` pairs and the `encryptedFor` paths share it, and the
+/// meta-schema states the same bound as `maxLength`.
+const MAX_PROPERTY_PATH_LENGTH: usize = 256;
 
 const MAX_INDEXED_STRING_PROPERTY_LENGTH: u16 = 63;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;
@@ -193,6 +200,8 @@ fn insert_values(
                     apply_property_reference(&inner_properties, property_type, platform_version)?;
                 let distinct_from =
                     apply_distinct_from(&inner_properties, &property_type, platform_version)?;
+                let encrypted_for =
+                    apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -201,6 +210,7 @@ fn insert_values(
                         transient: is_transient,
                         required_since,
                         distinct_from,
+                        encrypted_for,
                     },
                 );
             }
@@ -323,6 +333,7 @@ fn insert_values_nested(
     let property_type =
         apply_property_reference(&inner_properties, property_type, platform_version)?;
     let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
+    let encrypted_for = apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -332,6 +343,7 @@ fn insert_values_nested(
             transient: is_transient,
             required_since,
             distinct_from,
+            encrypted_for,
         },
     );
 
@@ -626,11 +638,12 @@ fn apply_property_reference_v0(
                                     )
                                 })?;
                             for path in [referring_property.as_str(), referenced_property] {
-                                if path.is_empty() || path.len() > 256 {
+                                if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
                                     return Err(DataContractError::InvalidContractStructure(
-                                        "propertyAgreement property paths must be between 1 \
-                                         and 256 characters"
-                                            .to_string(),
+                                        format!(
+                                            "propertyAgreement property paths must be between 1 \
+                                             and {MAX_PROPERTY_PATH_LENGTH} characters"
+                                        ),
                                     ));
                                 }
                             }
@@ -684,11 +697,11 @@ fn apply_property_reference_v0(
                 .get_str(property_names::KEY_ID_PROPERTY)
                 .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
 
-            if key_id_property.is_empty() || key_id_property.len() > 256 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "identityPublicKey refersTo keyIdProperty must be between 1 and 256 characters"
-                        .to_string(),
-                ));
+            if key_id_property.is_empty() || key_id_property.len() > MAX_PROPERTY_PATH_LENGTH {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "identityPublicKey refersTo keyIdProperty must be between 1 and \
+                     {MAX_PROPERTY_PATH_LENGTH} characters"
+                )));
             }
 
             DocumentPropertyReferenceTarget::IdentityPublicKey {
@@ -715,6 +728,281 @@ fn apply_property_reference_v0(
     }
 
     Ok(DocumentPropertyType::IdentifierWithReference(target))
+}
+
+/// Reads a property's `encryptedFor` declaration: how the bytes of a byte
+/// array property were encrypted. Non-byte-array properties, identifiers
+/// among them, cannot carry it.
+///
+/// Versioned on `apply_encrypted_for` in the platform version's document type
+/// schema versions. `None` selects the behavior of the versions that predate
+/// the keyword: it is ignored entirely, so their parses stay byte-for-byte
+/// identical to what they always produced.
+fn apply_encrypted_for(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<Option<EncryptedFor>, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_encrypted_for
+    {
+        None => Ok(None),
+        Some(0) => apply_encrypted_for_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_encrypted_for version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_encrypted_for_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+) -> Result<Option<EncryptedFor>, DataContractError> {
+    let Some(encrypted_for_value) = inner_properties.get(property_names::ENCRYPTED_FOR) else {
+        return Ok(None);
+    };
+
+    match property_type {
+        DocumentPropertyType::ByteArray(_) => {}
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+            return Err(DataContractError::InvalidContractStructure(
+                "encryptedFor is not allowed on identifier properties, only on byte arrays"
+                    .to_string(),
+            ));
+        }
+        _ => {
+            return Err(DataContractError::InvalidContractStructure(
+                "encryptedFor is only allowed on byte array properties".to_string(),
+            ));
+        }
+    }
+
+    let encrypted_for_map = encrypted_for_value.to_btree_ref_string_map()?;
+
+    for key in encrypted_for_map.keys() {
+        if !matches!(
+            key.as_str(),
+            property_names::RECIPIENT
+                | property_names::RECIPIENT_KEY
+                | property_names::SENDER_KEY
+                | property_names::SCHEME
+        ) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "encryptedFor {key:?} is unknown, expected recipient, recipientKey, senderKey \
+                 and scheme"
+            )));
+        }
+    }
+
+    let path = |key: &'static str| -> Result<&str, DataContractError> {
+        let Some(value) = encrypted_for_map.get(key) else {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "encryptedFor must declare {key}"
+            )));
+        };
+        let path = value.as_text().ok_or_else(|| {
+            DataContractError::InvalidContractStructure(format!(
+                "encryptedFor {key} must be a property path (a string)"
+            ))
+        })?;
+        if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "encryptedFor {key} must be between 1 and {MAX_PROPERTY_PATH_LENGTH} characters"
+            )));
+        }
+        Ok(path)
+    };
+
+    let recipient = EncryptedForRecipient::from_path(path(property_names::RECIPIENT)?);
+    if recipient
+        .property_path()
+        .is_some_and(|recipient_path| recipient_path.starts_with('$'))
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "encryptedFor recipient must name an identifier property of the document type or \
+             its $ownerId"
+                .to_string(),
+        ));
+    }
+
+    let mut key_paths = [String::new(), String::new()];
+    for (key, slot) in [property_names::RECIPIENT_KEY, property_names::SENDER_KEY]
+        .into_iter()
+        .zip(key_paths.iter_mut())
+    {
+        let key_path = path(key)?;
+        if key_path.starts_with('$') {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "encryptedFor {key} must name an integer property of the document type, not a \
+                 system property"
+            )));
+        }
+        *slot = key_path.to_string();
+    }
+    let [recipient_key, sender_key] = key_paths;
+
+    let scheme_value = encrypted_for_map
+        .get(property_names::SCHEME)
+        .ok_or_else(|| {
+            DataContractError::InvalidContractStructure(
+                "encryptedFor must declare scheme".to_string(),
+            )
+        })?;
+    let scheme_name = scheme_value.as_text().ok_or_else(|| {
+        DataContractError::InvalidContractStructure(
+            "encryptedFor scheme must be a string".to_string(),
+        )
+    })?;
+    let scheme = EncryptionScheme::from_wire_name(scheme_name).ok_or_else(|| {
+        DataContractError::InvalidContractStructure(format!(
+            "encryptedFor scheme {scheme_name:?} is unknown, expected one of {}",
+            EncryptionScheme::ALL
+                .iter()
+                .map(|scheme| format!("{:?}", scheme.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })?;
+
+    Ok(Some(EncryptedFor {
+        recipient,
+        recipient_key,
+        sender_key,
+        scheme,
+    }))
+}
+
+/// Checks every `encryptedFor` declaration of a document type against the
+/// properties it names, once all of them are parsed: the recipient must be an
+/// identifier property (or `$ownerId`), the two key properties integers whose
+/// schema declares `minimum` at least 0 and `maximum` at most 4294967295 (read
+/// from the schema itself, so the rule holds whatever `sizedIntegerTypes` the
+/// contract sets), none of them may be `transient` (a transient property is
+/// stripped before storage, which would leave the stored ciphertext without
+/// its recipe), and the byte array's own `maxItems` must hold the scheme's
+/// shortest ciphertext. Paths are looked up among the flattened properties,
+/// so a nested property is named by its dotted path.
+///
+/// Owned by parser generation 3: the only generation that admits the keyword.
+pub(super) fn validate_encrypted_for_declarations(
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    let flattened_properties = &document_type.flattened_properties;
+    for (path, property) in flattened_properties {
+        let Some(encrypted_for) = &property.encrypted_for else {
+            continue;
+        };
+        let structure_error = |message: String| {
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" encryptedFor {message}"
+            ))
+        };
+
+        let shortest = encrypted_for.scheme.minimum_ciphertext_length();
+        if let DocumentPropertyType::ByteArray(sizes) = &property.property_type {
+            if let Some(max_size) = sizes.max_size.filter(|max| usize::from(*max) < shortest) {
+                return Err(structure_error(format!(
+                    "maxItems {max_size} is below the {shortest} bytes the {} scheme produces \
+                     at least, so no document could ever carry it",
+                    encrypted_for.scheme
+                )));
+            }
+        }
+
+        if let Some(recipient_path) = encrypted_for.recipient.property_path() {
+            match flattened_properties
+                .get(recipient_path)
+                .map(|recipient| &recipient.property_type)
+            {
+                Some(
+                    DocumentPropertyType::Identifier
+                    | DocumentPropertyType::IdentifierWithReference(_),
+                ) => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "recipient \"{recipient_path}\" has type {}, not identifier",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "recipient \"{recipient_path}\" is not a property of the document type"
+                    )));
+                }
+            }
+            if document_type.transient_fields.contains(recipient_path) {
+                return Err(structure_error(format!(
+                    "recipient \"{recipient_path}\" is transient: a transient property is never \
+                     stored, so a reader could not tell whom the bytes are for"
+                )));
+            }
+        }
+
+        for (key, key_path) in [
+            (property_names::RECIPIENT_KEY, &encrypted_for.recipient_key),
+            (property_names::SENDER_KEY, &encrypted_for.sender_key),
+        ] {
+            if !flattened_properties.contains_key(key_path) {
+                return Err(structure_error(format!(
+                    "{key} \"{key_path}\" is not a property of the document type"
+                )));
+            }
+            if !is_key_id_schema(&document_type.schema, key_path)? {
+                return Err(structure_error(format!(
+                    "{key} \"{key_path}\" must be an integer property with minimum at least 0 \
+                     and maximum at most {}, so that it carries a key id",
+                    u32::MAX
+                )));
+            }
+            if document_type.transient_fields.contains(key_path) {
+                return Err(structure_error(format!(
+                    "{key} \"{key_path}\" is transient: a transient property is never stored, \
+                     so a reader could not tell which key decrypts the bytes"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether the property at the dotted `path` of `schema` is declared as an
+/// integer with `minimum` at least 0 and `maximum` at most `u32::MAX`, read
+/// from the schema rather than from the parsed type so that the answer does
+/// not depend on the contract's `sizedIntegerTypes`. `$ref`s are followed.
+fn is_key_id_schema(schema: &Value, path: &str) -> Result<bool, DataContractError> {
+    fn resolve<'a>(
+        root_schema: &'a Value,
+        value: &'a Value,
+    ) -> Result<BTreeMap<String, &'a Value>, DataContractError> {
+        let map = value.to_btree_ref_string_map()?;
+        match map.get_optional_str(property_names::REF)? {
+            Some(schema_ref) => {
+                Ok(resolve_uri(root_schema, schema_ref)?.to_btree_ref_string_map()?)
+            }
+            None => Ok(map),
+        }
+    }
+    let mut current = resolve(schema, schema)?;
+    for segment in path.split('.') {
+        let Some(properties) = current.get(property_names::PROPERTIES) else {
+            return Ok(false);
+        };
+        let Some(next) = properties.to_btree_ref_string_map()?.get(segment).copied() else {
+            return Ok(false);
+        };
+        current = resolve(schema, next)?;
+    }
+    let is_integer = current.get_optional_str(property_names::TYPE)? == Some("integer");
+    let minimum = current.get_optional_integer::<i64>(property_names::MINIMUM)?;
+    let maximum = current.get_optional_integer::<i64>(property_names::MAXIMUM)?;
+    Ok(is_integer
+        && minimum.is_some_and(|minimum| minimum >= 0)
+        && maximum.is_some_and(|maximum| maximum <= i64::from(u32::MAX)))
 }
 
 /// The `contractRequirements` of a `contract` reference: each key an aspect of the referenced
@@ -2447,6 +2735,357 @@ mod tests {
                 .to_owned_document_type();
             assert_eq!(distinct_from_of(&message_type, "delegateId"), expected);
         }
+    }
+
+    // ================================================================
+    //  encryptedFor
+    // ================================================================
+
+    /// The `encryptedFor` declaration every encryption test starts from.
+    fn encrypted_for_declaration() -> serde_json::Value {
+        json!({
+            "recipient": "recipientId",
+            "recipientKey": "recipientKeyId",
+            "senderKey": "senderKeyId",
+            "scheme": "ecdh-secp256k1-aes256-cbc"
+        })
+    }
+
+    /// A document type with a recipient identifier, two bounded key ids, an
+    /// unbounded integer, a string and a nested object next to the
+    /// `encryptedMessage` byte array carrying `encrypted_for`.
+    fn encrypted_schema(encrypted_for: serde_json::Value) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "recipientId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0
+                },
+                "recipientKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 1 },
+                "senderKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 2 },
+                "unboundedKeyId": { "type": "integer", "minimum": 0, "position": 3 },
+                "note": { "type": "string", "maxLength": 63, "position": 4 },
+                "maxOnlyKeyId": { "type": "integer", "maximum": 100, "position": 7 },
+                "meta": {
+                    "type": "object",
+                    "position": 5,
+                    "properties": {
+                        "authorId": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "position": 0
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "encryptedMessage": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 1040,
+                    "position": 6,
+                    "encryptedFor": encrypted_for
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    fn encrypted_for_of(document_type: &DocumentType, path: &str) -> Option<EncryptedFor> {
+        document_type
+            .as_ref()
+            .flattened_properties()
+            .get(path)
+            .expect("property should be present")
+            .encrypted_for
+            .clone()
+    }
+
+    #[test]
+    fn should_parse_encrypted_for_on_a_byte_array_property() {
+        let document_type = try_document_type_from_schema_full_validation(encrypted_schema(
+            encrypted_for_declaration(),
+        ))
+        .expect("should parse");
+
+        let expected = EncryptedFor {
+            recipient: EncryptedForRecipient::Property("recipientId".to_string()),
+            recipient_key: "recipientKeyId".to_string(),
+            sender_key: "senderKeyId".to_string(),
+            scheme: EncryptionScheme::EcdhSecp256k1Aes256Cbc,
+        };
+        assert_eq!(
+            encrypted_for_of(&document_type, "encryptedMessage"),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            document_type.as_ref().encrypted_properties(),
+            vec![(&"encryptedMessage".to_string(), &expected)]
+        );
+        assert_eq!(encrypted_for_of(&document_type, "note"), None);
+    }
+
+    #[test]
+    fn should_parse_encrypted_for_with_the_owner_and_a_nested_identifier_as_recipient() {
+        for (recipient, expected) in [
+            ("$ownerId", EncryptedForRecipient::Owner),
+            (
+                "meta.authorId",
+                EncryptedForRecipient::Property("meta.authorId".to_string()),
+            ),
+        ] {
+            let mut declaration = encrypted_for_declaration();
+            declaration["recipient"] = json!(recipient);
+            let document_type =
+                try_document_type_from_schema(encrypted_schema(declaration)).expect("should parse");
+            assert_eq!(
+                encrypted_for_of(&document_type, "encryptedMessage")
+                    .expect("should be declared")
+                    .recipient,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_encrypted_for_on_a_non_byte_array_or_identifier_property() {
+        let mut on_string = encrypted_schema(encrypted_for_declaration());
+        on_string["properties"]["note"]["encryptedFor"] = encrypted_for_declaration();
+        on_string["properties"]["encryptedMessage"]
+            .as_object_mut()
+            .expect("object")
+            .remove("encryptedFor");
+        let err = try_document_type_from_schema(on_string).expect_err("should be refused");
+        assert!(
+            err.to_string()
+                .contains("encryptedFor is only allowed on byte array properties"),
+            "{err}"
+        );
+
+        let mut on_identifier = encrypted_schema(encrypted_for_declaration());
+        on_identifier["properties"]["recipientId"]["encryptedFor"] = encrypted_for_declaration();
+        on_identifier["properties"]["encryptedMessage"]
+            .as_object_mut()
+            .expect("object")
+            .remove("encryptedFor");
+        let err =
+            try_document_type_from_schema(on_identifier.clone()).expect_err("should be refused");
+        assert!(
+            err.to_string()
+                .contains("encryptedFor is not allowed on identifier properties"),
+            "{err}"
+        );
+        // The meta-schema refuses it on an identifier too, before the parser sees it
+        try_document_type_from_schema_full_validation(on_identifier)
+            .expect_err("the meta-schema should refuse encryptedFor on an identifier");
+    }
+
+    #[test]
+    fn should_reject_encrypted_for_with_a_missing_unknown_or_malformed_key_or_an_unknown_scheme() {
+        for (mutate, fragment) in [
+            (
+                Box::new(|d: &mut serde_json::Value| {
+                    d.as_object_mut().expect("object").remove("recipient");
+                }) as Box<dyn Fn(&mut serde_json::Value)>,
+                "must declare recipient",
+            ),
+            (
+                Box::new(|d: &mut serde_json::Value| {
+                    d.as_object_mut().expect("object").remove("scheme");
+                }),
+                "must declare scheme",
+            ),
+            (
+                Box::new(|d: &mut serde_json::Value| d["scheme"] = json!("rsa-oaep")),
+                "scheme \"rsa-oaep\" is unknown",
+            ),
+            (
+                Box::new(|d: &mut serde_json::Value| d["iv"] = json!("ivProperty")),
+                "\"iv\" is unknown",
+            ),
+            (
+                Box::new(|d: &mut serde_json::Value| d["recipient"] = json!(7)),
+                "recipient must be a property path",
+            ),
+            (
+                Box::new(|d: &mut serde_json::Value| d["recipientKey"] = json!("")),
+                "recipientKey must be between 1 and 256 characters",
+            ),
+            (
+                Box::new(|d: &mut serde_json::Value| d["recipient"] = json!("$createdAt")),
+                "recipient must name an identifier property",
+            ),
+            (
+                Box::new(|d: &mut serde_json::Value| d["senderKey"] = json!("$ownerId")),
+                "senderKey must name an integer property",
+            ),
+        ] {
+            let mut declaration = encrypted_for_declaration();
+            mutate(&mut declaration);
+            let err = try_document_type_from_schema(encrypted_schema(declaration.clone()))
+                .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(fragment),
+                "{declaration}: expected {fragment:?}, got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_encrypted_for_naming_a_property_that_is_missing_or_of_the_wrong_type() {
+        for (key, path, fragment) in [
+            ("recipient", "note", "has type string, not identifier"),
+            (
+                "recipient",
+                "nowhere",
+                "is not a property of the document type",
+            ),
+            (
+                "recipientKey",
+                "note",
+                "must be an integer property with minimum at least 0",
+            ),
+            (
+                "recipientKey",
+                "unboundedKeyId",
+                "must be an integer property with minimum at least 0",
+            ),
+            (
+                "recipientKey",
+                "maxOnlyKeyId",
+                "must be an integer property with minimum at least 0",
+            ),
+            (
+                "senderKey",
+                "recipientId",
+                "must be an integer property with minimum at least 0",
+            ),
+            (
+                "senderKey",
+                "nowhere",
+                "is not a property of the document type",
+            ),
+        ] {
+            let mut declaration = encrypted_for_declaration();
+            declaration[key] = json!(path);
+            let err = try_document_type_from_schema(encrypted_schema(declaration))
+                .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(fragment),
+                "{key}={path}: expected {fragment:?}, got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_encrypted_for_below_platform_version_14_and_accept_it_at_14() {
+        let schema = encrypted_schema(encrypted_for_declaration());
+        let v13 = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+        // The v2 meta-schema does not know the keyword: a validating parse refuses it
+        let config = DataContractConfig::default_for_version(v13).expect("config should build");
+        let value = platform_value::to_value(schema.clone()).expect("schema should convert");
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            v13,
+        )
+        .expect_err("platform version 13 should refuse encryptedFor under full validation");
+
+        // Without validation the tables carry `apply_encrypted_for: None`, so the keyword
+        // is ignored and the property parses as the plain byte array it always was
+        let document_type =
+            try_document_type_from_schema_on_version(schema.clone(), v13).expect("should parse");
+        assert_eq!(encrypted_for_of(&document_type, "encryptedMessage"), None);
+        assert!(document_type.as_ref().encrypted_properties().is_empty());
+
+        // At 14 both parses carry it
+        let document_type = try_document_type_from_schema_full_validation(schema.clone())
+            .expect("should parse at platform version 14");
+        assert!(encrypted_for_of(&document_type, "encryptedMessage").is_some());
+        let document_type = try_document_type_from_schema(schema).expect("should parse");
+        assert!(encrypted_for_of(&document_type, "encryptedMessage").is_some());
+    }
+
+    #[test]
+    fn should_reject_encrypted_for_naming_a_transient_recipient_or_key() {
+        for (transient, fragment) in [
+            ("recipientId", "recipient \"recipientId\" is transient"),
+            ("senderKeyId", "senderKey \"senderKeyId\" is transient"),
+        ] {
+            let mut schema = encrypted_schema(encrypted_for_declaration());
+            schema["transient"] = json!([transient]);
+            let err = try_document_type_from_schema(schema).expect_err("should be refused");
+            assert!(err.to_string().contains(fragment), "{transient}: got {err}");
+        }
+    }
+
+    #[test]
+    fn should_reject_encrypted_for_on_a_byte_array_too_short_for_the_scheme() {
+        let mut schema = encrypted_schema(encrypted_for_declaration());
+        schema["properties"]["encryptedMessage"]["minItems"] = json!(1);
+        schema["properties"]["encryptedMessage"]["maxItems"] = json!(24);
+        let err = try_document_type_from_schema(schema).expect_err("should be refused");
+        assert!(
+            err.to_string()
+                .contains("maxItems 24 is below the 32 bytes the ecdh-secp256k1-aes256-cbc"),
+            "{err}"
+        );
+    }
+
+    /// The key-id bounds are read from the schema, so a contract whose
+    /// integers are not sized (config V0, or `sizedIntegerTypes: false`)
+    /// can still declare the keyword.
+    #[test]
+    fn should_accept_encrypted_for_key_ids_when_sized_integer_types_are_off() {
+        use crate::data_contract::config::v0::DataContractConfigV0;
+
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::V0(DataContractConfigV0::default());
+        let value = platform_value::to_value(encrypted_schema(encrypted_for_declaration()))
+            .expect("schema should convert");
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("should parse with unsized integers");
+
+        assert!(matches!(
+            document_type
+                .as_ref()
+                .flattened_properties()
+                .get("recipientKeyId")
+                .map(|p| &p.property_type),
+            Some(DocumentPropertyType::I64)
+        ));
+        assert!(encrypted_for_of(&document_type, "encryptedMessage").is_some());
     }
 
     // ================================================================

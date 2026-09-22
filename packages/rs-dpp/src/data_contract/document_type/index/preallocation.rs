@@ -187,6 +187,7 @@ mod tests {
             required: true,
             required_since: None,
             distinct_from: None,
+            encrypted_for: None,
             transient: false,
         }
     }
@@ -201,6 +202,7 @@ mod tests {
             required: true,
             required_since: None,
             distinct_from: None,
+            encrypted_for: None,
             transient: false,
         }
     }
@@ -211,6 +213,7 @@ mod tests {
             required: true,
             required_since: None,
             distinct_from: None,
+            encrypted_for: None,
             transient: false,
         }
     }

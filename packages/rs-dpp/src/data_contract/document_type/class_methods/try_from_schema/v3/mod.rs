@@ -40,6 +40,7 @@ use std::collections::BTreeMap;
 use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
 
 use super::common;
+use super::validate_encrypted_for_declarations;
 
 mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
@@ -390,6 +391,12 @@ fn try_from_schema_generation_3(
         name,
         full_validation,
     )?;
+
+    // After the core parse: every property, its transient flag and its schema
+    // are known, so each `encryptedFor` declaration can be checked against the
+    // properties it names. Generation 3 is the only one admitting the keyword.
+    validate_encrypted_for_declarations(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
 
     // After `apply_index_only`: the flag is refused on an indexOnly type, so it
     // has to see that one already applied.
