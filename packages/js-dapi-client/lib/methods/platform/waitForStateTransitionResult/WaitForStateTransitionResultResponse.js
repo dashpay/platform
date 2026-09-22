@@ -27,8 +27,8 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
   /**
    * The credit balance of the transition's owner after it executed, as DAPI
    * read it without a proof. Set when the request asked for the user's
-   * balance and for no proof; a proved response carries the balance inside
-   * the proof of a document batch.
+   * balance and for no proof; a proved response of an owned, fee-paying
+   * transition carries the balance inside the proof.
    *
    * @returns {bigint|undefined}
    */

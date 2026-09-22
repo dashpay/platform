@@ -11,9 +11,10 @@ use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatch
 use dash_sdk::dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
-use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::broadcast::{
+    require_execution_proved, BroadcastStateTransition, WaitForOutcome,
+};
 use dash_sdk::platform::ContextProvider;
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::*;
@@ -174,12 +175,14 @@ impl WasmSdk {
         // Preserve the error kind: callers distinguish `ExecutionNotProved`,
         // which reports that this transition family has no execution proof
         // rather than that anything went wrong, from a genuine failure.
-        let result = st
-            .wait_for_response::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
             .map_err(WasmSdkError::from)?;
+        let owner_balance = outcome.owner_balance();
+        let result = require_execution_proved(outcome).map_err(WasmSdkError::from)?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Broadcasts a state transition and waits for the result.
@@ -202,12 +205,18 @@ impl WasmSdk {
         let put_settings = parse_put_settings(settings)?;
         self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .broadcast_and_wait::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        st.broadcast(self.as_ref(), put_settings)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+        let owner_balance = outcome.owner_balance();
+        let result = require_execution_proved(outcome)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Waits for a state transition response, accepting proofs that only
@@ -234,14 +243,16 @@ impl WasmSdk {
         let put_settings = parse_put_settings(settings)?;
         self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .wait_for_affected_state::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
             .map_err(|e| {
                 WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
             })?;
+        let owner_balance = outcome.owner_balance();
+        let result = outcome.into_result();
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Broadcasts a state transition and waits for the result, accepting
@@ -261,15 +272,17 @@ impl WasmSdk {
         let put_settings = parse_put_settings(settings)?;
         self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                self.as_ref(),
-                put_settings,
-            )
+        st.broadcast(self.as_ref(), put_settings)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+        let owner_balance = outcome.owner_balance();
+        let result = outcome.into_result();
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 }
 
@@ -629,4 +642,22 @@ mod tests {
             .expect("preparation must skip compiled-in system contracts");
         assert!(sdk.get_cached_contract(&dpns_id).is_none());
     }
+}
+
+/// Hands the owner's credit balance the verified outcome carried (from
+/// protocol version 14, for owned fee-paying transitions) to JavaScript as an
+/// `ownerBalance` `BigInt` property on the verified result; absent otherwise.
+fn with_owner_balance(
+    result: StateTransitionProofResultTypeJs,
+    owner_balance: Option<u64>,
+) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+    if let Some(owner_balance) = owner_balance {
+        js_sys::Reflect::set(
+            result.as_ref(),
+            &JsValue::from_str("ownerBalance"),
+            &js_sys::BigInt::from(owner_balance).into(),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set ownerBalance".to_string()))?;
+    }
+    Ok(result)
 }

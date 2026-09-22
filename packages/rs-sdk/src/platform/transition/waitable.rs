@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::broadcast::{
-    convert_proof_result, require_execution_proved, BroadcastStateTransition, WaitForOutcome,
-};
+use super::broadcast::{convert_proof_result, BroadcastStateTransition, WaitForOutcome};
 use super::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::Error;
@@ -56,9 +54,10 @@ impl Waitable for Document {
         state_transition: StateTransition,
         settings: Option<PutSettings>,
     ) -> Result<Self, Error> {
-        wait_for_document_and_owner_balance(sdk, state_transition, settings)
-            .await
-            .map(|(document, _owner_balance)| document)
+        let doc_id = single_document_id(&state_transition)?;
+        let mut documents: BTreeMap<Identifier, Option<Document>> =
+            state_transition.wait_for_response(sdk, settings).await?;
+        take_document(&mut documents, doc_id)
     }
 }
 
@@ -69,12 +68,30 @@ impl Waitable for Document {
 /// carries only the document and the balance is `None`. The balance is a
 /// snapshot at the proof's block, so it may already include later transitions
 /// of the same identity.
+///
+/// Unlike [`Waitable::wait_for_response`] for a document, this accepts an
+/// affected-state outcome too: an indexOnly document type's proof can only
+/// attest the resulting entry, not this transition's execution, and its
+/// document is then a snapshot rebuilt from the transition.
 pub async fn wait_for_document_and_owner_balance(
     sdk: &Sdk,
     state_transition: StateTransition,
     settings: Option<PutSettings>,
 ) -> Result<(Document, Option<Credits>), Error> {
-    let doc_id = if let StateTransition::Batch(transition) = &state_transition {
+    let doc_id = single_document_id(&state_transition)?;
+
+    let (outcome, _metadata) = state_transition
+        .wait_for_outcome_with_metadata(sdk, settings)
+        .await?;
+    let owner_balance = outcome.owner_balance();
+    let mut documents: BTreeMap<Identifier, Option<Document>> =
+        convert_proof_result(outcome.into_result())?;
+    take_document(&mut documents, doc_id).map(|document| (document, owner_balance))
+}
+
+/// The id of the one document a batch transition modifies.
+fn single_document_id(state_transition: &StateTransition) -> Result<Identifier, Error> {
+    if let StateTransition::Batch(transition) = state_transition {
         let ids = transition.modified_data_ids();
         if ids.len() != 1 {
             return Err(Error::Protocol(
@@ -88,33 +105,30 @@ pub async fn wait_for_document_and_owner_balance(
                 )),
             ));
         }
-        ids[0]
+        Ok(ids[0])
     } else {
-        return Err(Error::Protocol(ProtocolError::InvalidStateTransitionType(
+        Err(Error::Protocol(ProtocolError::InvalidStateTransitionType(
             format!(
                 "expected state transition to be a DocumentsBatchTransition, got {}",
                 state_transition.name()
             ),
-        )));
-    };
+        )))
+    }
+}
 
-    let (outcome, _metadata) = state_transition
-        .wait_for_outcome_with_metadata(sdk, settings)
-        .await?;
-    let owner_balance = outcome.owner_balance();
-    let mut documents: BTreeMap<Identifier, Option<Document>> =
-        convert_proof_result(require_execution_proved(outcome)?)?;
-
-    let document: Document = documents
+/// The proved document out of a verified documents result.
+fn take_document(
+    documents: &mut BTreeMap<Identifier, Option<Document>>,
+    doc_id: Identifier,
+) -> Result<Document, Error> {
+    documents
         .remove(&doc_id)
         .ok_or(Error::InvalidProvedResponse(
             "did not prove the sent document".to_string(),
         ))?
         .ok_or(Error::InvalidProvedResponse(
             "expected there to actually be a document".to_string(),
-        ))?;
-
-    Ok((document, owner_balance))
+        ))
 }
 
 #[async_trait::async_trait]

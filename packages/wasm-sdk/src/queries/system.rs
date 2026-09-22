@@ -1170,8 +1170,8 @@ pub struct StateTransitionResultWasm {
     pub error: Option<String>,
     /// The credit balance of the transition's owner after it executed, as
     /// DAPI read it without a proof. Present when the SDK did not ask for a
-    /// proof (it then asks for the balance); a proved wait carries the balance
-    /// inside the proof of a document batch instead.
+    /// proof (it then asks for the balance); a proved wait of an owned,
+    /// fee-paying transition carries the balance inside the proof instead.
     pub owner_balance: Option<u64>,
 }
 

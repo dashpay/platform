@@ -261,11 +261,12 @@ impl PlatformServiceImpl {
     }
 
     /// Complete a successful wait: with `prove`, the proof of the transition's
-    /// execution (which carries the owner's balance for a document batch from
-    /// protocol version 14); else with `request_user_balance`, the balance of
-    /// the identity that owns the transition read from Drive unverified, and
-    /// only from a state at or past `executed_at_height`, the block that
-    /// executed the transition. Either read failing leaves the response as it
+    /// execution (which carries the owner's balance for an owned, fee-paying
+    /// transition from protocol version 14); else with `request_user_balance`,
+    /// the balance of the identity that owns the transition read from Drive
+    /// unverified, and only from a state at or past `executed_at_height`, the
+    /// block that executed the transition (a read behind it answers with its
+    /// metadata and no balance). Either read failing leaves the response as it
     /// was, which still tells the caller the transition succeeded.
     async fn fill_success_result(
         &self,
@@ -294,11 +295,16 @@ impl PlatformServiceImpl {
                 self.fetch_identity_balance_unproved(owner_id).await
         {
             if metadata.height < executed_at_height {
-                debug!(
+                // The read predates the executing block: answer with that
+                // state's metadata and no balance, so the caller can tell a
+                // lagging node (metadata height below its transaction's
+                // block) from a node that was not asked.
+                tracing::warn!(
                     balance_height = metadata.height,
                     executed_at_height,
                     "Drive's state predates the block that executed the transition; not reporting the owner's balance"
                 );
+                response_v0.metadata = Some(metadata);
                 return;
             }
             response_v0.result = Some(

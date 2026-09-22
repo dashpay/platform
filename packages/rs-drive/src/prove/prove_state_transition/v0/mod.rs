@@ -267,26 +267,10 @@ impl Drive {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 Drive::identity_balance_query(&st.identity_id().to_buffer())
             }
-            StateTransition::IdentityUpdate(st) => {
-                if carries_owner_balance {
-                    // The keys, the balance and the revision, composed as the
-                    // verifier composes them.
-                    let identity_id = st.identity_id().to_buffer();
-                    let keys_query = IdentityKeysRequest::new_all_keys_query(&identity_id, None)
-                        .into_path_query();
-                    let balance_query = Drive::balance_for_identity_id_query(identity_id);
-                    let revision_query = Drive::identity_revision_query(&identity_id);
-                    PathQuery::merge(
-                        vec![&keys_query, &balance_query, &revision_query],
-                        &platform_version.drive.grove_version,
-                    )?
-                } else {
-                    Drive::identity_all_keys_query(
-                        &st.identity_id().to_buffer(),
-                        &platform_version.drive.grove_version,
-                    )?
-                }
-            }
+            StateTransition::IdentityUpdate(st) => Drive::identity_all_keys_query(
+                &st.identity_id().to_buffer(),
+                &platform_version.drive.grove_version,
+            )?,
             // The lists the moderation touched: a ban also removes a suspension, so it proves
             // every list the contract keeps (the banlist entry present, the suspension absent);
             // an unban, a suspend and an unsuspend prove the one entry they edit.
@@ -427,22 +411,11 @@ impl Drive {
             }
             // Only the rewritten key: the verifier compares that one key.
             StateTransition::IdentityKeyLimitsUpdate(st) => {
-                let identity_id = st.identity_id().to_buffer();
-                let key_query = IdentityKeysRequest::new_specific_key_query_without_limit(
-                    &identity_id,
+                IdentityKeysRequest::new_specific_key_query_without_limit(
+                    &st.identity_id().to_buffer(),
                     st.key_id(),
                 )
-                .into_path_query();
-                if carries_owner_balance {
-                    // The key and the balance, composed as the verifier composes them.
-                    let balance_query = Drive::balance_for_identity_id_query(identity_id);
-                    PathQuery::merge(
-                        vec![&key_query, &balance_query],
-                        &platform_version.drive.grove_version,
-                    )?
-                } else {
-                    key_query
-                }
+                .into_path_query()
             }
             StateTransition::IdentityCreditTransfer(st) => {
                 let sender_query = Drive::identity_balance_query(&st.identity_id().into_buffer());
@@ -747,8 +720,7 @@ impl Drive {
         // what the write left it with without a second query. The verifier
         // rebuilds a document batch's merged query and verifies it strictly,
         // and reads the other kinds' result and balance as subsets of the
-        // merged proof. (An identity update composed its balance above, the
-        // way the identity keys verifier does.)
+        // merged proof.
         let path_query =
             if carries_owner_balance && Self::proof_merges_owner_balance_after(state_transition) {
                 let owner_id = state_transition.owner_id().ok_or(Error::Proof(
@@ -777,15 +749,18 @@ impl Drive {
         Ok(ProofCreationResult::new_with_data(proof))
     }
 
-    /// The transitions whose version 1 proof gains the owner's balance by a merge
-    /// after their own path query is built: document and token batches, contract
-    /// creates and updates, and contract moderation.
+    /// The owned, fee-paying transitions whose version 1 proof gains the owner's
+    /// balance by a merge after their own path query is built: document and token
+    /// batches, contract creates and updates, identity updates and key limit
+    /// updates, and contract moderation.
     fn proof_merges_owner_balance_after(state_transition: &StateTransition) -> bool {
         matches!(
             state_transition,
             StateTransition::Batch(_)
                 | StateTransition::DataContractCreate(_)
                 | StateTransition::DataContractUpdate(_)
+                | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityKeyLimitsUpdate(_)
                 | StateTransition::ContractUserModeration(_)
         )
     }

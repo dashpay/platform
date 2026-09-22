@@ -262,6 +262,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
+    // From prover version 1 every owned, fee-paying transition's proof also
+    // carries the owner's balance; its own part is then one subset of it.
+    let proof_carries_owner_balance =
+        platform_version.drive.methods.prove.prove_state_transition >= 1;
     let state = abci_app.platform.state.load();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
@@ -389,8 +393,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
                         Some(keeps_history),
-                        // From prover version 1 the proof also carries the owner's balance.
-                        platform_version.drive.methods.prove.prove_state_transition >= 1,
+                        proof_carries_owner_balance,
                         true,
                         data_contract_create.data_contract_ref().id().into_buffer(),
                         platform_version,
@@ -423,8 +426,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
                         Some(keeps_history),
-                        // From prover version 1 the proof also carries the owner's balance.
-                        platform_version.drive.methods.prove.prove_state_transition >= 1,
+                        proof_carries_owner_balance,
                         true,
                         data_contract_update.data_contract_ref().id().into_buffer(),
                         platform_version,
@@ -529,8 +531,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 platform.state.last_committed_block_info()
                             );
 
-                            // From prover version 1 the owner's balance rides along.
-                            if platform_version.drive.methods.prove.prove_state_transition >= 1 {
+                            if proof_carries_owner_balance {
                                 let owner_id = batch_transition.owner_id();
                                 let (balance_root_hash, proved_owner_balance) =
                                     Drive::verify_identity_balance_for_identity_id(
@@ -750,7 +751,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                                 let (root_hash, serialized_document) = query
                                     .verify_proof_keep_serialized(
-                                        // From prover version 1 the proof also carries the owner's balance.
                                         platform_version.drive.methods.prove.prove_state_transition
                                             >= 1,
                                         &response_proof.grovedb_proof,
@@ -902,8 +902,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         ),
                         false,
                         false,
-                        // From prover version 1 the proof also carries the owner's balance.
-                        platform_version.drive.methods.prove.prove_state_transition >= 1,
+                        proof_carries_owner_balance,
                         platform_version,
                     )
                     .expect("expected to verify identity keys");

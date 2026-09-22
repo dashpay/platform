@@ -387,7 +387,7 @@ fn is_missing_transition_owner(transition: &StateTransition, error: &Error) -> b
 }
 
 /// Reject snapshot outcomes for the strict wait APIs with a typed error.
-pub(crate) fn require_execution_proved(
+pub fn require_execution_proved(
     outcome: StateTransitionProofOutcome,
 ) -> Result<StateTransitionProofResult, Error> {
     let (guarantee, result, _owner_balance) = outcome.into_parts();
@@ -403,7 +403,7 @@ pub(crate) fn require_execution_proved(
 }
 
 /// Convert the verified inner result into the caller's expected type.
-pub(crate) fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
+pub fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
     result: StateTransitionProofResult,
 ) -> Result<T, Error> {
     let variant_name = result.to_string();
@@ -419,7 +419,7 @@ pub(crate) fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
 /// Internal wait primitive shared by the strict and affected-state public
 /// APIs.
 #[async_trait::async_trait]
-pub(crate) trait WaitForOutcome {
+pub trait WaitForOutcome {
     async fn wait_for_outcome_with_metadata(
         &self,
         sdk: &Sdk,

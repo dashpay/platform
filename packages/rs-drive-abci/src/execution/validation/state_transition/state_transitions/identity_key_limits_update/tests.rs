@@ -708,6 +708,11 @@ async fn should_prove_the_rewritten_key() {
         "expected AffectedState, got {:?}",
         outcome
     );
+    assert_eq!(
+        outcome.owner_balance().is_some(),
+        version.drive.methods.prove.prove_state_transition >= 1,
+        "the proof carries the owner's balance exactly from prover version 1"
+    );
     let StateTransitionProofResult::VerifiedPartialIdentity(identity) = outcome.into_result()
     else {
         panic!("expected the affected state to be proved as a partial identity");

@@ -6785,7 +6785,9 @@ GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionR
 /**
  * Flag to request, without a proof, the credit balance of the identity
  * that owns the transition after it executed. Ignored when a proof is
- * requested: from protocol version 14 a document batch's proof carries
+ * requested: from protocol version 14 the proof of an owned, fee-paying
+ * transition (document and token batches, contract creates and updates,
+ * identity updates and key limit updates, contract moderation) carries
  * the owner's balance itself.
  **/
 @property(nonatomic, readwrite) BOOL requestUserBalance;

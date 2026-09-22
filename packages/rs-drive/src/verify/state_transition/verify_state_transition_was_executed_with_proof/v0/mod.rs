@@ -1201,8 +1201,8 @@ impl Drive {
                         None,
                     ),
                     true,
-                    carries_owner_balance,
                     false,
+                    carries_owner_balance,
                     platform_version,
                 )?;
                 let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain update for identity {} expected to exist because of state transition (update)", identity_update_transition.identity_id()))))?;
@@ -1450,8 +1450,8 @@ impl Drive {
                         transition.key_id(),
                     ),
                     false,
-                    carries_owner_balance,
                     false,
+                    carries_owner_balance,
                     platform_version,
                 )?;
                 let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
@@ -2636,7 +2636,6 @@ impl Drive {
         let owner_balance = if carries_owner_balance {
             Self::owner_balance_of_verified_transition(
                 state_transition,
-                &result,
                 document_owner_balance,
                 proof,
                 root_hash,
@@ -2661,14 +2660,12 @@ impl Drive {
 
     /// The owner's credit balance a version 1 proof carries for an owned,
     /// fee-paying transition: a document batch's came out of its strict merged
-    /// verification, an identity update's or key limits update's out of the
-    /// identity keys verifier, and the others (contract creates and updates,
-    /// contract moderation, token batches) are read as a subset of the merged
-    /// proof and must come from the same state as the result. `None` for a
-    /// transition whose proof does not carry it.
+    /// verification, and the others (contract creates and updates, identity
+    /// updates and key limit updates, contract moderation, token batches) are
+    /// read as a subset of the merged proof and must come from the same state
+    /// as the result. `None` for a transition whose proof does not carry it.
     fn owner_balance_of_verified_transition(
         state_transition: &StateTransition,
-        result: &StateTransitionProofResult,
         document_owner_balance: Option<Credits>,
         proof: &[u8],
         root_hash: RootHash,
@@ -2682,13 +2679,9 @@ impl Drive {
             },
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_) => state_transition.owner_id(),
-            StateTransition::IdentityUpdate(_) | StateTransition::IdentityKeyLimitsUpdate(_) => {
-                return Ok(match result {
-                    VerifiedPartialIdentity(identity) => identity.balance,
-                    _ => None,
-                });
-            }
             _ => None,
         };
         let Some(owner_id) = subset_owner else {
@@ -3202,6 +3195,7 @@ mod tests {
             "expected ExecutionProved, got {:?}",
             proof_result
         );
+        assert_eq!(proof_result.owner_balance(), Some(owner.balance()));
         match proof_result.into_result() {
             StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
                 assert_eq!(
@@ -3288,6 +3282,7 @@ mod tests {
             "expected AffectedState, got {:?}",
             proof_result
         );
+        assert_eq!(proof_result.owner_balance(), Some(owner.balance()));
         match proof_result.into_result() {
             StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
                 assert_eq!(verified_contract.id(), contract.id());
@@ -3552,6 +3547,7 @@ mod tests {
             "expected ExecutionProved, got {:?}",
             proof_result
         );
+        assert_eq!(proof_result.owner_balance(), Some(identity.balance()));
         match proof_result.into_result() {
             StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
                 assert_eq!(partial_identity.id, identity.id());
@@ -3726,6 +3722,7 @@ mod tests {
             "expected ExecutionProved, got {:?}",
             result
         );
+        assert_eq!(result.owner_balance(), Some(identity.balance()));
 
         match result.into_result() {
             StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
@@ -4085,6 +4082,124 @@ mod tests {
             }
             other => panic!("expected VerifiedDocuments, got {:?}", other),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: before protocol version 14 the proof carries no balance
+    // -----------------------------------------------------------------------
+
+    /// Version 0 of the prover and the verifier (every protocol version before
+    /// 14) keep the document-only proof: it verifies, carries no balance, and is
+    /// exactly the single-document proof a pre-14 client rebuilds strictly.
+    #[test]
+    fn verify_batch_document_proof_before_protocol_version_14_carries_no_balance() {
+        let (drive, contract) = setup_drive_and_contract();
+        let latest = PlatformVersion::latest();
+        let before_balances = PlatformVersion::get(13).expect("protocol version 13 exists");
+        assert_eq!(
+            before_balances.drive.methods.prove.prove_state_transition,
+            0
+        );
+        assert_eq!(
+            before_balances
+                .drive
+                .methods
+                .verify
+                .state_transition
+                .verify_state_transition_was_executed_with_proof,
+            0
+        );
+        let owner = add_batch_owner(&drive, 17, latest);
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+        let mut document = document_type
+            .random_document(Some(99), latest)
+            .expect("expected a random document");
+        document.set_owner_id(owner.id());
+        let doc_id = document.id();
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: Some(owner.id().to_buffer()),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                latest,
+                None,
+            )
+            .expect("expected to insert document");
+
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: doc_id,
+            identity_contract_nonce: 1,
+            document_type_name: "preorder".to_string(),
+            data_contract_id: contract.id(),
+        });
+        let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: owner.id(),
+            transitions: vec![DocumentTransition::Create(DocumentCreateTransition::V0(
+                DocumentCreateTransitionV0 {
+                    base,
+                    entropy: [100u8; 32],
+                    data: document.properties().clone(),
+                    prefunded_voting_balance: None,
+                },
+            ))],
+            ..Default::default()
+        }));
+
+        let proof = drive
+            .prove_state_transition(&st, None, before_balances)
+            .expect("expected to prove the create at protocol version 13")
+            .into_data()
+            .expect("expected proof bytes");
+
+        // The old shape: the document alone verifies strictly.
+        use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+        let (_, proved_document) = SingleDocumentDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "preorder".to_string(),
+            document_type_keeps_history: document_type.documents_keep_history(),
+            document_id: doc_id.to_buffer(),
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        }
+        .verify_proof(false, &proof, document_type, before_balances)
+        .expect("a version 0 proof is the document alone");
+        assert_eq!(proved_document.map(|document| document.id()), Some(doc_id));
+
+        let contract_arc = Arc::new(contract.clone());
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(Some(contract_arc.clone()));
+        let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            before_balances,
+        )
+        .expect("the version 0 proof verifies at protocol version 13");
+        assert!(outcome.is_execution_proved());
+        assert_eq!(outcome.owner_balance(), None);
+        assert!(matches!(
+            outcome.into_result(),
+            StateTransitionProofResult::VerifiedDocuments(_)
+        ));
     }
 
     // -----------------------------------------------------------------------

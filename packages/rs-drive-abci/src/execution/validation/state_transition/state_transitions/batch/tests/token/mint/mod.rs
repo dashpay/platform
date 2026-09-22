@@ -2282,7 +2282,15 @@ mod token_mint_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
-            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+            .map(|(root_hash, outcome)| {
+                // From prover version 1 the proof carries the owner's balance.
+                assert_eq!(
+                    outcome.owner_balance().is_some(),
+                    platform_version.drive.methods.prove.prove_state_transition >= 1,
+                    "the proof carries the owner's balance exactly from prover version 1"
+                );
+                (root_hash, outcome.into_result())
+            })
             .unwrap_or_else(|_| {
                 panic!(
                     "expect to verify state transition proof {}",
@@ -2399,7 +2407,15 @@ mod token_mint_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
-            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+            .map(|(root_hash, outcome)| {
+                // From prover version 1 the proof carries the owner's balance.
+                assert_eq!(
+                    outcome.owner_balance().is_some(),
+                    platform_version.drive.methods.prove.prove_state_transition >= 1,
+                    "the proof carries the owner's balance exactly from prover version 1"
+                );
+                (root_hash, outcome.into_result())
+            })
             .unwrap_or_else(|_| {
                 panic!(
                     "expect to verify state transition proof {}",
@@ -2564,7 +2580,15 @@ mod token_mint_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
-            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+            .map(|(root_hash, outcome)| {
+                // From prover version 1 the proof carries the owner's balance.
+                assert_eq!(
+                    outcome.owner_balance().is_some(),
+                    platform_version.drive.methods.prove.prove_state_transition >= 1,
+                    "the proof carries the owner's balance exactly from prover version 1"
+                );
+                (root_hash, outcome.into_result())
+            })
             .unwrap_or_else(|_| {
                 panic!(
                     "expect to verify state transition proof {}",
@@ -2736,7 +2760,15 @@ mod token_mint_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
-            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+            .map(|(root_hash, outcome)| {
+                // From prover version 1 the proof carries the owner's balance.
+                assert_eq!(
+                    outcome.owner_balance().is_some(),
+                    platform_version.drive.methods.prove.prove_state_transition >= 1,
+                    "the proof carries the owner's balance exactly from prover version 1"
+                );
+                (root_hash, outcome.into_result())
+            })
             .unwrap_or_else(|e| {
                 panic!(
                     "expect to verify state transition proof {}, error is {}",
@@ -2892,7 +2924,15 @@ mod token_mint_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
-            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+            .map(|(root_hash, outcome)| {
+                // From prover version 1 the proof carries the owner's balance.
+                assert_eq!(
+                    outcome.owner_balance().is_some(),
+                    platform_version.drive.methods.prove.prove_state_transition >= 1,
+                    "the proof carries the owner's balance exactly from prover version 1"
+                );
+                (root_hash, outcome.into_result())
+            })
             .unwrap_or_else(|_| {
                 panic!(
                     "expect to verify state transition proof {}",

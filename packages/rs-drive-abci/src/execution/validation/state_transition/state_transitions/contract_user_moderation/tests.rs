@@ -492,6 +492,11 @@ impl Setup {
             "expected AffectedState, got {:?}",
             outcome
         );
+        assert_eq!(
+            outcome.owner_balance().is_some(),
+            platform_version.drive.methods.prove.prove_state_transition >= 1,
+            "the proof carries the moderator's balance exactly from prover version 1"
+        );
         match outcome.into_result() {
             StateTransitionProofResult::VerifiedContractDocumentRemoval(
                 contract_id,
@@ -647,6 +652,11 @@ impl Setup {
             !outcome.is_execution_proved(),
             "expected AffectedState, got {:?}",
             outcome
+        );
+        assert_eq!(
+            outcome.owner_balance().is_some(),
+            platform_version.drive.methods.prove.prove_state_transition >= 1,
+            "the proof carries the moderator's balance exactly from prover version 1"
         );
         match outcome.into_result() {
             StateTransitionProofResult::VerifiedContractModerationListStatuses(_, _, status) => {
