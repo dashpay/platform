@@ -859,7 +859,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
             DocumentPropertyType::TypedArray(typed_array) => {
-                Ok(Some(typed_array.min_encoded_size()))
+                typed_array.min_encoded_size(platform_version).map(Some)
             }
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Ok(Some(32))
@@ -909,7 +909,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
             DocumentPropertyType::TypedArray(typed_array) => {
-                Ok(Some(typed_array.max_encoded_size()))
+                typed_array.max_encoded_size(platform_version).map(Some)
             }
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Ok(Some(32))
@@ -1478,8 +1478,10 @@ impl DocumentPropertyType {
                     Ok((Some(Value::Map(values)), false))
                 }
             }
-            DocumentPropertyType::Array(item_type)
-            | DocumentPropertyType::TypedArray(TypedArrayProperty { item_type, .. }) => {
+            DocumentPropertyType::TypedArray(typed_array) => {
+                Ok((Some(typed_array.read_from(buf)?), false))
+            }
+            DocumentPropertyType::Array(item_type) => {
                 // Mirrors the encoding: a varint element count, then the
                 // elements. The count comes from the serialized document, so
                 // it never sizes an allocation; every element takes at least
@@ -1701,11 +1703,8 @@ impl DocumentPropertyType {
                     Err(get_field_type_matching_error(&value).into())
                 }
             }
-            DocumentPropertyType::Array(array_field_type)
-            | DocumentPropertyType::TypedArray(TypedArrayProperty {
-                item_type: array_field_type,
-                ..
-            }) => {
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.encode_value_ref(&value),
+            DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -1860,11 +1859,8 @@ impl DocumentPropertyType {
                 len_prepended_vec.append(&mut r_vec);
                 Ok(len_prepended_vec)
             }
-            DocumentPropertyType::Array(array_field_type)
-            | DocumentPropertyType::TypedArray(TypedArrayProperty {
-                item_type: array_field_type,
-                ..
-            }) => {
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.encode_value_ref(value),
+            DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -3093,14 +3089,19 @@ impl DocumentPropertyType {
             }
 
             // Handle Array type - sanitize all elements
-            (DocumentPropertyType::Array(item_type), Value::Array(_))
-            | (
-                DocumentPropertyType::TypedArray(TypedArrayProperty { item_type, .. }),
-                Value::Array(_),
-            ) => {
+            (DocumentPropertyType::Array(item_type), Value::Array(_)) => {
                 if let Value::Array(items) = value {
                     for item in items.iter_mut() {
                         item_type.sanitize_value_mut(item);
+                    }
+                }
+            }
+
+            // A typed array's elements sanitize as scalars of its element type
+            (DocumentPropertyType::TypedArray(typed_array), Value::Array(_)) => {
+                if let Value::Array(items) = value {
+                    for item in items.iter_mut() {
+                        typed_array.item_type.sanitize_value_mut(item);
                     }
                 }
             }
@@ -5160,123 +5161,263 @@ mod tests {
         assert_eq!(value, Some(Value::Bytes(vec![10, 20, 30])));
     }
 
-    fn typed_array(item_type: ArrayItemType) -> DocumentPropertyType {
+    fn typed_array(item_type: DocumentPropertyType) -> DocumentPropertyType {
         DocumentPropertyType::TypedArray(TypedArrayProperty {
-            item_type,
+            item_type: Box::new(item_type),
             min_items: None,
             max_items: 8,
             unique_items: false,
         })
     }
 
-    #[test]
-    fn should_round_trip_every_array_element_type_through_encode_and_read_optionally_from() {
+    fn encode_and_read_back(property_type: &DocumentPropertyType, value: &Value) -> Vec<u8> {
         use std::io::BufReader;
+        // The document serializer writes the presence flag of a property that
+        // is not required itself
+        let encoded = property_type
+            .encode_value_ref_with_size(value, true)
+            .expect("encodes");
+        let mut reader = BufReader::new(encoded.as_slice());
+        let (decoded, finished) = property_type
+            .read_optionally_from(&mut reader, true)
+            .expect("decodes");
+        assert_eq!(decoded.as_ref(), Some(value), "{property_type:?}");
+        assert!(!finished);
+        assert!(reader.buffer().is_empty(), "{property_type:?} left bytes");
+
+        let mut with_marker = vec![1];
+        with_marker.extend(&encoded);
+        let mut reader = BufReader::new(with_marker.as_slice());
+        let (decoded, _) = property_type
+            .read_optionally_from(&mut reader, false)
+            .expect("decodes behind a presence flag");
+        assert_eq!(
+            decoded.as_ref(),
+            Some(value),
+            "{property_type:?} behind a presence flag"
+        );
+        encoded
+    }
+
+    #[test]
+    fn should_round_trip_every_typed_array_element_type_through_encode_and_read_optionally_from() {
         for (item_type, items) in [
             (
-                ArrayItemType::Integer,
+                DocumentPropertyType::I64,
                 vec![Value::I64(i64::MIN), Value::I64(-1), Value::I64(i64::MAX)],
             ),
             (
-                ArrayItemType::Number,
+                DocumentPropertyType::U8,
+                vec![Value::U8(0), Value::U8(u8::MAX)],
+            ),
+            (
+                DocumentPropertyType::I16,
+                vec![Value::I16(i16::MIN), Value::I16(1000)],
+            ),
+            (DocumentPropertyType::U32, vec![Value::U32(u32::MAX)]),
+            (DocumentPropertyType::U128, vec![Value::U128(u128::MAX)]),
+            (
+                DocumentPropertyType::F64,
                 vec![Value::Float(-0.5), Value::Float(1e300)],
             ),
             (
-                ArrayItemType::String(None, Some(20)),
+                DocumentPropertyType::String(StringPropertySizes {
+                    min_length: None,
+                    max_length: Some(20),
+                }),
                 vec![Value::Text("".to_string()), Value::Text("über".to_string())],
             ),
             (
-                ArrayItemType::ByteArray(Some(1), Some(40)),
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                    min_size: Some(1),
+                    max_size: Some(40),
+                }),
                 vec![Value::Bytes(vec![0xFF]), Value::Bytes(vec![7; 40])],
             ),
             // Fixed-size elements read back as the fixed-size value kinds
             (
-                ArrayItemType::ByteArray(Some(32), Some(32)),
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                    min_size: Some(32),
+                    max_size: Some(32),
+                }),
                 vec![Value::Bytes32([0x80; 32])],
             ),
             (
-                ArrayItemType::Identifier,
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                    min_size: Some(3),
+                    max_size: Some(3),
+                }),
+                vec![Value::Bytes(vec![1, 2, 3]), Value::Bytes(vec![4, 5, 6])],
+            ),
+            (
+                DocumentPropertyType::Identifier,
                 vec![Value::Identifier([1; 32]), Value::Identifier([2; 32])],
             ),
             (
-                ArrayItemType::Boolean,
+                DocumentPropertyType::Boolean,
                 vec![Value::Bool(true), Value::Bool(false)],
             ),
         ] {
-            for property_type in [
-                typed_array(item_type.clone()),
-                DocumentPropertyType::Array(item_type.clone()),
-            ] {
-                for items in [items.clone(), vec![]] {
-                    let value = Value::Array(items);
-                    // The document serializer writes the presence flag of a
-                    // property that is not required itself
-                    let encoded = property_type
-                        .encode_value_ref_with_size(&value, true)
-                        .expect("encodes");
-                    let mut reader = BufReader::new(encoded.as_slice());
-                    let (decoded, finished) = property_type
-                        .read_optionally_from(&mut reader, true)
-                        .expect("decodes");
-                    assert_eq!(decoded, Some(value.clone()), "{item_type:?}");
-                    assert!(!finished);
-
-                    let mut with_marker = vec![1];
-                    with_marker.extend(&encoded);
-                    let mut reader = BufReader::new(with_marker.as_slice());
-                    let (decoded, _) = property_type
-                        .read_optionally_from(&mut reader, false)
-                        .expect("decodes behind a presence flag");
-                    assert_eq!(decoded, Some(value), "{item_type:?} behind a presence flag");
-                }
+            let property_type = typed_array(item_type);
+            for items in [items.clone(), vec![]] {
+                encode_and_read_back(&property_type, &Value::Array(items));
             }
         }
     }
 
+    /// Each element is written exactly as a required scalar property of its
+    /// type is written: after the varint count, an identifier is its 32 raw
+    /// bytes, an integer takes its width, a fixed-size byte array is raw, and
+    /// only strings and variable-size byte arrays carry a length.
     #[test]
-    fn should_refuse_an_array_whose_elements_run_past_the_serialized_document() {
+    fn should_encode_each_typed_array_element_as_a_required_scalar_property_of_its_type() {
+        let identifiers = encode_and_read_back(
+            &typed_array(DocumentPropertyType::Identifier),
+            &Value::Array(vec![
+                Value::Identifier([0xAA; 32]),
+                Value::Identifier([0xBB; 32]),
+            ]),
+        );
+        let mut expected = vec![2];
+        expected.extend([0xAA; 32]);
+        expected.extend([0xBB; 32]);
+        assert_eq!(identifiers, expected);
+
+        let small_integers = encode_and_read_back(
+            &typed_array(DocumentPropertyType::U8),
+            &Value::Array(vec![Value::U8(7), Value::U8(200)]),
+        );
+        assert_eq!(small_integers, vec![2, 7, 200]);
+
+        let wide_integers = encode_and_read_back(
+            &typed_array(DocumentPropertyType::I64),
+            &Value::Array(vec![Value::I64(1)]),
+        );
+        assert_eq!(wide_integers, vec![1, 0, 0, 0, 0, 0, 0, 0, 1]);
+
+        let hashes = encode_and_read_back(
+            &typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(3),
+                max_size: Some(3),
+            })),
+            &Value::Array(vec![Value::Bytes(vec![1, 2, 3])]),
+        );
+        assert_eq!(hashes, vec![1, 1, 2, 3]);
+
+        let blobs = encode_and_read_back(
+            &typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: None,
+                max_size: Some(3),
+            })),
+            &Value::Array(vec![Value::Bytes(vec![1, 2])]),
+        );
+        assert_eq!(blobs, vec![1, 2, 1, 2]);
+
+        let strings = encode_and_read_back(
+            &typed_array(DocumentPropertyType::String(StringPropertySizes {
+                min_length: None,
+                max_length: Some(8),
+            })),
+            &Value::Array(vec![Value::Text("ab".to_string())]),
+        );
+        assert_eq!(strings, vec![1, 2, b'a', b'b']);
+
+        let flags = encode_and_read_back(
+            &typed_array(DocumentPropertyType::Boolean),
+            &Value::Array(vec![Value::Bool(true), Value::Bool(false)]),
+        );
+        assert_eq!(flags, vec![2, 1, 0]);
+    }
+
+    #[test]
+    fn should_refuse_to_encode_a_typed_array_value_that_is_not_a_list_of_its_elements() {
+        let identifiers = typed_array(DocumentPropertyType::Identifier);
+        for value in [
+            Value::Identifier([1; 32]),
+            Value::Array(vec![Value::Null]),
+            Value::Array(vec![Value::Text("not an identifier".to_string())]),
+            Value::Array(vec![Value::Bytes(vec![1; 31])]),
+        ] {
+            assert!(
+                identifiers
+                    .encode_value_ref_with_size(&value, true)
+                    .is_err(),
+                "{value:?}"
+            );
+        }
+        // An element out of a fixed size's bounds is refused, not written raw
+        let hashes = typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(3),
+            max_size: Some(3),
+        }));
+        assert!(hashes
+            .encode_value_ref_with_size(&Value::Array(vec![Value::Bytes(vec![1, 2])]), true)
+            .is_err());
+    }
+
+    #[test]
+    fn should_refuse_a_typed_array_whose_elements_run_past_the_serialized_document() {
         use std::io::BufReader;
         // One element claimed, two of its eight bytes present
         let data: &[u8] = &[1, 2, 3];
         let mut reader = BufReader::new(data);
-        let result = typed_array(ArrayItemType::Integer).read_optionally_from(&mut reader, true);
+        let result = typed_array(DocumentPropertyType::I64).read_optionally_from(&mut reader, true);
         assert!(matches!(
             result,
             Err(DataContractError::CorruptedSerialization(_))
         ));
 
-        // A count no document could hold fails when the input runs out,
-        // without sizing anything by it
-        let mut data = u64::MAX.encode_var_vec();
-        data.push(1);
-        let mut reader = BufReader::new(data.as_slice());
-        let result = typed_array(ArrayItemType::Boolean).read_optionally_from(&mut reader, true);
-        assert!(matches!(
-            result,
-            Err(DataContractError::CorruptedSerialization(_))
-        ));
-    }
-
-    #[test]
-    fn should_refuse_malformed_identifier_and_boolean_array_elements() {
-        use std::io::BufReader;
-        // An identifier element carries its length, which must be 32
+        // One identifier claimed, 31 of its 32 bytes present: refused as a
+        // scalar identifier cut short is
         let mut data = vec![1];
-        data.extend(31usize.encode_var_vec());
         data.extend([5; 31]);
         let mut reader = BufReader::new(data.as_slice());
-        assert!(matches!(
-            typed_array(ArrayItemType::Identifier).read_optionally_from(&mut reader, true),
-            Err(DataContractError::CorruptedSerialization(_))
-        ));
+        assert!(typed_array(DocumentPropertyType::Identifier)
+            .read_optionally_from(&mut reader, true)
+            .is_err());
+    }
 
-        // A boolean element is written as 0 or 1
-        let data: &[u8] = &[1, 2];
+    /// The count comes from the serialized document, so one above `maxItems`
+    /// is refused before any element is read. Without that, elements of zero
+    /// width (a byte array pinned to zero bytes) would let a few bytes claim
+    /// a list of any length.
+    #[test]
+    fn should_refuse_a_serialized_typed_array_counting_more_elements_than_its_max_items() {
+        use std::io::BufReader;
+        for item_type in [
+            DocumentPropertyType::Boolean,
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(0),
+                max_size: Some(0),
+            }),
+        ] {
+            let property_type = typed_array(item_type);
+            for count in [9u64, u64::MAX] {
+                let mut data = count.encode_var_vec();
+                data.extend([1; 16]);
+                let mut reader = BufReader::new(data.as_slice());
+                let error = property_type
+                    .read_optionally_from(&mut reader, true)
+                    .expect_err("more elements than maxItems");
+                assert!(
+                    matches!(error, DataContractError::CorruptedSerialization(ref message)
+                        if message.contains("more than its maxItems of 8")),
+                    "{error}"
+                );
+            }
+        }
+
+        // maxItems zero-width elements read back as that many empty byte arrays
+        let empties = typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(0),
+            max_size: Some(0),
+        }));
+        let data: &[u8] = &[8];
         let mut reader = BufReader::new(data);
-        assert!(matches!(
-            typed_array(ArrayItemType::Boolean).read_optionally_from(&mut reader, true),
-            Err(DataContractError::CorruptedSerialization(_))
-        ));
+        let (value, _) = empties
+            .read_optionally_from(&mut reader, true)
+            .expect("maxItems elements decode");
+        assert_eq!(value, Some(Value::Array(vec![Value::Bytes(vec![]); 8])));
     }
 
     #[test]
@@ -5284,20 +5425,53 @@ mod tests {
         let pv = PlatformVersion::latest();
         let bounded = |item_type, min_items, max_items| {
             DocumentPropertyType::TypedArray(TypedArrayProperty {
-                item_type,
+                item_type: Box::new(item_type),
                 min_items,
                 max_items,
                 unique_items: true,
             })
         };
 
-        // Identifiers carry a one-byte length prefix: 33 bytes each
-        let identifiers = bounded(ArrayItemType::Identifier, Some(2), 64);
-        assert_eq!(identifiers.min_byte_size(pv).unwrap(), Some(1 + 2 * 33));
-        assert_eq!(identifiers.max_byte_size(pv).unwrap(), Some(1 + 64 * 33));
+        // Identifiers are 32 raw bytes each
+        let identifiers = bounded(DocumentPropertyType::Identifier, Some(2), 64);
+        assert_eq!(identifiers.min_byte_size(pv).unwrap(), Some(1 + 2 * 32));
+        assert_eq!(identifiers.max_byte_size(pv).unwrap(), Some(1 + 64 * 32));
 
-        // A string element's maxLength counts characters of up to four bytes
-        let strings = bounded(ArrayItemType::String(Some(3), Some(40)), None, 200);
+        // An integer element takes the width its bounds give it
+        let small_integers = bounded(DocumentPropertyType::U8, Some(1), 10);
+        assert_eq!(small_integers.min_byte_size(pv).unwrap(), Some(2));
+        assert_eq!(small_integers.max_byte_size(pv).unwrap(), Some(11));
+
+        // A fixed-size byte array carries no length; a variable one does
+        let hashes = bounded(
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(20),
+                max_size: Some(20),
+            }),
+            None,
+            4,
+        );
+        assert_eq!(hashes.max_byte_size(pv).unwrap(), Some(1 + 4 * 20));
+        let blobs = bounded(
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: None,
+                max_size: Some(200),
+            }),
+            None,
+            4,
+        );
+        assert_eq!(blobs.max_byte_size(pv).unwrap(), Some(1 + 4 * (2 + 200)));
+
+        // A string element is sized as a string property is: four bytes per
+        // character of its length bounds, plus its varint length
+        let strings = bounded(
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(3),
+                max_length: Some(40),
+            }),
+            None,
+            200,
+        );
         assert_eq!(strings.min_byte_size(pv).unwrap(), Some(1));
         assert_eq!(
             strings.max_byte_size(pv).unwrap(),
@@ -5305,14 +5479,31 @@ mod tests {
         );
 
         // Unbounded, or past what a u16 holds, reports u16::MAX
-        let unbounded_elements = bounded(ArrayItemType::String(None, None), None, 4);
+        let unbounded_elements = bounded(
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: None,
+                max_length: None,
+            }),
+            None,
+            4,
+        );
         assert_eq!(
             unbounded_elements.max_byte_size(pv).unwrap(),
             Some(u16::MAX)
         );
-        let saturated = bounded(ArrayItemType::String(None, Some(5000)), Some(1024), 1024);
+        let saturated = bounded(
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(1),
+                max_length: Some(5000),
+            }),
+            Some(1024),
+            1024,
+        );
         assert_eq!(saturated.max_byte_size(pv).unwrap(), Some(u16::MAX));
-        assert_eq!(saturated.min_byte_size(pv).unwrap(), Some(2 + 1024));
+        assert_eq!(
+            saturated.min_byte_size(pv).unwrap(),
+            Some(2 + 1024 * (1 + 4))
+        );
     }
 
     #[test]

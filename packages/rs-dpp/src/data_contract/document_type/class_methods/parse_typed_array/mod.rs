@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
-use crate::data_contract::document_type::DocumentPropertyType;
+use crate::data_contract::document_type::{
+    DocumentPropertyType, DocumentPropertyTypeParsingOptions,
+};
 use crate::data_contract::errors::DataContractError;
 
 mod v0;
@@ -12,7 +14,9 @@ mod v0;
 /// schema in place of `byteArray`, into [`DocumentPropertyType::TypedArray`].
 ///
 /// Returns `None` for every other property, a byte array included, which the
-/// caller leaves to `DocumentPropertyType::try_from_value_map`.
+/// caller leaves to `DocumentPropertyType::try_from_value_map`. The element
+/// schema is parsed by that same scalar parser with the property's `options`,
+/// so an element has the type a scalar property of its schema would have.
 ///
 /// Versioned on `parse_typed_array` in the platform version's document type
 /// schema versions. `None` selects the behavior of the versions that predate
@@ -20,6 +24,7 @@ mod v0;
 /// array that is not a byte array, exactly as those versions always did.
 pub(crate) fn parse_typed_array(
     inner_properties: &BTreeMap<String, &Value>,
+    options: &DocumentPropertyTypeParsingOptions,
     platform_version: &PlatformVersion,
 ) -> Result<Option<DocumentPropertyType>, DataContractError> {
     match platform_version
@@ -30,7 +35,7 @@ pub(crate) fn parse_typed_array(
         .parse_typed_array
     {
         None => Ok(None),
-        Some(0) => v0::parse_typed_array_v0(inner_properties),
+        Some(0) => v0::parse_typed_array_v0(inner_properties, options),
         Some(version) => Err(DataContractError::Unsupported(format!(
             "parse_typed_array version {version} is not supported"
         ))),
@@ -40,7 +45,8 @@ pub(crate) fn parse_typed_array(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::array::{ArrayItemType, TypedArrayProperty};
+    use crate::data_contract::document_type::array::TypedArrayProperty;
+    use crate::data_contract::document_type::StringPropertySizes;
     use platform_value::platform_value;
 
     #[test]
@@ -55,11 +61,15 @@ mod tests {
         let map = schema
             .to_btree_ref_string_map()
             .expect("the schema is a map");
+        let options = DocumentPropertyTypeParsingOptions::default();
 
         assert_eq!(
-            parse_typed_array(&map, PlatformVersion::latest()).expect("parses"),
+            parse_typed_array(&map, &options, PlatformVersion::latest()).expect("parses"),
             Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
-                item_type: ArrayItemType::String(None, Some(16)),
+                item_type: Box::new(DocumentPropertyType::String(StringPropertySizes {
+                    min_length: None,
+                    max_length: Some(16),
+                })),
                 min_items: Some(1),
                 max_items: 8,
                 unique_items: true,
@@ -68,7 +78,7 @@ mod tests {
         // Protocol version 13 leaves the property to the scalar parser
         let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13 exists");
         assert_eq!(
-            parse_typed_array(&map, platform_version_13).expect("parses"),
+            parse_typed_array(&map, &options, platform_version_13).expect("parses"),
             None
         );
     }
