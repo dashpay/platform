@@ -343,6 +343,7 @@ mod tests {
     fn should_accept_contract_requirements_on_a_contract_refers_to_in_v3_document_schema() {
         for requirements in [
             json!({ "moderation": "elected" }),
+            json!({ "moderation": "electionOpen" }),
             json!({ "minimumAgeSeconds": 1 }),
             json!({ "minimumAgeSeconds": 4294967295u64 }),
             json!({ "minimumSecondsSinceUpdate": 86400 }),

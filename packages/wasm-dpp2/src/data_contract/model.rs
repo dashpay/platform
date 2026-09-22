@@ -141,6 +141,12 @@ export type ContractModerators =
       voteWindow?: number;
       challengeCoolDown: number;
       /**
+       * Seconds after the contract's creation before the first charter may be filed
+       * against it, unbounded; the election may be called at once when left out. A
+       * reference requiring `moderation: 'electionOpen'` reads it.
+       */
+      electionDelay?: number;
+      /**
        * The moderated document types of the contract, each with the non-empty abilities a
        * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
        * keeps, `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay

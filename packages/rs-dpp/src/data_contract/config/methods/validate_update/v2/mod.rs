@@ -215,6 +215,7 @@ mod tests {
                 BTreeSet::from([ModerationAbility::Ban]),
             )]),
             interim: InterimModerators::ContractOwner,
+            election_delay: None,
             owner_protected: false,
         };
         modify(&mut declaration);
@@ -238,10 +239,11 @@ mod tests {
         assert!(kept.is_valid(), "{:?}", kept.errors);
 
         type Change = (&'static str, fn(&mut ElectedModerators));
-        let changes: [Change; 7] = [
+        let changes: [Change; 8] = [
             ("join window", |d| d.join_window += 1),
             ("vote window", |d| d.vote_window += 1),
             ("challenge cool-down", |d| d.challenge_cool_down += 1),
+            ("election delay", |d| d.election_delay = Some(1)),
             ("moderated set", |d| {
                 d.moderated_document_types
                     .insert("like".to_string(), BTreeSet::from([ModerationAbility::Ban]));

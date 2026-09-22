@@ -133,12 +133,13 @@
               "pattern": "^[a-zA-Z0-9-_]{1,64}$"
             },
             "contractRequirements": {
-              "description": "contract references only: what the referenced contract must declare beyond existing, checked when the referring document is written against the contract already fetched for the existence check and the block time, so a requirement costs no further read. Each key names an aspect of the referenced contract and its value the requirement: moderation \"elected\" requires the contract to declare an elected moderation team; minimumAgeSeconds requires the contract's recorded creation time to be at least that many seconds before the block time of the write, and minimumSecondsSinceUpdate the later of its recorded creation and last update times (a contract without a recorded creation time never meets either). An unmet requirement refuses the write (ReferencedContractRequirementNotMetError, 40135)",
+              "description": "contract references only: what the referenced contract must declare beyond existing, checked when the referring document is written against the contract already fetched for the existence check and the block time, so a requirement costs no further read. Each key names an aspect of the referenced contract and its value the requirement: moderation \"elected\" requires the contract to declare an elected moderation team and \"electionOpen\" one whose own electionDelay, counted from the contract's creation, has passed at the block time of the write (or which declares none); minimumAgeSeconds requires the contract's recorded creation time to be at least that many seconds before the block time of the write, and minimumSecondsSinceUpdate the later of its recorded creation and last update times (a contract without a recorded creation time never meets either). An unmet requirement refuses the write (ReferencedContractRequirementNotMetError, 40135)",
               "type": "object",
               "properties": {
                 "moderation": {
                   "enum": [
-                    "elected"
+                    "elected",
+                    "electionOpen"
                   ]
                 },
                 "minimumAgeSeconds": {
