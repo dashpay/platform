@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 
-use crate::data_contract::document_type::array::{
-    ArrayItemConstraints, ArrayItemType, TypedArrayProperty,
+use crate::data_contract::document_type::array::{ArrayItemConstraints, TypedArrayProperty};
+use crate::data_contract::document_type::{
+    property_names, DocumentPropertyType, DocumentPropertyTypeParsingOptions,
 };
-use crate::data_contract::document_type::{property_names, DocumentPropertyType};
 use crate::data_contract::errors::DataContractError;
 
 /// Generation 0 parse rules: an array property that does not declare
@@ -19,6 +19,7 @@ use crate::data_contract::errors::DataContractError;
 /// validation.
 pub(super) fn parse_typed_array_v0(
     inner_properties: &BTreeMap<String, &Value>,
+    options: &DocumentPropertyTypeParsingOptions,
 ) -> Result<Option<DocumentPropertyType>, DataContractError> {
     let is_array = inner_properties
         .get(property_names::TYPE)
@@ -45,7 +46,7 @@ pub(super) fn parse_typed_array_v0(
         ));
     }
 
-    let item_type = ArrayItemType::try_from(*items)?;
+    let item_type = parse_element_type(items, options)?;
     let item_constraints = parse_item_constraints(items, &item_type)?;
 
     // Fee estimation sizes the inline list by its bound
@@ -64,7 +65,7 @@ pub(super) fn parse_typed_array_v0(
     }
 
     Ok(Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
-        item_type,
+        item_type: Box::new(item_type),
         item_constraints,
         min_items,
         max_items,
@@ -74,15 +75,99 @@ pub(super) fn parse_typed_array_v0(
     })))
 }
 
-/// Whether an `enum` member is a value of the element type: a string, an
-/// integer, a number (an integer counts) or a boolean.
-fn is_member_of(item_type: &ArrayItemType, member: &Value) -> bool {
-    match item_type {
-        ArrayItemType::String(_, _) => member.is_text(),
-        ArrayItemType::Integer => member.to_integer::<i64>().is_ok(),
-        ArrayItemType::Number => member.to_float().is_ok(),
-        ArrayItemType::Boolean => member.as_bool().is_some(),
-        ArrayItemType::ByteArray(_, _) | ArrayItemType::Identifier | ArrayItemType::Date => false,
+/// The element type of a typed array: its `items` schema parsed exactly as a
+/// scalar property schema is, so an integer element takes the width its
+/// bounds give it and a byte array element with the identifier media type is
+/// an identifier. Objects and arrays of arrays are refused.
+///
+/// `refersTo` is refused for now. A reference on identifier elements would be
+/// read from this same map and folded into the element type, as
+/// `apply_property_reference` folds one into a scalar identifier.
+fn parse_element_type(
+    items: &Value,
+    options: &DocumentPropertyTypeParsingOptions,
+) -> Result<DocumentPropertyType, DataContractError> {
+    // The tuple form (`items: [..]`) and boolean schemas are not one element
+    // schema
+    let items_map = items.to_btree_ref_string_map().map_err(|_| {
+        DataContractError::InvalidContractStructure(
+            "the items of a typed array must be one element schema (an object)".to_string(),
+        )
+    })?;
+    if items_map.contains_key(property_names::REF) {
+        return Err(DataContractError::InvalidContractStructure(
+            "the items of a typed array must be an inline element schema, not a $ref".to_string(),
+        ));
+    }
+    if items_map.contains_key(property_names::REFERS_TO) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is not supported on the elements of a typed array".to_string(),
+        ));
+    }
+    match items_map
+        .get(property_names::TYPE)
+        .and_then(|type_value| type_value.as_text())
+    {
+        Some("object") => {
+            return Err(DataContractError::InvalidContractStructure(
+                "arrays of objects are not supported: the elements of a typed array must be \
+                 scalars (integer, number, string, boolean, byte array or identifier)"
+                    .to_string(),
+            ))
+        }
+        Some("array") if !items_map.contains_key(property_names::BYTE_ARRAY) => {
+            return Err(DataContractError::InvalidContractStructure(
+                "arrays of arrays are not supported: an element of a typed array may be a byte \
+                 array (byteArray: true) or an identifier, but not another array"
+                    .to_string(),
+            ))
+        }
+        _ => {}
+    }
+
+    let element_type = DocumentPropertyType::try_from_value_map(&items_map, options)?;
+    match element_type {
+        DocumentPropertyType::U128
+        | DocumentPropertyType::I128
+        | DocumentPropertyType::U64
+        | DocumentPropertyType::I64
+        | DocumentPropertyType::U32
+        | DocumentPropertyType::I32
+        | DocumentPropertyType::U16
+        | DocumentPropertyType::I16
+        | DocumentPropertyType::U8
+        | DocumentPropertyType::I8
+        | DocumentPropertyType::F64
+        | DocumentPropertyType::String(_)
+        | DocumentPropertyType::ByteArray(_)
+        | DocumentPropertyType::Identifier
+        | DocumentPropertyType::Boolean => Ok(element_type),
+        other => Err(DataContractError::InvalidContractStructure(format!(
+            "unsupported typed array element type: {}",
+            other.name()
+        ))),
+    }
+}
+
+/// Whether an `enum` member, a `minimum` or a `maximum` is a value of the
+/// element type: a string, an integer, a number (an integer counts) or a
+/// boolean.
+fn is_value_of(element_type: &DocumentPropertyType, value: &Value) -> bool {
+    match element_type {
+        DocumentPropertyType::String(_) => value.is_text(),
+        DocumentPropertyType::U128
+        | DocumentPropertyType::I128
+        | DocumentPropertyType::U64
+        | DocumentPropertyType::I64
+        | DocumentPropertyType::U32
+        | DocumentPropertyType::I32
+        | DocumentPropertyType::U16
+        | DocumentPropertyType::I16
+        | DocumentPropertyType::U8
+        | DocumentPropertyType::I8 => value.to_integer::<i128>().is_ok(),
+        DocumentPropertyType::F64 => value.to_float().is_ok(),
+        DocumentPropertyType::Boolean => value.as_bool().is_some(),
+        _ => false,
     }
 }
 
@@ -94,10 +179,15 @@ fn is_member_of(item_type: &ArrayItemType, member: &Value) -> bool {
 /// `maximum`. The meta-schema states the same rules for the validating path.
 fn parse_item_constraints(
     items: &Value,
-    item_type: &ArrayItemType,
+    element_type: &DocumentPropertyType,
 ) -> Result<ArrayItemConstraints, DataContractError> {
     let items_map = items.to_btree_ref_string_map()?;
     let mut constraints = ArrayItemConstraints::default();
+    let is_number = element_type.is_integer()
+        || matches!(
+            element_type,
+            DocumentPropertyType::U128 | DocumentPropertyType::I128 | DocumentPropertyType::F64
+        );
 
     if let Some(members) = items_map.get(property_names::ENUM) {
         let Some(members) = members.as_array() else {
@@ -111,8 +201,10 @@ fn parse_item_constraints(
             ));
         }
         if matches!(
-            item_type,
-            ArrayItemType::ByteArray(_, _) | ArrayItemType::Identifier | ArrayItemType::Date
+            element_type,
+            DocumentPropertyType::ByteArray(_)
+                | DocumentPropertyType::Identifier
+                | DocumentPropertyType::IdentifierWithReference(_)
         ) {
             return Err(DataContractError::InvalidContractStructure(
                 "enum is not supported on byte array or identifier elements of a typed array"
@@ -121,26 +213,26 @@ fn parse_item_constraints(
         }
         if let Some(member) = members
             .iter()
-            .find(|member| !is_member_of(item_type, member))
+            .find(|member| !is_value_of(element_type, member))
         {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "every enum member of a typed array's elements must be a {} value, found {}",
-                item_type.name(),
+                element_type.name(),
                 member
             )));
         }
         constraints.allowed_values = Some(members.clone());
     }
 
-    if matches!(item_type, ArrayItemType::Integer | ArrayItemType::Number) {
+    if is_number {
         let read_bound = |keyword: &str| -> Result<Option<Value>, DataContractError> {
             let Some(bound) = items_map.get(keyword) else {
                 return Ok(None);
             };
-            if !is_member_of(item_type, bound) {
+            if !is_value_of(element_type, bound) {
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "the {keyword} of a typed array's elements must be a {} value, found {}",
-                    item_type.name(),
+                    element_type.name(),
                     bound
                 )));
             }
@@ -149,13 +241,7 @@ fn parse_item_constraints(
         constraints.minimum = read_bound(property_names::MINIMUM)?;
         constraints.maximum = read_bound(property_names::MAXIMUM)?;
         if let (Some(minimum), Some(maximum)) = (&constraints.minimum, &constraints.maximum) {
-            let min_exceeds_max = match item_type {
-                ArrayItemType::Integer => {
-                    minimum.to_integer::<i64>().ok() > maximum.to_integer::<i64>().ok()
-                }
-                _ => minimum.to_float().ok() > maximum.to_float().ok(),
-            };
-            if min_exceeds_max {
+            if minimum.to_float().ok() > maximum.to_float().ok() {
                 return Err(DataContractError::InvalidContractStructure(
                     "the minimum of a typed array's elements may not exceed their maximum: no \
                      document could hold the list"
@@ -177,7 +263,7 @@ mod tests {
         let map = schema
             .to_btree_ref_string_map()
             .expect("the schema is a map");
-        parse_typed_array_v0(&map)
+        parse_typed_array_v0(&map, &DocumentPropertyTypeParsingOptions::default())
     }
 
     #[test]
@@ -203,7 +289,7 @@ mod tests {
             }))
             .expect("parses"),
             Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
-                item_type: ArrayItemType::Integer,
+                item_type: Box::new(DocumentPropertyType::I64),
                 item_constraints: ArrayItemConstraints::default(),
                 min_items: Some(1),
                 max_items: 4,
@@ -223,7 +309,8 @@ mod tests {
         let Some(DocumentPropertyType::TypedArray(typed_array)) = parsed else {
             panic!("expected a typed array, got {parsed:?}");
         };
-        assert_eq!(typed_array.item_type, ArrayItemType::Integer);
+        // Sized by its bounds, as a scalar integer is
+        assert_eq!(*typed_array.item_type, DocumentPropertyType::U8);
         // The bounds keep the schema's own value kinds; compare as integers
         let as_integer = |value: &Value| value.to_integer::<i64>().expect("an integer");
         let constraints = &typed_array.item_constraints;
@@ -251,7 +338,7 @@ mod tests {
             ),
             (
                 platform_value!({ "type": "integer", "enum": [1, "b"] }),
-                "must be a integer value",
+                "must be a",
             ),
             (
                 platform_value!({ "type": "boolean", "enum": [true, 0] }),
@@ -261,9 +348,11 @@ mod tests {
                 platform_value!({ "type": "array", "byteArray": true, "enum": [[1, 2]] }),
                 "not supported on byte array",
             ),
+            // A number element's bound must be a number; an integer element's
+            // bound is already read by the scalar parse that sizes it
             (
-                platform_value!({ "type": "integer", "minimum": "low" }),
-                "minimum of a typed array's elements must be a integer",
+                platform_value!({ "type": "number", "minimum": "low" }),
+                "minimum of a typed array's elements must be a",
             ),
             (
                 platform_value!({ "type": "number", "minimum": 2.5, "maximum": 1 }),
@@ -281,6 +370,60 @@ mod tests {
                 error.contains(fragment),
                 "{items:?}: expected {fragment:?}, got {error}"
             );
+        }
+    }
+
+    /// An element is parsed by the scalar parser, so it takes the type a
+    /// scalar property of the same schema takes: an integer sized by its
+    /// bounds (when the contract sizes integers), an identifier from the
+    /// identifier media type.
+    #[test]
+    fn should_type_an_element_as_a_scalar_property_of_its_schema() {
+        for (items, sized_integer_types, expected) in [
+            (
+                platform_value!({ "type": "integer", "minimum": 0, "maximum": 100 }),
+                true,
+                DocumentPropertyType::U8,
+            ),
+            (
+                platform_value!({ "type": "integer", "minimum": -1000, "maximum": 1000 }),
+                true,
+                DocumentPropertyType::I16,
+            ),
+            // A contract that does not size integers keeps them at 64 bits
+            (
+                platform_value!({ "type": "integer", "minimum": 0, "maximum": 100 }),
+                false,
+                DocumentPropertyType::I64,
+            ),
+            (
+                platform_value!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                }),
+                true,
+                DocumentPropertyType::Identifier,
+            ),
+        ] {
+            let schema =
+                platform_value!({ "type": "array", "maxItems": 4, "items": items.clone() });
+            let map = schema
+                .to_btree_ref_string_map()
+                .expect("the schema is a map");
+            let parsed = parse_typed_array_v0(
+                &map,
+                &DocumentPropertyTypeParsingOptions {
+                    sized_integer_types,
+                },
+            )
+            .expect("parses");
+            let Some(DocumentPropertyType::TypedArray(typed_array)) = parsed else {
+                panic!("{items:?} should parse to a typed array");
+            };
+            assert_eq!(*typed_array.item_type, expected, "{items:?}");
         }
     }
 

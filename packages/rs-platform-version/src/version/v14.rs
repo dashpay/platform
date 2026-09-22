@@ -569,9 +569,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     array or identifier element), and an integer element's `minimum` and
 ///     `maximum` are integers; the parser reads them so random documents stay
 ///     inside them. The array is stored inline, a varint element count followed by the
-///     elements, and cannot be an index property or one side of a
-///     `propertyAgreement`. Its identifier and byte array elements are
-///     conversion paths (`find_identifier_and_binary_paths` 1). A byte array
+///     elements, each encoded exactly as a required scalar property of its
+///     type: an identifier element is 32 raw bytes, an integer element takes
+///     the width its bounds give it, a fixed-size byte array element is raw.
+///     A contract update may not change how an element encodes
+///     (`validate_update` 1). The array cannot be an index property or one
+///     side of a `propertyAgreement`. Its identifier and byte array elements
+///     are conversion paths (`find_identifier_and_binary_paths` 1). A byte array
 ///     refuses `items`, and an identifier (a byte array with the identifier
 ///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
 ///     no byte repeat.

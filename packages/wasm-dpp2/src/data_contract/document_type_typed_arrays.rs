@@ -11,9 +11,7 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::array::{
-    ArrayItemConstraints, ArrayItemType, TypedArrayProperty,
-};
+use dpp::data_contract::document_type::array::{ArrayItemConstraints, TypedArrayProperty};
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::platform_value::Value;
 use js_sys::{Array, Object, Reflect};
@@ -115,40 +113,50 @@ fn scalar_to_js(value: &Value) -> Option<JsValue> {
 
 /// Build the flat, internally-tagged JS object for one element type.
 fn item_to_js(
-    item_type: &ArrayItemType,
+    item_type: &DocumentPropertyType,
     constraints: &ArrayItemConstraints,
     path: &str,
 ) -> WasmDppResult<JsValue> {
     let object = Object::new();
     let kind = match item_type {
-        ArrayItemType::Integer => "integer",
-        ArrayItemType::Number => "number",
-        ArrayItemType::Boolean => "boolean",
-        ArrayItemType::String(..) => "string",
-        ArrayItemType::ByteArray(..) => "byteArray",
-        ArrayItemType::Identifier => "identifier",
+        DocumentPropertyType::U8
+        | DocumentPropertyType::I8
+        | DocumentPropertyType::U16
+        | DocumentPropertyType::I16
+        | DocumentPropertyType::U32
+        | DocumentPropertyType::I32
+        | DocumentPropertyType::U64
+        | DocumentPropertyType::I64
+        | DocumentPropertyType::U128
+        | DocumentPropertyType::I128 => "integer",
         // No items schema parses to a date; reported as the number it
         // decodes to rather than failing the whole collection
-        ArrayItemType::Date => "number",
+        DocumentPropertyType::F64 | DocumentPropertyType::Date => "number",
+        DocumentPropertyType::Boolean => "boolean",
+        DocumentPropertyType::String(_) => "string",
+        DocumentPropertyType::ByteArray(_) => "byteArray",
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+            "identifier"
+        }
+        other => {
+            return Err(WasmDppError::generic(format!(
+                "the typed array declared at '{path}' has a {} element, which is not a scalar",
+                other.name()
+            )));
+        }
     };
     set_field(&object, "type", &JsValue::from_str(kind), path)?;
 
-    // Parsed from u16 schema values, so exact as JS numbers
-    let as_f64 = |bound: &Option<usize>| bound.map(|bound| bound as f64);
     match item_type {
-        ArrayItemType::String(min_length, max_length) => {
-            set_bound(&object, "minLength", as_f64(min_length), path)?;
-            set_bound(&object, "maxLength", as_f64(max_length), path)?;
+        DocumentPropertyType::String(sizes) => {
+            set_bound(&object, "minLength", sizes.min_length, path)?;
+            set_bound(&object, "maxLength", sizes.max_length, path)?;
         }
-        ArrayItemType::ByteArray(min_size, max_size) => {
-            set_bound(&object, "minItems", as_f64(min_size), path)?;
-            set_bound(&object, "maxItems", as_f64(max_size), path)?;
+        DocumentPropertyType::ByteArray(sizes) => {
+            set_bound(&object, "minItems", sizes.min_size, path)?;
+            set_bound(&object, "maxItems", sizes.max_size, path)?;
         }
-        ArrayItemType::Integer
-        | ArrayItemType::Number
-        | ArrayItemType::Boolean
-        | ArrayItemType::Identifier
-        | ArrayItemType::Date => {}
+        _ => {}
     }
 
     // The element constraints the parser reads, absent when undeclared

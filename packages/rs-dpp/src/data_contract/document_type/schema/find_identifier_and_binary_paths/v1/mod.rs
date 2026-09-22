@@ -51,14 +51,26 @@ impl DocumentTypeV0 {
                     binary_paths.extend(inner_binary_paths);
                 }
                 // `path[]` addresses every element of the list
-                DocumentPropertyType::Array(item_type)
-                | DocumentPropertyType::TypedArray(TypedArrayProperty { item_type, .. }) => {
+                DocumentPropertyType::Array(item_type) => {
                     let new_path = format!("{}[]", new_path);
                     match item_type {
                         ArrayItemType::Identifier => {
                             identifier_paths.insert(new_path);
                         }
                         ArrayItemType::ByteArray(_, _) => {
+                            binary_paths.insert(new_path);
+                        }
+                        _ => {}
+                    }
+                }
+                DocumentPropertyType::TypedArray(TypedArrayProperty { item_type, .. }) => {
+                    let new_path = format!("{}[]", new_path);
+                    match item_type.as_ref() {
+                        DocumentPropertyType::Identifier
+                        | DocumentPropertyType::IdentifierWithReference(_) => {
+                            identifier_paths.insert(new_path);
+                        }
+                        DocumentPropertyType::ByteArray(_) => {
                             binary_paths.insert(new_path);
                         }
                         _ => {}
