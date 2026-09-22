@@ -341,7 +341,10 @@ know that the binary is too old to handle the active protocol version.
 
 Let us walk through the exact steps to add a v1 implementation of a method
 that currently only has v0. We will use a fictional example:
-`my_grove_operation`.
+`my_grove_operation`. The version constants in the excerpts below
+(`DRIVE_VERSION_V7`, `PLATFORM_V13`) are illustrative and do not describe the
+recorded history of those versions; the real `PLATFORM_V13` uses
+`DRIVE_VERSION_V8`, and the current latest is `PLATFORM_V14`.
 
 ### Step 1: Write the new implementation
 

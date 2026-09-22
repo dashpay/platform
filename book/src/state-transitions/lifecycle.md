@@ -58,6 +58,8 @@ pub enum StateTransition {
     ShieldFromIdentity(ShieldFromIdentityTransition),
     IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
     IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition),
+    ContractUserModeration(ContractUserModerationTransition),
+    ContractFeeClaim(ContractFeeClaimTransition),
 }
 ```
 
@@ -80,19 +82,35 @@ These variants fall into natural groups:
 - `DataContractCreate` -- Register a new data contract (schema)
 - `DataContractUpdate` -- Update an existing data contract
 - `Batch` -- Create, replace, delete, or transfer documents; mint, burn, transfer, or freeze tokens
+- `ContractUserModeration` -- Ban, suspend or warn an identity on a moderated contract
+  (protocol version 14 and later)
+- `ContractFeeClaim` -- Pay out a contract's accumulated owner or moderator fee pot
+  (protocol version 14 and later)
 
 **Governance:**
 - `MasternodeVote` -- Cast a vote in a contested resource election
 
-**Address-based (newer):**
-- `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`,
-  `AddressFundingFromAssetLock`, `AddressCreditWithdrawal` -- Operations that use
-  platform addresses instead of (or in addition to) identity-based authentication
+**Address-based (protocol version 11 and later):**
+- `IdentityCreditTransferToAddresses`, `IdentityCreateFromAddresses`,
+  `IdentityTopUpFromAddresses`, `AddressFundsTransfer`, `AddressFundingFromAssetLock`,
+  `AddressCreditWithdrawal` -- Operations that use platform addresses instead of (or
+  in addition to) identity-based authentication
 
-**Shielded pool:**
-- `Shield`, `ShieldedTransfer`, `Unshield`, `ShieldFromAssetLock`, `ShieldedWithdrawal`,
-  `IdentityCreateFromShieldedPool`, `ShieldFromIdentity`, `IdentityTopUpFromShieldedPool` --
-  Operations that move credits into, inside, and out of the shielded pool
+**Shielded pool (protocol version 12 and later):**
+- `Shield` -- Move credits from transparent platform addresses into the shielded pool
+- `ShieldFromAssetLock` -- Fund the shielded pool directly from a core-chain asset lock
+- `ShieldedTransfer` -- Move value inside the pool; only the fee leaves it
+- `Unshield` -- Move credits from the pool back to a transparent platform address
+- `ShieldedWithdrawal` -- Withdraw credits from the pool to the core chain
+- `IdentityCreateFromShieldedPool` -- Create an identity funded from the pool with a
+  fixed denomination
+- `ShieldFromIdentity` -- Move credits from an identity balance into the pool (protocol
+  version 14 and later)
+- `IdentityTopUpFromShieldedPool` -- Top up an existing identity from the pool (protocol
+  version 14 and later)
+
+The [Shielded Transaction Fees](../fees/shielded-fees.md) chapter covers how each
+of these is priced.
 
 Each variant has its own numeric discriminant, defined in
 `packages/rs-dpp/src/state_transition/state_transition_types.rs`:
@@ -124,6 +142,8 @@ pub enum StateTransitionType {
     ShieldFromIdentity = 21,
     IdentityTopUpFromShieldedPool = 22,
     IdentityKeyLimitsUpdate = 23,
+    ContractUserModeration = 24,
+    ContractFeeClaim = 25,
 }
 ```
 
@@ -137,7 +157,8 @@ The `Batch` variant deserves special attention because it is the most complex. A
 `BatchTransition` can contain multiple sub-transitions, each operating on a different
 document or token. The sub-transitions include:
 
-- **Document operations:** Create, Replace, Delete, Transfer, UpdatePrice, Purchase
+- **Document operations:** Create, Replace, Delete, Transfer, UpdatePrice, Purchase,
+  IndexOnlyDelete
 - **Token operations:** Transfer, Mint, Burn, Freeze, Unfreeze, DestroyFrozenFunds,
   EmergencyAction, ConfigUpdate, Claim, DirectPurchase, SetPriceForDirectPurchase
 
@@ -163,6 +184,11 @@ chain. The signature proves ownership of the funds being locked.
 **Address-based transitions** -- Newer transition types like `IdentityCreateFromAddresses`
 use platform address inputs with their own nonces and balances, rather than identity-based
 authentication.
+
+**Shielded transitions** -- The shielded-pool transitions are authorized by the
+zero-knowledge proof and the binding signature of their Orchard bundle. Only
+`ShieldFromAssetLock` also carries a transition-level ECDSA signature, made with the
+asset-lock key over the signable bytes; it commits to the optional surplus output.
 
 The `sign` method on `StateTransition` handles this:
 
@@ -274,8 +300,8 @@ version's logic. It is how the platform achieves hard-fork-free upgrades.
 
 ## The call_method Macro
 
-Since `StateTransition` is an enum with 15 variants, dispatching a method call to
-the inner type would require writing out a 15-arm match statement every time. The
+Since `StateTransition` is an enum with 26 variants, dispatching a method call to
+the inner type would require writing out a 26-arm match statement every time. The
 codebase solves this with a family of macros:
 
 ```rust
@@ -285,7 +311,7 @@ macro_rules! call_method {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
-            // ... all 15 variants
+            // ... all 26 variants
         }
     };
 }
@@ -308,9 +334,14 @@ an error for inapplicable variants).
   for the current protocol version.
 
 **Do not:**
-- Assume all transitions have signatures. `IdentityCreateFromAddresses` and
-  `AddressFundsTransfer` return `None` from `signature()`.
-- Assume all transitions have an `owner_id`. Address-based transitions do not.
+- Assume all transitions have signatures. `signature()` returns `None` for
+  `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`,
+  `AddressCreditWithdrawal`, `Shield`, `ShieldedTransfer`, `Unshield`,
+  `ShieldedWithdrawal` and `IdentityCreateFromShieldedPool`. Of the address and
+  shielded transitions only `AddressFundingFromAssetLock` and `ShieldFromAssetLock`
+  are signed.
+- Assume all transitions have an `owner_id`. Address-based and shielded transitions
+  do not.
 - Modify the `StateTransitionType` discriminant values -- they are part of the
   wire format and changing them would break all existing serialized data.
 - Add new variants without also updating every `call_method` macro and every

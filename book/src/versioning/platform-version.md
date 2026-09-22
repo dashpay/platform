@@ -125,7 +125,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V1,
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V1,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1,
-        query: DRIVE_ABCI_QUERY_VERSIONS_V1,
+        query: DRIVE_ABCI_QUERY_VERSIONS_V0,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -201,9 +201,10 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
 
 Notice how only some subsystem versions change between V1 and V14. The ABCI
 structure versions and checkpoint parameters are still at V1 because nothing
-in them ever changed. The ABCI method versions, on the other hand, went from
-V1 to V10 -- ten revisions of the block processing logic -- and the query
-versions from V1 to V3.
+in them ever changed. The query versions stayed at V0 for the first eleven
+protocol versions, moved to V1 at V12 and to V2 at V14. The ABCI method
+versions, on the other hand, went from V1 to V10 -- ten revisions of the block
+processing logic.
 
 This is the power of the snapshot model: **each subsystem version evolves at
 its own pace.** A new protocol version does not require bumping everything. You
