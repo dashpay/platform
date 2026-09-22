@@ -55,11 +55,8 @@ export type DocumentTypedArrayProperty = {
   items: DocumentTypedArrayItem;
   /** The fewest elements a document may hold; absent when not declared. */
   minItems?: number;
-  /**
-   * The most elements a document may hold. Contract registration requires
-   * it, so it is only absent on a contract parsed without validation.
-   */
-  maxItems?: number;
+  /** The most elements a document may hold; every typed array declares it. */
+  maxItems: number;
   /** Whether a document repeating an element is refused. */
   uniqueItems: boolean;
 };
@@ -147,7 +144,12 @@ fn typed_array_to_js(path: &str, typed_array: &TypedArrayProperty) -> WasmDppRes
         path,
     )?;
     set_bound(&object, "minItems", typed_array.min_items, path)?;
-    set_bound(&object, "maxItems", typed_array.max_items, path)?;
+    set_field(
+        &object,
+        "maxItems",
+        &JsValue::from_f64(f64::from(typed_array.max_items)),
+        path,
+    )?;
     set_field(
         &object,
         "uniqueItems",

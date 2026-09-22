@@ -562,11 +562,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `DocumentPropertyType::TypedArray`). An element is an integer, a
 ///     number, a string, a boolean, a byte array or an identifier; objects
 ///     and arrays of arrays are refused. On the array `minItems` and
-///     `maxItems` count elements, `maxItems` is required and at most
-///     `SYSTEM_LIMITS_V4.max_document_array_items` (1024), and `uniqueItems`
-///     refuses a document repeating an element. The array is stored inline,
-///     a varint element count followed by the elements, and cannot be an
-///     index property or one side of a `propertyAgreement`. A byte array
+///     `maxItems` count elements, `maxItems` is required (with `minItems`
+///     not above it) and at most `SYSTEM_LIMITS_V4.max_document_array_items`
+///     (1024), and `uniqueItems` refuses a document repeating an element.
+///     The array is stored inline, a varint element count followed by the
+///     elements, and cannot be an index property or one side of a
+///     `propertyAgreement`. Its identifier and byte array elements are
+///     conversion paths (`find_identifier_and_binary_paths` 1). A byte array
 ///     now refuses `uniqueItems`, as it refuses `items`.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)

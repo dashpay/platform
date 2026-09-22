@@ -5164,7 +5164,7 @@ mod tests {
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type,
             min_items: None,
-            max_items: Some(8),
+            max_items: 8,
             unique_items: false,
         })
     }
@@ -5292,12 +5292,12 @@ mod tests {
         };
 
         // Identifiers carry a one-byte length prefix: 33 bytes each
-        let identifiers = bounded(ArrayItemType::Identifier, Some(2), Some(64));
+        let identifiers = bounded(ArrayItemType::Identifier, Some(2), 64);
         assert_eq!(identifiers.min_byte_size(pv).unwrap(), Some(1 + 2 * 33));
         assert_eq!(identifiers.max_byte_size(pv).unwrap(), Some(1 + 64 * 33));
 
         // A string element's maxLength counts characters of up to four bytes
-        let strings = bounded(ArrayItemType::String(Some(3), Some(40)), None, Some(200));
+        let strings = bounded(ArrayItemType::String(Some(3), Some(40)), None, 200);
         assert_eq!(strings.min_byte_size(pv).unwrap(), Some(1));
         assert_eq!(
             strings.max_byte_size(pv).unwrap(),
@@ -5305,18 +5305,12 @@ mod tests {
         );
 
         // Unbounded, or past what a u16 holds, reports u16::MAX
-        let unbounded_elements = bounded(ArrayItemType::String(None, None), None, Some(4));
+        let unbounded_elements = bounded(ArrayItemType::String(None, None), None, 4);
         assert_eq!(
             unbounded_elements.max_byte_size(pv).unwrap(),
             Some(u16::MAX)
         );
-        let unbounded_count = bounded(ArrayItemType::Boolean, None, None);
-        assert_eq!(unbounded_count.max_byte_size(pv).unwrap(), Some(u16::MAX));
-        let saturated = bounded(
-            ArrayItemType::String(None, Some(5000)),
-            Some(1024),
-            Some(1024),
-        );
+        let saturated = bounded(ArrayItemType::String(None, Some(5000)), Some(1024), 1024);
         assert_eq!(saturated.max_byte_size(pv).unwrap(), Some(u16::MAX));
         assert_eq!(saturated.min_byte_size(pv).unwrap(), Some(2 + 1024));
     }

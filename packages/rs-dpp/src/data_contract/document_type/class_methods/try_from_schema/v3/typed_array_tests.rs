@@ -133,7 +133,7 @@ fn should_parse_a_typed_identifier_array() {
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type: ArrayItemType::Identifier,
             min_items: Some(0),
-            max_items: Some(64),
+            max_items: 64,
             unique_items: true,
         })
     );
@@ -161,7 +161,7 @@ fn should_parse_a_typed_integer_array_with_bounds() {
         DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type: ArrayItemType::Integer,
             min_items: Some(1),
-            max_items: Some(10),
+            max_items: 10,
             unique_items: false,
         })
     );
@@ -323,6 +323,7 @@ fn should_require_max_items_on_a_typed_array_within_the_system_limit() {
     let platform_version = PlatformVersion::latest();
     let limit = platform_version.system_limits.max_document_array_items;
 
+    // maxItems is the shape of the declaration: required on every parse
     let without_max_items = schema_with_list(platform_value!({
         "type": "array",
         "items": { "type": "boolean" },
@@ -334,7 +335,12 @@ fn should_require_max_items_on_a_typed_array_within_the_system_limit() {
         true,
     ));
     assert_eq!(error.keyword(), "required");
+    expect_structure_error(
+        parse_dispatched(without_max_items, platform_version, false),
+        "a typed array must declare maxItems",
+    );
 
+    // The cap is a registration limit: a stored contract is read as declared
     let over_the_limit = schema_with_list(platform_value!({
         "type": "array",
         "maxItems": u64::from(limit) + 1,
@@ -343,12 +349,8 @@ fn should_require_max_items_on_a_typed_array_within_the_system_limit() {
     }));
     expect_structure_error(
         parse_dispatched(over_the_limit.clone(), platform_version, true),
-        &format!("must declare maxItems of at most {limit}"),
+        &format!("above the maximum of {limit}"),
     );
-
-    // The bound is a registration rule: a stored contract is read as declared
-    parse_dispatched(without_max_items, platform_version, false)
-        .expect("the non-validating parse reads the declaration as it is");
     parse_dispatched(over_the_limit, platform_version, false)
         .expect("the non-validating parse reads the declaration as it is");
 
@@ -359,6 +361,62 @@ fn should_require_max_items_on_a_typed_array_within_the_system_limit() {
         "position": 0
     }));
     parse_dispatched(at_the_limit, platform_version, true).expect("maxItems at the limit parses");
+}
+
+#[test]
+fn should_hold_the_shape_rules_of_a_typed_array_without_the_meta_schema() {
+    for (list, needle) in [
+        (
+            platform_value!({
+                "type": "array",
+                "minItems": 5,
+                "maxItems": 4,
+                "items": { "type": "integer" },
+                "position": 0
+            }),
+            "minItems may not exceed its maxItems",
+        ),
+        (
+            platform_value!({
+                "type": "array",
+                "maxItems": 4,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "items": { "type": "integer" },
+                "position": 0
+            }),
+            "contentMediaType belongs on the items",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error_or_json_schema_error(
+                parse_dispatched(
+                    schema_with_list(list.clone()),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                full_validation,
+                needle,
+            );
+        }
+    }
+}
+
+/// On the validating path the meta-schema may refuse a declaration before the
+/// parser sees it; without it the parser has to refuse it itself.
+fn expect_structure_error_or_json_schema_error<T: std::fmt::Debug>(
+    result: Result<T, ProtocolError>,
+    full_validation: bool,
+    needle: &str,
+) {
+    match result {
+        Err(ProtocolError::ConsensusError(boxed))
+            if full_validation
+                && matches!(
+                    *boxed,
+                    ConsensusError::BasicError(BasicError::JsonSchemaError(_))
+                ) => {}
+        result => expect_structure_error(result, needle),
+    }
 }
 
 #[test]
@@ -540,7 +598,7 @@ fn should_round_trip_a_contract_with_typed_arrays_through_platform_serialization
         Some(DocumentPropertyType::TypedArray(TypedArrayProperty {
             item_type: ArrayItemType::Identifier,
             min_items: Some(0),
-            max_items: Some(64),
+            max_items: 64,
             unique_items: true,
         }))
     );
@@ -596,6 +654,52 @@ fn should_round_trip_a_document_with_typed_arrays_through_serialization() {
     }
 }
 
+/// The identifier and byte array elements are conversion paths (`reasons[]`,
+/// `digests[]`), so a document built from data carrying base58 strings and
+/// plain bytes holds identifiers and bytes, as it does for scalar properties.
+#[test]
+fn should_convert_the_elements_of_typed_arrays_when_creating_a_document_from_data() {
+    use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use crate::document::DocumentV0Getters;
+    use platform_value::string_encoding::Encoding;
+
+    let platform_version = PlatformVersion::latest();
+    let contract = charter_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("charter")
+        .expect("charter type");
+
+    assert!(document_type.identifier_paths().contains("reasons[]"));
+    assert!(document_type.binary_paths().contains("digests[]"));
+
+    let reason = Identifier::new([5; 32]);
+    let data = Value::Map(vec![
+        (
+            Value::Text("reasons".to_string()),
+            Value::Array(vec![Value::Text(reason.to_string(Encoding::Base58))]),
+        ),
+        (
+            Value::Text("counts".to_string()),
+            Value::Array(vec![Value::I64(1)]),
+        ),
+    ]);
+    let document = document_type
+        .create_document_from_data(
+            data,
+            Identifier::new([2; 32]),
+            1,
+            1,
+            [3; 32],
+            platform_version,
+        )
+        .expect("the document is created");
+
+    assert_eq!(
+        document.properties().get("reasons"),
+        Some(&Value::Array(vec![Value::Identifier([5; 32])]))
+    );
+}
+
 #[test]
 fn should_refuse_a_document_whose_typed_array_breaks_its_schema() {
     use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
@@ -622,6 +726,17 @@ fn should_refuse_a_document_whose_typed_array_breaks_its_schema() {
             "reasons",
             platform_value!([Value::Bytes(vec![1; 31])]),
             "minItems",
+        ),
+        // The element schema's own bounds
+        (
+            "labels",
+            Value::Array(vec![Value::Text("x".repeat(21))]),
+            "maxLength",
+        ),
+        (
+            "labels",
+            Value::Array(vec![Value::Text(String::new())]),
+            "minLength",
         ),
     ] {
         let mut properties = charter_properties();

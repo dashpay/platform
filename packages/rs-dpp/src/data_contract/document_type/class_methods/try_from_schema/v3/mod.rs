@@ -428,10 +428,10 @@ fn try_from_schema_generation_3(
     Ok(v2)
 }
 
-/// Every typed array property must declare `maxItems`, at most
-/// `SystemLimits::max_document_array_items`, so its worst-case encoded size
-/// stays finite. Read off the flattened properties, which reach a typed array
-/// nested in an object too.
+/// Every typed array property's `maxItems` (which the parse requires) is at
+/// most `SystemLimits::max_document_array_items`, so its worst-case encoded
+/// size stays small. Read off the flattened properties, which reach a typed
+/// array nested in an object too.
 ///
 /// Full validation only, like the other registration limits: a stored
 /// contract was checked when it was registered, and a later protocol version
@@ -447,20 +447,14 @@ fn validate_typed_array_max_items(
         let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
             continue;
         };
-        match typed_array.max_items {
-            Some(max_items) if max_items <= limit => {}
-            max_items => {
-                return Err(consensus_or_protocol_data_contract_error(
-                    DataContractError::InvalidContractStructure(format!(
-                        "typed array property \"{}\" of document type \"{}\" must declare \
-                         maxItems of at most {}, found {}",
-                        path,
-                        name,
-                        limit,
-                        max_items.map_or_else(|| "none".to_string(), |max| max.to_string()),
-                    )),
-                ));
-            }
+        if typed_array.max_items > limit {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "typed array property \"{}\" of document type \"{}\" declares maxItems \
+                     {}, above the maximum of {}",
+                    path, name, typed_array.max_items, limit,
+                )),
+            ));
         }
     }
     Ok(())

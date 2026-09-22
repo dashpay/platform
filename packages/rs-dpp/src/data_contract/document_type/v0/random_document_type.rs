@@ -405,7 +405,7 @@ impl DocumentTypeV0 {
                         }),
                         [
                             ("minItems", typed_array.min_items.map(usize::from)),
-                            ("maxItems", typed_array.max_items.map(usize::from)),
+                            ("maxItems", Some(usize::from(typed_array.max_items))),
                         ],
                     )
                 },

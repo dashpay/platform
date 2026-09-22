@@ -41,11 +41,13 @@ pub enum ArrayItemType {
 pub struct TypedArrayProperty {
     /// The type of every element, parsed from `items`.
     pub item_type: ArrayItemType,
-    /// `minItems`: the fewest elements a document may hold.
+    /// `minItems`: the fewest elements a document may hold, never above
+    /// `max_items`.
     pub min_items: Option<u16>,
-    /// `maxItems`: the most elements a document may hold. Full validation
-    /// requires it and caps it at `SystemLimits::max_document_array_items`.
-    pub max_items: Option<u16>,
+    /// `maxItems`: the most elements a document may hold. Every parse
+    /// requires it; full validation also caps it at
+    /// `SystemLimits::max_document_array_items`.
+    pub max_items: u16,
     /// `uniqueItems`: whether a document is refused for repeating an element.
     pub unique_items: bool,
 }
@@ -64,26 +66,21 @@ impl TypedArrayProperty {
     /// The most bytes the array encodes to: the varint count of `maxItems`
     /// elements and that many of the largest element, saturating at
     /// `u16::MAX`, the size an unbounded string or byte array reports. Also
-    /// `u16::MAX` when `maxItems` or the element is unbounded.
+    /// `u16::MAX` when the element is unbounded.
     pub fn max_encoded_size(&self) -> u16 {
-        let (Some(max_items), Some(item_max)) = (self.max_items, self.item_type.max_encoded_size())
-        else {
+        let Some(item_max) = self.item_type.max_encoded_size() else {
             return u16::MAX;
         };
-        let size = (max_items.required_space() as u64)
-            .saturating_add(u64::from(max_items).saturating_mul(item_max));
+        let size = (self.max_items.required_space() as u64)
+            .saturating_add(u64::from(self.max_items).saturating_mul(item_max));
         u16::try_from(size).unwrap_or(u16::MAX)
     }
 
     /// How many elements a random value holds: between `minItems` and
-    /// `maxItems`, and eight more than `minItems` when `maxItems` is absent.
+    /// `maxItems`.
     fn random_items_range(&self) -> (usize, usize) {
-        let min_items = usize::from(self.min_items.unwrap_or(0));
-        let max_items = self
-            .max_items
-            .map(usize::from)
-            .unwrap_or(min_items + 8)
-            .max(min_items);
+        let max_items = usize::from(self.max_items);
+        let min_items = usize::from(self.min_items.unwrap_or(0)).min(max_items);
         (min_items, max_items)
     }
 
