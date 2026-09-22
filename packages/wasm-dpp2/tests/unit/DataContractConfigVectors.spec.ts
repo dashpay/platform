@@ -38,6 +38,8 @@ describe('DataContract configuration vectors', () => {
       'v0_key_requirements',
       'v0_envelope',
       'v1_unknown_field_is_ignored',
+      'v2_defaults',
+      'v2_moderated',
     ]);
   });
 
@@ -60,7 +62,7 @@ describe('DataContract configuration vectors', () => {
         expect(json.config).to.deep.equal(vector.canonical.config);
       });
 
-      if (vector.expect.$formatVersion === '1') {
+      if (vector.expect.$formatVersion !== '0') {
         it('should round-trip the expected configuration through setConfig', () => {
           const platformVersion = new wasm.PlatformVersion(vector.platformVersion);
           const dataContract = wasm.DataContract.fromJSON(vector.contract, true, platformVersion);
@@ -75,21 +77,49 @@ describe('DataContract configuration vectors', () => {
     });
   });
 
-  it('should accept the bare flags without a format tag and default sizedIntegerTypes', () => {
-    const vector = cases.find((c) => c.name === 'v1_all_set') as VectorCase;
-    const platformVersion = new wasm.PlatformVersion(vector.platformVersion);
-    const dataContract = wasm.DataContract.fromJSON(vector.contract, true, platformVersion);
+  // The bare flags select the generation from the platform version: format
+  // version 1 at the V1 case's version, 2 at the V2 case's, with
+  // `sizedIntegerTypes` defaulted and no `moderation` key invented.
+  [['v1_all_set', '1'], ['v2_moderated', '2']].forEach(([name, formatVersion]) => {
+    it(`should accept the bare flags without a format tag and select format version ${formatVersion}`, () => {
+      const vector = cases.find((c) => c.name === name) as VectorCase;
+      const platformVersion = new wasm.PlatformVersion(vector.platformVersion);
+      const dataContract = wasm.DataContract.fromJSON(vector.contract, true, platformVersion);
 
-    const flags = Object.fromEntries(
-      Object.entries(vector.expect).filter(([key]) => key !== '$formatVersion' && key !== 'sizedIntegerTypes'),
-    );
-    dataContract.setConfig(toObjectForm(flags), platformVersion);
+      const flags = Object.fromEntries(
+        Object.entries(vector.expect).filter(
+          ([key]) => key !== '$formatVersion' && key !== 'sizedIntegerTypes' && key !== 'moderation',
+        ),
+      );
+      dataContract.setConfig(toObjectForm(flags), platformVersion);
 
-    expect(dataContract.config).to.deep.equal({
-      ...toObjectForm(flags),
-      $formatVersion: '1',
-      sizedIntegerTypes: true,
+      expect(dataContract.config).to.deep.equal({
+        ...toObjectForm(flags),
+        $formatVersion: formatVersion,
+        sizedIntegerTypes: true,
+      });
     });
+  });
+
+  it('should refuse a moderation declaration at a version whose configuration cannot carry it', () => {
+    const vector = cases.find((c) => c.name === 'v2_moderated') as VectorCase;
+    const v1Vector = cases.find((c) => c.name === 'v1_all_set') as VectorCase;
+    expect(vector.expect).to.have.property('moderation');
+
+    // The V1 case's version selects a configuration generation without the
+    // `moderation` key. Dropping the declaration would leave the contract
+    // unmoderated for good, so both the setter and the renderer refuse it.
+    const platformVersion = new wasm.PlatformVersion(v1Vector.platformVersion);
+    const dataContract = wasm.DataContract.fromJSON(v1Vector.contract, true, platformVersion);
+    expect(() => dataContract.setConfig(toObjectForm(vector.expect), platformVersion)).to.throw();
+    expect(dataContract.config).to.deep.equal(toObjectForm(v1Vector.expect));
+
+    const moderated = wasm.DataContract.fromJSON(
+      vector.contract,
+      true,
+      new wasm.PlatformVersion(vector.platformVersion),
+    );
+    expect(() => moderated.toJSON(platformVersion)).to.throw();
   });
 
   it('should ignore unknown configuration keys and drop them when re-serializing', () => {

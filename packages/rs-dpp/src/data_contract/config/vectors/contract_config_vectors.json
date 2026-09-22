@@ -3,7 +3,7 @@
   "cases": [
     {
       "name": "v1_defaults",
-      "platformVersion": 14,
+      "platformVersion": 13,
       "contract": {
         "$formatVersion": "1",
         "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
@@ -101,7 +101,7 @@
     },
     {
       "name": "v1_all_set",
-      "platformVersion": 14,
+      "platformVersion": 13,
       "contract": {
         "$formatVersion": "1",
         "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
@@ -199,7 +199,7 @@
     },
     {
       "name": "v0_defaults_in_v1_envelope",
-      "platformVersion": 14,
+      "platformVersion": 13,
       "contract": {
         "$formatVersion": "1",
         "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
@@ -294,7 +294,7 @@
     },
     {
       "name": "v0_key_requirements",
-      "platformVersion": 14,
+      "platformVersion": 13,
       "contract": {
         "$formatVersion": "1",
         "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
@@ -464,7 +464,7 @@
     },
     {
       "name": "v1_unknown_field_is_ignored",
-      "platformVersion": 14,
+      "platformVersion": 13,
       "contract": {
         "$formatVersion": "1",
         "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
@@ -561,6 +561,223 @@
         "requiresIdentityEncryptionBoundedKey": 0,
         "requiresIdentityDecryptionBoundedKey": 2,
         "sizedIntegerTypes": false
+      }
+    },
+    {
+      "name": "v2_defaults",
+      "platformVersion": 14,
+      "contract": {
+        "$formatVersion": "1",
+        "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
+        "config": {
+          "$formatVersion": "2",
+          "canBeDeleted": false,
+          "readonly": false,
+          "keepsHistory": false,
+          "documentsKeepHistoryContractDefault": false,
+          "documentsMutableContractDefault": true,
+          "documentsCanBeDeletedContractDefault": true,
+          "requiresIdentityEncryptionBoundedKey": null,
+          "requiresIdentityDecryptionBoundedKey": null,
+          "sizedIntegerTypes": true
+        },
+        "version": 1,
+        "ownerId": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+        "schemaDefs": null,
+        "documentSchemas": {
+          "note": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "position": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "createdAt": null,
+        "updatedAt": null,
+        "createdAtBlockHeight": null,
+        "updatedAtBlockHeight": null,
+        "createdAtEpoch": null,
+        "updatedAtEpoch": null,
+        "groups": {},
+        "tokens": {},
+        "keywords": [],
+        "description": null
+      },
+      "canonical": {
+        "$formatVersion": "1",
+        "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
+        "config": {
+          "$formatVersion": "2",
+          "canBeDeleted": false,
+          "readonly": false,
+          "keepsHistory": false,
+          "documentsKeepHistoryContractDefault": false,
+          "documentsMutableContractDefault": true,
+          "documentsCanBeDeletedContractDefault": true,
+          "requiresIdentityEncryptionBoundedKey": null,
+          "requiresIdentityDecryptionBoundedKey": null,
+          "sizedIntegerTypes": true
+        },
+        "version": 1,
+        "ownerId": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+        "schemaDefs": null,
+        "documentSchemas": {
+          "note": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "position": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "createdAt": null,
+        "updatedAt": null,
+        "createdAtBlockHeight": null,
+        "updatedAtBlockHeight": null,
+        "createdAtEpoch": null,
+        "updatedAtEpoch": null,
+        "groups": {},
+        "tokens": {},
+        "keywords": [],
+        "description": null
+      },
+      "expect": {
+        "$formatVersion": "2",
+        "canBeDeleted": false,
+        "readonly": false,
+        "keepsHistory": false,
+        "documentsKeepHistoryContractDefault": false,
+        "documentsMutableContractDefault": true,
+        "documentsCanBeDeletedContractDefault": true,
+        "requiresIdentityEncryptionBoundedKey": null,
+        "requiresIdentityDecryptionBoundedKey": null,
+        "sizedIntegerTypes": true
+      }
+    },
+    {
+      "name": "v2_moderated",
+      "platformVersion": 14,
+      "contract": {
+        "$formatVersion": "1",
+        "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
+        "config": {
+          "$formatVersion": "2",
+          "canBeDeleted": true,
+          "readonly": true,
+          "keepsHistory": true,
+          "documentsKeepHistoryContractDefault": true,
+          "documentsMutableContractDefault": false,
+          "documentsCanBeDeletedContractDefault": false,
+          "requiresIdentityEncryptionBoundedKey": 0,
+          "requiresIdentityDecryptionBoundedKey": 2,
+          "sizedIntegerTypes": false,
+          "moderation": {
+            "banlist": true,
+            "suspensions": true,
+            "moderators": {
+              "$type": "contractOwner"
+            }
+          }
+        },
+        "version": 1,
+        "ownerId": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+        "schemaDefs": null,
+        "documentSchemas": {
+          "note": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "position": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "createdAt": null,
+        "updatedAt": null,
+        "createdAtBlockHeight": null,
+        "updatedAtBlockHeight": null,
+        "createdAtEpoch": null,
+        "updatedAtEpoch": null,
+        "groups": {},
+        "tokens": {},
+        "keywords": [],
+        "description": null
+      },
+      "canonical": {
+        "$formatVersion": "1",
+        "id": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
+        "config": {
+          "$formatVersion": "2",
+          "canBeDeleted": true,
+          "readonly": true,
+          "keepsHistory": true,
+          "documentsKeepHistoryContractDefault": true,
+          "documentsMutableContractDefault": false,
+          "documentsCanBeDeletedContractDefault": false,
+          "requiresIdentityEncryptionBoundedKey": 0,
+          "requiresIdentityDecryptionBoundedKey": 2,
+          "sizedIntegerTypes": false,
+          "moderation": {
+            "banlist": true,
+            "suspensions": true,
+            "moderators": {
+              "$type": "contractOwner"
+            }
+          }
+        },
+        "version": 1,
+        "ownerId": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+        "schemaDefs": null,
+        "documentSchemas": {
+          "note": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "position": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "createdAt": null,
+        "updatedAt": null,
+        "createdAtBlockHeight": null,
+        "updatedAtBlockHeight": null,
+        "createdAtEpoch": null,
+        "updatedAtEpoch": null,
+        "groups": {},
+        "tokens": {},
+        "keywords": [],
+        "description": null
+      },
+      "expect": {
+        "$formatVersion": "2",
+        "canBeDeleted": true,
+        "readonly": true,
+        "keepsHistory": true,
+        "documentsKeepHistoryContractDefault": true,
+        "documentsMutableContractDefault": false,
+        "documentsCanBeDeletedContractDefault": false,
+        "requiresIdentityEncryptionBoundedKey": 0,
+        "requiresIdentityDecryptionBoundedKey": 2,
+        "sizedIntegerTypes": false,
+        "moderation": {
+          "banlist": true,
+          "suspensions": true,
+          "moderators": {
+            "$type": "contractOwner"
+          }
+        }
       }
     }
   ]
