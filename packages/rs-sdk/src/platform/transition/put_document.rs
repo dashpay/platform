@@ -1,6 +1,6 @@
 use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
-use super::waitable::Waitable;
+use super::waitable::{wait_for_document_and_owner_balance, Waitable};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
@@ -9,6 +9,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
+use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
@@ -46,6 +47,37 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
+
+    /// Puts a document on platform, waits for the confirmation proof and
+    /// returns the confirmed document together with the credit balance of the
+    /// document's owner after the write, which the proof carries next to the
+    /// document from protocol version 14 (a snapshot at the proof's block;
+    /// `None` for a proof made at an earlier version).
+    #[allow(clippy::too_many_arguments)]
+    async fn put_to_platform_and_wait_for_response_with_owner_balance(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: Option<[u8; 32]>,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Document, Option<Credits>), Error> {
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                document_type,
+                document_state_transition_entropy,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
+
+        wait_for_document_and_owner_balance(sdk, state_transition, settings).await
+    }
 }
 
 #[async_trait::async_trait]

@@ -23,6 +23,7 @@ pub struct VerifyStateTransitionWasExecutedWithProofResult {
     root_hash: Vec<u8>,
     execution_proved: bool,
     proof_result: JsValue,
+    owner_balance: Option<u64>,
 }
 
 #[wasm_bindgen]
@@ -30,6 +31,18 @@ impl VerifyStateTransitionWasExecutedWithProofResult {
     #[wasm_bindgen(getter)]
     pub fn root_hash(&self) -> Uint8Array {
         self.root_hash.to_uint8array()
+    }
+
+    /// The credit balance of the transition's owner after it executed, when
+    /// the proof carried it (from protocol version 14, for owned fee-paying
+    /// transitions), as a decimal string; `undefined` otherwise. A snapshot at
+    /// the proof's block.
+    #[wasm_bindgen(getter, js_name = ownerBalance)]
+    pub fn owner_balance(&self) -> JsValue {
+        match self.owner_balance {
+            Some(owner_balance) => JsValue::from_str(&owner_balance.to_string()),
+            None => JsValue::UNDEFINED,
+        }
     }
 
     /// Whether the proof established that this specific transition executed.
@@ -92,6 +105,7 @@ pub fn verify_state_transition_was_executed_with_proof(
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     let execution_proved = outcome.is_execution_proved();
+    let owner_balance = outcome.owner_balance();
 
     // Convert proof result to JS value
     let proof_result_js = convert_proof_result_to_js(outcome.result())?;
@@ -100,6 +114,7 @@ pub fn verify_state_transition_was_executed_with_proof(
         root_hash: root_hash.to_vec(),
         execution_proved,
         proof_result: proof_result_js,
+        owner_balance,
     })
 }
 

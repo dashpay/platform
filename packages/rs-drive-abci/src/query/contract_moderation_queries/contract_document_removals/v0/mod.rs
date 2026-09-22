@@ -385,6 +385,7 @@ mod tests {
                 &proof.grovedb_proof,
                 contract.id(),
                 &query,
+                false,
                 version,
             )
             .expect("expected the proof to verify");
