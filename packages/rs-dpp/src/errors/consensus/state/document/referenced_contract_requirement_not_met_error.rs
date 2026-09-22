@@ -52,13 +52,14 @@ impl ReferencedContractRequirementNotMetError {
         &self.contract_id
     }
 
-    /// The `contractRequirements` key of the requirement, `moderation` or `minimumAgeSeconds`
+    /// The `contractRequirements` key of the requirement: `moderation`, `minimumAgeSeconds` or
+    /// `minimumSecondsSinceUpdate`
     pub fn field(&self) -> &str {
         &self.field
     }
 
     /// The value the reference requires as the schema spells it, `elected` for a moderation
-    /// requirement, the number of seconds for a minimum age
+    /// requirement, the number of seconds for a duration
     pub fn required(&self) -> &str {
         &self.required
     }

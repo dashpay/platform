@@ -558,19 +558,11 @@ fn parse_contract_reference_requirements(
                 })?);
             }
             property_names::MINIMUM_AGE_SECONDS => {
-                let seconds: u32 = value.to_integer().map_err(|_| {
-                    DataContractError::InvalidContractStructure(
-                        "contract refersTo contractRequirements minimumAgeSeconds must be an integer from 1 to 4294967295"
-                            .to_string(),
-                    )
-                })?;
-                if seconds == 0 {
-                    return Err(DataContractError::InvalidContractStructure(
-                        "contract refersTo contractRequirements minimumAgeSeconds must be at least 1"
-                            .to_string(),
-                    ));
-                }
-                fields.minimum_age_seconds = Some(seconds);
+                fields.minimum_age_seconds = Some(parse_contract_reference_seconds(&field, value)?);
+            }
+            property_names::MINIMUM_SECONDS_SINCE_UPDATE => {
+                fields.minimum_seconds_since_update =
+                    Some(parse_contract_reference_seconds(&field, value)?);
             }
             other => {
                 return Err(DataContractError::InvalidContractStructure(format!(
@@ -580,6 +572,22 @@ fn parse_contract_reference_requirements(
         }
     }
     Ok(fields)
+}
+
+/// A duration requirement of a `contract` reference (`minimumAgeSeconds`,
+/// `minimumSecondsSinceUpdate`): a whole number of seconds from 1 to `u32::MAX`.
+fn parse_contract_reference_seconds(field: &str, value: &Value) -> Result<u32, DataContractError> {
+    let seconds: u32 = value.to_integer().map_err(|_| {
+        DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be an integer from 1 to 4294967295"
+        ))
+    })?;
+    if seconds == 0 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "contract refersTo contractRequirements {field} must be at least 1"
+        )));
+    }
+    Ok(seconds)
 }
 
 #[cfg(test)]
@@ -1109,6 +1117,7 @@ mod tests {
                     contract_requirements: ContractReferenceRequirements {
                         moderation: Some(ContractReferenceModeration::Elected),
                         minimum_age_seconds: None,
+                        minimum_seconds_since_update: None,
                     },
                 }
             )
@@ -1116,7 +1125,7 @@ mod tests {
     }
 
     #[test]
-    fn should_parse_contract_refers_to_requiring_a_minimum_age() {
+    fn should_parse_contract_refers_to_requiring_a_minimum_age_or_time_since_update() {
         assert_eq!(
             contract_reference_target(json!({
                 "type": "contract",
@@ -1127,6 +1136,22 @@ mod tests {
                     contract_requirements: ContractReferenceRequirements {
                         moderation: None,
                         minimum_age_seconds: Some(604_800),
+                        minimum_seconds_since_update: None,
+                    },
+                }
+            )
+        );
+        assert_eq!(
+            contract_reference_target(json!({
+                "type": "contract",
+                "contractRequirements": { "minimumSecondsSinceUpdate": 86400 }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements: ContractReferenceRequirements {
+                        moderation: None,
+                        minimum_age_seconds: None,
+                        minimum_seconds_since_update: Some(86_400),
                     },
                 }
             )
@@ -1136,7 +1161,8 @@ mod tests {
                 "type": "contract",
                 "contractRequirements": {
                     "moderation": "elected",
-                    "minimumAgeSeconds": u32::MAX
+                    "minimumAgeSeconds": u32::MAX,
+                    "minimumSecondsSinceUpdate": 1
                 }
             })),
             DocumentPropertyType::IdentifierWithReference(
@@ -1144,6 +1170,7 @@ mod tests {
                     contract_requirements: ContractReferenceRequirements {
                         moderation: Some(ContractReferenceModeration::Elected),
                         minimum_age_seconds: Some(u32::MAX),
+                        minimum_seconds_since_update: Some(1),
                     },
                 }
             )
@@ -1151,24 +1178,27 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_a_minimum_age_that_is_zero_negative_too_large_or_not_an_integer() {
-        for (seconds, fragment) in [
-            (json!(0), "must be at least 1"),
-            (json!(-1), "must be an integer"),
-            (json!(u64::from(u32::MAX) + 1), "must be an integer"),
-            (json!(1.5), "must be an integer"),
-            (json!("3600"), "must be an integer"),
-        ] {
-            let refers_to = json!({
-                "type": "contract",
-                "contractRequirements": { "minimumAgeSeconds": seconds }
-            });
-            let err = try_document_type_from_schema(contract_reference_schema(refers_to.clone()))
-                .expect_err("should be refused");
-            assert!(
-                err.to_string().contains(fragment),
-                "{refers_to}: expected {fragment:?}, got {err}"
-            );
+    fn should_reject_a_duration_requirement_that_is_zero_negative_too_large_or_not_an_integer() {
+        for field in ["minimumAgeSeconds", "minimumSecondsSinceUpdate"] {
+            for (seconds, fragment) in [
+                (json!(0), "must be at least 1"),
+                (json!(-1), "must be an integer"),
+                (json!(u64::from(u32::MAX) + 1), "must be an integer"),
+                (json!(1.5), "must be an integer"),
+                (json!("3600"), "must be an integer"),
+            ] {
+                let refers_to = json!({
+                    "type": "contract",
+                    "contractRequirements": { field: seconds }
+                });
+                let err =
+                    try_document_type_from_schema(contract_reference_schema(refers_to.clone()))
+                        .expect_err("should be refused");
+                assert!(
+                    err.to_string().contains(fragment) && err.to_string().contains(field),
+                    "{refers_to}: expected {fragment:?} naming {field}, got {err}"
+                );
+            }
         }
     }
 

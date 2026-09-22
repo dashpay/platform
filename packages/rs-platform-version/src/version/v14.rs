@@ -526,13 +526,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document id) for every resolution, where the shipped rule awarded the
 ///     latest; DPNS contests ending from this version on follow the new rule.
 ///
-/// 24. **Contract references may require elected moderation or a minimum age**:
-///     a `contract` `refersTo` declaration may carry `contractRequirements`,
-///     what the referenced contract must declare beyond existing, with
-///     `moderation: "elected"` and `minimumAgeSeconds` (the contract's recorded
-///     creation time must be at least that many seconds before the block time
-///     of the write; a contract without a recorded creation time never meets
-///     it) as the requirements (meta-schema v3, `apply_property_reference` 0,
+/// 24. **Contract references may require elected moderation, a minimum age or
+///     a minimum time since the last update**: a `contract` `refersTo`
+///     declaration may carry `contractRequirements`, what the referenced
+///     contract must declare beyond existing, with `moderation: "elected"`,
+///     `minimumAgeSeconds` (the contract's recorded creation time must be at
+///     least that many seconds before the block time of the write) and
+///     `minimumSecondsSinceUpdate` (the same of the later of its creation and
+///     last update times; a contract without a recorded creation time never
+///     meets either) as the requirements (meta-schema v3, `apply_property_reference` 0,
 ///     `ContractReferenceRequirements` on `DocumentPropertyReferenceTarget::Contract`).
 ///     The document reference validation checks them against the contract it
 ///     fetched for the existence check and the block time, so they cost no

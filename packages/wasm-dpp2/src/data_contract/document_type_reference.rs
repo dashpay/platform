@@ -38,13 +38,18 @@ export type DocumentPropertyReferenceTarget =
        * What the referenced contract must declare beyond existing, checked
        * by consensus when the referring document is written against the
        * contract fetched for the existence check and the block time:
-       * `moderation: 'elected'` requires an elected moderation team, and
+       * `moderation: 'elected'` requires an elected moderation team,
        * `minimumAgeSeconds` requires the contract's recorded creation time
-       * to be at least that many seconds before the block time of the write
-       * (code 40135 when either is unmet). Absent when the declaration
-       * carries no requirement.
+       * to be at least that many seconds before the block time of the write,
+       * and `minimumSecondsSinceUpdate` the same of the later of its creation
+       * and last update times (code 40135 when any is unmet). Absent when
+       * the declaration carries no requirement.
        */
-      contractRequirements?: { moderation?: 'elected'; minimumAgeSeconds?: number };
+      contractRequirements?: {
+        moderation?: 'elected';
+        minimumAgeSeconds?: number;
+        minimumSecondsSinceUpdate?: number;
+      };
     }
   | { type: 'token' }
   | {
@@ -198,6 +203,14 @@ fn reference_to_js(
                     set_field(
                         &fields,
                         "minimumAgeSeconds",
+                        &JsValue::from_f64(f64::from(seconds)),
+                        path,
+                    )?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_seconds_since_update {
+                    set_field(
+                        &fields,
+                        "minimumSecondsSinceUpdate",
                         &JsValue::from_f64(f64::from(seconds)),
                         path,
                     )?;

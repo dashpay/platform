@@ -5309,9 +5309,13 @@ mod creation_tests {
     /// state without a creation time, so a reference to it is unmet.
     const REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_ID: &str =
         "GbYWKJSr6P7fJqkAdSCNM5kuN2eBewAgYfrMJ22rfhrD";
-    /// The block time the aged-contract-reference tests write the referring document at
+    const REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-updated-contract-ref.json";
+    /// The block time the aged- and updated-contract-reference tests write the referring
+    /// document at
     const AGED_REFERENCE_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
-    /// The minimum age the aged-contract-reference fixture declares, in milliseconds
+    /// The minimum age, and minimum time since the last update, the aged- and
+    /// updated-contract-reference fixtures declare, in milliseconds
     const AGED_REFERENCE_MINIMUM_AGE_MS: u64 = 3_600_000;
     const REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-token-ref.json";
@@ -5732,6 +5736,15 @@ mod creation_tests {
     fn insert_contract_created_at(
         created_at: Option<u64>,
     ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &PlatformVersion) -> Identifier {
+        insert_contract_with_times(created_at, None)
+    }
+
+    /// A contract created at `created_at` and last updated at `updated_at`, the times the
+    /// create and update transitions would have recorded, written to state directly.
+    fn insert_contract_with_times(
+        created_at: Option<u64>,
+        updated_at: Option<u64>,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &PlatformVersion) -> Identifier {
         move |platform, _platform_version| {
             use dpp::data_contract::accessors::v1::DataContractV1Setters;
 
@@ -5742,6 +5755,7 @@ mod creation_tests {
                 None,
                 Some(|contract: &mut DataContract| {
                     contract.set_created_at(created_at);
+                    contract.set_updated_at(updated_at);
                 }),
                 None,
                 None,
@@ -5813,6 +5827,80 @@ mod creation_tests {
                 && e.field() == "minimumAgeSeconds"
                 && e.required() == "3600"
                 && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_was_updated_too_recently() {
+        // Created long before the block, but updated one millisecond less than the minimum
+        // before it: the update restarts the clock
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_with_times(
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - 100 * AGED_REFERENCE_MINIMUM_AGE_MS),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS + 1),
+            ),
+            |document, _, updated_contract_id| {
+                document.set("refContractId", updated_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xA6; 32])
+                && e.field() == "minimumSecondsSinceUpdate"
+                && e.required() == "3600"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_contract_was_updated_long_enough_ago()
+    {
+        // Updated exactly the minimum before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_with_times(
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - 100 * AGED_REFERENCE_MINIMUM_AGE_MS),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS),
+            ),
+            |document, _, updated_contract_id| {
+                document.set("refContractId", updated_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_never_updated_referenced_contract_is_old_enough()
+    {
+        // Never updated: the creation time is the last change
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_created_at(Some(
+                AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS,
+            )),
+            |document, _, old_contract_id| {
+                document.set("refContractId", old_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
 
