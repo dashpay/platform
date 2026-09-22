@@ -768,7 +768,7 @@ mod token_shielded_pool_tests {
         assert_matches!(
             errors.as_slice(),
             [ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(error))]
-                if error.required_balance() >= compute_fee
+                if error.required_balance() > compute_fee
         );
         assert_eq!(pool_balance(&platform, token_id), 0);
     }

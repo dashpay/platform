@@ -3063,43 +3063,6 @@ mod tests {
         );
     }
 
-    /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
-    ///
-    /// The `[ShieldedBalances]` subtree is built two ways that MUST be
-    /// byte-identical:
-    ///
-    ///  * GENESIS path — a node that state-syncs a fresh v12 chain runs the real
-    ///    `Drive::create_initial_state_structure_v3` (protocol-v12 genesis).
-    ///  * UPGRADE path — a node already on v11 runs the real
-    ///    `Platform::transition_to_version_12` at the activation block.
-    ///
-    /// Before the fix these diverged: genesis built the pool via a sorted
-    /// `GroveDbOpBatch`, which roots the parent Merk at the batch's median key
-    /// `[160]`; the upgrade built it with sequential breadth-first inserts, which
-    /// root it at `[128]` (the intended NOTES-at-root layout). Two different
-    /// subtree shapes ⇒ a state-synced v12 node and an in-place-upgraded v12 node
-    /// would compute different app hashes at the boundary block and fork.
-    ///
-    /// This test drives the REAL production functions (not a hand-rebuilt batch)
-    /// — Platform A is a genuine genesis-v12, Platform B is a genuine genesis-v11
-    /// then the real `transition_to_version_12`. It asserts that the ENTIRE
-    /// `[ShieldedBalances]` subtree (the main pool element with its carried
-    /// `root_key`, all eight children, and every node below them) is byte-
-    /// identical via `collect_subtree_diffs`.
-    ///
-    /// We compare the named subtree rather than the whole-DB root hash on
-    /// purpose: the whole DB also carries the genesis epoch's recorded protocol-
-    /// version field (`[Pools, epoch_0, "v"]` = 12 for Platform A, 11 for
-    /// Platform B), which legitimately differs between a chain *born* at v12 and
-    /// a chain born at v11 then upgraded. That field has nothing to do with how
-    /// the shielded pool is constructed and would pollute a whole-DB comparison.
-    /// The diagnostic that localized the original bug confirmed the shielded
-    /// subtree was the ONLY construction-driven divergence.
-    ///
-    /// RED before the fix (genesis pool root `[160]` ≠ upgrade pool root `[128]`,
-    /// plus a cascade of differing child hashes), GREEN after (both `[128]`,
-    /// because both paths now call the shared
-    /// `Drive::insert_shielded_pool_structure`).
     /// The token shielded pools root is built by two paths that must coincide byte for byte:
     /// `Drive::create_initial_state_structure_v4` at a v14 genesis and
     /// `transition_to_version_14` on a chain upgraded from v13.
@@ -3153,6 +3116,38 @@ mod tests {
         );
     }
 
+    /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
+    ///
+    /// The `[ShieldedBalances]` subtree is built two ways that MUST be
+    /// byte-identical:
+    ///
+    ///  * GENESIS path — a node that state-syncs a fresh v12 chain runs the real
+    ///    `Drive::create_initial_state_structure_v3` (protocol-v12 genesis).
+    ///  * UPGRADE path — a node already on v11 runs the real
+    ///    `Platform::transition_to_version_12` at the activation block.
+    ///
+    /// Genesis builds the pool through a sorted `GroveDbOpBatch`, which roots the parent
+    /// Merk at the batch's median key `[160]`; sequential breadth-first inserts root it at
+    /// `[128]`, the intended NOTES-at-root layout. Two different subtree shapes mean a
+    /// state-synced node and an in-place-upgraded node compute different app hashes at the
+    /// boundary block and fork, so both paths go through the shared
+    /// `Drive::insert_shielded_pool_structure`.
+    ///
+    /// This test drives the REAL production functions (not a hand-rebuilt batch)
+    /// — Platform A is a genuine genesis-v12, Platform B is a genuine genesis-v11
+    /// then the real `transition_to_version_12`. It asserts that the ENTIRE
+    /// `[ShieldedBalances]` subtree (the main pool element with its carried
+    /// `root_key`, all eight children, and every node below them) is byte-
+    /// identical via `collect_subtree_diffs`.
+    ///
+    /// We compare the named subtree rather than the whole-DB root hash on
+    /// purpose: the whole DB also carries the genesis epoch's recorded protocol-
+    /// version field (`[Pools, epoch_0, "v"]` = 12 for Platform A, 11 for
+    /// Platform B), which legitimately differs between a chain *born* at v12 and
+    /// a chain born at v11 then upgraded. That field has nothing to do with how
+    /// the shielded pool is constructed and would pollute a whole-DB comparison.
+    /// The diagnostic that localized the original bug confirmed the shielded
+    /// subtree was the ONLY construction-driven divergence.
     #[test]
     fn test_genesis_v12_and_upgrade_to_v12_build_identical_shielded_pool() {
         let platform_version_12 = PlatformVersion::get(12).expect("expected v12");

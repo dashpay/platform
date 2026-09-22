@@ -588,8 +588,9 @@ pub enum StateError {
     #[error(transparent)]
     ReferencedContractRequirementNotMetError(ReferencedContractRequirementNotMetError),
 
-    /// Variants are encoded by position: new ones go at the end (see the frozen
-    /// discriminant test below).
+    // NOTE: `StateError` is bincode-encoded positionally, so a new variant MUST be appended at
+    // the tail: inserting mid-enum shifts the wire discriminant of every variant after it and
+    // mis-decodes errors already encoded. The error code in `codes.rs` is independent of order.
     #[error(transparent)]
     TokenShieldedPoolNotEnabledError(TokenShieldedPoolNotEnabledError),
 
@@ -1097,7 +1098,7 @@ mod tests {
             )),
             142
         );
-        // Requirements on a referenced contract (protocol version 14): the tail of the enum.
+        // Requirements on a referenced contract (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedContractRequirementNotMetError(
                 ReferencedContractRequirementNotMetError::new(
@@ -1109,6 +1110,7 @@ mod tests {
             )),
             143
         );
+        // Token shielded pools (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
                 TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))

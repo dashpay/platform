@@ -1,3 +1,8 @@
+// A token pool stores the same five items as the credit pool, so it is sized from the same
+// constants: a divergence here would price one pool's writes wrong while the other stays right.
+use crate::drive::shielded::estimated_costs::{
+    ANCHOR_KEY_SIZE, ANCHOR_VALUE_SIZE, AVERAGE_NOTE_VALUE_SIZE, NULLIFIER_KEY_SIZE,
+};
 use crate::drive::shielded::paths::{
     token_shielded_pool_anchors_by_height_path_vec, token_shielded_pool_anchors_path_vec,
     token_shielded_pool_notes_path_vec, token_shielded_pool_nullifiers_path_vec,
@@ -12,19 +17,6 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees, SomeSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
-
-/// Average size of a note value: 32 cmx + 32 rho + 32 cv_net + 216 encrypted note = 312 bytes
-/// (the same item the credit pool stores; see `crate::drive::shielded::estimated_costs`).
-const AVERAGE_NOTE_VALUE_SIZE: u32 = 312;
-
-/// Size of a nullifier key (32 bytes)
-const NULLIFIER_KEY_SIZE: u8 = 32;
-
-/// Size of an anchor key (32 bytes)
-const ANCHOR_KEY_SIZE: u8 = 32;
-
-/// Size of an anchor value (u64 big-endian block height = 8 bytes)
-const ANCHOR_VALUE_SIZE: u32 = 8;
 
 impl Drive {
     /// Registers the layer information for every tree a token shielded pool write can touch,

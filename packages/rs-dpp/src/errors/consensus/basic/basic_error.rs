@@ -884,13 +884,20 @@ mod tests {
             )),
             192
         );
-        // Documents cited by a contract moderation reason (protocol version 14): the tail of
-        // the enum.
+        // Documents cited by a contract moderation reason (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidContractModerationReasonDocumentsError(
                 InvalidContractModerationReasonDocumentsError::new("x".to_string())
             )),
             193
+        );
+        // A token opting into a shielded pool keeps no freeze rules (protocol version 14): the
+        // tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::TokenShieldedPoolIncompatibleRulesError(
+                TokenShieldedPoolIncompatibleRulesError::new(0, "freezeRules".to_string())
+            )),
+            194
         );
     }
 }

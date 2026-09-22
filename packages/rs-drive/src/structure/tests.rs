@@ -119,13 +119,7 @@ fn should_record_a_contract_layer_with_its_documents_on_top() {
     // fixture. Documents are read most and sit at the root of the layer; the
     // contract itself and everything else hang below.
     let contract = &json["layer_shapes"]["contracts.contract"];
-    assert_eq!(
-        contract["origin"],
-        format!(
-            "fixture contracts_with_documents@{}",
-            PlatformVersion::latest().protocol_version
-        )
-    );
+    assert_eq!(contract["origin"], "fixture contracts_with_documents@14");
     assert_eq!(contract["tree"]["hex"], "01");
     assert_eq!(contract["tree"]["left"]["hex"], "00");
     assert_eq!(contract["tree"]["right"]["hex"], "02");
