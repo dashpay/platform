@@ -373,7 +373,15 @@ mod tests {
             &|_id: &Identifier| Ok(None),
             platform_version,
         )
-        .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+        .map(|(root_hash, outcome)| {
+            // From prover version 1 the proof carries the owner's balance.
+            assert_eq!(
+                outcome.owner_balance().is_some(),
+                platform_version.drive.methods.prove.prove_state_transition >= 1,
+                "the proof carries the owner's balance exactly from prover version 1"
+            );
+            (root_hash, outcome.into_result())
+        })
         .map_err(|e| e.to_string())
         .expect("expected to verify state transition");
 
@@ -613,7 +621,15 @@ mod tests {
             &|_id: &Identifier| Ok(None),
             platform_version,
         )
-        .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+        .map(|(root_hash, outcome)| {
+            // From prover version 1 the proof carries the owner's balance.
+            assert_eq!(
+                outcome.owner_balance().is_some(),
+                platform_version.drive.methods.prove.prove_state_transition >= 1,
+                "the proof carries the owner's balance exactly from prover version 1"
+            );
+            (root_hash, outcome.into_result())
+        })
         .map_err(|e| e.to_string())
         .expect("expected to verify state transition");
         let StateTransitionProofResult::VerifiedPartialIdentity(proven) = verification_result

@@ -782,6 +782,24 @@ impl DocumentPropertyType {
         }
     }
 
+    /// How a value of this scalar type is laid out in a stored document, in
+    /// the words a contract update error uses. The layout of two scalar types
+    /// is the same exactly when they give the same answer. The schema chooses
+    /// it in two places: an integer is stored at the width and signedness of
+    /// its type, which its `minimum`, `maximum` or `enum` pick, and a byte
+    /// array is stored raw when its `minItems` and `maxItems` pin one size and
+    /// length-prefixed otherwise. Every other scalar is laid out the same
+    /// whatever its schema says, so it answers with its name.
+    pub(crate) fn stored_encoding(&self) -> String {
+        match self {
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
+                (Some(min), Some(max)) if min == max => format!("a fixed {min}-byte array"),
+                _ => "a length-prefixed byte array".to_string(),
+            },
+            other => other.name(),
+        }
+    }
+
     pub fn min_size(&self) -> Option<u16> {
         match self {
             DocumentPropertyType::U128 => Some(16),

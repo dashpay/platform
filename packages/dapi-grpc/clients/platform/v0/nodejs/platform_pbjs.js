@@ -50349,6 +50349,7 @@ $root.org = (function() {
                              * @interface IWaitForStateTransitionResultRequestV0
                              * @property {Uint8Array|null} [stateTransitionHash] WaitForStateTransitionResultRequestV0 stateTransitionHash
                              * @property {boolean|null} [prove] WaitForStateTransitionResultRequestV0 prove
+                             * @property {boolean|null} [requestUserBalance] WaitForStateTransitionResultRequestV0 requestUserBalance
                              */
 
                             /**
@@ -50383,6 +50384,14 @@ $root.org = (function() {
                             WaitForStateTransitionResultRequestV0.prototype.prove = false;
 
                             /**
+                             * WaitForStateTransitionResultRequestV0 requestUserBalance.
+                             * @member {boolean} requestUserBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultRequestV0.prototype.requestUserBalance = false;
+
+                            /**
                              * Creates a new WaitForStateTransitionResultRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0
@@ -50410,6 +50419,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransitionHash);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                if (message.requestUserBalance != null && Object.hasOwnProperty.call(message, "requestUserBalance"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.requestUserBalance);
                                 return writer;
                             };
 
@@ -50449,6 +50460,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 3:
+                                        message.requestUserBalance = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -50491,6 +50505,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.requestUserBalance != null && message.hasOwnProperty("requestUserBalance"))
+                                    if (typeof message.requestUserBalance !== "boolean")
+                                        return "requestUserBalance: boolean expected";
                                 return null;
                             };
 
@@ -50513,6 +50530,8 @@ $root.org = (function() {
                                         message.stateTransitionHash = object.stateTransitionHash;
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.requestUserBalance != null)
+                                    message.requestUserBalance = Boolean(object.requestUserBalance);
                                 return message;
                             };
 
@@ -50538,11 +50557,14 @@ $root.org = (function() {
                                             object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
                                     }
                                     object.prove = false;
+                                    object.requestUserBalance = false;
                                 }
                                 if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
                                     object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.requestUserBalance != null && message.hasOwnProperty("requestUserBalance"))
+                                    object.requestUserBalance = message.requestUserBalance;
                                 return object;
                             };
 
@@ -50771,6 +50793,207 @@ $root.org = (function() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
+                        WaitForStateTransitionResultResponse.SuccessWithOwnerBalance = (function() {
+
+                            /**
+                             * Properties of a SuccessWithOwnerBalance.
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
+                             * @interface ISuccessWithOwnerBalance
+                             * @property {number|Long|null} [ownerBalance] SuccessWithOwnerBalance ownerBalance
+                             */
+
+                            /**
+                             * Constructs a new SuccessWithOwnerBalance.
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
+                             * @classdesc Represents a SuccessWithOwnerBalance.
+                             * @implements ISuccessWithOwnerBalance
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance=} [properties] Properties to set
+                             */
+                            function SuccessWithOwnerBalance(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * SuccessWithOwnerBalance ownerBalance.
+                             * @member {number|Long} ownerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @instance
+                             */
+                            SuccessWithOwnerBalance.prototype.ownerBalance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * Creates a new SuccessWithOwnerBalance instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance instance
+                             */
+                            SuccessWithOwnerBalance.create = function create(properties) {
+                                return new SuccessWithOwnerBalance(properties);
+                            };
+
+                            /**
+                             * Encodes the specified SuccessWithOwnerBalance message. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance} message SuccessWithOwnerBalance message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            SuccessWithOwnerBalance.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.ownerBalance != null && Object.hasOwnProperty.call(message, "ownerBalance"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.ownerBalance);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified SuccessWithOwnerBalance message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance} message SuccessWithOwnerBalance message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            SuccessWithOwnerBalance.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a SuccessWithOwnerBalance message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            SuccessWithOwnerBalance.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.ownerBalance = reader.uint64();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a SuccessWithOwnerBalance message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            SuccessWithOwnerBalance.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a SuccessWithOwnerBalance message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            SuccessWithOwnerBalance.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.ownerBalance != null && message.hasOwnProperty("ownerBalance"))
+                                    if (!$util.isInteger(message.ownerBalance) && !(message.ownerBalance && $util.isInteger(message.ownerBalance.low) && $util.isInteger(message.ownerBalance.high)))
+                                        return "ownerBalance: integer|Long expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a SuccessWithOwnerBalance message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} SuccessWithOwnerBalance
+                             */
+                            SuccessWithOwnerBalance.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance();
+                                if (object.ownerBalance != null)
+                                    if ($util.Long)
+                                        (message.ownerBalance = $util.Long.fromValue(object.ownerBalance)).unsigned = true;
+                                    else if (typeof object.ownerBalance === "string")
+                                        message.ownerBalance = parseInt(object.ownerBalance, 10);
+                                    else if (typeof object.ownerBalance === "number")
+                                        message.ownerBalance = object.ownerBalance;
+                                    else if (typeof object.ownerBalance === "object")
+                                        message.ownerBalance = new $util.LongBits(object.ownerBalance.low >>> 0, object.ownerBalance.high >>> 0).toNumber(true);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a SuccessWithOwnerBalance message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance} message SuccessWithOwnerBalance
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            SuccessWithOwnerBalance.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.ownerBalance = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.ownerBalance = options.longs === String ? "0" : 0;
+                                if (message.ownerBalance != null && message.hasOwnProperty("ownerBalance"))
+                                    if (typeof message.ownerBalance === "number")
+                                        object.ownerBalance = options.longs === String ? String(message.ownerBalance) : message.ownerBalance;
+                                    else
+                                        object.ownerBalance = options.longs === String ? $util.Long.prototype.toString.call(message.ownerBalance) : options.longs === Number ? new $util.LongBits(message.ownerBalance.low >>> 0, message.ownerBalance.high >>> 0).toNumber(true) : message.ownerBalance;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this SuccessWithOwnerBalance to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            SuccessWithOwnerBalance.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return SuccessWithOwnerBalance;
+                        })();
+
                         WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0 = (function() {
 
                             /**
@@ -50779,6 +51002,7 @@ $root.org = (function() {
                              * @interface IWaitForStateTransitionResultResponseV0
                              * @property {org.dash.platform.dapi.v0.IStateTransitionBroadcastError|null} [error] WaitForStateTransitionResultResponseV0 error
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] WaitForStateTransitionResultResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance|null} [successWithOwnerBalance] WaitForStateTransitionResultResponseV0 successWithOwnerBalance
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] WaitForStateTransitionResultResponseV0 metadata
                              */
 
@@ -50814,6 +51038,14 @@ $root.org = (function() {
                             WaitForStateTransitionResultResponseV0.prototype.proof = null;
 
                             /**
+                             * WaitForStateTransitionResultResponseV0 successWithOwnerBalance.
+                             * @member {org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.ISuccessWithOwnerBalance|null|undefined} successWithOwnerBalance
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultResponseV0.prototype.successWithOwnerBalance = null;
+
+                            /**
                              * WaitForStateTransitionResultResponseV0 metadata.
                              * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
@@ -50826,12 +51058,12 @@ $root.org = (function() {
 
                             /**
                              * WaitForStateTransitionResultResponseV0 result.
-                             * @member {"error"|"proof"|undefined} result
+                             * @member {"error"|"proof"|"successWithOwnerBalance"|undefined} result
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
                              * @instance
                              */
                             Object.defineProperty(WaitForStateTransitionResultResponseV0.prototype, "result", {
-                                get: $util.oneOfGetter($oneOfFields = ["error", "proof"]),
+                                get: $util.oneOfGetter($oneOfFields = ["error", "proof", "successWithOwnerBalance"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
@@ -50865,6 +51097,8 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.successWithOwnerBalance != null && Object.hasOwnProperty.call(message, "successWithOwnerBalance"))
+                                    $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.encode(message.successWithOwnerBalance, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 return writer;
                             };
 
@@ -50904,6 +51138,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.successWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.decode(reader, reader.uint32());
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
@@ -50962,6 +51199,16 @@ $root.org = (function() {
                                             return "proof." + error;
                                     }
                                 }
+                                if (message.successWithOwnerBalance != null && message.hasOwnProperty("successWithOwnerBalance")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.verify(message.successWithOwnerBalance);
+                                        if (error)
+                                            return "successWithOwnerBalance." + error;
+                                    }
+                                }
                                 if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                     var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
                                     if (error)
@@ -50991,6 +51238,11 @@ $root.org = (function() {
                                     if (typeof object.proof !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.proof: object expected");
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.successWithOwnerBalance != null) {
+                                    if (typeof object.successWithOwnerBalance !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.successWithOwnerBalance: object expected");
+                                    message.successWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.fromObject(object.successWithOwnerBalance);
                                 }
                                 if (object.metadata != null) {
                                     if (typeof object.metadata !== "object")
@@ -51027,6 +51279,11 @@ $root.org = (function() {
                                 }
                                 if (message.metadata != null && message.hasOwnProperty("metadata"))
                                     object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                if (message.successWithOwnerBalance != null && message.hasOwnProperty("successWithOwnerBalance")) {
+                                    object.successWithOwnerBalance = $root.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.SuccessWithOwnerBalance.toObject(message.successWithOwnerBalance, options);
+                                    if (options.oneofs)
+                                        object.result = "successWithOwnerBalance";
+                                }
                                 return object;
                             };
 

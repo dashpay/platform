@@ -18,7 +18,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
+    StateTransitionProofGuarantee, StateTransitionProofOutcome, StateTransitionProofResult,
 };
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
@@ -387,12 +387,13 @@ fn is_missing_transition_owner(transition: &StateTransition, error: &Error) -> b
 }
 
 /// Reject snapshot outcomes for the strict wait APIs with a typed error.
-fn require_execution_proved(
+pub fn require_execution_proved(
     outcome: StateTransitionProofOutcome,
 ) -> Result<StateTransitionProofResult, Error> {
-    match outcome {
-        StateTransitionProofOutcome::ExecutionProved(result) => Ok(result),
-        StateTransitionProofOutcome::AffectedState(result) => Err(Error::ExecutionNotProved(
+    let (guarantee, result, _owner_balance) = outcome.into_parts();
+    match guarantee {
+        StateTransitionProofGuarantee::ExecutionProved => Ok(result),
+        StateTransitionProofGuarantee::AffectedState => Err(Error::ExecutionNotProved(
             format!(
                 "received a verified {} snapshot for this transition family; use the *_affected_state wait APIs and treat the result as a height-pinned snapshot",
                 result
@@ -402,7 +403,7 @@ fn require_execution_proved(
 }
 
 /// Convert the verified inner result into the caller's expected type.
-fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
+pub fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
     result: StateTransitionProofResult,
 ) -> Result<T, Error> {
     let variant_name = result.to_string();
@@ -418,7 +419,7 @@ fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
 /// Internal wait primitive shared by the strict and affected-state public
 /// APIs.
 #[async_trait::async_trait]
-trait WaitForOutcome {
+pub trait WaitForOutcome {
     async fn wait_for_outcome_with_metadata(
         &self,
         sdk: &Sdk,
@@ -989,13 +990,13 @@ mod tests {
     fn strict_wait_rejects_affected_state_outcomes() {
         let snapshot =
             StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1u8; 32]));
-        let err = require_execution_proved(StateTransitionProofOutcome::AffectedState(snapshot))
+        let err = require_execution_proved(StateTransitionProofOutcome::affected_state(snapshot))
             .expect_err("affected-state outcomes must be rejected by the strict wait");
         assert!(matches!(err, Error::ExecutionNotProved(_)));
 
         let proved =
             StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1u8; 32]));
-        require_execution_proved(StateTransitionProofOutcome::ExecutionProved(proved))
+        require_execution_proved(StateTransitionProofOutcome::execution_proved(proved))
             .expect("execution-proved outcomes must pass the strict wait");
     }
 }

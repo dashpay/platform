@@ -163,49 +163,115 @@ pub enum StateTransitionProofResult {
     VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
 }
 
-/// A verified state-transition proof result, tagged with the guarantee the
-/// proof establishes.
+/// The guarantee a verified state-transition proof establishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub enum StateTransitionProofGuarantee {
+    /// The proof binds the execution of this specific state transition:
+    /// the verified values could only exist if the transition was applied.
+    ExecutionProved,
+    /// The proof authenticates a snapshot of the state the transition
+    /// affects — keys derived from the transition, values as of the proof's
+    /// block — but cannot bind them to the execution of this transition.
+    /// Treat as a height-pinned snapshot, not as evidence of execution.
+    AffectedState,
+}
+
+/// A verified state-transition proof: the result, the guarantee the proof
+/// establishes for it, and, when the proof carries it, the credit balance of
+/// the identity that owns the transition after it executed.
 ///
 /// Some transition families (balance top-ups, credit transfers and
 /// withdrawals, address funds movements, shields, no-history token
 /// operations) produce proofs whose values cannot be bound to the execution
 /// of one specific transition: the proof only authenticates the affected
-/// keys' state at the committed block. The tag makes that distinction part
-/// of the type so a snapshot cannot be mistaken for execution evidence.
-#[derive(Debug, PartialEq, strum::Display)]
+/// keys' state at the committed block. The guarantee makes that distinction
+/// part of the type so a snapshot cannot be mistaken for execution evidence.
+///
+/// From protocol version 14 the proof of an owned, fee-paying transition
+/// (document and token batches, contract creates and updates, identity
+/// updates and key limit updates, contract moderation) also carries the
+/// owner's credit balance, read from the same state as the result. It is a
+/// snapshot at the proof's block whatever the guarantee, and `None` for a
+/// proof made at an earlier version or for a transition without an owner.
+#[derive(Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize)
 )]
-pub enum StateTransitionProofOutcome {
-    /// The proof binds the execution of this specific state transition:
-    /// the verified values could only exist if the transition was applied.
-    ExecutionProved(StateTransitionProofResult),
-    /// The proof authenticates a snapshot of the state the transition
-    /// affects — keys derived from the transition, values as of the proof's
-    /// block — but cannot bind them to the execution of this transition.
-    /// Treat as a height-pinned snapshot, not as evidence of execution.
-    AffectedState(StateTransitionProofResult),
+pub struct StateTransitionProofOutcome {
+    guarantee: StateTransitionProofGuarantee,
+    result: StateTransitionProofResult,
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::serialization::json_safe_option_u64")
+    )]
+    owner_balance: Option<Credits>,
 }
 
 impl StateTransitionProofOutcome {
-    /// The verified result, regardless of the guarantee tag.
-    pub fn result(&self) -> &StateTransitionProofResult {
-        match self {
-            Self::ExecutionProved(result) | Self::AffectedState(result) => result,
+    /// An outcome whose proof binds the execution of the transition.
+    pub fn execution_proved(result: StateTransitionProofResult) -> Self {
+        Self {
+            guarantee: StateTransitionProofGuarantee::ExecutionProved,
+            result,
+            owner_balance: None,
         }
     }
 
-    /// Consume the outcome, discarding the guarantee tag.
-    pub fn into_result(self) -> StateTransitionProofResult {
-        match self {
-            Self::ExecutionProved(result) | Self::AffectedState(result) => result,
+    /// An outcome whose proof only authenticates the affected state.
+    pub fn affected_state(result: StateTransitionProofResult) -> Self {
+        Self {
+            guarantee: StateTransitionProofGuarantee::AffectedState,
+            result,
+            owner_balance: None,
         }
+    }
+
+    /// The same outcome carrying the owner's credit balance the proof showed.
+    pub fn with_owner_balance(mut self, owner_balance: Option<Credits>) -> Self {
+        self.owner_balance = owner_balance;
+        self
+    }
+
+    /// The guarantee the proof establishes.
+    pub fn guarantee(&self) -> StateTransitionProofGuarantee {
+        self.guarantee
     }
 
     /// Whether the proof established that this specific transition executed.
     pub fn is_execution_proved(&self) -> bool {
-        matches!(self, Self::ExecutionProved(_))
+        self.guarantee == StateTransitionProofGuarantee::ExecutionProved
+    }
+
+    /// The verified result, regardless of the guarantee.
+    pub fn result(&self) -> &StateTransitionProofResult {
+        &self.result
+    }
+
+    /// Consume the outcome, discarding the guarantee and the balance.
+    pub fn into_result(self) -> StateTransitionProofResult {
+        self.result
+    }
+
+    /// The credit balance of the transition's owner after it executed, when
+    /// the proof carried it: a snapshot at the proof's block.
+    pub fn owner_balance(&self) -> Option<Credits> {
+        self.owner_balance
+    }
+
+    /// Consume the outcome into its guarantee, result and owner balance.
+    pub fn into_parts(
+        self,
+    ) -> (
+        StateTransitionProofGuarantee,
+        StateTransitionProofResult,
+        Option<Credits>,
+    ) {
+        (self.guarantee, self.result, self.owner_balance)
     }
 }
 
@@ -342,6 +408,28 @@ mod json_convertible_tests {
         assert_eq!(json["VerifiedTokenBalance"][1], json!("9007199254740993"));
         let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    /// The outcome carries the owner's balance next to the result; past
+    /// `Number.MAX_SAFE_INTEGER` it serializes as a string, and a proof made
+    /// before protocol version 14 carries none.
+    #[test]
+    fn outcome_owner_balance_serializes_as_string_past_safe_integer() {
+        let outcome = StateTransitionProofOutcome::execution_proved(fixture())
+            .with_owner_balance(Some(9_007_199_254_740_993));
+        let json = serde_json::to_value(&outcome).expect("to json");
+        assert_eq!(json["owner_balance"], json!("9007199254740993"));
+        assert_eq!(json["guarantee"], json!("ExecutionProved"));
+        let recovered: StateTransitionProofOutcome =
+            serde_json::from_value(json).expect("from json");
+        assert_eq!(outcome, recovered);
+
+        let without_balance = StateTransitionProofOutcome::affected_state(fixture());
+        let json = serde_json::to_value(&without_balance).expect("to json");
+        assert_eq!(json["owner_balance"], serde_json::Value::Null);
+        let recovered: StateTransitionProofOutcome =
+            serde_json::from_value(json).expect("from json");
+        assert_eq!(without_balance, recovered);
     }
 
     #[test]
