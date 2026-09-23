@@ -698,7 +698,8 @@ impl<C> Platform<C> {
     /// `profile` document type (DIP-33), the withdrawals contract whose v2
     /// schema admits the terminal FAILED value of the `status` property, and
     /// register the app-connect contract that carries the wallet-to-app login
-    /// handshake.
+    /// handshake and the moderation charters contract that elected moderation
+    /// teams apply through.
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
@@ -740,6 +741,21 @@ impl<C> Platform<C> {
 
         self.drive.insert_contract(
             &app_connect_contract,
+            *block_info,
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // Moderation charters contract: the reasons, proposals, join requests and elected
+        // charters of elected moderation teams, one system contract id on every network from
+        // this version. Fresh chains register it at genesis (`create_genesis_state` v1, behind
+        // the same version branch as app-connect).
+        let moderation_charters_contract =
+            load_system_data_contract(SystemDataContract::ModerationCharters, platform_version)?;
+
+        self.drive.insert_contract(
+            &moderation_charters_contract,
             *block_info,
             true,
             Some(transaction),
@@ -1233,6 +1249,87 @@ mod tests {
             "profile must carry platformPaymentAddress after transition_to_version_14"
         );
         assert!(profile.iter().any(|p| p == "shieldedAddress"));
+    }
+
+    #[test]
+    fn should_insert_moderation_charters_on_transition_to_version_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        // A chain born at protocol version 13 has no moderation charters contract: it is
+        // neither in that genesis state nor active for the system contract cache.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let platform_version = PlatformVersion::latest();
+        let moderation_charters_id = SystemDataContract::ModerationCharters.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    moderation_charters_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_13,
+                )
+                .value
+                .expect("expected to query the moderation charters contract")
+                .is_none(),
+            "the moderation charters contract must not exist before transition_to_version_14"
+        );
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                moderation_charters_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the moderation charters contract")
+            .expect("the moderation charters contract must exist after transition_to_version_14");
+
+        assert_eq!(stored.contract.id(), moderation_charters_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert_eq!(stored.contract.document_types().len(), 7);
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(
+                    moderation_charters_id.to_buffer(),
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected to read the version item"),
+            Some(stored.contract.version()),
+            "the moderation charters contract has its version item after the transition"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(moderation_charters_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
     }
 
     #[test]

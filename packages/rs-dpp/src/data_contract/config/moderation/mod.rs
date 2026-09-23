@@ -171,7 +171,9 @@ impl Serialize for ContractModerators {
                 m.end()
             }
             ContractModerators::Elected(elected) => {
-                let entries = 7 + usize::from(elected.election_delay.is_some());
+                let entries = 7
+                    + usize::from(elected.election_delay.is_some())
+                    + usize::from(elected.max_added_moderators > 0);
                 let mut m = serializer.serialize_map(Some(entries))?;
                 m.serialize_entry("$type", "elected")?;
                 m.serialize_entry(elected_names::JOIN_WINDOW, &elected.join_window)?;
@@ -184,6 +186,13 @@ impl Serialize for ContractModerators {
                 // declaration that left it out is unchanged
                 if let Some(delay) = elected.election_delay {
                     m.serialize_entry(elected_names::ELECTION_DELAY, &delay)?;
+                }
+                // Absent when no member may be added, for the same reason
+                if elected.max_added_moderators > 0 {
+                    m.serialize_entry(
+                        elected_names::MAX_ADDED_MODERATORS,
+                        &elected.max_added_moderators,
+                    )?;
                 }
                 m.serialize_entry(
                     elected_names::MODERATED_DOCUMENT_TYPES,
@@ -209,6 +218,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
             elected_names::VOTE_WINDOW,
             elected_names::CHALLENGE_COOL_DOWN,
             elected_names::ELECTION_DELAY,
+            elected_names::MAX_ADDED_MODERATORS,
             elected_names::MODERATED_DOCUMENT_TYPES,
             elected_names::INTERIM,
             elected_names::OWNER_PROTECTED,
@@ -221,6 +231,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
             vote_window: Option<u32>,
             challenge_cool_down: Option<u32>,
             election_delay: Option<u32>,
+            max_added_moderators: Option<u16>,
             moderated_document_types: Option<BTreeMap<DocumentName, BTreeSet<ModerationAbility>>>,
             interim: Option<InterimModerators>,
             owner_protected: Option<bool>,
@@ -232,6 +243,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
                     || self.vote_window.is_some()
                     || self.challenge_cool_down.is_some()
                     || self.election_delay.is_some()
+                    || self.max_added_moderators.is_some()
                     || self.moderated_document_types.is_some()
                     || self.interim.is_some()
                     || self.owner_protected.is_some()
@@ -296,6 +308,11 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             elected_names::ELECTION_DELAY,
                             &mut elected.election_delay,
                         )?,
+                        elected_names::MAX_ADDED_MODERATORS => read_once(
+                            &mut map,
+                            elected_names::MAX_ADDED_MODERATORS,
+                            &mut elected.max_added_moderators,
+                        )?,
                         elected_names::MODERATED_DOCUMENT_TYPES => read_once(
                             &mut map,
                             elected_names::MODERATED_DOCUMENT_TYPES,
@@ -354,6 +371,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
                                 .challenge_cool_down
                                 .ok_or_else(required(elected_names::CHALLENGE_COOL_DOWN))?,
                             election_delay: elected.election_delay,
+                            max_added_moderators: elected.max_added_moderators.unwrap_or(0),
                             moderated_document_types: elected
                                 .moderated_document_types
                                 .ok_or_else(required(elected_names::MODERATED_DOCUMENT_TYPES))?,

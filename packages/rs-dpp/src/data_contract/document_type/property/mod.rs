@@ -9538,6 +9538,7 @@ mod tests {
                         vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                         challenge_cool_down: 1_209_600,
                         election_delay: None,
+                        max_added_moderators: 0,
                         moderated_document_types: BTreeMap::from([(
                             "profile".to_string(),
                             BTreeSet::from([ModerationAbility::Ban]),
@@ -9621,6 +9622,7 @@ mod tests {
                             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                             challenge_cool_down: 1_209_600,
                             election_delay,
+                            max_added_moderators: 0,
                             moderated_document_types: BTreeMap::from([(
                                 "profile".to_string(),
                                 BTreeSet::from([ModerationAbility::Ban]),

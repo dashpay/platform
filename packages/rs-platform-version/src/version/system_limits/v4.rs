@@ -63,6 +63,11 @@ use crate::version::system_limits::SystemLimits;
 ///   most 4 operands (`max_reference_operands`) and they nest at most 4 combinators deep
 ///   (`max_reference_expression_depth`), both backfilled into the earlier tables, whose parsers
 ///   never read them; every leaf counts against `max_references_per_document`.
+/// * Moderation charters (protocol version 14): a charter's description is at most 4096
+///   bytes (`max_moderation_charter_description_length`), and an elected moderation
+///   declaration lets a seated team's leader add at most 15 members
+///   (`max_contract_moderation_added_moderators`); both joined this table in place while
+///   protocol version 14 was unreleased.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -100,6 +105,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,        // 7 days
+    max_moderation_charter_description_length: 4096,
+    max_contract_moderation_added_moderators: 15,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

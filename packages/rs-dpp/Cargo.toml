@@ -269,6 +269,7 @@ all-system_contracts = [
   "keywords-contract",
   "document-history-contract",
   "app-connect-contract",
+  "moderation-charters-contract",
 ]
 
 # Individual data contract features
@@ -284,6 +285,7 @@ token-history-contract = ["data-contracts", "data-contracts/token-history"]
 keywords-contract = ["data-contracts", "data-contracts/keyword-search"]
 document-history-contract = ["data-contracts", "data-contracts/document-history"]
 app-connect-contract = ["data-contracts", "data-contracts/app-connect"]
+moderation-charters-contract = ["data-contracts", "data-contracts/moderation-charters"]
 fixtures-and-mocks = ["all-system_contracts", "platform-value/json"]
 random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]

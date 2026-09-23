@@ -272,6 +272,11 @@ impl ErrorWithCode for BasicError {
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
             Self::ContractModerationReasonTooLongError(_) => 10903,
             Self::InvalidContractModerationReasonDocumentsError(_) => 10904,
+
+            // Moderation Team Errors: 11000-11099
+            Self::ModerationCharterMalformedFieldError(_) => 11000,
+            Self::ModerationCharterRewardSplitNotOneHundredError(_) => 11001,
+            Self::ModerationCharterDescriptionTooLongError(_) => 11002,
         }
     }
 }

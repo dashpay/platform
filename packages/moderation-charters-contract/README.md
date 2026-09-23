@@ -1,0 +1,109 @@
+# Moderation Charters Contract
+
+The moderation charters system contract holds the charters of the moderation
+teams that masternodes elect for data contracts that declare an elected
+moderation team. It activates at protocol version 14, registered at genesis by
+chains born at 14 and inserted by the upgrade to 14, and has the same ID on
+every network: `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
+
+It has seven document types. All are immutable, and all but `resignationRequest` are undeletable, so
+everything a charter points at, and the charter itself, is a fixed text.
+
+The schema carries almost every rule through its keywords: typed arrays with
+a reference per element, a reference resolved through a unique index
+(`lookup`), `distinctFrom`, key requirements on key references and the
+`encryptedFor` envelope. What it cannot say, the reward split summing to 100
+and the description's byte cap, is checked by `SubmittedCharter` in
+`rs-dpp` when a team is seated.
+
+## `reason`
+
+A ground for a moderation action. Anyone may file one.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `code` | string, 3 uppercase letters, required | Unique among the owner's reasons (`byOwnerCode`); what an action shows |
+| `label` | string, 1 to 64 characters, required | The reason's name |
+| `description` | string, 1 to 1024 characters | What the reason covers and how the team applies it |
+
+## `submittedCharter`
+
+A leader's proposal to moderate one contract, on the contract's own terms:
+the target's elected moderation declaration is the team's whole mandate, so
+the proposal names no abilities. Its owner is the leader, and must hold a
+decryption key bound to this type so join requests can be encrypted to it.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `targetContractId` | identifier, required, `refersTo` a contract with elected moderation | The contract the team proposes to moderate |
+| `description` | string, 1 to 4096 characters, required | What the team would moderate and how. Informational |
+| `reasons` | array of at most 64 unique reason ids, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; a team with none can take no action |
+| `moderatorsShare` | integer 0 to 100 | The percentage of each moderated type's declared moderators fee the team takes; absent is the full amount, 0 a team that will not moderate and takes no rewards |
+| `rewardSplit` | object, required | `leader`, `equal` and `actions` percentages summing to 100 |
+
+Indexes: `byTargetContract` (target, `$createdAt`) lists the proposals for a
+contract in filing order; `byOwner` lists a leader's proposals.
+
+## `joinRequest`
+
+An identity's offer to serve on the team of a proposal, one per identity per
+proposal (`bySubmittedCharter`, unique on the proposal and the owner), with a
+message only the leader can read. The owner must hold an encryption key bound
+to this type.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` | The proposal; `recipientId` must equal its owner (`propertyAgreement`) |
+| `recipientId` | identifier, required, `refersTo` an identity public key through `recipientKeyId` | The leader and the decryption key the message is encrypted to |
+| `recipientKeyId` | integer, required | The leader's key id |
+| `senderKeyId` | integer, required | The owner's encryption key the shared secret is derived from |
+| `encryptedMessage` | bytes, 32 to 1040, required | Why the owner wants to join, encrypted for the leader (ECDH on secp256k1, AES-256-CBC) |
+
+## `electedCharter`
+
+A proposal put to the vote with its team: the only type that opens or joins
+the contest for a target. Only the proposal's leader may create one, for the
+proposal's own target (`propertyAgreement` on `$ownerId` and
+`targetContractId`). The `byTargetContract` index is a contested unique index
+keyed by the target contract with resolution `1`, the vote without a Lock
+choice by masternodes (weight 1) and evonodes (weight 4): a create on it
+opens or joins the contest, a tie goes to the earliest applicant, and a
+single applicant is seated when the join window closes. `bySubmittedCharter`
+lists the elected charters of a proposal. It is not unique: a type with a
+contested unique index may carry no other unique index, and none is needed,
+since an identity may contend once per contest and only the proposal's owner
+may enter it, so a proposal has at most one contender at a time. The seated
+leader and members act with the target's full mandate; there are no powers.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `targetContractId` | identifier, required, `refersTo` a contract whose election is open | The contract contended for; its own `electionDelay` since its creation must have passed |
+| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` | The proposal the team runs on |
+| `members` | array of at most 15 unique identity ids, required, each the owner of a `joinRequest` for this proposal (`lookup`) and none the leader (`distinctFrom`) | The team besides the leader; may be empty |
+
+## After the election
+
+Once an elected charter is seated, its team can change without a new vote:
+
+| Type | Written by | Properties | Rules |
+| --- | --- | --- | --- |
+| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter, a consensus rule that comes with seating |
+| `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is not the leader |
+| `resignationRequest` | a member of the team | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The writer is in the charter's `members` or was added (`ownerRefersTo` with `anyOf`); a message only the leader can read; deletable, which withdraws it; the leader acts on it with a removal |
+
+Each is written once per member and charter (unique indexes), and a removal is
+final. The team that acts is the leader plus the elected members and the
+additions, less the removals (`ElectedCharter::active_members` in `rs-dpp`).
+
+See [the protocol guide](../../docs/protocol/moderation-charters.md) for
+details.
+
+## Install
+
+```sh
+npm install @dashevo/moderation-charters-contract
+```
+
+## License
+
+[MIT](LICENSE) © Dash Core Group, Inc.
