@@ -144,7 +144,7 @@ impl Drive {
 /// for them. The whole batch, which is exact: a moderator's deletion removes the document and
 /// nothing else, since its removal record is written once (a document id is produced at most
 /// once) and the nonce it bumps keeps its size.
-fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
+pub(super) fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {
         let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation else {
             continue;

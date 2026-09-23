@@ -1,9 +1,9 @@
 use crate::version::drive_versions::drive_address_funds_method_versions::v2::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_contract_group_method_versions::v1::DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_contract_method_versions::v4::DRIVE_CONTRACT_METHOD_VERSIONS_V4;
+use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DOCUMENT_METHOD_VERSIONS_V4;
-use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_group_method_versions::v2::DRIVE_GROUP_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMethodVersions;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v3::DRIVE_IDENTITY_METHOD_VERSIONS_V3;
@@ -39,6 +39,14 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   turns on `update.credit_storage_refunds_to_owners`, the primitive
 ///   block lifecycle paths use to credit each recorded owner of a refund
 ///   and report the amount whose owner has no balance element.
+/// * **Price before commit** — `batch_operations.apply_drive_operations`
+///   1 -> 2, `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
+///   0 -> 1) and `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (the four moderation
+///   writers that can free flagged bytes, 0 -> 1). Every fee-returning
+///   entry point that owns its transaction when the caller passes none
+///   now prices the batch before committing, so the missing-history error
+///   above never leaves a write persisted without its fee result. With a
+///   caller transaction nothing changes.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -71,7 +79,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V4, // changed in v9: add_contract_to_storage v1 writes the contract version item beside the contract; update_contract v2 creates the distribution storage and mints the base supply of tokens added by an update
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: the moderation removal wrappers price before committing an owned transaction
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
         estimated_costs: DriveEstimatedCostsMethodVersions {
             add_estimation_costs_for_levels_up_to_contract: 0,
@@ -104,7 +112,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4, // changed: document_from_action generation 1 stamps built documents with the contract version (create assigns, replace re-assigns; paired with document serialization format 3)
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 0,
-            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody
+            apply_drive_operations: 2, // changed in v10: the batch is priced before an owned transaction commits
         },
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,
@@ -126,7 +134,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             estimated_cost_for_prefunded_specialized_balance_update: 1, // changed: the prefunded balances layer holds three trees, the voting balances and the two contract fee pot trees
             empty_prefunded_specialized_balance: 0,
         },
-        group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+        group: DRIVE_GROUP_METHOD_VERSIONS_V2, // changed in v10: add_group_action prices before committing an owned transaction
         contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
         address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V2,
         shielded: DriveShieldedMethodVersions {
