@@ -7,6 +7,8 @@ use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -110,8 +112,8 @@ impl EncryptedPropertyEnvelopeWasm {
         self.0.recipient_key_id
     }
 
-    /// The identity whose key `senderKeyId` names: the one the schema's key reference says,
-    /// the document owner when it declares none.
+    /// The identity whose key `senderKeyId` names: the document owner, the writer that
+    /// encrypted the bytes.
     #[wasm_bindgen(getter = senderId)]
     pub fn sender_id(&self) -> IdentifierWasm {
         self.0.sender_id.into()
@@ -155,6 +157,14 @@ fn secret_key_from_options(options: &JsValue, field: &str) -> Result<SecretKey, 
     Ok(PrivateKeyWasm::try_from_options(options, field)?
         .inner()
         .inner)
+}
+
+/// `document` with its properties coerced to the types its document type declares: a document
+/// built in JavaScript without its contract holds a byte array or an identifier as a list of
+/// numbers.
+fn sanitized(document_type: DocumentTypeRef<'_>, mut document: Document) -> Document {
+    document_type.sanitize_document_properties(document.properties_mut());
+    document
 }
 
 fn document_type_name_of(
@@ -213,7 +223,7 @@ impl WasmSdk {
         }
         let keys = EncryptionKeys {
             sender_key_id: sender_key.id(),
-            sender_private_key,
+            sender_private_key: &sender_private_key,
             recipient_key_id: recipient_key.id(),
             recipient_public_key: secp256k1_public_key(&recipient_key, "recipientKey")?,
         };
@@ -222,8 +232,7 @@ impl WasmSdk {
             .document_type_for_name(&document_type_name)
             .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
         let mut properties = BTreeMap::new();
-        encrypt_property(document_type, &property, &plaintext, &keys, &mut properties)
-            .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
+        encrypt_property(document_type, &property, &plaintext, &keys, &mut properties)?;
         Ok(platform_value_to_object(&Value::from(properties))?)
     }
 
@@ -252,15 +261,14 @@ impl WasmSdk {
         let document_type = contract
             .document_type_for_name(&document_type_name)
             .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
-        let document: Document = document.into();
-        decrypt_property(
+        let document = sanitized(document_type, document.into());
+        Ok(decrypt_property(
             document_type,
             &property,
             document.properties(),
             &recipient_private_key,
             &secp256k1_public_key(&sender_key, "senderKey")?,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))
+        )?)
     }
 
     /// Reads whose keys an encrypted property of a document is under: the recipient and the
@@ -281,9 +289,10 @@ impl WasmSdk {
         let document_type = contract
             .document_type_for_name(&document_type_name)
             .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
-        let document: Document = document.into();
-        EncryptedPropertyEnvelope::read(document_type, &property, &document)
-            .map(EncryptedPropertyEnvelopeWasm)
-            .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))
+        let document = sanitized(document_type, document.into());
+        Ok(
+            EncryptedPropertyEnvelope::read(document_type, &property, &document)
+                .map(EncryptedPropertyEnvelopeWasm)?,
+        )
     }
 }

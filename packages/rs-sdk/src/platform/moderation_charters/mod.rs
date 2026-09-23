@@ -37,27 +37,34 @@ pub use requests::{
 };
 pub use team::ModerationTeam;
 
-use crate::platform::{DataContract, Fetch};
+use crate::platform::DataContract;
 use crate::{Error, Sdk};
-use dash_context_provider::ContextProvider;
 use dpp::moderation_charter::MODERATION_CHARTERS_CONTRACT_ID;
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use std::sync::Arc;
 
 impl Sdk {
     /// The moderation charters system contract: from the context provider when it holds it,
     /// fetched otherwise.
+    ///
+    /// The contract exists from protocol version 14. An unpinned SDK starts mainnet and testnet
+    /// at 13 and only learns a newer version from a verified response, and the contract's schema
+    /// does not parse at 13, so below 14 the SDK first learns the network's version; a network
+    /// still below 14 has no such contract, which is an error.
     pub async fn fetch_moderation_charters_contract(&self) -> Result<Arc<DataContract>, Error> {
-        if let Some(provider) = self.context_provider() {
-            if let Some(contract) =
-                provider.get_data_contract(&MODERATION_CHARTERS_CONTRACT_ID, self.version())?
-            {
-                return Ok(contract);
+        if self.protocol_version_number() < MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION {
+            let version = self.refresh_protocol_version().await?;
+            if version < MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION {
+                return Err(Error::Generic(format!(
+                    "the moderation charters contract exists from protocol version \
+                     {MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION}; the SDK runs \
+                     protocol version {version}"
+                )));
             }
         }
-        DataContract::fetch(self, MODERATION_CHARTERS_CONTRACT_ID)
+        self.fetch_system_data_contract(MODERATION_CHARTERS_CONTRACT_ID)
             .await?
-            .map(Arc::new)
             .ok_or_else(|| {
                 Error::MissingDependency(
                     "moderation charters contract".to_string(),

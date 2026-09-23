@@ -191,7 +191,7 @@ impl Sdk {
     ) -> Result<ModerationCharterRequest, Error> {
         let contract = self.fetch_moderation_charters_contract().await?;
         let proposal = self
-            .fetch_submitted_charter(input.submitted_charter_id)
+            .fetch_submitted_charter_of(contract.clone(), input.submitted_charter_id)
             .await?
             .ok_or_else(|| {
                 Error::Generic(format!(
@@ -213,7 +213,7 @@ impl Sdk {
     ) -> Result<ModerationCharterRequest, Error> {
         let contract = self.fetch_moderation_charters_contract().await?;
         let charter = self
-            .fetch_elected_charter(input.elected_charter_id)
+            .fetch_elected_charter_of(contract.clone(), input.elected_charter_id)
             .await?
             .ok_or_else(|| {
                 Error::Generic(format!(

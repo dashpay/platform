@@ -1,5 +1,6 @@
 use super::*;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::DocumentV0;
@@ -102,22 +103,155 @@ fn contact_request_declaring_encrypted_for() -> DocumentType {
     .expect("the declaring contactRequest parses")
 }
 
+/// Encrypts with a pinned IV, which only tests may do.
+fn encrypt_property_with_iv(
+    document_type: DocumentTypeRef<'_>,
+    property_path: &str,
+    plaintext: &[u8],
+    keys: &EncryptionKeys<'_>,
+    iv: &[u8; AES_CBC_IV_LENGTH],
+    properties: &mut BTreeMap<String, Value>,
+) -> Result<(), EncryptedForError> {
+    let declaration = encrypted_for_declaration(document_type, property_path)?;
+    encrypt_declared(&declaration, property_path, plaintext, keys, iv, properties)
+}
+
+/// The contract id of [`audited_message`].
+const AUDITED_CONTRACT_ID: [u8; 32] = [4; 32];
+
+/// A `message` type whose recipient key reference requires a purpose and no binding, with a
+/// second, independent `identityPublicKey` reference on the sender key id: `auditIdentityId`
+/// makes consensus check that the auditor has a key of that id, nothing more.
+fn audited_message() -> DocumentType {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version).expect("config");
+    let identifier = |position: u32, refers_to: Value| {
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "position": position,
+            "refersTo": refers_to
+        })
+    };
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "recipientId": identifier(0, platform_value!({
+                "type": "identityPublicKey",
+                "keyIdProperty": "recipientKeyId",
+                "keyRequirements": { "purpose": "decryption" }
+            })),
+            "recipientKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1 },
+            "senderKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 2 },
+            "auditIdentityId": identifier(3, platform_value!({
+                "type": "identityPublicKey",
+                "keyIdProperty": "senderKeyId"
+            })),
+            "body": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 4096,
+                "position": 4,
+                "encryptedFor": {
+                    "recipient": "recipientId",
+                    "recipientKey": "recipientKeyId",
+                    "senderKey": "senderKeyId",
+                    "scheme": "ecdh-secp256k1-aes256-cbc"
+                }
+            }
+        },
+        "additionalProperties": false
+    });
+    DocumentType::try_from_schema(
+        Identifier::from(AUDITED_CONTRACT_ID),
+        1,
+        config.version(),
+        "message",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        false,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("the message type parses")
+}
+
+/// A `note` whose body its writer encrypts to itself, with one property for both key ids.
+fn note_keeping_both_key_ids_in_one_property() -> DocumentType {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version).expect("config");
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "keyId": { "type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 0 },
+            "body": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 4096,
+                "position": 1,
+                "encryptedFor": {
+                    "recipient": "$ownerId",
+                    "recipientKey": "keyId",
+                    "senderKey": "keyId",
+                    "scheme": "ecdh-secp256k1-aes256-cbc"
+                }
+            }
+        },
+        "additionalProperties": false
+    });
+    DocumentType::try_from_schema(
+        Identifier::from([3; 32]),
+        1,
+        config.version(),
+        "note",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        false,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("the note type parses")
+}
+
 fn key(
     id: KeyID,
     purpose: Purpose,
     bound_to: Option<&str>,
     public_key: &PublicKey,
 ) -> IdentityPublicKey {
+    key_with_bounds(
+        id,
+        purpose,
+        bound_to.map(
+            |document_type_name| ContractBounds::SingleContractDocumentType {
+                id: MODERATION_CHARTERS_CONTRACT_ID,
+                document_type_name: document_type_name.to_string(),
+            },
+        ),
+        public_key,
+    )
+}
+
+fn key_with_bounds(
+    id: KeyID,
+    purpose: Purpose,
+    contract_bounds: Option<ContractBounds>,
+    public_key: &PublicKey,
+) -> IdentityPublicKey {
     IdentityPublicKeyV0 {
         id,
         purpose,
         security_level: SecurityLevel::MEDIUM,
-        contract_bounds: bound_to.map(|document_type_name| {
-            ContractBounds::SingleContractDocumentType {
-                id: MODERATION_CHARTERS_CONTRACT_ID,
-                document_type_name: document_type_name.to_string(),
-            }
-        }),
+        contract_bounds,
         key_type: KeyType::ECDSA_SECP256K1,
         read_only: false,
         data: BinaryData::new(public_key.serialize().to_vec()),
@@ -136,8 +270,7 @@ fn identity(id: u8, keys: Vec<IdentityPublicKey>) -> Identity {
     .into()
 }
 
-fn keys_between(sender_scalar: u8, recipient_scalar: u8) -> EncryptionKeys {
-    let (sender_private_key, _) = key_pair(sender_scalar);
+fn keys_between(sender_private_key: &SecretKey, recipient_scalar: u8) -> EncryptionKeys<'_> {
     let (_, recipient_public_key) = key_pair(recipient_scalar);
     EncryptionKeys {
         sender_key_id: 3,
@@ -153,7 +286,8 @@ fn should_decrypt_what_it_encrypts_and_fill_the_key_id_properties() {
     let join_request = contract
         .document_type_for_name(JOIN_REQUEST_DOCUMENT_TYPE_NAME)
         .expect("joinRequest exists");
-    let keys = keys_between(0x21, 0x42);
+    let (writer_private_key, _) = key_pair(0x21);
+    let keys = keys_between(&writer_private_key, 0x42);
     let plaintext = b"I moderated a forum for five years and would like to help.";
 
     let mut properties = BTreeMap::new();
@@ -237,7 +371,7 @@ fn should_decrypt_the_dashpay_contact_request_vector_with_the_generic_helper() {
         &xpub,
         &EncryptionKeys {
             sender_key_id: 2,
-            sender_private_key,
+            sender_private_key: &sender_private_key,
             recipient_key_id: 1,
             recipient_public_key,
         },
@@ -273,7 +407,7 @@ fn should_write_an_iv_plus_whole_blocks_that_pass_the_consensus_shape_check() {
             join_request,
             ENCRYPTED_MESSAGE,
             &vec![0x61; plaintext_length],
-            &keys_between(0x21, 0x42),
+            &keys_between(&key_pair(0x21).0, 0x42),
             &mut properties,
         )
         .expect("encrypts");
@@ -306,7 +440,7 @@ fn should_fail_to_decrypt_with_a_wrong_key() {
         join_request,
         ENCRYPTED_MESSAGE,
         b"only the leader reads this",
-        &keys_between(0x21, 0x42),
+        &keys_between(&key_pair(0x21).0, 0x42),
         &[0x01; 16],
         &mut properties,
     )
@@ -377,7 +511,7 @@ fn should_refuse_a_property_that_declares_no_encrypted_for() {
             join_request,
             "submittedCharterId",
             b"x",
-            &keys_between(0x21, 0x42),
+            &keys_between(&key_pair(0x21).0, 0x42),
             &mut BTreeMap::new(),
         ),
         Err(EncryptedForError::NotDeclared {
@@ -572,54 +706,19 @@ fn should_write_the_recipient_and_read_the_envelope_back() {
 }
 
 #[test]
-fn should_decrypt_a_ciphertext_held_as_a_list_of_integers() {
-    // A document built without its contract, from JavaScript say, holds a byte array as a
-    // list of numbers
+fn should_refuse_a_ciphertext_that_is_not_bytes() {
+    // A document built without its contract holds a byte array as a list of numbers; the wasm
+    // bindings sanitize it against the document type before calling here
     let contract = charters_contract();
     let join_request = contract
         .document_type_for_name(JOIN_REQUEST_DOCUMENT_TYPE_NAME)
         .expect("joinRequest exists");
-    let mut properties = BTreeMap::new();
-    encrypt_property(
-        join_request,
-        ENCRYPTED_MESSAGE,
-        b"hello",
-        &keys_between(0x21, 0x42),
-        &mut properties,
-    )
-    .expect("encrypts");
-    let bytes = properties[ENCRYPTED_MESSAGE]
-        .to_binary_bytes()
-        .expect("bytes");
-    properties.insert(
+    let properties = BTreeMap::from([(
         ENCRYPTED_MESSAGE.to_string(),
-        Value::Array(
-            bytes
-                .into_iter()
-                .map(|byte| Value::U64(byte.into()))
-                .collect(),
-        ),
-    );
-
+        Value::Array(vec![Value::U64(1); 32]),
+    )]);
     let (recipient_private_key, _) = key_pair(0x42);
     let (_, sender_public_key) = key_pair(0x21);
-    assert_eq!(
-        decrypt_property(
-            join_request,
-            ENCRYPTED_MESSAGE,
-            &properties,
-            &recipient_private_key,
-            &sender_public_key,
-        )
-        .expect("decrypts"),
-        b"hello"
-    );
-
-    // An element that is not a byte is refused, not truncated
-    properties.insert(
-        ENCRYPTED_MESSAGE.to_string(),
-        Value::Array(vec![Value::U64(256); 32]),
-    );
     assert!(matches!(
         decrypt_property(
             join_request,
@@ -630,4 +729,239 @@ fn should_decrypt_a_ciphertext_held_as_a_list_of_integers() {
         ),
         Err(EncryptedForError::InvalidProperty { .. })
     ));
+}
+
+#[test]
+fn should_encrypt_under_one_key_when_one_property_keeps_both_key_ids() {
+    let note = note_keeping_both_key_ids_in_one_property();
+    let (writer_private_key, writer_public_key) = key_pair(0x21);
+    let (_, decryption_public_key) = key_pair(0x22);
+    let writer = identity(
+        1,
+        vec![
+            key(1, Purpose::ENCRYPTION, None, &writer_public_key),
+            key(2, Purpose::DECRYPTION, None, &decryption_public_key),
+        ],
+    );
+
+    // The writer's decryption key would be picked for a separate recipient key property; with
+    // one property for both, the one key is the writer's own
+    let mut properties = BTreeMap::new();
+    let keys = encrypt_property_for(
+        note.as_ref(),
+        "body",
+        b"note to self",
+        &writer,
+        &writer_private_key,
+        &writer,
+        &mut properties,
+    )
+    .expect("encrypts");
+    assert_eq!((keys.sender_key_id, keys.recipient_key_id), (1, 1));
+    assert_eq!(properties.get("keyId"), Some(&Value::U32(1)));
+    assert_eq!(
+        decrypt_property(
+            note.as_ref(),
+            "body",
+            &properties,
+            &writer_private_key,
+            &writer_public_key,
+        )
+        .expect("the key the document names decrypts"),
+        b"note to self"
+    );
+
+    // Two different key ids for the one property are refused rather than one overwritten
+    let mismatched = EncryptionKeys {
+        sender_key_id: 1,
+        sender_private_key: &writer_private_key,
+        recipient_key_id: 2,
+        recipient_public_key: decryption_public_key,
+    };
+    assert!(matches!(
+        encrypt_property(
+            note.as_ref(),
+            "body",
+            b"x",
+            &mismatched,
+            &mut BTreeMap::new()
+        ),
+        Err(EncryptedForError::SharedKeyIdProperty { .. })
+    ));
+}
+
+#[test]
+fn should_skip_keys_bound_to_another_scope_when_no_bound_to_is_required() {
+    // No keyRequirements at all: the dashpay-shaped contactRequest declaration
+    let contact_request = contact_request_declaring_encrypted_for();
+    // Purpose-only keyRequirements: the audited message
+    let message = audited_message();
+
+    let (writer_private_key, writer_public_key) = key_pair(0x21);
+    let writer = identity(
+        1,
+        vec![key(4, Purpose::ENCRYPTION, None, &writer_public_key)],
+    );
+    let public = |scalar| key_pair(scalar).1;
+
+    for (document_type, property) in [
+        (contact_request.as_ref(), "encryptedPublicKey"),
+        (message.as_ref(), "body"),
+    ] {
+        let contract_id = document_type.data_contract_id();
+        let elsewhere = ContractBounds::SingleContract {
+            id: MODERATION_CHARTERS_CONTRACT_ID,
+        };
+        let other_type_here = ContractBounds::SingleContractDocumentType {
+            id: contract_id,
+            document_type_name: "somethingElse".to_string(),
+        };
+        let recipient = identity(
+            2,
+            vec![
+                key_with_bounds(
+                    9,
+                    Purpose::DECRYPTION,
+                    Some(elsewhere.clone()),
+                    &public(0x49),
+                ),
+                key_with_bounds(8, Purpose::DECRYPTION, Some(other_type_here), &public(0x48)),
+                key_with_bounds(
+                    7,
+                    Purpose::DECRYPTION,
+                    Some(ContractBounds::ContractGroup { id: contract_id }),
+                    &public(0x47),
+                ),
+                key_with_bounds(2, Purpose::DECRYPTION, None, &public(0x42)),
+            ],
+        );
+        let keys = select_encryption_keys(
+            document_type,
+            property,
+            &writer,
+            &writer_private_key,
+            &recipient,
+        )
+        .expect("an unbound key is in scope");
+        assert_eq!(
+            keys.recipient_key_id,
+            2,
+            "{} passes over keys bound elsewhere",
+            document_type.name()
+        );
+
+        // A key bound to this contract, or to this very document type, is in scope
+        let mut in_scope = recipient.clone();
+        for (id, bounds) in [
+            (5, ContractBounds::SingleContract { id: contract_id }),
+            (
+                6,
+                ContractBounds::SingleContractDocumentType {
+                    id: contract_id,
+                    document_type_name: document_type.name().clone(),
+                },
+            ),
+        ] {
+            let Identity::V0(IdentityV0 { public_keys, .. }) = &mut in_scope;
+            public_keys.insert(
+                id,
+                key_with_bounds(
+                    id,
+                    Purpose::DECRYPTION,
+                    Some(bounds),
+                    &public(0x50 + id as u8),
+                ),
+            );
+        }
+        let keys = select_encryption_keys(
+            document_type,
+            property,
+            &writer,
+            &writer_private_key,
+            &in_scope,
+        )
+        .expect("keys are found");
+        assert_eq!(keys.recipient_key_id, 6);
+
+        // A writer key bound to another contract is refused as the sender key
+        let (bound_private_key, bound_public_key) = key_pair(0x23);
+        let bound_writer = identity(
+            1,
+            vec![key_with_bounds(
+                4,
+                Purpose::ENCRYPTION,
+                Some(elsewhere),
+                &bound_public_key,
+            )],
+        );
+        assert!(matches!(
+            select_encryption_keys(
+                document_type,
+                property,
+                &bound_writer,
+                &bound_private_key,
+                &recipient,
+            ),
+            Err(EncryptedForError::NoSuitableKey {
+                role: EncryptionKeyRole::Sender,
+                ..
+            })
+        ));
+    }
+}
+
+#[test]
+fn should_name_the_owner_as_the_sender_whatever_else_refers_to_the_sender_key() {
+    let message = audited_message();
+    let (writer_private_key, writer_public_key) = key_pair(0x21);
+    let writer = identity(
+        1,
+        vec![key(4, Purpose::ENCRYPTION, None, &writer_public_key)],
+    );
+    let (leader_private_key, leader_public_key) = key_pair(0x42);
+    let leader = identity(
+        2,
+        vec![key(2, Purpose::DECRYPTION, None, &leader_public_key)],
+    );
+    let auditor = Identifier::from([0xAD; 32]);
+
+    let mut properties = BTreeMap::from([(
+        "auditIdentityId".to_string(),
+        Value::Identifier(auditor.to_buffer()),
+    )]);
+    encrypt_property_for(
+        message.as_ref(),
+        "body",
+        b"for the leader",
+        &writer,
+        &writer_private_key,
+        &leader,
+        &mut properties,
+    )
+    .expect("encrypts");
+    // Recorded with a creator other than its owner, as a transferred document would be
+    let document: Document = DocumentV0 {
+        id: Identifier::from([5; 32]),
+        owner_id: writer.id(),
+        creator_id: Some(Identifier::from([0xC0; 32])),
+        properties,
+        ..Default::default()
+    }
+    .into();
+
+    let envelope =
+        EncryptedPropertyEnvelope::read(message.as_ref(), "body", &document).expect("reads");
+    assert_eq!(envelope.sender_id, writer.id());
+    assert_eq!(envelope.recipient_id, leader.id());
+    assert_eq!(
+        decrypt_property(
+            message.as_ref(),
+            "body",
+            document.properties(),
+            &leader_private_key,
+            &writer_public_key,
+        )
+        .expect("the owner's key is the sender key"),
+        b"for the leader"
+    );
 }

@@ -175,6 +175,7 @@ describe('encryptedFor helpers', () => {
       }));
     } catch (e) {
       expect((e as Error).message).to.match(/decryption failed/);
+      expect((e as sdk.WasmSdkError).kind).to.equal(sdk.WasmSdkErrorKind.DecryptionFailed);
     }
     expect(recovered).to.not.equal(message);
   });

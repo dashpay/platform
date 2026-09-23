@@ -16,6 +16,7 @@ use dpp::platform_value::{Identifier, Value};
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::types::Documents;
 use std::collections::BTreeSet;
+use std::future::Future;
 use std::sync::Arc;
 
 /// The most documents one query returns, the platform's cap.
@@ -279,6 +280,16 @@ impl Sdk {
         submitted_charter_id: Identifier,
     ) -> Result<Option<Document>, Error> {
         let contract = self.fetch_moderation_charters_contract().await?;
+        self.fetch_submitted_charter_of(contract, submitted_charter_id)
+            .await
+    }
+
+    /// [`Sdk::fetch_submitted_charter`] with the charters contract already resolved.
+    pub(super) async fn fetch_submitted_charter_of(
+        &self,
+        contract: Arc<DataContract>,
+        submitted_charter_id: Identifier,
+    ) -> Result<Option<Document>, Error> {
         let query = DocumentQuery::new(contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME)?
             .with_document_id(&submitted_charter_id);
         Document::fetch(self, query).await
@@ -291,6 +302,16 @@ impl Sdk {
         elected_charter_id: Identifier,
     ) -> Result<Option<SeatedCharter>, Error> {
         let contract = self.fetch_moderation_charters_contract().await?;
+        self.fetch_elected_charter_of(contract, elected_charter_id)
+            .await
+    }
+
+    /// [`Sdk::fetch_elected_charter`] with the charters contract already resolved.
+    pub(super) async fn fetch_elected_charter_of(
+        &self,
+        contract: Arc<DataContract>,
+        elected_charter_id: Identifier,
+    ) -> Result<Option<SeatedCharter>, Error> {
         let query = DocumentQuery::new(contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME)?
             .with_document_id(&elected_charter_id);
         Document::fetch(self, query)
@@ -394,23 +415,40 @@ impl Sdk {
         &self,
         query_for_page: impl Fn(CharterDocumentsPage) -> Result<DocumentQuery, Error>,
     ) -> Result<Vec<Document>, Error> {
-        let mut documents = Vec::new();
-        let mut page = CharterDocumentsPage::default();
-        for _ in 0..MAX_PAGES_PER_READ {
-            let fetched = Document::fetch_many(self, query_for_page(page)?).await?;
-            let next = page.after(&fetched);
-            documents.extend(fetched.into_values().flatten());
-            match next {
-                Some(next) => page = next,
-                None => return Ok(documents),
-            }
-        }
-        Err(Error::Generic(format!(
-            "more than {} moderation charter documents match; refusing to answer from part of \
-             them",
-            MAX_PAGES_PER_READ * MAX_PAGE_SIZE
-        )))
+        collect_every_page(|page| {
+            let query = query_for_page(page);
+            async move { Document::fetch_many(self, query?).await }
+        })
+        .await
     }
+}
+
+/// Every document `fetch_page` returns, page after page, up to [`MAX_PAGES_PER_READ`] full
+/// pages. With the budget spent, one more page is read: empty, the set held exactly the budget
+/// and is complete; not empty, the set is larger and the read is refused.
+pub(super) async fn collect_every_page<F, Fut>(mut fetch_page: F) -> Result<Vec<Document>, Error>
+where
+    F: FnMut(CharterDocumentsPage) -> Fut,
+    Fut: Future<Output = Result<Documents, Error>>,
+{
+    let mut documents = Vec::new();
+    let mut page = CharterDocumentsPage::default();
+    for _ in 0..MAX_PAGES_PER_READ {
+        let fetched = fetch_page(page).await?;
+        let next = page.after(&fetched);
+        documents.extend(fetched.into_values().flatten());
+        match next {
+            Some(next) => page = next,
+            None => return Ok(documents),
+        }
+    }
+    if fetch_page(page).await?.is_empty() {
+        return Ok(documents);
+    }
+    Err(Error::Generic(format!(
+        "more than {} moderation charter documents match; refusing to answer from part of them",
+        MAX_PAGES_PER_READ * MAX_PAGE_SIZE
+    )))
 }
 
 #[cfg(test)]
@@ -418,9 +456,12 @@ mod tests {
     use super::*;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::document::DocumentV0;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::version::PlatformVersion;
     use drive::query::DriveDocumentQuery;
+    use std::collections::BTreeMap;
+    use std::future::{ready, Ready};
 
     fn charters_contract() -> Arc<DataContract> {
         Arc::new(
@@ -534,5 +575,206 @@ mod tests {
             start_after: None,
         };
         assert_eq!(default_size.after(&full), None);
+    }
+
+    fn document(id: u32, owner: u8) -> Document {
+        let mut bytes = [0u8; 32];
+        bytes[..4].copy_from_slice(&id.to_be_bytes());
+        DocumentV0 {
+            id: Identifier::from(bytes),
+            owner_id: Identifier::from([owner; 32]),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// A store of `total` documents served a page at a time, as the platform pages them.
+    fn serve_pages(
+        total: u32,
+    ) -> impl FnMut(CharterDocumentsPage) -> Ready<Result<Documents, Error>> {
+        move |page| {
+            let first = match page.start_after {
+                None => 0,
+                Some(last) => {
+                    let bytes = last.to_buffer();
+                    u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) + 1
+                }
+            };
+            let end = total.min(first + page.page_size());
+            ready(Ok((first..end)
+                .map(|id| {
+                    let document = document(id, 1);
+                    (document.id(), Some(document))
+                })
+                .collect()))
+        }
+    }
+
+    #[tokio::test]
+    async fn should_read_a_set_of_exactly_the_page_budget_in_full() {
+        let budget = MAX_PAGES_PER_READ * MAX_PAGE_SIZE;
+        let documents = collect_every_page(serve_pages(budget))
+            .await
+            .expect("a set of exactly the budget is complete");
+        assert_eq!(documents.len(), budget as usize);
+
+        let short = collect_every_page(serve_pages(250)).await.expect("reads");
+        assert_eq!(short.len(), 250);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_set_larger_than_the_page_budget() {
+        let budget = MAX_PAGES_PER_READ * MAX_PAGE_SIZE;
+        assert!(collect_every_page(serve_pages(budget + 1)).await.is_err());
+    }
+
+    #[test]
+    fn should_keep_only_the_resignation_requests_whose_writer_was_not_removed() {
+        let requests = vec![document(1, 0xA1), document(2, 0xA2), document(3, 0xA3)];
+        let removed = BTreeSet::from([Identifier::from([0xA2; 32]), Identifier::from([0xFF; 32])]);
+
+        let pending = pending_resignation_requests(requests, &removed);
+
+        assert_eq!(
+            pending
+                .iter()
+                .map(|request| request.owner_id())
+                .collect::<Vec<_>>(),
+            vec![Identifier::from([0xA1; 32]), Identifier::from([0xA3; 32])]
+        );
+        assert!(pending_resignation_requests(vec![], &removed).is_empty());
+    }
+
+    #[test]
+    fn should_read_the_member_of_each_team_change() {
+        let change = |member: u8| -> Document {
+            DocumentV0 {
+                id: Identifier::from([member; 32]),
+                properties: BTreeMap::from([(
+                    property_names::MEMBER_ID.to_string(),
+                    Value::Identifier([member; 32]),
+                )]),
+                ..Default::default()
+            }
+            .into()
+        };
+        assert_eq!(
+            member_ids(&[change(5), change(6)]).expect("reads"),
+            BTreeSet::from([Identifier::from([5; 32]), Identifier::from([6; 32])])
+        );
+        assert!(member_ids(&[document(1, 1)]).is_err());
+    }
+
+    /// Serves `documents` a page at a time in their given order, the order of the index a query
+    /// walks, continuing after the document a page names.
+    fn serve_in_order(
+        documents: Vec<Document>,
+    ) -> impl FnMut(CharterDocumentsPage) -> Ready<Result<Documents, Error>> {
+        move |page| {
+            let first = match page.start_after {
+                None => 0,
+                Some(last) => {
+                    documents
+                        .iter()
+                        .position(|document| document.id() == last)
+                        .expect("the cursor names a served document")
+                        + 1
+                }
+            };
+            let end = documents.len().min(first + page.page_size() as usize);
+            ready(Ok(documents[first..end]
+                .iter()
+                .map(|document| (document.id(), Some(document.clone())))
+                .collect()))
+        }
+    }
+
+    #[tokio::test]
+    async fn should_continue_after_the_last_document_of_each_page_in_query_order() {
+        // Ids run against the index order, so the last document of a page is not its largest id
+        let documents: Vec<Document> = (0..102u32).rev().map(|id| document(id, 1)).collect();
+        let mut serve = serve_in_order(documents.clone());
+        let mut cursors = Vec::new();
+        let collected = collect_every_page(|page: CharterDocumentsPage| {
+            cursors.push(page.start_after);
+            serve(page)
+        })
+        .await
+        .expect("reads");
+
+        assert_eq!(cursors, vec![None, Some(documents[99].id())]);
+        assert_eq!(
+            collected
+                .iter()
+                .map(|document| document.id())
+                .collect::<Vec<_>>(),
+            documents
+                .iter()
+                .map(|document| document.id())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn should_build_the_team_from_changes_on_every_page() {
+        let charter_id = Identifier::from([0xC1; 32]);
+        let leader = Identifier::from([0x01; 32]);
+        let member = |n: u32| {
+            let mut bytes = [0xEE; 32];
+            bytes[..4].copy_from_slice(&n.to_be_bytes());
+            Identifier::from(bytes)
+        };
+        let change = |n: u32, id_byte: u8| -> Document {
+            let mut id = [id_byte; 32];
+            id[..4].copy_from_slice(&n.to_be_bytes());
+            DocumentV0 {
+                id: Identifier::from(id),
+                owner_id: leader,
+                properties: BTreeMap::from([
+                    (
+                        property_names::ELECTED_CHARTER_ID.to_string(),
+                        Value::Identifier(charter_id.to_buffer()),
+                    ),
+                    (
+                        property_names::MEMBER_ID.to_string(),
+                        Value::Identifier(member(n).to_buffer()),
+                    ),
+                ]),
+                ..Default::default()
+            }
+            .into()
+        };
+        let charter: Document = DocumentV0 {
+            id: charter_id,
+            owner_id: leader,
+            properties: ElectedCharter {
+                target_contract_id: Identifier::from([0xAA; 32]),
+                submitted_charter_id: Identifier::from([0xBB; 32]),
+                members: vec![member(1000), member(1001)],
+            }
+            .to_document_properties(),
+            ..Default::default()
+        }
+        .into();
+
+        // 105 additions over two pages; 101 removals over two pages, the last one on the
+        // second page removing an elected member
+        let added = collect_every_page(serve_in_order((0..105).map(|n| change(n, 0xA0)).collect()))
+            .await
+            .expect("reads the additions");
+        let removed = collect_every_page(serve_in_order(
+            (0..100)
+                .map(|n| change(n, 0xB0))
+                .chain([change(1001, 0xB1)])
+                .collect(),
+        ))
+        .await
+        .expect("reads the removals");
+        assert_eq!((added.len(), removed.len()), (105, 101));
+
+        let team = ModerationTeam::from_documents(&charter, &added, &removed).expect("reads");
+        let mut expected: BTreeSet<Identifier> = (100..105).map(member).collect();
+        expected.insert(member(1000));
+        assert_eq!(team.members, expected);
     }
 }

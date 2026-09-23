@@ -26,7 +26,6 @@
 //! which a wrong key passes about once in 256 attempts and then returns garbage; a caller that
 //! must tell the two apart has to recognise its plaintext.
 
-use crate::Error;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
 use dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
@@ -34,10 +33,10 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef, EncryptedFor,
     EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements,
-    KeyReferenceIdentityProperty,
 };
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose};
 use dpp::platform_value::btreemap_extensions::{
@@ -108,6 +107,22 @@ pub enum EncryptedForError {
         /// Why none fits.
         reason: String,
     },
+    /// The declaration names one property for both key ids, so the message must be encrypted
+    /// under one key of one identity, and the keys given differ.
+    #[error(
+        "property {path} keeps both key ids in {key_path}, so the recipient key {recipient_key_id} \
+         and the sender key {sender_key_id} must be the same key"
+    )]
+    SharedKeyIdProperty {
+        /// The property path.
+        path: String,
+        /// The one key id property the declaration names for both keys.
+        key_path: String,
+        /// The recipient key id given.
+        recipient_key_id: KeyID,
+        /// The sender key id given.
+        sender_key_id: KeyID,
+    },
     /// The declaration's recipient is the document owner, the writer, but another identity was
     /// named as the recipient.
     #[error(
@@ -122,12 +137,6 @@ pub enum EncryptedForError {
         /// The recipient named.
         recipient_id: Identifier,
     },
-}
-
-impl From<EncryptedForError> for Error {
-    fn from(error: EncryptedForError) -> Self {
-        Error::Generic(error.to_string())
-    }
 }
 
 /// Which side of an encrypted property a key belongs to.
@@ -149,20 +158,21 @@ impl fmt::Display for EncryptionKeyRole {
 }
 
 /// The two keys a message is encrypted under: the ids written into the document's key id
-/// properties, the sender's private key and the recipient's public key.
+/// properties, the sender's private key and the recipient's public key. The private key is
+/// borrowed, so copying the struct never copies secret material.
 #[derive(Clone, Copy)]
-pub struct EncryptionKeys {
+pub struct EncryptionKeys<'a> {
     /// The id of the sender's key, written into the declaration's `senderKey` property.
     pub sender_key_id: KeyID,
     /// The private half of that key.
-    pub sender_private_key: SecretKey,
+    pub sender_private_key: &'a SecretKey,
     /// The id of the recipient's key, written into the declaration's `recipientKey` property.
     pub recipient_key_id: KeyID,
     /// The public half of that key.
     pub recipient_public_key: PublicKey,
 }
 
-impl fmt::Debug for EncryptionKeys {
+impl fmt::Debug for EncryptionKeys<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EncryptionKeys")
             .field("sender_key_id", &self.sender_key_id)
@@ -198,36 +208,52 @@ pub fn encrypt_property(
     document_type: DocumentTypeRef<'_>,
     property_path: &str,
     plaintext: &[u8],
-    keys: &EncryptionKeys,
+    keys: &EncryptionKeys<'_>,
     properties: &mut BTreeMap<String, Value>,
 ) -> Result<(), EncryptedForError> {
-    let mut iv = [0u8; AES_CBC_IV_LENGTH];
-    StdRng::from_entropy().fill_bytes(&mut iv);
-    encrypt_property_with_iv(
-        document_type,
+    let declaration = encrypted_for_declaration(document_type, property_path)?;
+    encrypt_declared(
+        &declaration,
         property_path,
         plaintext,
         keys,
-        &iv,
+        &random_iv(),
         properties,
     )
 }
 
-/// [`encrypt_property`] with the IV given. Private: an IV must never be reused under one
-/// shared key, so only tests pin it.
-fn encrypt_property_with_iv(
-    document_type: DocumentTypeRef<'_>,
+fn random_iv() -> [u8; AES_CBC_IV_LENGTH] {
+    let mut iv = [0u8; AES_CBC_IV_LENGTH];
+    StdRng::from_entropy().fill_bytes(&mut iv);
+    iv
+}
+
+/// Encrypts under `declaration`, the one of `property_path`, with the IV given. Private: an IV
+/// must never be reused under one shared key, so only tests pin it.
+fn encrypt_declared(
+    declaration: &EncryptedFor,
     property_path: &str,
     plaintext: &[u8],
-    keys: &EncryptionKeys,
+    keys: &EncryptionKeys<'_>,
     iv: &[u8; AES_CBC_IV_LENGTH],
     properties: &mut BTreeMap<String, Value>,
 ) -> Result<(), EncryptedForError> {
-    let declaration = encrypted_for_declaration(document_type, property_path)?;
+    // One property holding both key ids names a single key, so the message must be under it:
+    // writing two different ids there would keep only the second
+    if declaration.recipient_key == declaration.sender_key
+        && keys.recipient_key_id != keys.sender_key_id
+    {
+        return Err(EncryptedForError::SharedKeyIdProperty {
+            path: property_path.to_string(),
+            key_path: declaration.sender_key.clone(),
+            recipient_key_id: keys.recipient_key_id,
+            sender_key_id: keys.sender_key_id,
+        });
+    }
     let ciphertext = match declaration.scheme {
         EncryptionScheme::EcdhSecp256k1Aes256Cbc => {
             let shared_key =
-                derive_shared_key_ecdh(&keys.sender_private_key, &keys.recipient_public_key);
+                derive_shared_key_ecdh(keys.sender_private_key, &keys.recipient_public_key);
             let mut bytes = iv.to_vec();
             bytes.extend(encrypt_aes_256_cbc(&shared_key, iv, plaintext));
             bytes
@@ -262,7 +288,12 @@ pub fn decrypt_property(
     sender_public_key: &PublicKey,
 ) -> Result<Vec<u8>, EncryptedForError> {
     let declaration = encrypted_for_declaration(document_type, property_path)?;
-    let bytes = ciphertext_at_path(properties, property_path)?;
+    let bytes = required_at_path(properties, property_path)?
+        .to_binary_bytes()
+        .map_err(|e| EncryptedForError::InvalidProperty {
+            path: property_path.to_string(),
+            reason: e.to_string(),
+        })?;
     let scheme = declaration.scheme;
     if !scheme.is_valid_ciphertext_length(bytes.len()) {
         return Err(EncryptedForError::InvalidCiphertextLength {
@@ -296,9 +327,11 @@ pub struct EncryptedPropertyEnvelope {
     pub recipient_id: Identifier,
     /// The id of the recipient's key, from the declaration's `recipientKey` property.
     pub recipient_key_id: KeyID,
-    /// The identity whose key the `senderKey` property names: the identity the schema's
-    /// `identityPublicKey` reference on that key id says, and the document owner, the writer,
-    /// when the schema declares none.
+    /// The identity whose key the `senderKey` property names: the document owner, the writer
+    /// that encrypted the bytes ([`encrypt_property_for`] encrypts with the writer's key). A
+    /// document transferred since keeps its previous owner's key id, so its sender is that
+    /// previous owner. Another `identityPublicKey` reference on the same key id only makes
+    /// consensus check that key exists; it does not change whose key encrypted the bytes.
     pub sender_id: Identifier,
     /// The id of the sender's key, from the declaration's `senderKey` property.
     pub sender_key_id: KeyID,
@@ -318,17 +351,10 @@ impl EncryptedPropertyEnvelope {
             EncryptedForRecipient::Owner => document.owner_id(),
             EncryptedForRecipient::Property(path) => identifier_at_path(properties, path)?,
         };
-        let sender_id = match key_identity_source(document_type, &declaration.sender_key) {
-            Some(KeyIdentitySource::Property(path)) => identifier_at_path(properties, &path)?,
-            Some(KeyIdentitySource::Creator) => {
-                document.creator_id().unwrap_or_else(|| document.owner_id())
-            }
-            Some(KeyIdentitySource::Owner) | None => document.owner_id(),
-        };
         Ok(Self {
             recipient_id,
             recipient_key_id: key_id_at_path(properties, &declaration.recipient_key)?,
-            sender_id,
+            sender_id: document.owner_id(),
             sender_key_id: key_id_at_path(properties, &declaration.sender_key)?,
         })
     }
@@ -344,15 +370,37 @@ impl EncryptedPropertyEnvelope {
 /// property that names it (the checks consensus runs when the document is written) and is not
 /// disabled. When the schema requires no purpose for a side, the dashpay convention stands in:
 /// an `ENCRYPTION` key for the sender, a `DECRYPTION` or `ENCRYPTION` key for the recipient, so
-/// an authentication key is never used for ECDH.
-pub fn select_encryption_keys(
+/// an authentication key is never used for ECDH. When the schema requires no `boundTo` for a
+/// side, a key bound to a contract must be bound to this contract, or to this document type of
+/// it: consensus leaves the scope of encryption and decryption keys to clients, and a key bound
+/// elsewhere is one another application may hold.
+///
+/// A declaration that keeps both key ids in one property names a single key, so the recipient
+/// must then be the sender and the recipient key is the sender's own.
+pub fn select_encryption_keys<'a>(
     document_type: DocumentTypeRef<'_>,
     property_path: &str,
     sender: &Identity,
-    sender_private_key: &SecretKey,
+    sender_private_key: &'a SecretKey,
     recipient: &Identity,
-) -> Result<EncryptionKeys, EncryptedForError> {
+) -> Result<EncryptionKeys<'a>, EncryptedForError> {
     let declaration = encrypted_for_declaration(document_type, property_path)?;
+    select_declared_keys(
+        document_type,
+        &declaration,
+        sender,
+        sender_private_key,
+        recipient,
+    )
+}
+
+fn select_declared_keys<'a>(
+    document_type: DocumentTypeRef<'_>,
+    declaration: &EncryptedFor,
+    sender: &Identity,
+    sender_private_key: &'a SecretKey,
+    recipient: &Identity,
+) -> Result<EncryptionKeys<'a>, EncryptedForError> {
     let contract_id = document_type.data_contract_id();
 
     let sender_requirements = key_requirements_naming(document_type, &declaration.sender_key);
@@ -379,11 +427,31 @@ pub fn select_encryption_keys(
         &sender_requirements,
         &[Purpose::ENCRYPTION],
         contract_id,
+        document_type.name(),
     ) {
         return Err(no_sender_key(format!(
             "the key of the private key given, {}, {reason}",
             sender_key.id()
         )));
+    }
+
+    if declaration.recipient_key == declaration.sender_key {
+        if recipient.id() != sender.id() {
+            return Err(EncryptedForError::NoSuitableKey {
+                identity_id: recipient.id(),
+                role: EncryptionKeyRole::Recipient,
+                reason: format!(
+                    "{} keeps both key ids, so only the sender's own key can be the recipient key",
+                    declaration.sender_key
+                ),
+            });
+        }
+        return Ok(EncryptionKeys {
+            sender_key_id: sender_key.id(),
+            sender_private_key,
+            recipient_key_id: sender_key.id(),
+            recipient_public_key: sender_public_key,
+        });
     }
 
     let recipient_requirements = key_requirements_naming(document_type, &declaration.recipient_key);
@@ -397,6 +465,7 @@ pub fn select_encryption_keys(
                 &recipient_requirements,
                 &[Purpose::DECRYPTION, Purpose::ENCRYPTION],
                 contract_id,
+                document_type.name(),
             )
             .is_none()
         })
@@ -414,7 +483,7 @@ pub fn select_encryption_keys(
 
     Ok(EncryptionKeys {
         sender_key_id: sender_key.id(),
-        sender_private_key: *sender_private_key,
+        sender_private_key,
         recipient_key_id: recipient_key.id(),
         recipient_public_key,
     })
@@ -427,19 +496,19 @@ pub fn select_encryption_keys(
 ///
 /// A declaration whose recipient is `$ownerId` encrypts to the writer, so `recipient` must then
 /// be `sender`.
-pub fn encrypt_property_for(
+pub fn encrypt_property_for<'a>(
     document_type: DocumentTypeRef<'_>,
     property_path: &str,
     plaintext: &[u8],
     sender: &Identity,
-    sender_private_key: &SecretKey,
+    sender_private_key: &'a SecretKey,
     recipient: &Identity,
     properties: &mut BTreeMap<String, Value>,
-) -> Result<EncryptionKeys, EncryptedForError> {
+) -> Result<EncryptionKeys<'a>, EncryptedForError> {
     let declaration = encrypted_for_declaration(document_type, property_path)?;
-    let keys = select_encryption_keys(
+    let keys = select_declared_keys(
         document_type,
-        property_path,
+        &declaration,
         sender,
         sender_private_key,
         recipient,
@@ -459,44 +528,15 @@ pub fn encrypt_property_for(
             Value::Identifier(recipient.id().to_buffer()),
         )?,
     }
-    encrypt_property(document_type, property_path, plaintext, &keys, properties)?;
+    encrypt_declared(
+        &declaration,
+        property_path,
+        plaintext,
+        &keys,
+        &random_iv(),
+        properties,
+    )?;
     Ok(keys)
-}
-
-/// Whose key a key id property names, as the schema's `identityPublicKey` references say.
-enum KeyIdentitySource {
-    Owner,
-    Creator,
-    Property(String),
-}
-
-/// Where the identity of the key `key_path` names comes from: a `refersTo: identityPublicKey`
-/// on the key id itself (`identityProperty`), or on an identifier property whose
-/// `keyIdProperty` is `key_path`. `None` when the schema declares neither.
-fn key_identity_source(
-    document_type: DocumentTypeRef<'_>,
-    key_path: &str,
-) -> Option<KeyIdentitySource> {
-    document_type
-        .flattened_properties()
-        .iter()
-        .find_map(|(path, property)| match &property.property_type {
-            DocumentPropertyType::KeyIdWithReference(reference) if path == key_path => {
-                Some(match &reference.identity_property {
-                    KeyReferenceIdentityProperty::OwnerId => KeyIdentitySource::Owner,
-                    KeyReferenceIdentityProperty::CreatorId => KeyIdentitySource::Creator,
-                    KeyReferenceIdentityProperty::Property(identity_path) => {
-                        KeyIdentitySource::Property(identity_path.clone())
-                    }
-                })
-            }
-            DocumentPropertyType::IdentifierWithReference(
-                DocumentPropertyReferenceTarget::IdentityPublicKey {
-                    key_id_property, ..
-                },
-            ) if key_id_property == key_path => Some(KeyIdentitySource::Property(path.clone())),
-            _ => None,
-        })
 }
 
 /// Every `keyRequirements` the schema declares on a reference to the key `key_path` names: on
@@ -523,13 +563,16 @@ fn key_requirements_naming(
         .collect()
 }
 
-/// Why `key` cannot be named where `requirements` apply, `None` when it can. With no purpose
-/// among the requirements, the key's purpose must be one of `default_purposes`.
+/// Why `key` cannot be named where `requirements` apply to a document of type
+/// `document_type_name` of the contract `declaring_contract_id`, `None` when it can. With no
+/// purpose among the requirements, the key's purpose must be one of `default_purposes`; with no
+/// `boundTo`, a contract-bound key must be bound to this contract or this document type of it.
 fn why_unfit(
     key: &IdentityPublicKey,
     requirements: &[IdentityKeyReferenceRequirements],
     default_purposes: &[Purpose],
     declaring_contract_id: Identifier,
+    document_type_name: &str,
 ) -> Option<String> {
     if key.disabled_at().is_some() {
         return Some("is disabled".to_string());
@@ -541,6 +584,28 @@ fn why_unfit(
                 unmet.field(),
                 unmet.required(),
                 unmet.actual_of(key)
+            ));
+        }
+    }
+    // A declared `boundTo` is the scope the schema asks for, checked above; without one, a
+    // bound key must be bound here, never to another contract, another document type or a
+    // group whose members this check cannot see
+    let bound_to_declared = requirements
+        .iter()
+        .any(|declaration| declaration.bound_to.is_some());
+    if let (false, Some(bounds)) = (bound_to_declared, key.contract_bounds()) {
+        let in_scope = match bounds {
+            ContractBounds::SingleContract { id } => *id == declaring_contract_id,
+            ContractBounds::SingleContractDocumentType {
+                id,
+                document_type_name: bound_document_type_name,
+            } => *id == declaring_contract_id && bound_document_type_name == document_type_name,
+            ContractBounds::ContractGroup { .. } => false,
+        };
+        if !in_scope {
+            return Some(format!(
+                "is bound to {bounds:?}, not to contract {declaring_contract_id} or its document \
+                 type {document_type_name}"
             ));
         }
     }
@@ -601,25 +666,6 @@ fn required_at_path<'a>(
         .ok_or_else(|| EncryptedForError::MissingProperty {
             path: path.to_string(),
         })
-}
-
-/// The ciphertext at `path`: byte values, or a list of integers each a byte, which is how a
-/// document built without its contract (from JavaScript, say) holds a byte array.
-fn ciphertext_at_path(
-    properties: &BTreeMap<String, Value>,
-    path: &str,
-) -> Result<Vec<u8>, EncryptedForError> {
-    let invalid = |reason: String| EncryptedForError::InvalidProperty {
-        path: path.to_string(),
-        reason,
-    };
-    match required_at_path(properties, path)? {
-        Value::Array(items) => items
-            .iter()
-            .map(|item| item.to_integer::<u8>().map_err(|e| invalid(e.to_string())))
-            .collect(),
-        value => value.to_binary_bytes().map_err(|e| invalid(e.to_string())),
-    }
 }
 
 fn identifier_at_path(

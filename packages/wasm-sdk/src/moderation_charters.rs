@@ -5,7 +5,6 @@
 
 use crate::encrypted_for::message_from_options;
 use crate::error::WasmSdkError;
-use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::moderation_charter::{
     ELECTED_CHARTER_DOCUMENT_TYPE_NAME, JOIN_REQUEST_DOCUMENT_TYPE_NAME,
@@ -19,12 +18,12 @@ use dash_sdk::platform::moderation_charters::{
 use dash_sdk::platform::{Document, Fetch, Identifier, Identity};
 use drive_proof_verifier::types::Documents;
 use js_sys::{Array, Map};
-use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityWasm;
+use wasm_dpp2::utils::{try_from_options_optional_with, try_to_u32};
 use wasm_dpp2::PrivateKeyWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -102,26 +101,6 @@ extern "C" {
     pub type ModerationResignationRequestOptionsJs;
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SubmittedChartersQueryInput {
-    target_contract_id: IdentifierWasm,
-    #[serde(default)]
-    start_after: Option<IdentifierWasm>,
-    #[serde(default)]
-    limit: Option<u32>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct JoinRequestsQueryInput {
-    submitted_charter_id: IdentifierWasm,
-    #[serde(default)]
-    start_after: Option<IdentifierWasm>,
-    #[serde(default)]
-    limit: Option<u32>,
-}
-
 /// The team that moderates a contract: the seated charter's leader and its active members.
 #[wasm_bindgen(js_name = "ModerationTeam")]
 #[derive(Clone)]
@@ -169,11 +148,21 @@ impl ModerationTeamWasm {
     }
 }
 
-fn page(start_after: Option<IdentifierWasm>, limit: Option<u32>) -> CharterDocumentsPage {
-    CharterDocumentsPage {
-        limit,
-        start_after: start_after.map(Identifier::from),
+/// The identifier `id_field` of a page query and the page it asks for. Each field is read as
+/// an `IdentifierLike` on its own: an `Identifier` instance does not survive the serde
+/// conversion a whole-object deserialization goes through.
+fn page_query(
+    query: &JsValue,
+    id_field: &str,
+) -> Result<(Identifier, CharterDocumentsPage), WasmSdkError> {
+    if query.is_undefined() || query.is_null() {
+        return Err(WasmSdkError::invalid_argument("Query object is required"));
     }
+    let id = IdentifierWasm::try_from_options(query, id_field)?.into();
+    let start_after =
+        IdentifierWasm::try_from_optional_options(query, "startAfter")?.map(Identifier::from);
+    let limit = try_from_options_optional_with(query, "limit", |value| try_to_u32(value, "limit"))?;
+    Ok((id, CharterDocumentsPage { limit, start_after }))
 }
 
 fn document_wasm(document: Document, document_type_name: &str) -> DocumentWasm {
@@ -302,17 +291,10 @@ impl WasmSdk {
         &self,
         query: ModerationSubmittedChartersQueryJs,
     ) -> Result<Map, WasmSdkError> {
-        let input: SubmittedChartersQueryInput = deserialize_required_query(
-            query,
-            "Query object is required",
-            "moderation submitted charters query",
-        )?;
+        let (target_contract_id, page) = page_query(&query.into(), "targetContractId")?;
         let documents = self
             .as_ref()
-            .fetch_submitted_charters(
-                input.target_contract_id.into(),
-                page(input.start_after, input.limit),
-            )
+            .fetch_submitted_charters(target_contract_id, page)
             .await?;
         Ok(documents_map(
             documents,
@@ -332,17 +314,10 @@ impl WasmSdk {
         &self,
         query: ModerationJoinRequestsQueryJs,
     ) -> Result<Map, WasmSdkError> {
-        let input: JoinRequestsQueryInput = deserialize_required_query(
-            query,
-            "Query object is required",
-            "moderation join requests query",
-        )?;
+        let (submitted_charter_id, page) = page_query(&query.into(), "submittedCharterId")?;
         let documents = self
             .as_ref()
-            .fetch_join_requests(
-                input.submitted_charter_id.into(),
-                page(input.start_after, input.limit),
-            )
+            .fetch_join_requests(submitted_charter_id, page)
             .await?;
         Ok(documents_map(documents, JOIN_REQUEST_DOCUMENT_TYPE_NAME))
     }
