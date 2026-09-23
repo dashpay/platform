@@ -134,9 +134,26 @@ await sdk.dpns.register({
 The `sdk.stateTransitions` facade provides low-level control:
 
 ```typescript
-// Broadcast a raw state transition and wait for confirmation
-const result = await sdk.stateTransitions.waitForResult(stateTransitionHash);
+// Wait by hash for a transition you broadcast elsewhere
+const result = await sdk.stateTransitions.waitForStateTransitionResult(stateTransitionHash);
+
+// Strict: resolves only when the proof binds this transition's execution
+const proved = await sdk.stateTransitions.waitForResponse(stateTransition);
+
+// Snapshot: also accepts proofs that only authenticate the affected state
+const snapshot = await sdk.stateTransitions.waitForAffectedState(stateTransition);
 ```
+
+`waitForResponse` and `broadcastAndWait` are strict: they resolve only when
+the proof shows this specific transition executed, and reject with an
+execution-not-proved error for the families whose proofs cannot show that
+(balance top-ups, credit transfers and withdrawals, address funds movements,
+shields, no-history token operations). `waitForAffectedState` and
+`broadcastAndWaitForAffectedState` accept those proofs too and return a
+verified, height-pinned snapshot of the keys the transition affects, not
+evidence that it executed. For what each kind of result proves, and how
+contract-call receipts fit in, see
+[Results, Receipts and Proofs](../sdk/results-receipts-and-proofs.md).
 
 ## Nonces
 

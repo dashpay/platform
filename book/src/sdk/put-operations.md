@@ -188,16 +188,36 @@ pub trait BroadcastStateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error>;
+
+    async fn wait_for_affected_state<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<T, Error>;
+
+    async fn broadcast_and_wait_for_affected_state<T: TryFrom<StateTransitionProofResult> + Send>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<T, Error>;
 }
 ```
 
-Three methods, three use cases:
+Five methods, five use cases (each wait also has a `_with_metadata` twin
+that returns the quorum-authenticated response metadata alongside the
+result):
 
 - **`broadcast`**: Fire-and-forget. Returns `Ok(())` when the node accepts the
   transition. The response is always empty -- confirmation comes later.
 - **`wait_for_response`**: Poll until the transition is included in a block.
-  Returns the proven result.
-- **`broadcast_and_wait`**: Combines both -- broadcast, then wait.
+  Returns the result only when the proof establishes that this specific
+  transition executed.
+- **`broadcast_and_wait`**: Combines both -- broadcast, then wait strictly.
+- **`wait_for_affected_state`**: Like `wait_for_response`, but also accepts
+  proofs that only authenticate the state the transition affects. The result
+  is a verified, height-pinned snapshot, not evidence of execution.
+- **`broadcast_and_wait_for_affected_state`**: Broadcast, then wait accepting
+  snapshots.
 
 ### The Wait Mechanism
 
@@ -219,13 +239,16 @@ async fn wait_for_response<T>(&self, sdk: &Sdk, settings: Option<PutSettings>)
 
         // Extract and verify the proof
         let proof = grpc_response.proof()?;
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
+        let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             self,
             &block_info,
             proof.grovedb_proof.as_slice(),
             &context_provider.as_contract_lookup_fn(sdk.version()),
             sdk.version(),
         )?;
+
+        // The strict wait accepts only execution-proved outcomes
+        let result = require_execution_proved(outcome)?;
 
         // Convert to the expected output type
         T::try_from(result)
@@ -235,9 +258,21 @@ async fn wait_for_response<T>(&self, sdk: &Sdk, settings: Option<PutSettings>)
 }
 ```
 
-The wait includes full proof verification: the SDK verifies a GroveDB proof that
-the state transition was actually applied. This is not just checking a status flag --
+The wait includes full proof verification: the SDK verifies a GroveDB proof
+against the quorum-signed root. This is not just checking a status flag --
 it is cryptographic proof of inclusion.
+
+The verifier returns a `StateTransitionProofOutcome`, which tags the result
+with the guarantee the proof gives. `ExecutionProved` means the verified
+values could only exist if this transition was applied. `AffectedState` means
+the proof authenticates the keys the transition affects as of the proof's
+block, but cannot bind them to this transition: balance top-ups, credit
+transfers and withdrawals, address funds movements, shields and no-history
+token operations all land here. The strict methods reject `AffectedState`
+with `Error::ExecutionNotProved`; the `*_affected_state` methods accept both
+tags. Which families produce which tag, and how contract-call receipts fit
+alongside the two, is in
+[Results, Receipts and Proofs](results-receipts-and-proofs.md).
 
 ### Timeout Handling
 
@@ -347,6 +382,10 @@ Errors during put operations fall into several categories:
   `TimeoutReached` with the timeout duration and a description.
 - **Conversion errors**: The proof result could not be converted to the expected
   type. Returned as `InvalidProvedResponse`.
+- **Snapshot-only proofs**: The proof authenticated the affected state but not
+  the execution of this transition, and the caller used a strict wait. Returned
+  as `ExecutionNotProved`; switch to the `*_affected_state` wait if a snapshot
+  is what the flow needs.
 
 ## PutSettings
 

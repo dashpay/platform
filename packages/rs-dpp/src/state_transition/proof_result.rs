@@ -139,6 +139,18 @@ pub enum StateTransitionProofResult {
 /// of one specific transition: the proof only authenticates the affected
 /// keys' state at the committed block. The tag makes that distinction part
 /// of the type so a snapshot cannot be mistaken for execution evidence.
+///
+/// Smart-contract calls keep the same two tags. A stored contract receipt is
+/// a record in current state, and proving it proves inclusion of that record
+/// under its key at the signed root: it is neither a re-execution proof nor
+/// a proof of state at the height the call ran. A wait on a contract call may
+/// only report [`ExecutionProved`](Self::ExecutionProved) when the proved
+/// receipt key binds the specific outer invocation; a call whose contract
+/// disabled receipts can at best yield [`AffectedState`](Self::AffectedState)
+/// over the keys it declared. Unproven execution-result text returned by a
+/// node never carries either tag. The full vocabulary, the receipt policy and
+/// the requirements on the receipt and client tasks are in the book chapter
+/// `book/src/sdk/results-receipts-and-proofs.md`.
 #[derive(Debug, PartialEq, strum::Display)]
 #[cfg_attr(
     feature = "serde-conversion",

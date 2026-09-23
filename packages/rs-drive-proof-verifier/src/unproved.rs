@@ -45,7 +45,13 @@ fn parse_hash_32(field: &str, bytes: &[u8]) -> Result<[u8; 32], Error> {
 /// - `from_unproved_with_metadata`: Retrieves the requested object from the response along with
 ///   metadata, returning an error if the object is not found.
 ///
-/// ```
+/// ## Trust
+///
+/// Whatever the object's Rust type, a value decoded through this trait is unproven
+/// execution-result text in the vocabulary of the book chapter
+/// `book/src/sdk/results-receipts-and-proofs.md`: it reports what the serving node
+/// said and is not bound to a signed state root. Callers must not persist or display
+/// it as verified state; use [`FromProof`](crate::FromProof) for that.
 pub trait FromUnproved<Req> {
     /// Request type for which this trait is implemented.
     type Request;

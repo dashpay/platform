@@ -18,8 +18,29 @@ use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
 use tracing::{trace, warn};
 
+/// Broadcast a state transition and wait for its verified result.
+///
+/// The wait methods come in two pairs that differ in the guarantee they
+/// accept from the proof. The strict pair ([`wait_for_response`] and
+/// [`broadcast_and_wait`]) returns a result only when the verified proof
+/// establishes that this specific transition executed
+/// ([`StateTransitionProofOutcome::ExecutionProved`]). The snapshot pair
+/// ([`wait_for_affected_state`] and [`broadcast_and_wait_for_affected_state`])
+/// also accepts proofs that only authenticate the keys the transition
+/// affects as of the proof's block
+/// ([`StateTransitionProofOutcome::AffectedState`]). Every wait verifies the
+/// GroveDB proof and the quorum signature; nothing here returns unproven
+/// node text as if it were a result. How stored contract receipts extend
+/// these two guarantees is described in the book chapter
+/// `book/src/sdk/results-receipts-and-proofs.md`.
+///
+/// [`wait_for_response`]: Self::wait_for_response
+/// [`broadcast_and_wait`]: Self::broadcast_and_wait
+/// [`wait_for_affected_state`]: Self::wait_for_affected_state
+/// [`broadcast_and_wait_for_affected_state`]: Self::broadcast_and_wait_for_affected_state
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
+    /// Broadcast the transition without waiting for its result.
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error>;
     /// Waits for the transition's result and verifies its proof STRICTLY:
     /// succeeds only when the proof establishes that this specific
