@@ -54,8 +54,9 @@ use crate::version::system_limits::SystemLimits;
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
 ///   earlier tables, whose parsers never read it).
 /// * References (protocol version 14): one document of a document type carries at most 256
-///   references, counted at registration as one per property with `refersTo` and
-///   `maxItems` per typed array whose elements declare one (`max_references_per_document`,
+///   references, counted at registration as one per property with `refersTo`, one for the
+///   type's `ownerRefersTo` and `maxItems` per typed array whose elements declare one
+///   (`max_references_per_document`,
 ///   backfilled into the earlier tables, whose parsers never read it). Each reference is a
 ///   billed state read when the document is written.
 /// * Reference expressions (protocol version 14): a `refersTo` `anyOf` or `allOf` list holds at

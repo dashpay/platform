@@ -1083,6 +1083,79 @@ impl<'a> PropertyReference<'a> {
     }
 }
 
+/// Where a reference declaration of a document type sits, and so where the
+/// value it checks comes from. Paired with each declaration by
+/// [`DocumentTypeRef::reference_declarations`].
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ReferenceHolder<'a> {
+    /// The document type's `ownerRefersTo`: the value is the document's
+    /// `$ownerId`, the writer.
+    Owner,
+    /// The document type's `creatorRefersTo`: the value is the document's
+    /// `$creatorId`, its creator, which never changes.
+    Creator,
+    /// A property, by its flattened path: the value is the property's, or each
+    /// element's for a typed array.
+    Property(&'a str),
+}
+
+impl<'a> ReferenceHolder<'a> {
+    /// The path the reference errors name the declaration by: the property's,
+    /// `$ownerId` for the owner reference or `$creatorId` for the creator one.
+    pub fn path(&self) -> &'a str {
+        match self {
+            ReferenceHolder::Owner => OWNER_ID,
+            ReferenceHolder::Creator => CREATOR_ID,
+            ReferenceHolder::Property(path) => path,
+        }
+    }
+
+    /// How contract structure errors name the declaration.
+    pub fn describe(&self) -> String {
+        match self {
+            ReferenceHolder::Owner => property_names::OWNER_REFERS_TO.to_string(),
+            ReferenceHolder::Creator => property_names::CREATOR_REFERS_TO.to_string(),
+            ReferenceHolder::Property(path) => format!("property \"{path}\" refersTo"),
+        }
+    }
+}
+
+impl<'a> DocumentTypeRef<'a> {
+    /// Every reference declaration of the document type with its holder: the
+    /// type's `ownerRefersTo` and `creatorRefersTo` first (a type declares at
+    /// most one of them), then each property's own
+    /// ([`DocumentPropertyType::reference`]) in schema order. This is how the
+    /// registration and write-time validators, the per-document reference
+    /// bound and the client bindings enumerate a type's references, so none of
+    /// them can skip a holder.
+    pub fn reference_declarations(
+        self,
+    ) -> impl Iterator<Item = (ReferenceHolder<'a>, PropertyReference<'a>)> {
+        let (owner_reference, creator_reference, flattened_properties) = match self {
+            DocumentTypeRef::V0(v0) => (None, None, &v0.flattened_properties),
+            DocumentTypeRef::V1(v1) => (None, None, &v1.flattened_properties),
+            DocumentTypeRef::V2(v2) => (
+                v2.owner_reference.as_ref(),
+                v2.creator_reference.as_ref(),
+                &v2.flattened_properties,
+            ),
+        };
+        owner_reference
+            .map(|target| (ReferenceHolder::Owner, PropertyReference::Value(target)))
+            .into_iter()
+            .chain(
+                creator_reference
+                    .map(|target| (ReferenceHolder::Creator, PropertyReference::Value(target))),
+            )
+            .chain(flattened_properties.iter().filter_map(|(path, property)| {
+                property
+                    .property_type
+                    .reference()
+                    .map(|reference| (ReferenceHolder::Property(path.as_str()), reference))
+            }))
+    }
+}
+
 /// The system properties of a referenced document that the referenced side
 /// of a `propertyAgreement` pair may name, next to the referenced document
 /// type's schema properties: `$ownerId`, the current owner (which follows

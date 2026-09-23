@@ -610,6 +610,138 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
+  describe('ownerRefersTo and creatorRefersTo', () => {
+    /**
+     * A `resignation` may only be written by the owner of a join request for
+     * its own `submittedCharterId`: the document type's own reference, whose
+     * value is the writer rather than a property's value.
+     */
+    const ownerSchemas = {
+      joinRequest: lookupSchemas.joinRequest,
+      resignation: {
+        type: 'object',
+        ownerRefersTo: {
+          type: 'permanentDocument',
+          documentType: 'joinRequest',
+          lookup: {
+            index: 'bySubmittedCharter',
+            keys: { submittedCharterId: 'submittedCharterId', $ownerId: '.' },
+          },
+        },
+        properties: {
+          submittedCharterId: plainIdentifier,
+          author: identifierProperty(1, { type: 'identity' }),
+        },
+        required: ['submittedCharterId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildOwnerContract(
+      resignation: object,
+      platformVersion = 14,
+      fullValidation = true,
+    ) {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: { joinRequest: ownerSchemas.joinRequest, resignation },
+        definitions: null,
+        fullValidation,
+        platformVersion: new PlatformVersion(platformVersion),
+      });
+    }
+
+    it('should list the owner reference first, at the path $ownerId', () => {
+      const contract = buildOwnerContract(ownerSchemas.resignation);
+      const references = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(references.map((reference) => reference.path)).to.deep.equal([
+        '$ownerId',
+        'author',
+      ]);
+      const [writer] = references;
+      expect(writer.type).to.equal('permanentDocument');
+      expect(writer.documentType).to.equal('joinRequest');
+      expect(writer.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(writer.lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+      expect(
+        (contract.documentReferences as Map<string, Reference[]>).get('resignation')!
+          .map((reference) => reference.path),
+      ).to.deep.equal(['$ownerId', 'author']);
+    });
+
+    it('should report a document type declaring only an owner reference', () => {
+      const onlyOwner = structuredClone(ownerSchemas.resignation) as {
+        ownerRefersTo: object;
+        properties: Record<string, object>;
+      };
+      delete onlyOwner.properties.author;
+      onlyOwner.ownerRefersTo = { type: 'identity' };
+      const contract = buildOwnerContract(onlyOwner);
+
+      expect(contract.documentTypeReferences('resignation')).to.deep.equal([
+        { path: '$ownerId', type: 'identity' },
+      ]);
+    });
+
+    it('should refuse an owner reference to a target the writer can never be', () => {
+      for (const ownerRefersTo of [
+        { type: 'contract' },
+        { type: 'token' },
+        { type: 'identityPublicKey', identityProperty: '$ownerId' },
+      ]) {
+        const refused = { ...ownerSchemas.resignation, ownerRefersTo };
+        expect(() => buildOwnerContract(refused)).to.throw();
+        // The stored path refuses it too, where no meta-schema runs
+        expect(() => buildOwnerContract(refused, 14, false)).to.throw(/ownerRefersTo does not take/);
+      }
+    });
+
+    it('should list a creator reference first, at the path $creatorId', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const badge = { ...rest, transferable: 1, creatorRefersTo: ownerRefersTo };
+      const contract = buildOwnerContract(badge);
+      const references = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(references.map((reference) => reference.path)).to.deep.equal([
+        '$creatorId',
+        'author',
+      ]);
+      expect(references[0].type).to.equal('permanentDocument');
+      expect(references[0].lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+    });
+
+    it('should refuse a creator reference on a type that records no creator ids', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const notTransferable = { ...rest, creatorRefersTo: ownerRefersTo };
+
+      expect(() => buildOwnerContract(notTransferable)).to.throw(/records no creator ids/);
+    });
+
+    it('should list an owner reference expression at the path $ownerId', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const expression = { ...rest, ownerRefersTo: { anyOf: [ownerRefersTo, { type: 'identity' }] } };
+      const contract = buildOwnerContract(expression);
+      const [writer] = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(writer.path).to.equal('$ownerId');
+      expect(writer.type).to.equal('anyOf');
+    });
+
+    it('should report no owner reference on a pre-v14 contract', () => {
+      const contract = buildOwnerContract(ownerSchemas.resignation, 13, false);
+
+      expect(contract.documentTypeReferences('resignation')).to.deep.equal([]);
+    });
+  });
+
   describe('documentReferences', () => {
     it('should key declarations by document type and omit types with none', () => {
       const contract = buildContract(14);

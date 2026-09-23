@@ -57,12 +57,15 @@ pub(crate) trait DocumentReferenceValidation {
     /// property changed, a writer gate applies or its target is deletable.
     ///
     /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
-    /// whose referring side is `$ownerId` compares it, and an `identityPublicKey`
+    /// whose referring side is `$ownerId` compares it, an `identityPublicKey`
     /// reference on a key id property with `identityProperty: $ownerId` names
-    /// its key, since it lives on the transition rather than in `document_data`.
-    /// `creator_id` is the document's creator for the `$creatorId` form: the
-    /// writer on a create, the stored creator on a replace, `None` when the
-    /// document type records none (registration then admits no such form).
+    /// its key, and the document type's `ownerRefersTo` declaration is checked
+    /// with it as the value (under the replace rules of its target), since it
+    /// lives on the transition rather than in `document_data`.
+    /// `creator_id` is the document's creator for the `$creatorId` form and
+    /// the value of the document type's `creatorRefersTo`: the writer on a
+    /// create, the stored creator on a replace, `None` when the document type
+    /// records none (registration then admits neither).
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,

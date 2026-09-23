@@ -5,6 +5,7 @@ use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
     DocumentReferenceDeclaration, DocumentTypeRef, KeyReferenceIdentityProperty, PropertyReference,
+    ReferenceHolder,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
@@ -63,6 +64,11 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// referenced document type. `identityPublicKey` never reaches here on
 /// elements: the parser refuses it there.
 ///
+/// A document type's `ownerRefersTo` or `creatorRefersTo` declaration, whose
+/// value is the writer or the creator, is checked as a single identifier
+/// reference's is, first; the parser only admits an `identity` or a
+/// `permanentDocument` lookup one, or an expression of them.
+///
 /// Each leaf of a reference expression (`anyOf` / `allOf`) is checked exactly
 /// as the same target declared alone, in declared order, and every one of them
 /// must pass: an `anyOf` lets a WRITE satisfy one operand, but each leaf has to
@@ -73,7 +79,9 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// `documentTypeName.propertyPath`, an element declaration by its list
 /// path, `documentTypeName.propertyPath[]`, and a leaf of a reference
 /// expression by where it sits, `documentTypeName.propertyPath.anyOf[1]` or
-/// `documentTypeName.propertyPath[].anyOf[1].allOf[0]`. Validation stops at the first invalid
+/// `documentTypeName.propertyPath[].anyOf[1].allOf[0]`, and the owner and
+/// creator references as `documentTypeName.$ownerId` and
+/// `documentTypeName.$creatorId`. Validation stops at the first invalid
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -92,14 +100,30 @@ pub(super) fn validate_data_contract_references_v0(
         BTreeMap::new();
 
     for (declaring_type_name, document_type) in contract.document_types() {
-        for (path, property) in document_type.as_ref().flattened_properties() {
+        // The writer's or the creator's reference first (`ownerRefersTo` or
+        // `creatorRefersTo`, whose value is the document's `$ownerId` or
+        // `$creatorId` and which is named by that path), then the properties'
+        // own. Neither is ever a key reference: the parser only admits an
+        // identity or a permanentDocument lookup there, or an expression of
+        // them. Inert before protocol version 14: this module is only called
+        // from contract create and update state validation 1, selected from
+        // it, and no parse before it sets an owner or creator reference.
+        for (holder, reference) in document_type.as_ref().reference_declarations() {
+            let path = holder.path();
+            // The property carrying the reference, which an agreement may not
+            // name on its referring side; the owner's and the creator's are
+            // carried by no property
+            let reference_property = match holder {
+                ReferenceHolder::Property(path) => Some(path),
+                ReferenceHolder::Owner | ReferenceHolder::Creator => None,
+            };
             let declaration_path = format!("{declaring_type_name}.{path}");
 
-            let (reference_target, declaration_path) = match property.property_type.reference() {
+            let (reference_target, declaration_path) = match reference {
                 // A key reference on the key id property: what `identityProperty`
                 // names must fit the document type; nothing else about the
                 // declaration is state-dependent
-                Some(PropertyReference::KeyId(reference)) => {
+                PropertyReference::KeyId(reference) => {
                     let invalid = |message: &str| {
                         SimpleConsensusValidationResult::new_with_error(
                             ReferencedKeyIdPropertyInvalidError::new(
@@ -174,14 +198,13 @@ pub(super) fn validate_data_contract_references_v0(
                     }
                     continue;
                 }
-                Some(PropertyReference::Value(target)) => (target, declaration_path),
+                PropertyReference::Value(target) => (target, declaration_path),
                 // A typed array only parses from protocol version 14, whose
                 // contract create and update state validation are the only
                 // callers, so this arm is never reached before it
-                Some(PropertyReference::Elements { target, .. }) => {
+                PropertyReference::Elements { target, .. } => {
                     (target, format!("{declaring_type_name}.{path}[]"))
                 }
-                None => continue,
             };
 
             // Each leaf of a reference expression is checked as it would be
@@ -200,7 +223,7 @@ pub(super) fn validate_data_contract_references_v0(
                 let result = validate_reference_target_declaration_v0(
                     contract,
                     document_type.as_ref(),
-                    path,
+                    reference_property,
                     target,
                     target_path,
                     &mut fetched_contracts,
@@ -220,16 +243,18 @@ pub(super) fn validate_data_contract_references_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// Checks one single target declaration of the property at `path` of
-/// `document_type`, a declaration of its own or one leaf of a reference expression,
-/// against the contract and state: see [`validate_data_contract_references_v0`].
+/// Checks one single target declaration of the property at
+/// `reference_property` of `document_type` (`None` for the type's owner or
+/// creator reference), a declaration of its own or one leaf of a reference
+/// expression, against the contract and state: see
+/// [`validate_data_contract_references_v0`].
 /// `declaration_path` is how the errors name it; foreign contract resolutions
 /// are shared through `fetched_contracts`.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_target_declaration_v0(
     contract: &DataContract,
     document_type: DocumentTypeRef<'_>,
-    path: &str,
+    reference_property: Option<&str>,
     reference_target: &DocumentPropertyReferenceTarget,
     declaration_path: String,
     fetched_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
@@ -438,7 +463,10 @@ fn validate_reference_target_declaration_v0(
                 .into(),
             )
         };
-        if referring_property == path {
+        // The owner's or the creator's reference may name the writer on the
+        // referring side: `$ownerId` there is a write gate like any other,
+        // and for the owner's the same identity as its value
+        if Some(referring_property.as_str()) == reference_property {
             return Ok(invalid(
                 "the referring property cannot be the reference property itself",
             ));
