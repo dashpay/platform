@@ -1072,7 +1072,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; moderation election fund of 0.5 DASH; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -1088,13 +1088,17 @@ mod tests {
     fn should_change_only_the_contested_document_and_once_per_identity_fees_at_protocol_14() {
         for protocol_version in 1..14 {
             let version = PlatformVersion::get(protocol_version).expect("known protocol version");
+            let fund_fees = &version.fee_version.vote_resolution_fund_fees;
             assert_eq!(
-                version
-                    .fee_version
-                    .vote_resolution_fund_fees
-                    .contested_document_vote_resolution_fund_required_amount,
-                20_000_000_000,
+                fund_fees.contested_document_vote_resolution_fund_required_amount, 20_000_000_000,
                 "protocol {protocol_version} must preserve the 0.2 DASH contribution"
+            );
+            // No moderation election exists before 14; its amount is the contested one, so
+            // a shipped path choosing between the two cannot change what it charges
+            assert_eq!(
+                fund_fees.moderation_vote_resolution_fund_required_amount,
+                fund_fees.contested_document_vote_resolution_fund_required_amount,
+                "protocol {protocol_version}"
             );
         }
 
@@ -1102,6 +1106,10 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        // An application in a moderation election prefunds its masternode votes with 0.5 DASH
+        expected_fees
+            .vote_resolution_fund_fees
+            .moderation_vote_resolution_fund_required_amount = 50_000_000_000;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(

@@ -250,9 +250,29 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                         // We need to make sure that if there is a contest, it is in its first week
                         // The week might be more or less, as it's a versioned parameter
                         let time_ms_since_start = block_info.time_ms.checked_sub(start_block.time_ms).ok_or(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("it makes no sense that the start block time {} is before our current block time {}", start_block.time_ms, block_info.time_ms)))))?;
-                        let join_time_allowed = match platform.config.network {
-                            Network::Mainnet => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
-                            _ => platform_version.dpp.validation.voting.allow_other_contenders_time_testing_ms
+                        // A moderation election (protocol version 14) is joinable for the join
+                        // window its target contract declares. Before 14 the method's version is
+                        // `None`: it reads nothing, bills nothing and answers `None`, so every
+                        // protocol version that selects this module directly keeps the generic
+                        // window below
+                        let (charter_election_fee, charter_election_windows) = platform
+                            .drive
+                            .fetch_charter_election_windows(
+                                contested_document_resource_vote_poll,
+                                &block_info.epoch,
+                                transaction,
+                                platform_version,
+                            )
+                            .map_err(Error::Drive)?;
+                        if let Some(fee_result) = charter_election_fee {
+                            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+                        }
+                        let join_time_allowed = match charter_election_windows {
+                            Some(windows) => windows.join_window_ms,
+                            None => match platform.config.network {
+                                Network::Mainnet => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
+                                _ => platform_version.dpp.validation.voting.allow_other_contenders_time_testing_ms
+                            },
                         };
                         if time_ms_since_start > join_time_allowed {
                             return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestNotJoinableError(

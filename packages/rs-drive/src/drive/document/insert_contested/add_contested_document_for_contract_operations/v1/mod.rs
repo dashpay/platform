@@ -1,3 +1,4 @@
+use crate::drive::document::ContestWindows;
 use crate::drive::votes::paths::{
     vote_contested_resource_end_date_queries_at_time_tree_path_vec,
     vote_end_date_queries_tree_path_vec,
@@ -32,6 +33,10 @@ impl Drive {
     /// resolved without locking (`MasternodeVoteNoLocking`) ends when its join window closes
     /// while it has a single contender; the first additional contender moves its end date to
     /// the full poll duration, opening the vote window.
+    ///
+    /// A moderation election (an `electedCharter` contest) runs on the join window and the
+    /// vote window its target contract declares, on every network; every other contest runs on
+    /// the generic windows of the version tables.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contested_document_for_contract_operations_v1(
@@ -68,30 +73,31 @@ impl Drive {
             platform_version,
         )?;
 
-        let (poll_time, join_time) = match self.config.network {
-            Network::Mainnet => (
-                platform_version
-                    .dpp
-                    .voting_versions
-                    .default_vote_poll_time_duration_mainnet_ms,
-                platform_version
+        let generic_windows = match self.config.network {
+            Network::Mainnet => ContestWindows {
+                join_window_ms: platform_version
                     .dpp
                     .validation
                     .voting
                     .allow_other_contenders_time_mainnet_ms,
-            ),
-            _ => (
-                platform_version
+                poll_duration_ms: platform_version
                     .dpp
                     .voting_versions
-                    .default_vote_poll_time_duration_test_network_ms,
-                platform_version
+                    .default_vote_poll_time_duration_mainnet_ms,
+            },
+            _ => ContestWindows {
+                join_window_ms: platform_version
                     .dpp
                     .validation
                     .voting
                     .allow_other_contenders_time_testing_ms,
-            ),
+                poll_duration_ms: platform_version
+                    .dpp
+                    .voting_versions
+                    .default_vote_poll_time_duration_test_network_ms,
+            },
         };
+        let estimating = estimated_costs_only_with_layer_info.is_some();
 
         let no_locking = contested_document_resource_vote_poll
             .index()?
@@ -122,13 +128,23 @@ impl Drive {
                 batch_operations.append(&mut operations);
             }
 
+            let windows = self.contest_windows_v1(
+                &contested_document_resource_vote_poll,
+                generic_windows,
+                estimating,
+                block_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
             // Without locking, a contest runs only to the end of its join window until a
             // second contender joins; with locking, it always runs the full poll duration
             // so the masternodes may lock a single contender out
             let end_date = if no_locking {
-                block_info.time_ms.saturating_add(join_time)
+                block_info.time_ms.saturating_add(windows.join_window_ms)
             } else {
-                block_info.time_ms.saturating_add(poll_time)
+                block_info.time_ms.saturating_add(windows.poll_duration_ms)
             };
 
             self.add_vote_poll_end_date_query_operations(
@@ -144,7 +160,7 @@ impl Drive {
                 transaction,
                 platform_version,
             )?;
-        } else if no_locking && estimated_costs_only_with_layer_info.is_none() {
+        } else if no_locking && !estimating {
             // The first additional contender opens the vote window: the end date moves from
             // the end of the join window to the full poll duration. Later contenders find
             // it there already. An estimation never reaches this branch, since a stateless
@@ -186,8 +202,19 @@ impl Drive {
                     )));
                 };
 
-                let join_end = start_block.time_ms.saturating_add(join_time);
-                let vote_end = start_block.time_ms.saturating_add(poll_time);
+                // The same windows the contest started on: a moderation election's target
+                // declared them at its creation and can never change them
+                let windows = self.contest_windows_v1(
+                    &contested_document_resource_vote_poll,
+                    generic_windows,
+                    estimating,
+                    block_info,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+                let join_end = start_block.time_ms.saturating_add(windows.join_window_ms);
+                let vote_end = start_block.time_ms.saturating_add(windows.poll_duration_ms);
                 let vote_poll = VotePoll::ContestedDocumentResourceVotePoll(
                     contested_document_resource_vote_poll.into(),
                 );
@@ -229,5 +256,35 @@ impl Drive {
         }
 
         Ok(batch_operations)
+    }
+
+    /// The windows of a contest: those its target contract declares for a moderation election,
+    /// `generic_windows` for every other contest. The read of the target is billed into
+    /// `batch_operations`. An estimation reads nothing: the end date it writes has the same
+    /// size whatever the windows.
+    #[allow(clippy::too_many_arguments)]
+    fn contest_windows_v1(
+        &self,
+        contested_document_resource_vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
+        generic_windows: ContestWindows,
+        estimating: bool,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContestWindows, Error> {
+        if estimating {
+            return Ok(generic_windows);
+        }
+        let (fee_result, charter_election_windows) = self.fetch_charter_election_windows(
+            contested_document_resource_vote_poll,
+            &block_info.epoch,
+            transaction,
+            platform_version,
+        )?;
+        if let Some(fee_result) = fee_result {
+            batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(fee_result));
+        }
+        Ok(charter_election_windows.unwrap_or(generic_windows))
     }
 }

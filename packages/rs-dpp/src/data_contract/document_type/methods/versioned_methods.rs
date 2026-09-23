@@ -20,7 +20,9 @@ use crate::fee::Credits;
 use crate::identity::TimestampMillis;
 use crate::prelude::{BlockHeight, CoreBlockHeight};
 use crate::validation::SimpleConsensusValidationResult;
-use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use crate::voting::vote_polls::contested_document_resource_vote_poll::{
+    required_vote_resolution_fund, ContestedDocumentResourceVotePoll,
+};
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use chrono::Utc;
@@ -673,12 +675,16 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
+                // A moderation election is prefunded with the moderation fund. Every schedule
+                // before protocol version 14 carries the contested document fund there, so
+                // the amount is unchanged wherever this ran before
                 (
                     index.name.clone(),
-                    platform_version
-                        .fee_version
-                        .vote_resolution_fund_fees
-                        .contested_document_vote_resolution_fund_required_amount,
+                    required_vote_resolution_fund(
+                        &self.data_contract_id(),
+                        self.name(),
+                        platform_version,
+                    ),
                 )
             })
     }

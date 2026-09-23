@@ -3361,9 +3361,26 @@ mod creation_tests {
 
     #[tokio::test]
     async fn test_that_a_contested_document_can_not_be_added_to_after_a_week() {
-        let platform_version = PlatformVersion::latest();
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: the join check reads the generic join window there too; the
+    /// target contract's window of a moderation election is read only from 14 on.
+    #[tokio::test]
+    async fn test_that_a_contested_document_can_not_be_added_to_after_a_week_protocol_version_13() {
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(13).await;
+    }
+
+    async fn run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 

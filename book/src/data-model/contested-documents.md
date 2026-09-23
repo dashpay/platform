@@ -33,6 +33,26 @@ poll duration, which opens the vote window. `getVotePollsByEndDate` shows whiche
 
 The moderation charters contract uses this resolution to elect moderation teams.
 
+## Moderation elections
+
+An `electedCharter` contest of the moderation charters contract (protocol version 14), keyed by
+the target contract id, is a **moderation election** and does not take the generic parameters:
+
+- Its join window and vote window are the `joinWindow` and `voteWindow` of the target contract's
+  elected moderation declaration (one day to four weeks each, one week by default), on every
+  network. A single applicant wins when the join window closes; a second applicant moves the end
+  to the join window plus the vote window. A late applicant is refused with
+  `DocumentContestNotJoinableError` naming the target's join window.
+- Each application prefunds the votes with the moderation fund, 0.5 Dash
+  (`moderation_vote_resolution_fund_required_amount`), instead of the contested document fund.
+
+The target's declaration is read, and billed, when an application opens the contest and when a
+later one joins it; it is frozen at the target's creation, so both reads agree. Nothing at the
+end of a contest reads the target: the end date was written when the contest opened or was
+joined. A target that is missing or declares something else leaves a contest on the generic
+windows instead of failing, and the application's own reference validation refuses it. Every
+other contest, DPNS included, keeps the generic windows and fund.
+
 ## Ties
 
 From protocol version 14, a tie among the top contenders goes to the **earliest** contender:

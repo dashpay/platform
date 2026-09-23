@@ -83,4 +83,23 @@ impl DataContractFetchInfo {
             fee: Some(FeeResult::new_from_processing_fee(30000)),
         }
     }
+
+    /// This should ONLY be used for tests
+    pub fn moderation_charters_contract_fixture(protocol_version: u32) -> Self {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected to get version");
+
+        let contract = load_system_data_contract(
+            data_contracts::SystemDataContract::ModerationCharters,
+            platform_version,
+        )
+        .expect("to load system data contract");
+
+        DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: OperationCost::with_seek_count(1), //Just so there's a cost
+            fee: Some(FeeResult::new_from_processing_fee(30000)),
+        }
+    }
 }

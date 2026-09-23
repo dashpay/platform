@@ -133,6 +133,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
             add_contested_vote_subtree_for_non_identities_operations: 1, // changed in v4: recreates the abstain or lock vote tree over the storage an earlier poll's cleanup left orphaned when a resource is contested again
+            fetch_charter_election_windows: Some(0), // new in v14: a moderation election runs on the join and vote windows its target contract declares
         },
         update: DriveDocumentUpdateMethodVersions {
             add_update_multiple_documents_operations: 0,

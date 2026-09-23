@@ -169,9 +169,15 @@ masternodes (weight 1) and evonodes (weight 4) vote for a contender or abstain,
 with no Lock choice, so the contest always ends with a winner, a tie goes to
 the earliest contender, and a contest with a single contender at the end of the
 join window is awarded at once. An elected charter create opens or joins that
-contest for its target contract. Reading the join window, the vote window and
-the fund from the target contract comes with the seating, in a later pull
-request.
+contest for its target contract.
+
+The contest runs on the target contract's own windows, on every network: the
+join window is the target's `joinWindow`, and a second applicant moves the end
+to `joinWindow` plus `voteWindow`. An application prefunds the masternode
+votes with 0.5 Dash (`moderation_vote_resolution_fund_required_amount`), not
+the 0.1 Dash of other contests; what the votes leave is released as processing
+fees when the contest is cleaned up. The target's declaration is read when an
+application opens or joins the contest, never when it ends.
 
 ## Validation beyond the schema
 
