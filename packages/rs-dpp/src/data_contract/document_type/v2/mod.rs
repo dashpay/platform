@@ -10,6 +10,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostSettersV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
@@ -148,6 +149,14 @@ pub struct DocumentTypeV2 {
     /// clock: `$updatedAt`, or `$createdAt` when its documents never change
     /// (`apply_can_be_deleted_by_moderators_for`).
     pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
+    /// The `refersTo` declaration whose value is the document's `$ownerId`,
+    /// the writer (`ownerRefersTo` keyword, protocol version 14), `None` when
+    /// the type declares none. Checked with the writer's id as the value on
+    /// every create and every replace, as a property reference is checked
+    /// with the property's value. Never a `contract` or `identityPublicKey`
+    /// target, which the parser (`parse_owner_reference`) refuses: the writer
+    /// is an identity and carries no key id.
+    pub(in crate::data_contract) owner_reference: Option<DocumentPropertyReferenceTarget>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -236,6 +245,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            owner_reference: None,
         }
     }
 }
@@ -284,6 +294,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            owner_reference: None,
         }
     }
 }

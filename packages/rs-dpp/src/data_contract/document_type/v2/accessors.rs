@@ -5,7 +5,9 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::property::{
+    DocumentProperty, DocumentPropertyReferenceTarget,
+};
 
 use platform_value::{Identifier, Value};
 
@@ -259,6 +261,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         self.action_fees.as_ref()
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        self.owner_reference.as_ref()
     }
 }
 

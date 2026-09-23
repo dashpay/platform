@@ -13,11 +13,12 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentTypeRef, IdentityKeyReferenceRequirements,
     KeyIdReference, PropertyReference,
 };
+use dpp::document::property_names::OWNER_ID;
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::JsValue;
@@ -224,6 +225,12 @@ export type DocumentPropertyReference = {
    * element carries, is listed with the list path of its elements, for
    * example `"reasons[]"`; its `type` is never `identityPublicKey`, which
    * an element cannot declare.
+   *
+   * The document type's `ownerRefersTo` declaration, whose value is the
+   * document's `$ownerId`, the writer, is listed first with the path
+   * `"$ownerId"`. Consensus checks it with the writer's id on every create
+   * and every replace; in its `lookup`, `'.'` is the writer. Its `type` is
+   * never `contract` or `identityPublicKey`, which it cannot declare.
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135 and
@@ -489,9 +496,11 @@ fn set_reference_target_fields(
     Ok(())
 }
 
-/// Collect every reference declaration of one document type, in schema
-/// property order: an identifier property's own, and the one the elements
-/// of a typed array of identifiers carry, listed at `path[]`.
+/// Collect every reference declaration of one document type: its
+/// `ownerRefersTo` first, listed at `$ownerId`, the path consensus names it
+/// by, then in schema property order an identifier property's own, and the
+/// one the elements of a typed array of identifiers carry, listed at
+/// `path[]`.
 ///
 /// Walks `flattened_properties` rather than `properties` because that is
 /// what both consensus validators walk, and because their error `path` is
@@ -502,6 +511,10 @@ pub(crate) fn references_for_document_type(
     declaring_contract_id: Identifier,
 ) -> WasmDppResult<Array> {
     let references = Array::new();
+
+    if let Some(target) = document_type.owner_reference() {
+        references.push(&reference_to_js(OWNER_ID, target, declaring_contract_id)?);
+    }
 
     for (path, property) in document_type.flattened_properties() {
         match property.property_type.reference() {

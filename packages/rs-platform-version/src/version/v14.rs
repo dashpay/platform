@@ -759,6 +759,41 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
 ///
+/// 33. **References on the document's writer (`ownerRefersTo`)**: a document
+///     type may declare one `refersTo` declaration of its own, under the
+///     doctype-level `ownerRefersTo` keyword (meta-schema v3, which reuses the
+///     property declaration by `$ref` and refuses `contract` and
+///     `identityPublicKey`), whose value is the document's `$ownerId`, the
+///     writer, instead of a property's. Parser generation 3 reads it on every
+///     parse through the same `apply_property_reference` 0 an identifier
+///     property's goes through, onto `DocumentTypeV2::owner_reference`, so it
+///     takes every target an identifier property takes but those two (the
+///     writer is an identity, never a contract, and carries no key id),
+///     `propertyAgreement` and `lookup` included: in a lookup `.` is the
+///     writer, and a `$ownerId` key part, the writer too, is admitted on a
+///     transferable or tradeable type, since the declaration governs writing
+///     rather than holding. Its lookup's referring side is checked on every
+///     parse, a lookup into a type of the same contract by
+///     `create_document_types_from_document_schemas` 1 (edited in place like
+///     for item 29, inert before this version, whose parsers never set an
+///     owner reference), and the whole declaration at registration by the
+///     contract reference validation (`data_contract_reference_validation` 0,
+///     extended in place, only reached from this version), which names it
+///     `<documentType>.$ownerId` and lets its `propertyAgreement` name the
+///     writer on the referring side. It counts one against
+///     `max_references_per_document`. Document create state validation 2 and
+///     replace state validation 1 (`document_reference_validation` 0, extended
+///     in place, both only reached from this version) check the writer against
+///     the target exactly as a property's value is checked, on every create and
+///     on every replace whatever it changes (the writer is transition metadata
+///     that never appears among the changed fields), never on a transfer or a
+///     purchase, and refuse the write with the error the target reports for a
+///     property (40120 and the rest) at the path `$ownerId`; an `identity`
+///     target fetches nothing, the transition having proved the writer exists.
+///     Adding, removing or changing it is an incompatible schema change on
+///     update (`validate_schema_compatibility` 1 freezes it as the shared rule
+///     set freezes `refersTo`).
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

@@ -1,5 +1,7 @@
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::reference_lookup::{
@@ -25,7 +27,7 @@ use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use indexmap::IndexMap;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::{Identifier, Value};
+use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -923,6 +925,71 @@ fn apply_element_reference_v0(
     apply_property_reference_v0(items, element_type)
 }
 
+/// Reads a document type's `ownerRefersTo` keyword: one `refersTo` declaration
+/// whose value is the document's `$ownerId`, the writer, instead of a
+/// property's value. The declaration goes through [`apply_property_reference`]
+/// as one declared on an identifier property does, so it takes every target
+/// and key that declaration takes, `propertyAgreement` and `lookup` included
+/// (where `"."` is the writer), except two refused up front: `contract`, since
+/// the writer is an identity and never a contract, and `identityPublicKey`,
+/// which pairs the value with a key id the writer does not carry, in either
+/// form.
+///
+/// Only parser generation 3 calls it, on every parse, validating or not, like
+/// its other doctype-level keywords. Versioned through
+/// `apply_property_reference`, the gate of the declaration it reads: `None`
+/// leaves the keyword unread, as it leaves `refersTo` on a property.
+pub(super) fn parse_owner_reference(
+    schema: &Value,
+    platform_version: &PlatformVersion,
+) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
+    // A schema that is not an object carries no keyword: the core parser
+    // refuses it, and a value error here must not replace that refusal
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(None);
+    };
+    let Some(declaration) = schema_map.get_optional_key(property_names::OWNER_REFERS_TO) else {
+        return Ok(None);
+    };
+
+    let reference_type = declaration
+        .to_btree_ref_string_map()?
+        .get(property_names::TYPE)
+        .and_then(|reference_type| reference_type.as_text())
+        .map(str::to_string);
+    match reference_type.as_deref() {
+        Some("contract") => {
+            return Err(DataContractError::InvalidContractStructure(
+                "ownerRefersTo does not take a contract reference: its value is the writer, an \
+                 identity, which is never a contract"
+                    .to_string(),
+            ))
+        }
+        Some("identityPublicKey") => {
+            return Err(DataContractError::InvalidContractStructure(
+                "ownerRefersTo does not take an identityPublicKey reference: it pairs the value \
+                 with a key id, which the writer does not carry"
+                    .to_string(),
+            ))
+        }
+        _ => {}
+    }
+
+    let inner_properties = BTreeMap::from([(property_names::REFERS_TO.to_string(), declaration)]);
+    match apply_property_reference(
+        &inner_properties,
+        DocumentPropertyType::Identifier,
+        platform_version,
+    )? {
+        DocumentPropertyType::IdentifierWithReference(target) => Ok(Some(target)),
+        // The declaration is not read where the keyword is not active
+        DocumentPropertyType::Identifier => Ok(None),
+        _ => Err(DataContractError::InvalidContractStructure(
+            "ownerRefersTo must declare what the writer refers to".to_string(),
+        )),
+    }
+}
+
 /// The `lookup` of a `permanentDocument` reference: `index`, the name of an index of the
 /// referenced document type, and `keys`, every property of that index mapped to
 /// its referring-side source (`"."`, `"$ownerId"` or a property path), with `"."`
@@ -1015,7 +1082,9 @@ fn parse_document_reference_lookup(
 /// once all its properties are parsed: each property a key reads must exist,
 /// be a stored, required, single value (with every object around it
 /// required), and not be the reference property itself. See
-/// [`DocumentReferenceLookup::referring_side_error`].
+/// [`DocumentReferenceLookup::referring_side_error`], and
+/// [`DocumentReferenceLookup::owner_reference_referring_side_error`] for the
+/// lookup of the type's `ownerRefersTo`.
 ///
 /// Runs on every parse, validating or not, like the `encryptedFor` check: the
 /// rule is a property of the document type, and the write-time lookup reads
@@ -1041,6 +1110,18 @@ pub(super) fn validate_reference_lookup_sources(
             return Err(DataContractError::InvalidContractStructure(format!(
                 "document type \"{document_type_name}\" property \"{path}\" refersTo lookup: \
                  {reason}"
+            )));
+        }
+    }
+    // The writer's own reference, whose `"."` is the writer
+    if let Some(lookup) = document_type
+        .owner_reference()
+        .and_then(|target| target.as_any_document_reference())
+        .and_then(|declaration| declaration.lookup)
+    {
+        if let Some(reason) = lookup.owner_reference_referring_side_error(document_type) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" ownerRefersTo lookup: {reason}"
             )));
         }
     }

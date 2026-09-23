@@ -2,7 +2,8 @@
 //!
 //! Generation 3 is generation 2 plus the ranked index keywords
 //! (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
-//! indexOnly grammar, and the doctype-level `immutable` property list.
+//! indexOnly grammar, the doctype-level `immutable` property list and the
+//! doctype-level `ownerRefersTo` reference on the writer.
 //!
 //! It exists as its own generation — rather than as a version gate inside the
 //! shipped ones — because that is what keeps a historical block from ever
@@ -48,7 +49,9 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 use crate::consensus::ConsensusError;
 
 use super::common;
-use super::{validate_encrypted_for_declarations, validate_reference_lookup_sources};
+use super::{
+    parse_owner_reference, validate_encrypted_for_declarations, validate_reference_lookup_sources,
+};
 
 mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
@@ -328,6 +331,8 @@ fn try_from_schema_generation_3(
         name,
         property_names::IMMUTABLE_ALLOW_SETTING,
     )?;
+    let owner_reference = parse_owner_reference(&schema, platform_version)
+        .map_err(consensus_or_protocol_data_contract_error)?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -397,6 +402,7 @@ fn try_from_schema_generation_3(
     let mut v2: DocumentTypeV2 = v1.into();
     v2.action_fees = action_fees;
     v2.entry_payload = entry_payload;
+    v2.owner_reference = owner_reference;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
@@ -417,7 +423,8 @@ fn try_from_schema_generation_3(
     // properties it names. Generation 3 is the only one admitting the keyword.
     validate_encrypted_for_declarations(&v2, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
-    // The same for the properties a `refersTo` lookup reads to assemble its key.
+    // The same for the properties a `refersTo` lookup reads to assemble its key,
+    // the lookup of the `ownerRefersTo` declaration included.
     validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
         .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -494,8 +501,8 @@ fn validate_typed_array_max_items(
 
 /// The references one document of the type can carry, one for each
 /// property declaring `refersTo` (an identifier, or a key id with a key
-/// reference) and `maxItems` for each typed array whose elements declare it,
-/// are at most
+/// reference), `maxItems` for each typed array whose elements declare it and
+/// one for the type's `ownerRefersTo`, are at most
 /// `SystemLimits::max_references_per_document`. Every reference is a billed
 /// state read when the document is created or replaced, so the sum bounds
 /// the reads one write can cause; `max_typed_array_items` alone would let a
@@ -510,18 +517,20 @@ fn validate_reference_count(
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     let limit = platform_version.system_limits.max_references_per_document;
-    let references: u32 = document_type
+    let property_references: u32 = document_type
         .flattened_properties()
         .values()
         .filter_map(|property| property.property_type.reference())
         .map(|reference| reference.max_references())
         .sum();
+    let references =
+        property_references.saturating_add(u32::from(document_type.owner_reference.is_some()));
     if references > u32::from(limit) {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{name}\" declares references for up to {references} values per \
                  document (one per property with refersTo, maxItems per typed array of \
-                 referencing elements), above the maximum of {limit}",
+                 referencing elements, one for ownerRefersTo), above the maximum of {limit}",
             )),
         ));
     }
@@ -625,6 +634,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderators_delete_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]

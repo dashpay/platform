@@ -105,6 +105,11 @@ pub(crate) mod property_names {
     pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
     pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
     pub const REFERS_TO: &str = "refersTo";
+    /// Doctype-level `refersTo` declaration whose value is the document's
+    /// `$ownerId`, the writer, rather than a property's value. Meta-schema
+    /// v3+ (protocol version 14). See `parse_owner_reference` in
+    /// `try_from_schema`.
+    pub const OWNER_REFERS_TO: &str = "ownerRefersTo";
     pub const DISTINCT_FROM: &str = "distinctFrom";
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";

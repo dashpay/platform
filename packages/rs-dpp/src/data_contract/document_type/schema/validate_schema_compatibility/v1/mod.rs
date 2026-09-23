@@ -29,6 +29,10 @@
 //! the differ has no rule for it, and `validate_update` v1's
 //! `validate_immutable_fields_update` judges it (the list may grow, never
 //! shrink).
+//!
+//! The top-level `ownerRefersTo` key (protocol version 14) gets the frozen
+//! rule of the property `refersTo`, so any change to it is an incompatible
+//! schema change.
 
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
@@ -56,8 +60,22 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
         .expect("required rule must have inner rules")
         .allow_removal = false;
 
+    // `ownerRefersTo` (protocol version 14) is the document type's own
+    // `refersTo`, whose value is the writer: frozen exactly as the property
+    // keyword is, so adding, removing or changing it is reported as an
+    // incompatible change. The rule lives here rather than in the shared rule
+    // set, which the generation-0 check also reads, because no earlier
+    // protocol version knows the keyword.
+    let owner_refers_to_rule = KEYWORD_COMPATIBILITY_RULES
+        .get("refersTo")
+        .expect("refersTo rule must be present")
+        .clone();
+
     Options {
-        override_rules: CompatibilityRulesCollection::from_iter([("required", required_rule)]),
+        override_rules: CompatibilityRulesCollection::from_iter([
+            ("required", required_rule),
+            ("ownerRefersTo", owner_refers_to_rule),
+        ]),
     }
 });
 

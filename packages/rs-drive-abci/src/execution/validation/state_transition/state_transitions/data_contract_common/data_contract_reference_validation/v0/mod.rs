@@ -7,7 +7,7 @@ use dpp::data_contract::document_type::{
     DocumentReferenceDeclaration, KeyReferenceIdentityProperty, PropertyReference,
 };
 use dpp::data_contract::DataContract;
-use dpp::document::property_names::CREATOR_ID;
+use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
@@ -63,9 +63,14 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// referenced document type. `identityPublicKey` never reaches here on
 /// elements: the parser refuses it there.
 ///
+/// A document type's `ownerRefersTo` declaration, whose value is the writer,
+/// is checked as a single identifier reference's is, first; it is never an
+/// `identityPublicKey` or a `contract` one, which the parser refuses.
+///
 /// The error paths name the failing declaration as
-/// `documentTypeName.propertyPath`, and an element declaration by its list
-/// path, `documentTypeName.propertyPath[]`. Validation stops at the first invalid
+/// `documentTypeName.propertyPath`, an element declaration by its list
+/// path, `documentTypeName.propertyPath[]`, and the owner reference as
+/// `documentTypeName.$ownerId`. Validation stops at the first invalid
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -84,14 +89,34 @@ pub(super) fn validate_data_contract_references_v0(
         BTreeMap::new();
 
     for (declaring_type_name, document_type) in contract.document_types() {
-        for (path, property) in document_type.as_ref().flattened_properties() {
+        let declaring = document_type.as_ref();
+        // The writer's reference first (`ownerRefersTo`, whose value is the
+        // document's `$ownerId` and which is named by that path), then the
+        // properties' own. The owner reference is never a key reference: the
+        // parser refuses `identityPublicKey` there, and `contract` too
+        let references = declaring
+            .owner_reference()
+            .map(|target| (OWNER_ID, true, PropertyReference::Value(target)))
+            .into_iter()
+            .chain(
+                declaring
+                    .flattened_properties()
+                    .iter()
+                    .filter_map(|(path, property)| {
+                        property
+                            .property_type
+                            .reference()
+                            .map(|reference| (path.as_str(), false, reference))
+                    }),
+            );
+        for (path, is_owner_reference, reference) in references {
             let declaration_path = format!("{declaring_type_name}.{path}");
 
-            let (reference_target, declaration_path) = match property.property_type.reference() {
+            let (reference_target, declaration_path) = match reference {
                 // A key reference on the key id property: what `identityProperty`
                 // names must fit the document type; nothing else about the
                 // declaration is state-dependent
-                Some(PropertyReference::KeyId(reference)) => {
+                PropertyReference::KeyId(reference) => {
                     let invalid = |message: &str| {
                         SimpleConsensusValidationResult::new_with_error(
                             ReferencedKeyIdPropertyInvalidError::new(
@@ -166,14 +191,13 @@ pub(super) fn validate_data_contract_references_v0(
                     }
                     continue;
                 }
-                Some(PropertyReference::Value(target)) => (target, declaration_path),
+                PropertyReference::Value(target) => (target, declaration_path),
                 // A typed array only parses from protocol version 14, whose
                 // contract create and update state validation are the only
                 // callers, so this arm is never reached before it
-                Some(PropertyReference::Elements { target, .. }) => {
+                PropertyReference::Elements { target, .. } => {
                     (target, format!("{declaring_type_name}.{path}[]"))
                 }
-                None => continue,
             };
 
             // The key id property must exist in the same document type and be
@@ -382,7 +406,10 @@ pub(super) fn validate_data_contract_references_v0(
                         .into(),
                     )
                 };
-                if referring_property == path {
+                // The writer's own reference may name the writer on the
+                // referring side: `$ownerId` there is the same identity as its
+                // value, which a pair can bind to a referenced property
+                if !is_owner_reference && referring_property == path {
                     return Ok(invalid(
                         "the referring property cannot be the reference property itself",
                     ));

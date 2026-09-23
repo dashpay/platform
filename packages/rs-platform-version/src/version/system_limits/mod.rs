@@ -20,8 +20,9 @@ pub struct SystemLimits {
     pub max_typed_array_items: u16,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
-    /// property that declares one (an identifier, or a key id carrying a key reference), and
-    /// `maxItems` for each typed array whose identifier elements declare one. Every reference is checked against state when the
+    /// property that declares one (an identifier, or a key id carrying a key reference), one
+    /// for the type's `ownerRefersTo`, and `maxItems` for each typed array whose identifier
+    /// elements declare one. Every reference is checked against state when the
     /// document is created or replaced, each check a billed read, so this bounds the reads one
     /// document write can cause; without it a type could declare many typed arrays of
     /// `max_typed_array_items` references each. Refused under full validation only, like

@@ -153,11 +153,36 @@ impl DocumentReferenceLookup {
         declaring: DocumentTypeRef,
         reference_path: &str,
     ) -> Option<String> {
+        self.referring_sources_error(declaring, Some(reference_path))
+    }
+
+    /// [`Self::referring_side_error`] for the lookup of an `ownerRefersTo`
+    /// declaration of `declaring`, whose own value, `"."`, is the writer: every
+    /// property source follows the same rules. A `"$ownerId"` source is the
+    /// writer as well, and is admitted on any type: an owner reference is
+    /// checked on every create and every replace, whoever the writer is, and
+    /// like the `$ownerId` side of a `propertyAgreement` it governs writing,
+    /// not holding, so a transfer or a purchase moving the owner leaves
+    /// nothing it promised behind.
+    pub fn owner_reference_referring_side_error(
+        &self,
+        declaring: DocumentTypeRef,
+    ) -> Option<String> {
+        self.referring_sources_error(declaring, None)
+    }
+
+    /// The referring-side rules, for a lookup declared on the property at
+    /// `reference_path`, or, when it is `None`, on the owner reference.
+    fn referring_sources_error(
+        &self,
+        declaring: DocumentTypeRef,
+        reference_path: Option<&str>,
+    ) -> Option<String> {
         for (index_property, source) in &self.keys {
             let path = match source {
                 LookupKeySource::ReferenceValue => continue,
                 LookupKeySource::OwnerId => {
-                    if owner_can_change(declaring) {
+                    if reference_path.is_some() && owner_can_change(declaring) {
                         return Some(format!(
                             "key \"{index_property}\" reads \"$ownerId\", which a transfer or a \
                              purchase of the referring document changes without re-validating \
@@ -169,7 +194,7 @@ impl DocumentReferenceLookup {
                 }
                 LookupKeySource::Property(path) => path,
             };
-            if path == reference_path {
+            if Some(path.as_str()) == reference_path {
                 return Some(format!(
                     "key \"{index_property}\" names the reference property itself: write \".\" \
                      for the reference's own value"

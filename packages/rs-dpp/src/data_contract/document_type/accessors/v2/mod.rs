@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
+use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
 use std::collections::BTreeSet;
 
 /// Trait providing getters for DocumentTypeV2-specific fields.
@@ -76,6 +77,13 @@ pub trait DocumentTypeV2Getters {
     /// (the `actionFees` keyword, protocol version 14). `None` on document types that
     /// declare none and on those that predate the keyword.
     fn action_fees(&self) -> Option<&DocumentActionFees>;
+
+    /// The `refersTo` declaration whose value is the document's `$ownerId`, the
+    /// writer (the `ownerRefersTo` keyword, protocol version 14): consensus
+    /// checks it with the writer's id as the value when a document is created
+    /// and on every replace. `None` on document types that declare none and on
+    /// those that predate the keyword.
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

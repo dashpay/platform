@@ -226,6 +226,38 @@ fn validate_document_type_references_v0(
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
+    // The writer's own reference (`ownerRefersTo`, protocol version 14): its
+    // value is the writer, `owner_id`, checked as a property's value is, and
+    // named `$ownerId` in the errors; in a lookup the writer fills `"."`. It
+    // is checked on every create and on EVERY replace, touched or not, as a
+    // writer gate is: the writer is transition metadata that never appears
+    // among the changed fields, and may not be the one who wrote the
+    // document before (a transfer or a purchase moves the owner). An
+    // `identity` target has nothing to fetch: the transition already proved
+    // the writer exists.
+    if let Some(owner_reference) = document_type.owner_reference() {
+        if !matches!(owner_reference, DocumentPropertyReferenceTarget::Identity) {
+            let result = validate_reference_v0(
+                contract,
+                document_type,
+                document_data,
+                owner_id,
+                owner_reference,
+                owner_id.to_buffer(),
+                OWNER_ID,
+                &mut BTreeMap::new(),
+                platform,
+                block_info,
+                transaction,
+                execution_context,
+                platform_version,
+            )?;
+            if !result.is_valid() {
+                return Ok(result);
+            }
+        }
+    }
+
     for (path, property) in document_type.flattened_properties() {
         // A reference is an identifier property's value, or each element of
         // a typed array of identifiers whose `items` declare it (protocol
