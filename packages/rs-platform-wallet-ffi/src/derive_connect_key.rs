@@ -173,7 +173,8 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
     ));
 
     let derived = derive_connect_keypair_from_master(&master, kw_network, key);
-    // `ExtendedPrivKey` does not wipe itself; erase before any return.
+    // Dropping `master` zeroizes it too; erase now so the scalar does not
+    // outlive the derive.
     master.private_key.non_secure_erase();
     let derived = unwrap_result_or_return!(derived);
 
@@ -465,7 +466,10 @@ mod tests {
                 "sub_feature {sub_feature} purpose {purpose}"
             );
             let message = unsafe { CStr::from_ptr(result.message) }.to_str().unwrap();
-            assert!(message.contains(&format!("purpose {purpose}")), "{message}");
+            assert!(
+                message.contains(&format!("sub_feature {sub_feature} with purpose {purpose}")),
+                "{message}"
+            );
             unsafe { platform_wallet_ffi_result_free(&mut result) };
         }
     }

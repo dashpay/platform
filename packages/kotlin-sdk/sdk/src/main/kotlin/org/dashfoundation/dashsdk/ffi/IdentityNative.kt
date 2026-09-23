@@ -163,9 +163,9 @@ internal object IdentityNative {
      *   id) or 7 (app encryption; [leaf] is the bound contract's id).
      * @param identityId the identity's 32-byte id (a DIP-14 hardened child).
      * @param leaf the 32-byte leaf (a DIP-14 hardened child).
-     * @param purpose 0 for no purpose level (session authentication), or
-     *   the half of an encryption pair as one more hardened child: 1
-     *   ENCRYPTION, 2 DECRYPTION. Anything else throws.
+     * @param purpose 0 with sub-feature 6 (no purpose level), or the half
+     *   of an encryption pair with sub-feature 7: 1 ENCRYPTION,
+     *   2 DECRYPTION. Any other combination throws.
      * @return `[privateKey(32), publicKey(33)]`.
      */
     external fun deriveConnectKeyWithResolver(

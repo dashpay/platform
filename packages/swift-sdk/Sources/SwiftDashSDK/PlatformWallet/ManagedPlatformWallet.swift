@@ -1596,10 +1596,9 @@ extension ManagedPlatformWallet {
     ///
     /// `identityId` and `leaf` are DIP-14 256-bit hardened children, so
     /// nothing wallet-local is an input and two devices restored from one
-    /// seed derive the same key. `purpose`, when given, appends one more
-    /// hardened child: the encryption sub-feature uses `.encryption` and
-    /// `.decryption` to split its pair; the authentication sub-feature
-    /// takes `nil` (no purpose level at all).
+    /// seed derive the same key. `.appEncryption` requires a `purpose`,
+    /// which picks the half of its pair; `.sessionAuthentication` requires
+    /// `nil`. Any other combination throws `invalidParameter`.
     ///
     /// - Parameters:
     ///   - subFeature: `.sessionAuthentication` or `.appEncryption`.

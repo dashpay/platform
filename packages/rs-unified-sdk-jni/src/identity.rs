@@ -508,7 +508,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
             throw_sdk_exception(env, 1, "subFeature must be non-negative");
             return ptr::null_mut();
         }
-        // The FFI refuses a purpose other than 0, 1 or 2.
+        // The FFI refuses any combination other than (6, 0), (7, 1), (7, 2).
         if purpose < 0 {
             throw_sdk_exception(env, 1, "purpose must be non-negative");
             return ptr::null_mut();
