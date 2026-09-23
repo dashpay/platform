@@ -80,9 +80,10 @@ pub trait DocumentTypeV2Getters {
 
     /// The `refersTo` declaration whose value is the document's `$ownerId`, the
     /// writer (the `ownerRefersTo` keyword, protocol version 14): consensus
-    /// checks it with the writer's id as the value when a document is created
-    /// and on every replace. `None` on document types that declare none and on
-    /// those that predate the keyword.
+    /// checks it with the writer's id as the value when a document is created,
+    /// and on a replace under the rules of its target. `None` on document types
+    /// that declare none and on those that predate the keyword. Enumerated with
+    /// the property references by `DocumentTypeRef::reference_declarations`.
     fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget>;
 }
 

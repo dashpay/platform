@@ -14,7 +14,7 @@ use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, PropertyReference,
-    ReferringWrite,
+    ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -226,47 +226,21 @@ fn validate_document_type_references_v0(
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    // The writer's own reference (`ownerRefersTo`, protocol version 14): its
-    // value is the writer, `owner_id`, checked as a property's value is, and
-    // named `$ownerId` in the errors; in a lookup the writer fills `"."`. It
-    // is checked on every create and on EVERY replace, touched or not, as a
-    // writer gate is: the writer is transition metadata that never appears
-    // among the changed fields, and may not be the one who wrote the
-    // document before (a transfer or a purchase moves the owner). An
-    // `identity` target has nothing to fetch: the transition already proved
-    // the writer exists.
-    if let Some(owner_reference) = document_type.owner_reference() {
-        if !matches!(owner_reference, DocumentPropertyReferenceTarget::Identity) {
-            let result = validate_reference_v0(
-                contract,
-                document_type,
-                document_data,
-                owner_id,
-                owner_reference,
-                owner_id.to_buffer(),
-                OWNER_ID,
-                &mut BTreeMap::new(),
-                platform,
-                block_info,
-                transaction,
-                execution_context,
-                platform_version,
-            )?;
-            if !result.is_valid() {
-                return Ok(result);
-            }
-        }
-    }
-
-    for (path, property) in document_type.flattened_properties() {
-        // A reference is an identifier property's value, or each element of
-        // a typed array of identifiers whose `items` declare it (protocol
-        // version 14, the version whose document create and replace state
-        // validation call this; no document type of an earlier version can
-        // hold a typed array, so the element arm is never reached there)
-        let Some(reference) = property.property_type.reference() else {
-            continue;
-        };
+    // A reference is the writer's (`ownerRefersTo`, whose value is the
+    // document's `$ownerId` and which the errors name by that path), an
+    // identifier property's value, or each element of a typed array of
+    // identifiers whose `items` declare it. All three are protocol version 14
+    // declarations, the version whose document create and replace state
+    // validation call this: no document type of an earlier version has an
+    // owner reference or a typed array, so neither arm is reached there. The
+    // owner reference follows the replace rules of the target it declares,
+    // as a property's does: its holder never changes (the writer is the owner
+    // on a type that can be neither transferred nor traded, which generation 3
+    // requires of it), so a replace re-validates it when a property its
+    // lookup or a `propertyAgreement` reads changed, or always for a writer
+    // gate.
+    for (holder, reference) in document_type.reference_declarations() {
+        let path = holder.path();
         let (reference_target, holds_elements) = match reference {
             // A key reference on the key id property itself: the value is the
             // key id and the declaration names whose key it is. A transfer
@@ -389,15 +363,29 @@ fn validate_document_type_references_v0(
         let mut referenced_contracts = BTreeMap::new();
 
         if !holds_elements {
-            let referenced_id = match document_data.get_optional_identifier_at_path(path) {
-                Ok(Some(referenced_id)) => referenced_id,
-                // A reference property that is not set is not validated; whether it may be
-                // absent at all is enforced by the document type's required fields
-                Ok(None) => continue,
-                Err(err) => {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
-                    ))
+            let referenced_id = match holder {
+                // The writer: an identity target has nothing to fetch, the
+                // transition already proved the writer exists
+                ReferenceHolder::Owner => {
+                    if matches!(reference_target, DocumentPropertyReferenceTarget::Identity) {
+                        continue;
+                    }
+                    owner_id.to_buffer()
+                }
+                ReferenceHolder::Property(path) => {
+                    match document_data.get_optional_identifier_at_path(path) {
+                        Ok(Some(referenced_id)) => referenced_id,
+                        // A reference property that is not set is not validated; whether it
+                        // may be absent at all is enforced by the document type's required
+                        // fields
+                        Ok(None) => continue,
+                        Err(err) => {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidIdentifierError::new(path.to_string(), err.to_string())
+                                    .into(),
+                            ))
+                        }
+                    }
                 }
             };
             let result = validate_reference_v0(

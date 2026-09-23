@@ -1,9 +1,9 @@
 //! `ownerRefersTo` (protocol version 14): a document type's own `refersTo`
 //! declaration, whose value is the document's `$ownerId`, the writer. The
-//! parse of every target it takes and the two it refuses, the checks of its
-//! lookup on both sides, its count against the references a document may
-//! carry, the protocol version gate, the platform serialization round trip and
-//! the contract update rule.
+//! parse of the two targets it takes and the ones it refuses, the owner rule,
+//! the checks of its lookup on both sides, its count against the references a
+//! document may carry, the protocol version gate, the platform serialization
+//! round trip and the contract update rule.
 
 use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::basic_error::BasicError;
@@ -56,7 +56,7 @@ fn permanent_added_moderator(lookup: serde_json::Value) -> serde_json::Value {
 
 /// A contract with a permanent, immutable `addedModerator` type (unique on
 /// (`electedCharterId`, `memberId`) and on (`$ownerId`, `memberId`), with a
-/// non-unique `byMember` index), a deletable `post` type, and a transferable
+/// non-unique `byMember` index), a deletable `post` type, and a
 /// `resignationRequest` type declaring `owner_refers_to` (when it is not
 /// null) next to a required `electedCharterId`, an optional `note` and
 /// `extra`, one more property schema.
@@ -67,7 +67,6 @@ fn charter_contract_with(
 ) -> serde_json::Value {
     let mut resignation_request = json!({
         "type": "object",
-        "transferable": 1,
         "properties": {
             "electedCharterId": identifier(0),
             "note": { "type": "string", "maxLength": 63, "position": 1 }
@@ -148,6 +147,14 @@ fn owner_reference(contract: &DataContract) -> Option<DocumentPropertyReferenceT
         .cloned()
 }
 
+fn is_json_schema_error(error: &ProtocolError) -> bool {
+    matches!(
+        error,
+        ProtocolError::ConsensusError(boxed)
+            if matches!(**boxed, ConsensusError::BasicError(BasicError::JsonSchemaError(_)))
+    )
+}
+
 fn assert_refused(result: Result<DataContract, ProtocolError>, fragment: &str) {
     let error = result.expect_err("the contract should be refused");
     assert!(
@@ -157,7 +164,7 @@ fn assert_refused(result: Result<DataContract, ProtocolError>, fragment: &str) {
 }
 
 #[test]
-fn should_parse_an_owner_reference_to_every_target_an_identifier_property_takes_but_two() {
+fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
     let lookup = DocumentReferenceLookup {
         index: "byElectedCharterMember".to_string(),
         keys: BTreeMap::from([
@@ -174,18 +181,6 @@ fn should_parse_an_owner_reference_to_every_target_an_identifier_property_takes_
         (
             json!({ "type": "identity" }),
             DocumentPropertyReferenceTarget::Identity,
-        ),
-        (
-            json!({ "type": "token" }),
-            DocumentPropertyReferenceTarget::Token,
-        ),
-        (
-            json!({ "type": "permanentDocument", "documentType": "addedModerator" }),
-            DocumentPropertyReferenceTarget::PermanentDocument {
-                contract_id: None,
-                document_type_name: "addedModerator".to_string(),
-                property_agreement: BTreeMap::new(),
-            },
         ),
         (
             permanent_added_moderator(added_moderator_lookup()),
@@ -208,16 +203,8 @@ fn should_parse_an_owner_reference_to_every_target_an_identifier_property_takes_
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "addedModerator".to_string(),
-                property_agreement: agreement.clone(),
+                property_agreement: agreement,
                 lookup,
-            },
-        ),
-        (
-            json!({ "type": "deletableDocument", "documentType": "post" }),
-            DocumentPropertyReferenceTarget::DeletableDocument {
-                contract_id: None,
-                document_type_name: "post".to_string(),
-                property_agreement: BTreeMap::new(),
             },
         ),
     ] {
@@ -249,8 +236,11 @@ fn should_parse_an_owner_reference_to_every_target_an_identifier_property_takes_
     );
 }
 
+/// The targets the writer's identity id can never be, and `identityPublicKey`,
+/// which needs a key id the writer does not carry: a type declaring one could
+/// never be written.
 #[test]
-fn should_refuse_a_contract_or_identity_public_key_owner_reference() {
+fn should_refuse_an_owner_reference_to_a_target_the_writer_can_never_be() {
     for (owner_refers_to, fragment) in [
         (
             json!({ "type": "contract" }),
@@ -268,6 +258,18 @@ fn should_refuse_a_contract_or_identity_public_key_owner_reference() {
             json!({ "type": "identityPublicKey", "identityProperty": "$ownerId" }),
             "ownerRefersTo does not take an identityPublicKey reference",
         ),
+        (
+            json!({ "type": "token" }),
+            "ownerRefersTo does not take a token reference",
+        ),
+        (
+            json!({ "type": "permanentDocument", "documentType": "addedModerator" }),
+            "ownerRefersTo takes a permanentDocument reference only with a lookup",
+        ),
+        (
+            json!({ "type": "deletableDocument", "documentType": "post" }),
+            "ownerRefersTo does not take a deletableDocument reference",
+        ),
     ] {
         let schema = charter_contract(owner_refers_to.clone());
         // The parser refuses it on the stored path, where no meta-schema runs
@@ -275,8 +277,30 @@ fn should_refuse_a_contract_or_identity_public_key_owner_reference() {
             contract_on(schema.clone(), false, PlatformVersion::latest()),
             fragment,
         );
-        // and the meta-schema before it at registration
-        contract(schema).expect_err("the meta-schema should refuse it");
+        // and the meta-schema reports it at registration, before the parser
+        // reads the keyword, as it reports a malformed `refersTo` on a property
+        let error = contract(schema).expect_err("the meta-schema should refuse it");
+        assert!(
+            is_json_schema_error(&error),
+            "{owner_refers_to}: expected a meta-schema error, got {error}"
+        );
+    }
+}
+
+/// A transfer or a purchase would hand a document to an owner the declaration
+/// never checked, so the type must keep its writer as its owner.
+#[test]
+fn should_refuse_an_owner_reference_on_a_type_whose_documents_can_change_owner() {
+    for (keyword, value) in [("transferable", 1), ("tradeMode", 1)] {
+        let mut schema = charter_contract(json!({ "type": "identity" }));
+        schema["documentSchemas"]["resignationRequest"][keyword] = json!(value);
+        for full_validation in [true, false] {
+            assert_refused(
+                contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+                "document type \"resignationRequest\" declares ownerRefersTo, but its documents \
+                 can be transferred or traded",
+            );
+        }
     }
 }
 
@@ -320,33 +344,17 @@ fn should_check_the_referring_side_of_an_owner_lookup_on_every_parse() {
         );
     }
 
-    // `"$ownerId"` is the writer, like `"."`: an owner reference governs
-    // writing, so it reads the writer even on a type whose documents can be
-    // transferred, as `resignationRequest`'s can
+    // `"$ownerId"` is the writer, like `"."`, and passes the owner rule of a
+    // lookup's referring side: the type cannot change owner
     let writer_source = contract(charter_contract(permanent_added_moderator(json!({
         "index": "byOwnerMember",
         "keys": { "$ownerId": "$ownerId", "memberId": "." }
     }))))
-    .expect("an owner lookup may read the writer on a transferable type");
+    .expect("an owner lookup may read the writer");
     assert!(matches!(
         owner_reference(&writer_source),
         Some(DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. })
     ));
-
-    // whereas a property's lookup may not, there
-    let mut member_id = identifier(2);
-    member_id["refersTo"] = permanent_added_moderator(json!({
-        "index": "byOwnerMember",
-        "keys": { "$ownerId": "$ownerId", "memberId": "." }
-    }));
-    assert_refused(
-        contract(charter_contract_with(
-            serde_json::Value::Null,
-            Some(member_id),
-            1,
-        )),
-        "a lookup may read the writer only on a document type that cannot be transferred",
-    );
 }
 
 #[test]
@@ -495,21 +503,28 @@ fn should_refuse_adding_removing_or_changing_an_owner_reference_on_update() {
     for (before, after, operation) in [
         (serde_json::Value::Null, identity.clone(), "add"),
         (lookup.clone(), serde_json::Value::Null, "remove"),
-        (identity.clone(), json!({ "type": "token" }), "replace"),
+        (identity.clone(), lookup.clone(), "replace"),
     ] {
         let old = contract(charter_contract_with(before.clone(), None, 1)).expect("parses");
         let new = contract(charter_contract_with(after.clone(), None, 2)).expect("parses");
         let result = old
             .validate_update(&new, &BlockInfo::default(), platform_version)
             .expect("the update should be judged");
-        assert!(
-            matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::IncompatibleDocumentTypeSchemaError(e))]
+        let incompatible: Vec<_> = result
+            .errors
+            .iter()
+            .map(|error| match error {
+                ConsensusError::BasicError(BasicError::IncompatibleDocumentTypeSchemaError(e))
                     if e.document_type_name() == "resignationRequest"
-                        && e.operation() == operation
-                        && e.property_path().starts_with("/ownerRefersTo")
-            ),
+                        && e.property_path().starts_with("/ownerRefersTo") =>
+                {
+                    e.operation()
+                }
+                other => panic!("{before} -> {after}: unexpected {other:?}"),
+            })
+            .collect();
+        assert!(
+            incompatible.contains(&operation),
             "{before} -> {after}: {:?}",
             result.errors
         );

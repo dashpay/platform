@@ -4,10 +4,10 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentReferenceDeclaration, KeyReferenceIdentityProperty, PropertyReference,
+    DocumentReferenceDeclaration, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use dpp::data_contract::DataContract;
-use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
+use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
@@ -64,8 +64,8 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// elements: the parser refuses it there.
 ///
 /// A document type's `ownerRefersTo` declaration, whose value is the writer,
-/// is checked as a single identifier reference's is, first; it is never an
-/// `identityPublicKey` or a `contract` one, which the parser refuses.
+/// is checked as a single identifier reference's is, first; the parser only
+/// admits an `identity` or a `permanentDocument` lookup one.
 ///
 /// The error paths name the failing declaration as
 /// `documentTypeName.propertyPath`, an element declaration by its list
@@ -89,27 +89,16 @@ pub(super) fn validate_data_contract_references_v0(
         BTreeMap::new();
 
     for (declaring_type_name, document_type) in contract.document_types() {
-        let declaring = document_type.as_ref();
         // The writer's reference first (`ownerRefersTo`, whose value is the
         // document's `$ownerId` and which is named by that path), then the
         // properties' own. The owner reference is never a key reference: the
-        // parser refuses `identityPublicKey` there, and `contract` too
-        let references = declaring
-            .owner_reference()
-            .map(|target| (OWNER_ID, true, PropertyReference::Value(target)))
-            .into_iter()
-            .chain(
-                declaring
-                    .flattened_properties()
-                    .iter()
-                    .filter_map(|(path, property)| {
-                        property
-                            .property_type
-                            .reference()
-                            .map(|reference| (path.as_str(), false, reference))
-                    }),
-            );
-        for (path, is_owner_reference, reference) in references {
+        // parser only admits an identity or a permanentDocument lookup there.
+        // Inert before protocol version 14: this module is only called from
+        // contract create and update state validation 1, selected from it, and
+        // no parse before it sets an owner reference.
+        for (holder, reference) in document_type.as_ref().reference_declarations() {
+            let path = holder.path();
+            let is_owner_reference = matches!(holder, ReferenceHolder::Owner);
             let declaration_path = format!("{declaring_type_name}.{path}");
 
             let (reference_target, declaration_path) = match reference {

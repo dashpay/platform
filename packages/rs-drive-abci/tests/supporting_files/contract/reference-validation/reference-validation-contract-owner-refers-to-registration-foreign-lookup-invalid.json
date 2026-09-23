@@ -8,11 +8,12 @@
       "type": "object",
       "ownerRefersTo": {
         "type": "permanentDocument",
-        "documentType": "ghost",
+        "contractId": "4uAB6wAdt6FJ7djwjYrLnooVhYeQpzgkssBmgmvZ9WnM",
+        "documentType": "joinRequest",
         "lookup": {
-          "index": "byMember",
+          "index": "byMessage",
           "keys": {
-            "memberId": "."
+            "message": "."
           }
         }
       },

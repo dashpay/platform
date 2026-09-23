@@ -31,6 +31,7 @@ use crate::data_contract::document_type::property::{
     DocumentPropertyReferenceTarget, PropertyReference,
 };
 use crate::data_contract::document_type::property_names;
+use crate::data_contract::document_type::reference_lookup::owner_can_change;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -331,8 +332,6 @@ fn try_from_schema_generation_3(
         name,
         property_names::IMMUTABLE_ALLOW_SETTING,
     )?;
-    let owner_reference = parse_owner_reference(&schema, platform_version)
-        .map_err(consensus_or_protocol_data_contract_error)?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -402,6 +401,23 @@ fn try_from_schema_generation_3(
     let mut v2: DocumentTypeV2 = v1.into();
     v2.action_fees = action_fees;
     v2.entry_payload = entry_payload;
+    // Read from the stored schema once the core parse has run the meta-schema,
+    // so under full validation a malformed declaration is the meta-schema's to
+    // report, as a malformed `refersTo` on a property is
+    let owner_reference = parse_owner_reference(&v2.schema, platform_version)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // A document that can change owner, by a transfer or a purchase, would end
+    // up held by an owner the declaration never checked, since neither is a
+    // write: the declaration is only admitted where the writer stays the owner
+    if owner_reference.is_some() && owner_can_change(DocumentTypeRef::V2(&v2)) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares ownerRefersTo, but its documents can be \
+                 transferred or traded: a transfer or a purchase would hand a document to an \
+                 owner the declaration never checked",
+            )),
+        ));
+    }
     v2.owner_reference = owner_reference;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
@@ -517,14 +533,10 @@ fn validate_reference_count(
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     let limit = platform_version.system_limits.max_references_per_document;
-    let property_references: u32 = document_type
-        .flattened_properties()
-        .values()
-        .filter_map(|property| property.property_type.reference())
-        .map(|reference| reference.max_references())
+    let references: u32 = DocumentTypeRef::V2(document_type)
+        .reference_declarations()
+        .map(|(_, reference)| reference.max_references())
         .sum();
-    let references =
-        property_references.saturating_add(u32::from(document_type.owner_reference.is_some()));
     if references > u32::from(limit) {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(

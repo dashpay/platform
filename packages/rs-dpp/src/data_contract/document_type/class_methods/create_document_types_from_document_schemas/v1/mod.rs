@@ -161,27 +161,17 @@ impl DocumentType {
         //
         // Inert for every protocol version before 14 for the same reason as the check above:
         // a parsed reference carries a `lookup` only where the tables carry
-        // `apply_property_reference: Some(_)`, so the loop below finds none there, and only
-        // parser generation 3, selected from protocol version 14, reads `ownerRefersTo`.
+        // `apply_property_reference: Some(_)`, so the loop below finds none there. Only
+        // parser generation 3, selected from protocol version 14, sets an owner reference,
+        // so before it `reference_declarations` yields the properties' references alone, in
+        // the order the loop walked them, and names them as it did.
         for (name, document_type) in &contract_document_types {
             let declaring = document_type.as_ref();
-            // On the writer (`None`), on an identifier property or on the elements of a
-            // typed array
-            let declarations =
-                declaring
-                    .owner_reference()
-                    .map(|target| (None, target))
-                    .into_iter()
-                    .chain(declaring.flattened_properties().iter().filter_map(
-                        |(path, property)| {
-                            property
-                                .property_type
-                                .reference()
-                                .and_then(|reference| reference.target())
-                                .map(|target| (Some(path), target))
-                        },
-                    ));
-            for (path, target) in declarations {
+            // On the writer, on an identifier property or on the elements of a typed array
+            for (holder, reference) in declaring.reference_declarations() {
+                let Some(target) = reference.target() else {
+                    continue;
+                };
                 let Some(DocumentReferenceDeclaration {
                     contract_id,
                     document_type_name,
@@ -210,13 +200,10 @@ impl DocumentType {
                     continue;
                 }
                 if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {
-                    let declared_on = match path {
-                        Some(path) => format!("property \"{path}\" refersTo"),
-                        None => "ownerRefersTo".to_string(),
-                    };
                     return Err(consensus_or_protocol_data_contract_error(
                         DataContractError::InvalidContractStructure(format!(
-                            "document type \"{name}\" {declared_on} lookup: {reason}"
+                            "document type \"{name}\" {} lookup: {reason}",
+                            holder.describe()
                         )),
                     ));
                 }

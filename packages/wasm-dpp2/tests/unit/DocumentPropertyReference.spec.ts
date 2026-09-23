@@ -530,9 +530,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
       ]);
     });
 
-    it('should refuse a contract or identityPublicKey owner reference', () => {
+    it('should refuse an owner reference to a target the writer can never be', () => {
       for (const ownerRefersTo of [
         { type: 'contract' },
+        { type: 'token' },
         { type: 'identityPublicKey', identityProperty: '$ownerId' },
       ]) {
         const refused = { ...ownerSchemas.resignation, ownerRefersTo };

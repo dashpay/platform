@@ -56,8 +56,8 @@ pub(crate) trait DocumentReferenceValidation {
     /// whose referring side is `$ownerId` compares it, an `identityPublicKey`
     /// reference on a key id property with `identityProperty: $ownerId` names
     /// its key, and the document type's `ownerRefersTo` declaration is checked
-    /// with it as the value, on every create and every replace, since it lives
-    /// on the transition rather than in `document_data`.
+    /// with it as the value (under the replace rules of its target), since it
+    /// lives on the transition rather than in `document_data`.
     /// `creator_id` is the document's creator for the `$creatorId` form: the
     /// writer on a create, the stored creator on a replace, `None` when the
     /// document type records none (registration then admits no such form).

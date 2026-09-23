@@ -65,17 +65,20 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     // keyword is, so adding, removing or changing it is reported as an
     // incompatible change. The rule lives here rather than in the shared rule
     // set, which the generation-0 check also reads, because no earlier
-    // protocol version knows the keyword.
+    // protocol version knows the keyword. Without a `refersTo` rule to copy, a
+    // diff under `ownerRefersTo` fails as an unsupported keyword, an error
+    // rather than a panic.
     let owner_refers_to_rule = KEYWORD_COMPATIBILITY_RULES
         .get("refersTo")
-        .expect("refersTo rule must be present")
-        .clone();
+        .cloned()
+        .map(|rule| ("ownerRefersTo", rule));
 
     Options {
-        override_rules: CompatibilityRulesCollection::from_iter([
-            ("required", required_rule),
-            ("ownerRefersTo", owner_refers_to_rule),
-        ]),
+        override_rules: CompatibilityRulesCollection::from_iter(
+            [("required", required_rule)]
+                .into_iter()
+                .chain(owner_refers_to_rule),
+        ),
     }
 });
 

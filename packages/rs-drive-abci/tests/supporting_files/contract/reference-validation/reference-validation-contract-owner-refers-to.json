@@ -54,7 +54,6 @@
     },
     "resignationRequest": {
       "type": "object",
-      "transferable": 1,
       "ownerRefersTo": {
         "type": "permanentDocument",
         "documentType": "addedModerator",

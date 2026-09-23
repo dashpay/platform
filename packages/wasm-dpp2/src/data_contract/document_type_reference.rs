@@ -13,12 +13,10 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentTypeRef, IdentityKeyReferenceRequirements,
     KeyIdReference, PropertyReference,
 };
-use dpp::document::property_names::OWNER_ID;
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::JsValue;
@@ -228,9 +226,13 @@ export type DocumentPropertyReference = {
    *
    * The document type's `ownerRefersTo` declaration, whose value is the
    * document's `$ownerId`, the writer, is listed first with the path
-   * `"$ownerId"`. Consensus checks it with the writer's id on every create
-   * and every replace; in its `lookup`, `'.'` is the writer. Its `type` is
-   * never `contract` or `identityPublicKey`, which it cannot declare.
+   * `"$ownerId"`, which is not a property path: the value it checks is the
+   * document's owner. Consensus checks it with the writer's id when a
+   * document is created, and when a replace changes a property its `lookup`
+   * or `propertyAgreement` reads; in its `lookup`, `'.'` is the writer. Its
+   * `type` is `identity` or a `permanentDocument` with a `lookup`, the only
+   * targets a writer can be, on a document type whose documents can be
+   * neither transferred nor traded.
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135 and
@@ -512,19 +514,16 @@ pub(crate) fn references_for_document_type(
 ) -> WasmDppResult<Array> {
     let references = Array::new();
 
-    if let Some(target) = document_type.owner_reference() {
-        references.push(&reference_to_js(OWNER_ID, target, declaring_contract_id)?);
-    }
-
-    for (path, property) in document_type.flattened_properties() {
-        match property.property_type.reference() {
-            Some(PropertyReference::KeyId(reference)) => {
+    for (holder, reference) in document_type.reference_declarations() {
+        let path = holder.path();
+        match reference {
+            PropertyReference::KeyId(reference) => {
                 references.push(&key_id_reference_to_js(path, reference)?);
             }
-            Some(PropertyReference::Value(target)) => {
+            PropertyReference::Value(target) => {
                 references.push(&reference_to_js(path, target, declaring_contract_id)?);
             }
-            Some(PropertyReference::Elements { target, .. }) => {
+            PropertyReference::Elements { target, .. } => {
                 let element_path = format!("{path}[]");
                 references.push(&reference_to_js(
                     &element_path,
@@ -532,7 +531,6 @@ pub(crate) fn references_for_document_type(
                     declaring_contract_id,
                 )?);
             }
-            None => {}
         }
     }
 

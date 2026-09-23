@@ -151,11 +151,11 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
     /// The `refersTo` declaration whose value is the document's `$ownerId`,
     /// the writer (`ownerRefersTo` keyword, protocol version 14), `None` when
-    /// the type declares none. Checked with the writer's id as the value on
-    /// every create and every replace, as a property reference is checked
-    /// with the property's value. Never a `contract` or `identityPublicKey`
-    /// target, which the parser (`parse_owner_reference`) refuses: the writer
-    /// is an identity and carries no key id.
+    /// the type declares none. Checked with the writer's id as the value, as a
+    /// property reference is checked with the property's value. Only an
+    /// `identity` or a `permanentDocument` lookup target, and only on a type
+    /// whose documents can be neither transferred nor traded, which the parser
+    /// (`parse_owner_reference` and generation 3) enforces.
     pub(in crate::data_contract) owner_reference: Option<DocumentPropertyReferenceTarget>,
 }
 

@@ -762,18 +762,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 33. **References on the document's writer (`ownerRefersTo`)**: a document
 ///     type may declare one `refersTo` declaration of its own, under the
 ///     doctype-level `ownerRefersTo` keyword (meta-schema v3, which reuses the
-///     property declaration by `$ref` and refuses `contract` and
-///     `identityPublicKey`), whose value is the document's `$ownerId`, the
-///     writer, instead of a property's. Parser generation 3 reads it on every
-///     parse through the same `apply_property_reference` 0 an identifier
-///     property's goes through, onto `DocumentTypeV2::owner_reference`, so it
-///     takes every target an identifier property takes but those two (the
-///     writer is an identity, never a contract, and carries no key id),
-///     `propertyAgreement` and `lookup` included: in a lookup `.` is the
-///     writer, and a `$ownerId` key part, the writer too, is admitted on a
-///     transferable or tradeable type, since the declaration governs writing
-///     rather than holding. Its lookup's referring side is checked on every
-///     parse, a lookup into a type of the same contract by
+///     property declaration by `$ref`), whose value is the document's
+///     `$ownerId`, the writer, instead of a property's. Only two targets can
+///     hold a writer: `identity`, and a `permanentDocument` found through a
+///     `lookup`, where `.` is the writer; `contract`, `token` and a document
+///     by id (which the writer's identity id never is) and `identityPublicKey`
+///     (which needs a key id) are refused. Parser generation 3 reads it from
+///     the stored schema once the core parse has run the meta-schema, on
+///     every parse, through the same `apply_property_reference` 0 an
+///     identifier property's goes through, onto
+///     `DocumentTypeV2::owner_reference`, and refuses it on a type whose
+///     documents can be transferred or traded, since neither is a write. Every
+///     enumeration of a type's references goes through
+///     `DocumentTypeRef::reference_declarations`, which yields it first: its
+///     lookup's referring side is checked on every parse, a lookup into a
+///     type of the same contract by
 ///     `create_document_types_from_document_schemas` 1 (edited in place like
 ///     for item 29, inert before this version, whose parsers never set an
 ///     owner reference), and the whole declaration at registration by the
@@ -784,10 +787,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `max_references_per_document`. Document create state validation 2 and
 ///     replace state validation 1 (`document_reference_validation` 0, extended
 ///     in place, both only reached from this version) check the writer against
-///     the target exactly as a property's value is checked, on every create and
-///     on every replace whatever it changes (the writer is transition metadata
-///     that never appears among the changed fields), never on a transfer or a
-///     purchase, and refuse the write with the error the target reports for a
+///     the target exactly as a property's value is checked: on every create,
+///     and on a replace under the rules of its target (a changed property its
+///     lookup or a `propertyAgreement` reads, every replace for a `$ownerId`
+///     pair), and refuse the write with the error the target reports for a
 ///     property (40120 and the rest) at the path `$ownerId`; an `identity`
 ///     target fetches nothing, the transition having proved the writer exists.
 ///     Adding, removing or changing it is an incompatible schema change on

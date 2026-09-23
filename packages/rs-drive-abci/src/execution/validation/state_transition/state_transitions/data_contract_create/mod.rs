@@ -5738,6 +5738,46 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_reject_an_owner_reference_to_a_deletable_type_at_its_owner_path() {
+            // A permanentDocument lookup into a type of the same contract that
+            // allows deletion: the contract parse leaves it to registration
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-deletable-target.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeDeletableError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$ownerId" && e.document_type_name() == "moderator"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_an_owner_reference_property_agreement_at_its_owner_path() {
+            // The referring side names a property the declaring type does not
+            // have; `$ownerId` there would have been admitted
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-agreement-invalid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$ownerId" && e.referring_property() == "missing"
+            );
+        }
+
+        #[tokio::test]
         async fn should_register_contract_with_deletable_document_references() {
             // A deletableDocument reference targets a document type that
             // allows deletion (`draft`), which a permanentDocument one
@@ -6229,6 +6269,26 @@ mod tests {
         /// fixtures reference from another contract.
         const LOOKUP_CONTRACT_PATH: &str =
             "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup.json";
+
+        #[tokio::test]
+        async fn should_reject_an_owner_lookup_into_another_contract_at_its_owner_path() {
+            // `joinRequest` of the lookup contract has no `byMessage` index
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-foreign-lookup-invalid.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$ownerId" && e.index() == "byMessage"
+            );
+        }
 
         #[tokio::test]
         async fn should_register_a_lookup_into_a_unique_index_of_another_contract() {

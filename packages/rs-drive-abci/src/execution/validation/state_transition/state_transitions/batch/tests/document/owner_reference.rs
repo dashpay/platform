@@ -3,8 +3,8 @@
 //! fixture's `addedModerator` is unique on (`electedCharterId`, `memberId`),
 //! and a `resignationRequest` may only be written by the `memberId` of an
 //! `addedModerator` for its own `electedCharterId`, the moderation charters'
-//! rule: the lookup takes the writer for `"."`. `resignationRequest` can be
-//! transferred, so its owner can change without a write. `roleResignation`
+//! rule: the lookup takes the writer for `"."`. Neither type can be
+//! transferred or traded, so the writer stays the owner. `roleResignation`
 //! adds a `propertyAgreement` checked against the moderator the lookup finds,
 //! and `note` declares an identity target, which every writer meets.
 //!
@@ -16,14 +16,24 @@ use super::*;
 
 mod owner_reference_tests {
     use super::*;
+    use crate::execution::types::execution_operation::ValidationOperation;
+    use crate::execution::types::state_transition_execution_context::{
+        StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+    };
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
+    use crate::platform_types::platform::PlatformStateRef;
     use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, DocumentTypeRef};
     use dpp::document::Document;
     use dpp::identifier::Identifier;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::prelude::{DataContract, IdentityNonce};
     use dpp::state_transition::StateTransition;
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::validation::SimpleConsensusValidationResult;
+    use dpp::version::DefaultForPlatformVersion;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use simple_signer::signer::SimpleSigner;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     const CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to.json";
 
@@ -254,38 +264,67 @@ mod owner_reference_tests {
             self.process(&transition)
         }
 
-        /// Transfers `document`, as last accepted, from `from`, its owner,
-        /// to `to`.
-        async fn transfer(
-            &mut self,
-            from: Who,
-            to: Who,
+        /// Runs the document reference validation directly on `data`, a
+        /// `type_name` document written by `who`, as a create, or as a replace
+        /// changing `changed_fields`, and returns the result with the execution
+        /// context, whose operations are the reads it billed.
+        fn validate_directly(
+            &self,
+            who: Who,
             type_name: &str,
-            document: &Document,
-        ) -> StateTransitionExecutionResult {
+            data: BTreeMap<String, Value>,
+            changed_fields: Option<BTreeSet<String>>,
+        ) -> (
+            SimpleConsensusValidationResult,
+            StateTransitionExecutionContext,
+        ) {
             let platform_version = PlatformVersion::latest();
-            let recipient = self.id(to);
-            let mut transferred = document.clone();
-            transferred
-                .increment_revision()
-                .expect("the revision increments");
-            let (document_type, writer, _) = self.parts(from, type_name);
-            let nonce = writer.next_nonce();
-            let transition = BatchTransition::new_document_transfer_transition_from_document(
-                transferred,
-                document_type,
-                recipient,
-                &writer.key,
-                nonce,
-                0,
-                None,
-                &writer.signer,
-                platform_version,
-                None,
-            )
-            .await
-            .expect("expected the transfer transition");
-            self.process(&transition)
+            let (_, contract_fetch_info) = self
+                .platform
+                .drive
+                .get_contract_with_fetch_info_and_fee(
+                    self.contract.id().to_buffer(),
+                    None,
+                    false,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the contract");
+            let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+                id: Identifier::from([0xAB; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: type_name.to_string(),
+                data_contract: contract_fetch_info.expect("the contract is in state"),
+                token_cost: None,
+                gas_fees_paid_by: GasFeesPaidBy::default(),
+                contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                declared_action_fee: None,
+            });
+            let platform_state = self.platform.state.load();
+            let platform_ref = PlatformStateRef {
+                drive: &self.platform.drive,
+                state: &platform_state,
+                config: &self.platform.config,
+            };
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected an execution context");
+            let result = base
+                .validate_document_references(
+                    &data,
+                    self.id(who),
+                    // The fixture's types record no creator ids
+                    None,
+                    changed_fields.as_ref(),
+                    None,
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    None,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("expected the references to be validated");
+            (result, execution_context)
         }
 
         /// Seats `who` as a moderator of the elected charter `charter` in
@@ -382,11 +421,10 @@ mod owner_reference_tests {
     }
 
     #[tokio::test]
-    async fn should_refuse_a_replace_by_a_writer_who_no_longer_meets_the_owner_reference_even_when_no_field_changed(
-    ) {
+    async fn should_refuse_a_replace_that_moves_the_writer_off_the_owner_reference() {
         let mut fixture = OwnerReferenceFixture::new();
         fixture.seat(Who::Member, charter_id(1), "chair").await;
-        let stranger = fixture.id(Who::Stranger);
+        let member = fixture.id(Who::Member);
 
         let (request, result) = fixture
             .request_resignation(Who::Member, charter_id(1))
@@ -396,9 +434,11 @@ mod owner_reference_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
 
-        // The member still meets it: a replace changing nothing passes
+        // Touching nothing the lookup reads leaves the reference alone
         let result = fixture
-            .replace(Who::Member, "resignationRequest", &request, |_| {})
+            .replace(Who::Member, "resignationRequest", &request, |request| {
+                request.set("reason", "changed my mind".into());
+            })
             .await;
         assert_matches!(
             result,
@@ -408,26 +448,57 @@ mod owner_reference_tests {
         request
             .increment_revision()
             .expect("the revision increments");
+        request.set("reason", "changed my mind".into());
 
-        // A transfer is not checked: the reference governs writing
+        // Moving the key part re-validates it: the member is not seated for
+        // charter 2
         let result = fixture
-            .transfer(Who::Member, Who::Stranger, "resignationRequest", &request)
+            .replace(Who::Member, "resignationRequest", &request, |request| {
+                request.set("electedCharterId", id_value(charter_id(2)));
+            })
             .await;
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        assert_writer_not_found(result, member);
+    }
+
+    /// A replace that changes nothing the lookup reads cannot change its
+    /// outcome (the writer stays the owner, the target can never be deleted
+    /// and its key is fixed), so it reads nothing; one that moves a key part
+    /// is billed the lookup.
+    #[tokio::test]
+    async fn should_read_nothing_on_a_replace_leaving_the_owner_lookup_keys_alone() {
+        let mut fixture = OwnerReferenceFixture::new();
+        fixture.seat(Who::Member, charter_id(1), "chair").await;
+        let request = |charter: Identifier| {
+            BTreeMap::from([
+                ("electedCharterId".to_string(), id_value(charter)),
+                (
+                    "reason".to_string(),
+                    Value::Text("stepping down".to_string()),
+                ),
+            ])
+        };
+
+        let (result, execution_context) = fixture.validate_directly(
+            Who::Member,
+            "resignationRequest",
+            request(charter_id(1)),
+            Some(BTreeSet::from(["reason".to_string()])),
         );
-        request
-            .increment_revision()
-            .expect("the revision increments");
-        request.set_owner_id(stranger);
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert!(execution_context.operations_slice().is_empty());
 
-        // The new owner writes no field, and is still refused: the writer is
-        // checked on every replace
-        let result = fixture
-            .replace(Who::Stranger, "resignationRequest", &request, |_| {})
-            .await;
-        assert_writer_not_found(result, stranger);
+        let (result, execution_context) = fixture.validate_directly(
+            Who::Member,
+            "resignationRequest",
+            request(charter_id(1)),
+            Some(BTreeSet::from(["electedCharterId".to_string()])),
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_matches!(
+            execution_context.operations_slice(),
+            [ValidationOperation::PrecalculatedOperation(fee)] if fee.processing_fee > 0,
+            "the lookup query is the one billed operation"
+        );
     }
 
     #[tokio::test]
@@ -487,6 +558,18 @@ mod owner_reference_tests {
                 result,
                 StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
+        }
+
+        // and nothing is read to find that out, on a create or a replace
+        for changed_fields in [None, Some(BTreeSet::from(["text".to_string()]))] {
+            let (result, execution_context) = fixture.validate_directly(
+                Who::Stranger,
+                "note",
+                BTreeMap::from([("text".to_string(), Value::Text("hello".to_string()))]),
+                changed_fields,
+            );
+            assert!(result.is_valid(), "{:?}", result.errors);
+            assert!(execution_context.operations_slice().is_empty());
         }
     }
 }
