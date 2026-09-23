@@ -18,7 +18,12 @@
 //! mnemonic is pulled through the Swift/Kotlin-owned `MnemonicResolver`
 //! for the duration of the call only, in a zeroized buffer.
 
-use platform_wallet::wallet::identity::network::derive_connect_keypair_from_master;
+use key_wallet::bip32::ApplicationKeyPurpose;
+use key_wallet::dip9::{
+    FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_ENCRYPTION,
+    FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_SESSION_AUTHENTICATION,
+};
+use platform_wallet::wallet::identity::network::{derive_connect_keypair_from_master, ConnectKey};
 
 use crate::error::*;
 use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
@@ -44,16 +49,18 @@ pub const CONNECT_KEY_PURPOSE_ENCRYPTION: u32 = 1;
 /// `Purpose::DECRYPTION` discriminant).
 pub const CONNECT_KEY_PURPOSE_DECRYPTION: u32 = 2;
 
-// cbindgen only exports literal constants; these pin the literals above to the
-// values the derivation actually uses.
+// cbindgen only exports literal constants; these pin the literals above to
+// key-wallet's.
 const _: () = assert!(
     CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION
-        == platform_wallet::wallet::identity::network::CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION
+        == FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_SESSION_AUTHENTICATION
 );
 const _: () = assert!(
     CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION
-        == platform_wallet::wallet::identity::network::CONNECT_SUB_FEATURE_APP_ENCRYPTION
+        == FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_ENCRYPTION
 );
+const _: () = assert!(CONNECT_KEY_PURPOSE_ENCRYPTION == ApplicationKeyPurpose::Encryption as u32);
+const _: () = assert!(CONNECT_KEY_PURPOSE_DECRYPTION == ApplicationKeyPurpose::Decryption as u32);
 
 /// A derived DashPay Connect keypair. Plain old data: the caller copies
 /// what it needs and calls [`dash_sdk_derive_connect_key_free`] to wipe
@@ -82,24 +89,17 @@ impl Default for ConnectDerivedKeyFFI {
     }
 }
 
-/// Derive the DashPay Connect key at
-/// `m/9'/coin'/5'/<sub_feature>'/0'/<identity_id>'/<leaf>'[/<purpose>']`
-/// from the mnemonic the resolver returns for `wallet_id_bytes`.
+/// Derive a DashPay Connect key from the mnemonic the resolver returns for
+/// `wallet_id_bytes`, at the DIP-13 application paths key-wallet builds.
 ///
-/// - `network` picks the coin type (`5'` mainnet, `1'` otherwise), as the
-///   existing identity derivations do.
-/// - `sub_feature` is `6` (session authentication) or `7` (app
-///   encryption); any 31-bit value derives, the protocol decides which
-///   are meaningful.
-/// - `identity_id_bytes` and `leaf_bytes` are 32-byte DIP-14 hardened
-///   children: the identity's own id, and the request id or bound
-///   contract id.
-/// - `purpose` is `0` for no purpose level (the session authentication
-///   path), or the DPP purpose discriminant of the half being derived:
-///   `1` ENCRYPTION or `2` DECRYPTION, appended as one further hardened
-///   child. The DIP-13 amendment defines exactly those two, so any other
-///   value is refused with `ErrorInvalidParameter` rather than derived
-///   into a key nothing will ever look for.
+/// - `sub_feature` `6` with `purpose` `0`: the session authentication key;
+///   `leaf_bytes` is the connect request id.
+/// - `sub_feature` `7` with `purpose` `1` (ENCRYPTION) or `2` (DECRYPTION):
+///   one half of the app encryption pair; `leaf_bytes` is the bound contract
+///   id.
+///
+/// Any other combination is refused with `ErrorInvalidParameter`.
+/// `network` picks the coin type (`5'` mainnet, `1'` otherwise).
 ///
 /// The derived key is written to `out_key`; call
 /// [`dash_sdk_derive_connect_key_free`] when done with it.
@@ -128,24 +128,39 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(leaf_bytes);
 
-    let purpose = match purpose {
-        0 => None,
-        CONNECT_KEY_PURPOSE_ENCRYPTION | CONNECT_KEY_PURPOSE_DECRYPTION => Some(purpose),
-        other => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!(
-                    "purpose {other} is not a DashPay Connect key purpose (0 = none, \
-                     1 = ENCRYPTION, 2 = DECRYPTION)"
-                ),
-            );
-        }
-    };
-
     let identity_id = unwrap_result_or_return!(read_identifier(identity_id_bytes));
     let leaf: [u8; 32] = std::slice::from_raw_parts(leaf_bytes, 32)
         .try_into()
         .expect("from_raw_parts(_, 32) always yields exactly 32 bytes");
+    let key = match (sub_feature, purpose) {
+        (CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION, 0) => ConnectKey::SessionAuthentication {
+            identity_id,
+            request_id: leaf,
+        },
+        (CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, CONNECT_KEY_PURPOSE_ENCRYPTION) => {
+            ConnectKey::AppEncryption {
+                identity_id,
+                contract_id: leaf,
+                purpose: ApplicationKeyPurpose::Encryption,
+            }
+        }
+        (CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, CONNECT_KEY_PURPOSE_DECRYPTION) => {
+            ConnectKey::AppEncryption {
+                identity_id,
+                contract_id: leaf,
+                purpose: ApplicationKeyPurpose::Decryption,
+            }
+        }
+        (sub_feature, purpose) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!(
+                    "sub_feature {sub_feature} with purpose {purpose} is not a DashPay Connect \
+                     key (6 with purpose 0, or 7 with purpose 1 or 2)"
+                ),
+            );
+        }
+    };
 
     let kw_network: Network = network.into();
     let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
@@ -157,14 +172,7 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
         kw_network,
     ));
 
-    let derived = derive_connect_keypair_from_master(
-        &master,
-        kw_network,
-        sub_feature,
-        &identity_id,
-        leaf,
-        purpose,
-    );
+    let derived = derive_connect_keypair_from_master(&master, kw_network, key);
     // `ExtendedPrivKey` does not wipe itself; erase before any return.
     master.private_key.non_secure_erase();
     let derived = unwrap_result_or_return!(derived);
@@ -294,10 +302,10 @@ mod tests {
         let expected = derive_connect_keypair_from_master(
             &master,
             Network::Testnet,
-            CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
-            &Identifier::from(IDENTITY),
-            LEAF,
-            None,
+            ConnectKey::SessionAuthentication {
+                identity_id: Identifier::from(IDENTITY),
+                request_id: LEAF,
+            },
         )
         .unwrap();
         assert_eq!(first.private_key_bytes, *expected.private_key);
@@ -306,9 +314,7 @@ mod tests {
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 
-    /// Leaf, purpose and sub-feature each change the key; `purpose == 0`
-    /// appends nothing, so it differs from `purpose == 1` under the
-    /// encryption sub-feature.
+    /// Leaf, purpose and sub-feature each change the key.
     #[test]
     fn different_leaves_purposes_and_sub_features_give_different_keys() {
         let resolver = unsafe {
@@ -326,11 +332,10 @@ mod tests {
             [0x6C; 32],
             0,
         );
-        let enc_unpurposed = key(CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, LEAF, 0);
         let enc = key(CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, LEAF, 1);
         let dec = key(CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, LEAF, 2);
 
-        let all = [auth, auth_other_leaf, enc_unpurposed, enc, dec];
+        let all = [auth, auth_other_leaf, enc, dec];
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
                 assert_ne!(a, b, "connect keys collided (index {i})");
@@ -429,30 +434,39 @@ mod tests {
         assert_eq!(out.private_key_bytes, [0u8; 32]);
     }
 
-    /// Only the two DIP-13 purposes (and 0 for none) derive; anything else
-    /// is refused before the seed is resolved.
+    /// Only session authentication with no purpose, and app encryption with
+    /// ENCRYPTION or DECRYPTION, derive; anything else is refused before the
+    /// seed is resolved.
     #[test]
-    fn unknown_purpose_is_an_invalid_parameter() {
-        let mut out = ConnectDerivedKeyFFI::empty();
-        let wallet_id = [0x07u8; 32];
-        let mut result = unsafe {
-            dash_sdk_derive_connect_key_with_resolver(
-                FFINetwork::Testnet,
-                wallet_id.as_ptr(),
-                std::ptr::dangling_mut(),
-                CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION,
-                IDENTITY.as_ptr(),
-                LEAF.as_ptr(),
-                3,
-                &mut out,
-            )
-        };
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorInvalidParameter
-        );
-        let message = unsafe { CStr::from_ptr(result.message) }.to_str().unwrap();
-        assert!(message.contains("purpose 3"), "{message}");
-        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    fn other_sub_feature_and_purpose_combinations_are_invalid_parameters() {
+        for (sub_feature, purpose) in [
+            (CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, 3),
+            (CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, 0),
+            (CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION, 1),
+            (5, 0),
+        ] {
+            let mut out = ConnectDerivedKeyFFI::empty();
+            let wallet_id = [0x07u8; 32];
+            let mut result = unsafe {
+                dash_sdk_derive_connect_key_with_resolver(
+                    FFINetwork::Testnet,
+                    wallet_id.as_ptr(),
+                    std::ptr::dangling_mut(),
+                    sub_feature,
+                    IDENTITY.as_ptr(),
+                    LEAF.as_ptr(),
+                    purpose,
+                    &mut out,
+                )
+            };
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "sub_feature {sub_feature} purpose {purpose}"
+            );
+            let message = unsafe { CStr::from_ptr(result.message) }.to_str().unwrap();
+            assert!(message.contains(&format!("purpose {purpose}")), "{message}");
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+        }
     }
 }
