@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Changed
+
+- **dashmate:** use the floating Tenderdash `1.8` image tag and migrate existing configurations.
+
 ## [4.2.0-beta.3](https://github.com/dashpay/platform/compare/v4.2.0-beta.2...v4.2.0-beta.3) (2026-09-20)
 
 
