@@ -17,6 +17,7 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -1188,6 +1189,18 @@ pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
 /// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referring_system_agreement_property(name: &str) -> bool {
     REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
+}
+
+/// Whether the property at the dotted `path` of `document_type`, or an object
+/// around it, is transient: either way its value is never stored.
+/// `transient_fields()` holds the paths as declared, so a leaf of a transient
+/// object is found only through the object's path, a prefix of its own.
+pub(crate) fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
+    let transient_fields = document_type.transient_fields();
+    path.match_indices('.')
+        .map(|(end, _)| &path[..end])
+        .chain(std::iter::once(path))
+        .any(|prefix| transient_fields.contains(prefix))
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
