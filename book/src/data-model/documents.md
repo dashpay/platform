@@ -659,6 +659,8 @@ Nothing else is verifiable on chain: not that the bytes decrypt, not that they d
 
 In Rust the declaration is `DocumentProperty::encrypted_for` (`Option<EncryptedFor>`), listed per document type by `DocumentTypeV0Getters::encrypted_properties()`, and the shape check is `DocumentTypeBasicMethods::validate_encrypted_property_shapes()`, versioned on the `validate_encrypted_property_shapes` method slot (`None` before protocol version 14, which is what keeps the in-place replace call inert). In JavaScript, `contract.documentTypeEncryptedProperties(name)` and `contract.documentEncryptedProperties` expose the same declarations, and the shape error reaches an app as `DocumentEncryptionErrorCode.InvalidEncryptedPropertyShape`.
 
+Clients encrypt and decrypt through the declaration rather than a per-contract recipe. The Rust SDK's `dash_sdk::platform::encrypted_for` module has `encrypt_property`, which writes the ciphertext and both key id properties, and `decrypt_property`. `EncryptedPropertyEnvelope::read` names the identities and key ids a reader needs. `select_encryption_keys` picks the keys the document type's `identityPublicKey` references demand through their `keyRequirements`. In JavaScript the same helpers are `sdk.encryptedFor.encrypt`, `decrypt` and `envelope` (`WasmSdk.encryptDocumentProperty`, `decryptDocumentProperty` and `encryptedPropertyEnvelope`). The layout has no authentication tag, so a wrong key fails the padding check except about once in 256 attempts, when it yields garbage.
+
 ## Rules and Guidelines
 
 **Do:**

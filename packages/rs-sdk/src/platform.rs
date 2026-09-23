@@ -16,6 +16,7 @@ pub mod data_contracts_latest_versions;
 mod delegate;
 pub mod documents;
 pub mod dpns_usernames;
+pub mod encrypted_for;
 mod fetch;
 pub mod fetch_current_no_parameters;
 mod fetch_many;
@@ -23,6 +24,7 @@ mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod identity_keys_remaining_budgets;
+pub mod moderation_charters;
 pub mod query;
 pub mod query_settings;
 #[cfg(feature = "shielded")]

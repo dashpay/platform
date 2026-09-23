@@ -104,6 +104,8 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.group`](src/group/facade.ts) | Group membership, actions, and contested resources |
 | [`sdk.voting`](src/voting/facade.ts) | Contested resource vote states and polls |
 | [`sdk.shielded`](src/shielded/facade.ts) | Query shielded pool state, encrypted notes, anchors, and nullifier status |
+| [`sdk.encryptedFor`](src/encrypted-for/facade.ts) | Encrypt and decrypt the byte properties a document type declares `encryptedFor`, for any contract |
+| [`sdk.moderationCharters`](src/moderation-charters/facade.ts) | Read a contract's seated charter, its team, proposals and join requests; build join and resignation requests |
 
 A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
 
@@ -286,7 +288,81 @@ try {
 }
 ```
 
-Encrypt and decrypt helpers keyed off the declaration are not part of the SDK yet; the Rust `platform-encryption` crate has the primitives.
+`sdk.encryptedFor` encrypts and decrypts such a property, reading the declaration from the contract, so the same calls work for every contract that declares one. They run locally and need no connection.
+
+```ts
+import { PrivateKey } from '@dashevo/evo-sdk';
+
+// The writer: the fields to set on the document, the ciphertext and both key ids
+const fields = await sdk.encryptedFor.encrypt({
+  dataContract: contract,
+  documentTypeName: 'joinRequest',
+  property: 'encryptedMessage',
+  plaintext: 'I would like to help moderate',
+  senderKey: writerIdentity.getPublicKeyById(4),       // its id goes into senderKeyId
+  senderPrivateKey: PrivateKey.fromWIF(writerKeyWif),
+  recipientKey: leaderIdentity.getPublicKeyById(2),    // its id goes into recipientKeyId
+});
+// { encryptedMessage: Uint8Array(48), recipientKeyId: 2, senderKeyId: 4 }
+
+// The reader: whose keys the stored document names, then decrypt
+const envelope = await sdk.encryptedFor.envelope({ dataContract: contract, document, property: 'encryptedMessage' });
+const sender = await sdk.identities.fetch(envelope.senderId);
+const message = await sdk.encryptedFor.decrypt({
+  dataContract: contract,
+  document,
+  property: 'encryptedMessage',
+  recipientPrivateKey: PrivateKey.fromWIF(leaderDecryptionKeyWif), // the key recipientKeyId names
+  senderKey: sender.getPublicKeyById(envelope.senderKeyId),
+});
+```
+
+The IV is fresh randomness on every call. The scheme carries no authentication tag: a wrong key is caught only by the padding check, which it passes about once in 256 attempts and then returns garbage, so an app that must tell the two apart has to recognise its plaintext. ECDH is symmetric, so the writer can read its own message back with its private key and the recipient's key.
+
+## Moderation charters
+
+A contract that declares elected moderation is moderated by the team of its seated charter in the moderation charters system contract (protocol version 14, `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`). `sdk.moderationCharters` reads it with ordinary proved document queries:
+
+```ts
+// The seated charter: the one electedCharter for the contract, or undefined
+const charter = await sdk.moderationCharters.seatedCharter(contractId);
+
+// Its proposal, the submittedCharter it runs on
+const proposal = await sdk.moderationCharters.submittedCharter(charter.properties.submittedCharterId);
+
+// The team: the leader plus the elected members and the additions, less the removals
+const team = await sdk.moderationCharters.team(contractId);
+team.leaderId; team.members; team.contains(identityId);
+
+// Proposals for a contract in filing order, and the join requests for one, a page at a time
+const proposals = await sdk.moderationCharters.submittedCharters({ targetContractId: contractId, limit: 20 });
+const requests = await sdk.moderationCharters.joinRequests({ submittedCharterId: proposalId });
+
+// Resignation requests the leader has not acted on with a removal yet
+const pending = await sdk.moderationCharters.pendingResignationRequests(charter.id);
+```
+
+A join request and a resignation request carry a message only the leader can read. The builders fetch the proposal (or the charter) and the leader, pick the leader's decryption key bound to `submittedCharter` and the writer's encryption key bound to `joinRequest`, the keys the schema's `keyRequirements` demand, encrypt the message and set `recipientId`, `recipientKeyId` and `senderKeyId`:
+
+```ts
+const joinRequest = await sdk.moderationCharters.buildJoinRequest({
+  submittedCharterId: proposalId,
+  message: 'Five years moderating a forum; happy to help',
+  writer: identity,                                    // or its id
+  writerEncryptionKey: PrivateKey.fromWIF(encryptionKeyWif),
+});
+await sdk.documents.create({ document: joinRequest, identityKey, signer });
+
+const resignation = await sdk.moderationCharters.buildResignationRequest({
+  electedCharterId: charter.id,
+  message: 'Stepping down at the end of the month',
+  writer: identity,
+  writerEncryptionKey: PrivateKey.fromWIF(encryptionKeyWif),
+});
+await sdk.documents.create({ document: resignation, identityKey, signer });
+```
+
+The leader reads either with `sdk.encryptedFor.decrypt`.
 
 ## Immutable properties (`immutable`)
 
