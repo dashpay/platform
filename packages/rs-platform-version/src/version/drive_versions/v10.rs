@@ -1,10 +1,13 @@
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_group_method_versions::v2::DRIVE_GROUP_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::v3::DRIVE_IDENTITY_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::drive_versions::{DriveFeesMethodVersions, DriveMethodVersions, DriveVersion};
+use crate::version::drive_versions::{
+    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveMethodVersions, DriveVersion,
+};
 
 /// Drive version 10, introduced in protocol v15. Differs from v9 in:
 ///
@@ -39,16 +42,29 @@ use crate::version::drive_versions::{DriveFeesMethodVersions, DriveMethodVersion
 ///   turns on `update.credit_storage_refunds_to_owners`, the primitive
 ///   block lifecycle paths use to credit each recorded owner of a refund
 ///   and report the amount whose owner has no balance element.
+/// * **Price before commit** — `batch_operations.apply_drive_operations`
+///   1 -> 2, `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
+///   0 -> 1) and `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (the four moderation
+///   writers that can free flagged bytes, 0 -> 1). Every fee-returning
+///   entry point that owns its transaction when the caller passes none
+///   now prices the batch before committing, so the missing-history error
+///   above never leaves a write persisted without its fee result. With a
+///   caller transaction nothing changes.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled; the moderation removal wrappers price before committing an owned transaction
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no proof verifiers
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V3, // changed in v10: credit_storage_refunds_to_owners primitive for lifecycle refund settlement
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
+        batch_operations: DriveBatchOperationsMethodVersion {
+            apply_drive_operations: 2, // changed in v10: the batch is priced before an owned transaction commits
+            ..DRIVE_VERSION_V9.methods.batch_operations
+        },
+        group: DRIVE_GROUP_METHOD_VERSIONS_V2, // changed in v10: add_group_action prices before committing an owned transaction
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9
