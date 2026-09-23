@@ -16,7 +16,7 @@ describe('Tenderdash image migration', () => {
     expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:1.8');
   });
 
-  for (const fromVersion of ['4.2.0-beta.3', '4.2.0']) {
+  for (const fromVersion of ['4.2.0-dev.1', '4.2.0-beta.3']) {
     it(`should migrate pinned images from config format ${fromVersion}`, () => {
       const configFileData = {
         configFormatVersion: fromVersion,
@@ -38,7 +38,7 @@ describe('Tenderdash image migration', () => {
       expect(migrated.configs.withoutDocker).to.deep.equal({
         platform: { drive: { tenderdash: {} } },
       });
-      expect(migrated.configFormatVersion).to.equal('4.2.1');
+      expect(migrated.configFormatVersion).to.equal('4.2.0');
       expect(migrateConfigFile(migrated, migrated.configFormatVersion, version)).to.equal(migrated);
     });
   }

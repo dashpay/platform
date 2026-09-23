@@ -1733,16 +1733,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '4.2.1': (configFile) => {
-        // Development builds already stamp configs at 4.2.0, so use a newer key.
-        Object.values(configFile.configs).forEach((options) => {
-          if (options.platform?.drive?.tenderdash?.docker) {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
-          }
-        });
-
-        return configFile;
-      },
       '4.1.1': (configFile) => {
         // The drive and rs-dapi tags are derived from the package version, and
         // the migration that re-pins them no longer fires for a config already
