@@ -25,6 +25,10 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::{
+    DocumentPropertyReferenceTarget, PropertyReference,
+};
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentType;
@@ -446,6 +450,8 @@ fn try_from_schema_generation_3(
     #[cfg(feature = "validation")]
     if full_validation {
         validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_reference_count(&v2, name, platform_version)?;
+        validate_no_immutable_deletable_element_references(&v2, name)?;
     }
 
     Ok(v2)
@@ -476,6 +482,93 @@ fn validate_typed_array_max_items(
                     "typed array property \"{}\" of document type \"{}\" declares maxItems \
                      {}, above the maximum of {}",
                     path, name, typed_array.max_items, limit,
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The references one document of the type can carry, one for each
+/// property declaring `refersTo` (an identifier, or a key id with a key
+/// reference) and `maxItems` for each typed array whose elements declare it,
+/// are at most
+/// `SystemLimits::max_references_per_document`. Every reference is a billed
+/// state read when the document is created or replaced, so the sum bounds
+/// the reads one write can cause; `max_typed_array_items` alone would let a
+/// type declare many arrays of that many references each.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_count(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_references_per_document;
+    let references: u32 = document_type
+        .flattened_properties()
+        .values()
+        .filter_map(|property| property.property_type.reference())
+        .map(|reference| reference.max_references())
+        .sum();
+    if references > u32::from(limit) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares references for up to {references} values per \
+                 document (one per property with refersTo, maxItems per typed array of \
+                 referencing elements), above the maximum of {limit}",
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// An `immutable` property may not hold a `deletableDocument` reference the
+/// replace state validation could not clear: a typed array of them, at the
+/// top level or inside an immutable object, or a single one inside an
+/// immutable object. Every replace re-validates such a reference, so once a
+/// target is deleted the property would have to change, which an immutable
+/// property cannot: the document could never be replaced again. The one
+/// such reference that has a way out is a single one held by an immutable
+/// top-level property: a replace may remove it once its target is gone, an
+/// exception that reads the one identifier the removed top-level property
+/// held, which neither a list nor an object gives it.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_deletable_element_references(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for (path, property) in document_type.flattened_properties() {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        if !matches!(
+            reference.target(),
+            Some(DocumentPropertyReferenceTarget::DeletableDocument { .. })
+        ) {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        let is_list = matches!(reference, PropertyReference::Elements { .. });
+        // A single reference that is itself the immutable property can be
+        // cleared once its target is gone
+        if !is_list && top_level == path {
+            continue;
+        }
+        if document_type.immutable_fields.contains(top_level) {
+            let held_as = if is_list {
+                "a typed array of deletableDocument references"
+            } else {
+                "a deletableDocument reference inside an object"
+            };
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     {held_as}: every replace re-validates it, so once a target is deleted the \
+                     property would have to change and the document could never be replaced \
+                     again. Use permanentDocument references, or leave the property mutable",
                 )),
             ));
         }
@@ -529,6 +622,10 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderators_delete_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_test_helpers;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
 

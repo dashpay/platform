@@ -63,6 +63,7 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             owner_id,
             Some(owner_id),
             None,
+            None,
             platform,
             block_info,
             transaction,

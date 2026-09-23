@@ -222,6 +222,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 self.document_type.name(),
             )));
         };
+        // A typed array of references is no join property: it is not
+        // indexable, and a join value is one identifier
         let document_reference = match &join_document_property.property_type {
             DocumentPropertyType::IdentifierWithReference(reference_target) => {
                 reference_target.as_document_reference()

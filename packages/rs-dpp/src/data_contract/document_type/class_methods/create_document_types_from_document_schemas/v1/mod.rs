@@ -90,7 +90,9 @@ impl DocumentType {
 
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
-                // Both forms of the key reference carry the same requirements
+                // Both forms of the key reference carry the same requirements.
+                // Only a scalar property can hold either: the typed array
+                // parser refuses identityPublicKey on an element
                 let key_requirements = match &property.property_type {
                     DocumentPropertyType::IdentifierWithReference(
                         DocumentPropertyReferenceTarget::IdentityPublicKey {
