@@ -764,6 +764,8 @@ mod reference_expression_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
+mod reference_test_helpers;
+#[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_test_helpers;

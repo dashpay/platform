@@ -460,7 +460,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
      * a join request for the charter, or the moderator an `addedModerator`
      * document names.
      */
-    const anyOfSchemas = {
+    const expressionSchemas = {
       joinRequest: lookupSchemas.joinRequest,
       addedModerator: {
         type: 'object',
@@ -503,23 +503,24 @@ describe('DataContract — refersTo declarations (v14)', () => {
       },
     };
 
-    function buildAnyOfContract(schemas: object) {
+    function buildExpressionContract(documentSchemas: object) {
       return new wasm.DataContract({
         ownerId,
         identityNonce: BigInt(2),
-        schemas,
+        schemas: documentSchemas,
         definitions: null,
         fullValidation: true,
         platformVersion: new PlatformVersion(14),
       });
     }
 
-    it('should carry the targets of an anyOf in declared order, without a type', () => {
-      const contract = buildAnyOfContract(anyOfSchemas);
+    it('should carry the operands of an anyOf in declared order, tagged anyOf', () => {
+      const contract = buildExpressionContract(expressionSchemas);
       const [member] = contract.documentTypeReferences('resignation') as Reference[];
 
       expect(member.path).to.equal('memberId');
-      expect(member).to.not.have.property('type');
+      expect(member.type).to.equal('anyOf');
+      expect(member).to.not.have.property('allOf');
       expect(member.anyOf).to.have.lengthOf(2);
       const [joinRequest, addedModerator] = member.anyOf!;
       expect(joinRequest.type).to.equal('permanentDocument');
@@ -540,7 +541,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
 
     it('should carry an anyOf the elements of a typed array declare', () => {
-      const withMembers = structuredClone(anyOfSchemas);
+      const withMembers = structuredClone(expressionSchemas);
       const properties = withMembers.resignation.properties as Record<string, object>;
       properties.members = {
         type: 'array',
@@ -555,55 +556,55 @@ describe('DataContract — refersTo declarations (v14)', () => {
         },
         position: 2,
       };
-      const contract = buildAnyOfContract(withMembers);
+      const contract = buildExpressionContract(withMembers);
       const members = (contract.documentTypeReferences('resignation') as Reference[]).find(
         (reference) => reference.path === 'members[]',
       )!;
 
-      expect(members).to.not.have.property('type');
+      expect(members.type).to.equal('anyOf');
       expect(members.anyOf!.map((target) => target.type)).to.deep.equal(['identity', 'permanentDocument']);
       expect(members.anyOf![1].documentType).to.equal('joinRequest');
     });
 
-    it('should carry an allOf nested in an anyOf, each list under its own key', () => {
-      const nested = structuredClone(anyOfSchemas);
+    it('should carry an allOf nested in an anyOf, each list under its own key and tagged', () => {
+      const nested = structuredClone(expressionSchemas);
       const memberId = nested.resignation.properties.memberId as { refersTo: { anyOf: object[] } };
       const [joinRequest, addedModerator] = memberId.refersTo.anyOf;
       memberId.refersTo = {
         anyOf: [addedModerator, { allOf: [{ type: 'identity' }, joinRequest] }],
       };
-      const contract = buildAnyOfContract(nested);
+      const contract = buildExpressionContract(nested);
       const [member] = contract.documentTypeReferences('resignation') as Reference[];
 
-      expect(member).to.not.have.property('type');
+      expect(member.type).to.equal('anyOf');
       expect(member.anyOf).to.have.lengthOf(2);
       expect(member.anyOf![0].documentType).to.equal('addedModerator');
       const allOf = member.anyOf![1];
-      expect(allOf).to.not.have.property('type');
+      expect(allOf.type).to.equal('allOf');
       expect(allOf).to.not.have.property('anyOf');
       expect(allOf.allOf!.map((operand) => operand.type)).to.deep.equal(['identity', 'permanentDocument']);
       expect(allOf.allOf![1].documentType).to.equal('joinRequest');
     });
 
     it('should refuse a leaf of a type an expression does not take', () => {
-      const withContract = structuredClone(anyOfSchemas);
+      const withContract = structuredClone(expressionSchemas);
       (withContract.resignation.properties.memberId as { refersTo: object }).refersTo = {
         anyOf: [{ type: 'identity' }, { type: 'contract' }],
       };
 
-      expect(() => buildAnyOfContract(withContract)).to.throw(
+      expect(() => buildExpressionContract(withContract)).to.throw(
         /refersTo anyOf\[1\] is a reference of type contract, which a reference expression does not take/,
       );
     });
 
     it('should refuse an anyOf directly inside an anyOf', () => {
-      const flat = structuredClone(anyOfSchemas);
+      const flat = structuredClone(expressionSchemas);
       const memberId = flat.resignation.properties.memberId as { refersTo: { anyOf: object[] } };
       memberId.refersTo = {
         anyOf: [{ type: 'identity' }, { anyOf: memberId.refersTo.anyOf }],
       };
 
-      expect(() => buildAnyOfContract(flat)).to.throw(
+      expect(() => buildExpressionContract(flat)).to.throw(
         /refersTo anyOf\[1\] is an anyOf directly inside an anyOf/,
       );
     });

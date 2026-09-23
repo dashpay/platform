@@ -6,9 +6,11 @@
 //! each leaf gets as it would alone, the protocol version gate and the
 //! platform serialization round trip.
 
+use super::reference_test_helpers::{
+    assert_refused, contract, contract_on, identifier, join_request_schema, CONTRACT_ID,
+};
 use super::typed_array_test_helpers::expect_json_schema_error;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceLookup,
@@ -19,25 +21,11 @@ use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
-use crate::ProtocolError;
 use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde_json::json;
 use std::collections::BTreeMap;
-
-const CONTRACT_ID: [u8; 32] = [7; 32];
-
-fn identifier(position: u32) -> serde_json::Value {
-    json!({
-        "type": "array",
-        "byteArray": true,
-        "minItems": 32,
-        "maxItems": 32,
-        "contentMediaType": "application/x.dash.dpp.identifier",
-        "position": position
-    })
-}
 
 /// The moderation charter's two ways in: a `joinRequest` of the member for
 /// the charter, found by (`submittedCharterId`, `$ownerId`), or an
@@ -110,25 +98,7 @@ fn charter_contract(refers_to: serde_json::Value) -> serde_json::Value {
         "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
         "version": 1,
         "documentSchemas": {
-            "joinRequest": {
-                "type": "object",
-                "canBeDeleted": false,
-                "documentsMutable": false,
-                "properties": {
-                    "submittedCharterId": identifier(0),
-                    "message": { "type": "string", "maxLength": 63, "position": 1 }
-                },
-                "indices": [
-                    {
-                        "name": "bySubmittedCharter",
-                        "properties": [{ "submittedCharterId": "asc" }, { "$ownerId": "asc" }],
-                        "unique": true
-                    },
-                    { "name": "byMessage", "properties": [{ "message": "asc" }] }
-                ],
-                "required": ["submittedCharterId", "message"],
-                "additionalProperties": false
-            },
+            "joinRequest": join_request_schema(),
             "addedModerator": {
                 "type": "object",
                 "canBeDeleted": false,
@@ -197,19 +167,6 @@ fn charter_contract_with_members(
     contract
 }
 
-fn contract_on(
-    contract: serde_json::Value,
-    full_validation: bool,
-    platform_version: &PlatformVersion,
-) -> Result<DataContract, ProtocolError> {
-    let value = platform_value::to_value(contract).expect("the contract should convert");
-    DataContract::from_value(value, full_validation, platform_version)
-}
-
-fn contract(contract: serde_json::Value) -> Result<DataContract, ProtocolError> {
-    contract_on(contract, true, PlatformVersion::latest())
-}
-
 fn property_type(contract: &DataContract, property: &str) -> DocumentPropertyType {
     contract
         .document_type_for_name("resignation")
@@ -219,14 +176,6 @@ fn property_type(contract: &DataContract, property: &str) -> DocumentPropertyTyp
         .expect("the property")
         .property_type
         .clone()
-}
-
-fn assert_refused(result: Result<DataContract, ProtocolError>, fragment: &str) {
-    let error = result.expect_err("the contract should be refused");
-    assert!(
-        error.to_string().contains(fragment),
-        "expected {fragment:?} in: {error}"
-    );
 }
 
 /// Refused by the parser on every parse with `fragment`, and by the
@@ -679,7 +628,7 @@ fn should_check_each_leaf_as_it_would_be_checked_alone() {
     ]));
     assert_refused(
         contract_on(malformed.clone(), false, PlatformVersion::latest()),
-        "documentType",
+        "unable to get str property documentType",
     );
     expect_json_schema_error(contract(malformed));
 

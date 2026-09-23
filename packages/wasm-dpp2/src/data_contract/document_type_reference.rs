@@ -31,7 +31,10 @@ const DOCUMENT_PROPERTY_REFERENCE_TS: &'static str = r#"
  * Mirrors the `refersTo` keyword of the v3 document meta-schema, which is
  * active from protocol version 14. The field names are the schema keyword's
  * own, so what `contract.toJSON()` shows under `refersTo` and what these
- * accessors return line up key for key.
+ * accessors return line up key for key, with one addition: a reference
+ * expression, which the schema declares by its `anyOf` or `allOf` key alone,
+ * also carries `type: 'anyOf'` or `type: 'allOf'`, so every member of the
+ * union is tagged by `type`.
  */
 /**
  * What an `identityPublicKey` reference requires of the key it points at,
@@ -196,18 +199,20 @@ export type DocumentPropertyReferenceTarget =
 
 /**
  * A reference expression, declared as `refersTo: { anyOf: [...] }` or
- * `refersTo: { allOf: [...] }`, the schema's own shape. There is no `type`:
- * test for `'anyOf' in reference` or `'allOf' in reference`. An `anyOf`
- * holds when at least one operand holds: consensus checks the operands in
- * this order, stops at the first that holds, and when none does refuses the
- * write with the error of the last. An `allOf` holds when every operand holds
- * for the same value: consensus stops at the first that fails and refuses the
- * write with its error. Operands nest, the other combinator inside, up to the
+ * `refersTo: { allOf: [...] }`. The operands sit under the combinator's own
+ * key, as in the schema, and `type` names the combinator, so the union stays
+ * internally tagged like every other: `switch (reference.type)` sees
+ * `'anyOf'` and `'allOf'` next to the target kinds. An `anyOf` holds when at
+ * least one operand holds: consensus checks the operands in this order,
+ * stops at the first that holds, and when none does refuses the write with
+ * the error of the last. An `allOf` holds when every operand holds for the
+ * same value: consensus stops at the first that fails and refuses the write
+ * with its error. Operands nest, the other combinator inside, up to the
  * protocol's depth limit (4 from protocol version 14).
  */
 export type DocumentPropertyReferenceExpression =
-  | { type?: never; anyOf: Array<DocumentPropertyReferenceOperand> }
-  | { type?: never; allOf: Array<DocumentPropertyReferenceOperand> };
+  | { type: 'anyOf'; anyOf: Array<DocumentPropertyReferenceOperand> }
+  | { type: 'allOf'; allOf: Array<DocumentPropertyReferenceOperand> };
 
 /**
  * One operand of a reference expression: a leaf, an `identity` or a
@@ -374,8 +379,9 @@ fn set_reference_target_fields(
     declaring_contract_id: Identifier,
     path: &str,
 ) -> WasmDppResult<()> {
-    // No `type`, as the schema declares none: the operands sit under the
-    // combinator's own key, each an object of its own
+    // The operands sit under the combinator's own key, as in the schema,
+    // each an object of its own, and `type` names the combinator, so the
+    // union stays internally tagged (CONVENTIONS.md, "Tagged unions")
     if let Some((combinator, operands)) = target.combinator() {
         let objects = Array::new();
         for operand in operands.operands() {
@@ -385,7 +391,9 @@ fn set_reference_target_fields(
                 path,
             )?);
         }
-        return set_field(object, combinator.wire_name(), &objects, path);
+        let name = combinator.wire_name();
+        set_field(object, "type", &JsValue::from_str(name), path)?;
+        return set_field(object, name, &objects, path);
     }
 
     let kind = match target {
