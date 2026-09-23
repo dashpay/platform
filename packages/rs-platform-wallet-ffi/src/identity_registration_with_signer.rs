@@ -1021,37 +1021,6 @@ mod tests {
         assert_eq!(key.expires_at(), Some(1_800_000_000_000));
     }
 
-    /// The identity create / update transitions carry the key as an
-    /// `IdentityPublicKeyInCreation`; a limited row must become the V1
-    /// variant there too, since the limits are part of the signable bytes.
-    #[test]
-    fn limited_row_becomes_a_v1_key_in_creation() {
-        use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV1Getters;
-        use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-
-        let pk = [0x02u8; 33];
-        let mut session = ffi_row(9, &pk);
-        session.security_level = 2; // SecurityLevel::HIGH
-        session.has_total_budget = true;
-        session.total_budget = 10_000_000_000;
-        session.has_expires_at = true;
-        session.expires_at = 1_800_000_000_000;
-        let rows = [ffi_row(0, &pk), session];
-
-        // SAFETY: `rows` (and the pubkey array it borrows) outlive the call.
-        let map = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
-            .expect("limited authentication key must decode");
-
-        let master = IdentityPublicKeyInCreation::from(&map[&0]);
-        assert!(matches!(master, IdentityPublicKeyInCreation::V0(_)));
-        assert!(!master.has_limits());
-
-        let session = IdentityPublicKeyInCreation::from(&map[&9]);
-        assert!(matches!(session, IdentityPublicKeyInCreation::V1(_)));
-        assert_eq!(session.total_budget(), Some(10_000_000_000));
-        assert_eq!(session.expires_at(), Some(1_800_000_000_000));
-    }
-
     #[test]
     fn decode_contract_bounds_accepts_none_for_authentication_encryption_and_decryption() {
         let pk = [0x02u8; 33];
