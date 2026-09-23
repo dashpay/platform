@@ -27,7 +27,9 @@ use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
-use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
+use key_wallet::bip32::{
+    ApplicationKeyPurpose, ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType,
+};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
@@ -114,112 +116,73 @@ pub fn identity_auth_derivation_path_for_type(
     ]))
 }
 
-/// DIP-13 sub-feature under `m/9'/coin'/5'/` for the DashPay Connect
-/// session authentication key: `m/9'/coin'/5'/6'/0'/identityId'/requestId'`.
-/// The leaf is the connect request's id, `hash256(appEphemeralPubKey)`.
-pub const CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION: u32 = 6;
-
-/// DIP-13 sub-feature under `m/9'/coin'/5'/` for the DashPay Connect
-/// app encryption key pair:
-/// `m/9'/coin'/5'/7'/0'/identityId'/contractId'/purpose'`. The leaf is
-/// the id of the data contract the key is bound to; `purpose'` is the DPP
-/// purpose discriminant (`1'` ENCRYPTION, `2'` DECRYPTION), so an identity
-/// holds the DashPay-style pair per contract.
-pub const CONNECT_SUB_FEATURE_APP_ENCRYPTION: u32 = 7;
-
-/// Build the DIP-13 sub-feature derivation path DashPay Connect keys live
-/// at:
-///
-/// ```text
-/// m / 9' / coin' / 5' / sub_feature' / 0' / <identity_id>' / <leaf>' [ / purpose' ]
-/// ```
-///
-/// - `9'`, `coin'`, `5'` are the DIP-9 feature purpose, the network's coin
-///   type (`5'` mainnet, `1'` otherwise, as the existing identity paths
-///   pick it) and the DIP-13 identity feature.
-/// - `sub_feature'` is a 31-bit hardened child; today `6'` (session
-///   authentication) or `7'` (app encryption). DIP-13 assigns `0'`–`5'`.
-/// - `0'` is the DIP-13 key type slot (ECDSA secp256k1).
-/// - `identity_id'` and `leaf'` are DIP-14 256-bit hardened children
-///   ([`ChildNumber::Hardened256`]), so nothing wallet-local (identity
-///   ordinal, key counter) is an input and two devices restored from one
-///   seed derive the same key without coordination.
-/// - `purpose'`, when `Some`, is one further 31-bit hardened child. The
-///   encryption sub-feature uses it to split the ENCRYPTION (`1'`) and
-///   DECRYPTION (`2'`) halves of the pair; the authentication sub-feature
-///   passes `None`.
-///
-/// Values are not validated against the sub-feature (a `purpose` under
-/// `6'` derives a key like any other); the caller picks the shape the
-/// protocol asks for. The DIP-13 amendment registering `6'` and `7'` is
-/// dashpay/dips#191.
-pub fn connect_key_derivation_path(
-    network: key_wallet::Network,
-    sub_feature: u32,
-    identity_id: &Identifier,
-    leaf: [u8; 32],
-    purpose: Option<u32>,
-) -> Result<DerivationPath, PlatformWalletError> {
-    use key_wallet::dip9::{
-        DASH_COIN_TYPE, DASH_TESTNET_COIN_TYPE, FEATURE_PURPOSE, FEATURE_PURPOSE_IDENTITIES,
-    };
-
-    let coin_type = match network {
-        key_wallet::Network::Mainnet => DASH_COIN_TYPE,
-        _ => DASH_TESTNET_COIN_TYPE,
-    };
-    let hardened = |index: u32, what: &str| {
-        ChildNumber::from_hardened_idx(index).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!("Invalid {what} {index}: {e}"))
-        })
-    };
-
-    let mut path = vec![
-        hardened(FEATURE_PURPOSE, "feature purpose")?,
-        hardened(coin_type, "coin type")?,
-        hardened(FEATURE_PURPOSE_IDENTITIES, "identities feature")?,
-        hardened(sub_feature, "sub-feature")?,
-        hardened(u32::from(KeyDerivationType::ECDSA), "key type")?,
-        ChildNumber::from_hardened_idx_256(identity_id.to_buffer()),
-        ChildNumber::from_hardened_idx_256(leaf),
-    ];
-    if let Some(purpose) = purpose {
-        path.push(hardened(purpose, "purpose")?);
-    }
-    Ok(DerivationPath::from(path))
+/// A DashPay Connect key: the DIP-13 application sub-features (dashpay/dips#191), whose paths
+/// key-wallet builds. Identity, request and contract ids are DIP-14 256-bit children, so two
+/// devices restored from one seed derive the same key without coordination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectKey {
+    /// `m/9'/coin'/5'/6'/0'/identity_id'/request_id'`; `request_id` is
+    /// `hash256` of the app's request public key.
+    SessionAuthentication {
+        identity_id: Identifier,
+        request_id: [u8; 32],
+    },
+    /// `m/9'/coin'/5'/7'/0'/identity_id'/contract_id'/purpose'`: one half of
+    /// the encryption pair an identity holds for a contract.
+    AppEncryption {
+        identity_id: Identifier,
+        contract_id: [u8; 32],
+        purpose: ApplicationKeyPurpose,
+    },
 }
 
-/// Derive the ECDSA secp256k1 keypair at the DashPay Connect path built by
-/// [`connect_key_derivation_path`] from a master xpriv. Pure, like
-/// [`derive_ecdsa_identity_auth_keypair_from_master`], so it works for
-/// watch-only wallets whose seed the FFI resolves on demand. The returned
-/// [`DerivedIdentityAuthKey`] wraps the scalar in [`Zeroizing`]; its
-/// `derivation_path` renders the 256-bit children as `0x…'`.
+impl ConnectKey {
+    /// The key's derivation path on `network`.
+    pub fn derivation_path(&self, network: key_wallet::Network) -> DerivationPath {
+        match *self {
+            ConnectKey::SessionAuthentication {
+                identity_id,
+                request_id,
+            } => DerivationPath::application_session_authentication_path(
+                network,
+                identity_id.to_buffer(),
+                request_id,
+            ),
+            ConnectKey::AppEncryption {
+                identity_id,
+                contract_id,
+                purpose,
+            } => DerivationPath::application_encryption_path(
+                network,
+                identity_id.to_buffer(),
+                contract_id,
+                purpose,
+            ),
+        }
+    }
+}
+
+/// Derive the ECDSA secp256k1 keypair of `key` from a master xpriv. Pure, like
+/// [`derive_ecdsa_identity_auth_keypair_from_master`], so it works for watch-only wallets whose
+/// seed the FFI resolves on demand.
 pub fn derive_connect_keypair_from_master(
     master: &ExtendedPrivKey,
     network: key_wallet::Network,
-    sub_feature: u32,
-    identity_id: &Identifier,
-    leaf: [u8; 32],
-    purpose: Option<u32>,
+    key: ConnectKey,
 ) -> Result<DerivedIdentityAuthKey, PlatformWalletError> {
-    use dashcore::secp256k1::Secp256k1;
     use key_wallet::bip32::ExtendedPubKey;
 
-    let path = connect_key_derivation_path(network, sub_feature, identity_id, leaf, purpose)?;
-    let secp = Secp256k1::new();
+    let path = key.derivation_path(network);
     // See `derive_ecdsa_identity_auth_keypair_from_master` for why the
     // intermediate `ExtendedPrivKey` needs no explicit wipe.
-    let derived = master.derive_priv(&secp, &path).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Failed to derive connect key at sub-feature {sub_feature}: {e}"
-        ))
+    let derived = master.derive_priv(&path).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!("Failed to derive connect key: {e}"))
     })?;
-    let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+    let extended_pub = ExtendedPubKey::from_priv(&derived);
 
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.secret_bytes()),
+        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
         public_key: extended_pub.public_key.serialize(),
     })
 }
@@ -749,255 +712,73 @@ mod tests {
         }
     }
 
-    // ── DashPay Connect sub-feature derivation ────────────────────────
+    // ── DashPay Connect keys ──────────────────────────────────────────
 
     const CONNECT_IDENTITY: [u8; 32] = [0x35; 32];
     const CONNECT_LEAF: [u8; 32] = [0x6B; 32];
 
-    /// The connect path has the documented shape: DIP-9 prefix, the
-    /// sub-feature, the ECDSA key-type slot, then two DIP-14 256-bit
-    /// hardened children, and an optional trailing 31-bit `purpose'`.
-    #[test]
-    fn connect_key_derivation_path_has_the_documented_shape() {
-        let identity = Identifier::from(CONNECT_IDENTITY);
-
-        let auth = connect_key_derivation_path(
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-            &identity,
-            CONNECT_LEAF,
-            None,
-        )
-        .expect("auth path builds");
-        let auth_children: Vec<ChildNumber> = auth.as_ref().to_vec();
-        assert_eq!(
-            auth_children,
-            vec![
-                ChildNumber::Hardened { index: 9 },
-                ChildNumber::Hardened { index: 1 },
-                ChildNumber::Hardened { index: 5 },
-                ChildNumber::Hardened { index: 6 },
-                ChildNumber::Hardened { index: 0 },
-                ChildNumber::Hardened256 {
-                    index: CONNECT_IDENTITY
-                },
-                ChildNumber::Hardened256 {
-                    index: CONNECT_LEAF
-                },
-            ]
-        );
-
-        let enc = connect_key_derivation_path(
-            Network::Mainnet,
-            CONNECT_SUB_FEATURE_APP_ENCRYPTION,
-            &identity,
-            CONNECT_LEAF,
-            Some(1),
-        )
-        .expect("encryption path builds");
-        let enc_children: Vec<ChildNumber> = enc.as_ref().to_vec();
-        assert_eq!(enc_children.len(), 8);
-        assert_eq!(
-            enc_children[1],
-            ChildNumber::Hardened { index: 5 },
-            "mainnet coin type"
-        );
-        assert_eq!(enc_children[3], ChildNumber::Hardened { index: 7 });
-        assert_eq!(
-            enc_children[7],
-            ChildNumber::Hardened { index: 1 },
-            "purpose'"
-        );
-
-        // Every level is hardened: nothing about these keys is derivable
-        // from a public parent.
-        assert!(auth_children.iter().all(ChildNumber::is_hardened));
-        assert!(enc_children.iter().all(ChildNumber::is_hardened));
-
-        // A sub-feature outside the 31-bit hardened range is refused rather
-        // than silently masked.
-        assert!(connect_key_derivation_path(
-            Network::Testnet,
-            1 << 31,
-            &identity,
-            CONNECT_LEAF,
-            None
-        )
-        .is_err());
+    fn session_key() -> ConnectKey {
+        ConnectKey::SessionAuthentication {
+            identity_id: Identifier::from(CONNECT_IDENTITY),
+            request_id: CONNECT_LEAF,
+        }
     }
 
-    /// Fixed-vector determinism for the connect derivation: the same seed,
-    /// identity id and leaf always give the same key, on both networks, and
-    /// the derived public key is the compressed secp256k1 point of the
-    /// returned scalar. The pinned pubkeys let a future regression on the
-    /// Rust side (or a drift in the Swift/Kotlin ports, which re-derive the
-    /// same vector through the FFI) be spotted from either end.
+    fn encryption_key(purpose: ApplicationKeyPurpose) -> ConnectKey {
+        ConnectKey::AppEncryption {
+            identity_id: Identifier::from(CONNECT_IDENTITY),
+            contract_id: CONNECT_LEAF,
+            purpose,
+        }
+    }
+
+    /// The keys key-wallet pins for these inputs; a change orphans every key
+    /// already registered on-chain. The public key is the compressed point of
+    /// the returned scalar.
     #[test]
-    fn connect_keypair_is_deterministic_from_fixed_vectors() {
-        use dashcore::secp256k1::{PublicKey as SecpPublicKey, Secp256k1, SecretKey};
+    fn connect_keypairs_match_the_pinned_vectors() {
+        use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
 
-        let identity = Identifier::from(CONNECT_IDENTITY);
-        let secp = Secp256k1::new();
+        for (network, key, expected) in [
+            (
+                Network::Testnet,
+                session_key(),
+                "022c8b2e806244482374b1caf8306146dc03aad3b99a5954efd5e70a0eddd37a5d",
+            ),
+            (
+                Network::Mainnet,
+                encryption_key(ApplicationKeyPurpose::Encryption),
+                "03e989de1b62f137231cc06659c810c17100becd1f5e23d5710faa7602769fe434",
+            ),
+        ] {
+            let derived = derive_connect_keypair_from_master(&master_for(network), network, key)
+                .expect("connect derive");
+            assert_eq!(hex::encode(derived.public_key), expected);
+            assert_eq!(derived.derivation_path, key.derivation_path(network));
 
-        for network in [Network::Mainnet, Network::Testnet] {
-            let master = master_for(network);
-            let first = derive_connect_keypair_from_master(
-                &master,
-                network,
-                CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-                &identity,
-                CONNECT_LEAF,
-                None,
-            )
-            .expect("connect derive");
-            let second = derive_connect_keypair_from_master(
-                &master,
-                network,
-                CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-                &identity,
-                CONNECT_LEAF,
-                None,
-            )
-            .expect("connect derive");
-
-            assert_eq!(*first.private_key, *second.private_key);
-            assert_eq!(first.public_key, second.public_key);
-            assert_eq!(first.public_key.len(), 33);
-            assert!(first.public_key[0] == 0x02 || first.public_key[0] == 0x03);
-
-            let sk = SecretKey::from_slice(first.private_key.as_ref()).expect("valid scalar");
-            let pk = SecpPublicKey::from_secret_key(&secp, &sk);
-            assert_eq!(pk.serialize(), first.public_key, "pubkey matches scalar");
-
-            // The rendered path spells the 256-bit children as hex so the
-            // breadcrumb a client persists is unambiguous.
-            let rendered = first.derivation_path.to_string();
-            assert!(
-                rendered.contains("/0x3535"),
-                "256-bit identity child rendered as hex: {rendered}"
+            let secret: [u8; 32] = *derived.private_key;
+            let sk = SecretKey::from_secret_bytes(secret).expect("valid scalar");
+            assert_eq!(
+                SecpPublicKey::from_secret_key(&sk).serialize(),
+                derived.public_key
             );
         }
-
-        // Pinned vectors for the test mnemonic (all-zero entropy), identity
-        // `[0x35; 32]`, leaf `[0x6B; 32]`.
-        let testnet_auth = derive_connect_keypair_from_master(
-            &master_for(Network::Testnet),
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-            &identity,
-            CONNECT_LEAF,
-            None,
-        )
-        .expect("connect derive");
-        let mainnet_enc = derive_connect_keypair_from_master(
-            &master_for(Network::Mainnet),
-            Network::Mainnet,
-            CONNECT_SUB_FEATURE_APP_ENCRYPTION,
-            &identity,
-            CONNECT_LEAF,
-            Some(1),
-        )
-        .expect("connect derive");
-        assert_eq!(
-            (
-                hex::encode(testnet_auth.public_key),
-                hex::encode(mainnet_enc.public_key)
-            ),
-            (
-                CONNECT_TESTNET_AUTH_PUBKEY_HEX.to_string(),
-                CONNECT_MAINNET_ENCRYPTION_PUBKEY_HEX.to_string()
-            ),
-            "connect pubkey vectors drifted (testnet session-auth, mainnet app-encryption)"
-        );
     }
 
-    /// Changing any input (leaf, purpose, sub-feature, identity, network)
-    /// changes the key. In particular the ENCRYPTION and DECRYPTION halves
-    /// of a pair under one contract must differ, and a session key must not
-    /// collide with an encryption key that happens to share its leaf.
+    /// The two halves of an encryption pair and the session key are distinct.
     #[test]
-    fn connect_keypair_differs_across_leaves_purposes_and_sub_features() {
-        let identity = Identifier::from(CONNECT_IDENTITY);
-        let other_identity = Identifier::from([0x36; 32]);
+    fn connect_keys_are_distinct_per_kind_and_purpose() {
         let master = master_for(Network::Testnet);
-        let derive = |network: Network, sub: u32, id: &Identifier, leaf: [u8; 32], p| {
-            derive_connect_keypair_from_master(&master, network, sub, id, leaf, p)
+        let derive = |key| {
+            derive_connect_keypair_from_master(&master, Network::Testnet, key)
                 .expect("connect derive")
                 .public_key
         };
-
-        let auth = derive(
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-            &identity,
-            CONNECT_LEAF,
-            None,
-        );
-        let auth_other_leaf = derive(
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-            &identity,
-            [0x6C; 32],
-            None,
-        );
-        let auth_other_identity = derive(
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-            &other_identity,
-            CONNECT_LEAF,
-            None,
-        );
-        let enc = derive(
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_APP_ENCRYPTION,
-            &identity,
-            CONNECT_LEAF,
-            Some(1),
-        );
-        let dec = derive(
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_APP_ENCRYPTION,
-            &identity,
-            CONNECT_LEAF,
-            Some(2),
-        );
-        let enc_no_purpose = derive(
-            Network::Testnet,
-            CONNECT_SUB_FEATURE_APP_ENCRYPTION,
-            &identity,
-            CONNECT_LEAF,
-            None,
-        );
-        let auth_mainnet = derive(
-            Network::Mainnet,
-            CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
-            &identity,
-            CONNECT_LEAF,
-            None,
-        );
-
-        let all = [
-            auth,
-            auth_other_leaf,
-            auth_other_identity,
-            enc,
-            dec,
-            enc_no_purpose,
-            auth_mainnet,
-        ];
-        for (i, a) in all.iter().enumerate() {
-            for b in &all[i + 1..] {
-                assert_ne!(a, b, "connect keys collided (index {i})");
-            }
-        }
+        let session = derive(session_key());
+        let encryption = derive(encryption_key(ApplicationKeyPurpose::Encryption));
+        let decryption = derive(encryption_key(ApplicationKeyPurpose::Decryption));
+        assert_ne!(session, encryption);
+        assert_ne!(session, decryption);
+        assert_ne!(encryption, decryption);
     }
-
-    // `hex::encode` of the compressed pubkeys the two pinned derivations
-    // above produce. Regenerate deliberately (and update the Swift and
-    // Kotlin vectors) if the path ever changes; a silent change here would
-    // orphan every key already registered on-chain.
-    const CONNECT_TESTNET_AUTH_PUBKEY_HEX: &str =
-        "022c8b2e806244482374b1caf8306146dc03aad3b99a5954efd5e70a0eddd37a5d";
-    const CONNECT_MAINNET_ENCRYPTION_PUBKEY_HEX: &str =
-        "03e989de1b62f137231cc06659c810c17100becd1f5e23d5710faa7602769fe434";
 }
