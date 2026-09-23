@@ -140,6 +140,10 @@ impl JsonSafeFields
 {
 }
 impl JsonSafeFields for crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice {}
+impl JsonSafeFields
+    for crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice
+{
+}
 impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}
 // TokenEvent contains u64 aliases (TokenAmount, Credits) in tuple variants that
 // `#[json_safe_fields]` can't auto-annotate. Developer takes responsibility for

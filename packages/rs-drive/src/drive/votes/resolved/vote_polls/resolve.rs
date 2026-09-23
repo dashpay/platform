@@ -63,6 +63,9 @@ impl VotePollResolver for VotePoll {
                     ),
                 )
             }
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
+                Ok(ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll.clone()))
+            }
         }
     }
 
@@ -83,6 +86,9 @@ impl VotePollResolver for VotePoll {
                         )?,
                     ),
                 )
+            }
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
+                Ok(ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll))
             }
         }
     }

@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::state::state_error::StateError;
@@ -103,7 +104,17 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
                                 }
                             }
                         }
+                        VotePoll::YesNoVotePoll(_) => {
+                            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "yes/no vote polls need transform_into_action version 1",
+                            )))
+                        }
                     }
+                }
+                Vote::YesNoVote(_) => {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "yes/no votes need transform_into_action version 1",
+                    )))
                 }
             }
         }

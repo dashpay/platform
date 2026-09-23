@@ -182,6 +182,10 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_contests_proof: FeatureVersion,
     pub verify_vote_polls_by_end_date_proof: FeatureVersion,
     pub verify_specialized_balance: FeatureVersion,
+    /// The stored info and tallies of a yes/no poll (protocol version 14).
+    pub verify_yes_no_vote_poll_state_proof: FeatureVersion,
+    /// A masternode's vote on a yes/no poll (protocol version 14).
+    pub verify_masternode_yes_no_vote: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

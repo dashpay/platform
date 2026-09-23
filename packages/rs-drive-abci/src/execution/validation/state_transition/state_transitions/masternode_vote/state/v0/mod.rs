@@ -92,7 +92,17 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
                             }
                         }
                     }
+                    ResolvedVotePoll::YesNoVotePoll(_) => {
+                        Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "yes/no vote polls need validate_state version 1",
+                        )))
+                    }
                 }
+            }
+            ResolvedVote::YesNoVote(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "yes/no votes need validate_state version 1",
+                )))
             }
         }
     }

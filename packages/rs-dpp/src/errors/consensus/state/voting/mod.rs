@@ -6,3 +6,4 @@ pub mod masternode_voted_too_many_times;
 pub mod vote_choice_not_allowed_for_vote_poll_error;
 pub mod vote_poll_not_available_for_voting_error;
 pub mod vote_poll_not_found_error;
+pub mod yes_no_vote_poll_not_available_for_voting_error;

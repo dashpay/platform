@@ -1538,31 +1538,47 @@ impl Drive {
             StateTransition::MasternodeVote(masternode_vote) => {
                 let pro_tx_hash = masternode_vote.pro_tx_hash();
                 let vote = masternode_vote.vote();
-                let contract = match vote {
-                    Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
-                        VotePoll::ContestedDocumentResourceVotePoll(
-                            contested_document_resource_vote_poll,
-                        ) => known_contracts_provider_fn(
-                            &contested_document_resource_vote_poll.contract_id,
+                let (root_hash, vote) = match vote {
+                    Vote::ResourceVote(resource_vote) => {
+                        let contract = match resource_vote.vote_poll() {
+                            VotePoll::ContestedDocumentResourceVotePoll(
+                                contested_document_resource_vote_poll,
+                            ) => known_contracts_provider_fn(
+                                &contested_document_resource_vote_poll.contract_id,
+                            )?
+                            .ok_or(Error::Proof(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {} in resource vote verification",
+                                    contested_document_resource_vote_poll.contract_id
+                                )),
+                            ))?,
+                            VotePoll::YesNoVotePoll(_) => {
+                                return Err(Error::Proof(ProofError::InvalidTransition(
+                                    "a resource vote cannot answer a yes/no vote poll".to_string(),
+                                )))
+                            }
+                        };
+                        // we expect to get a vote that matches the state transition
+                        Drive::verify_masternode_vote(
+                            proof,
+                            pro_tx_hash.to_buffer(),
+                            vote,
+                            &contract,
+                            false,
+                            platform_version,
                         )?
-                        .ok_or(Error::Proof(
-                            ProofError::UnknownContract(format!(
-                                "unknown contract with id {} in resource vote verification",
-                                contested_document_resource_vote_poll.contract_id
-                            )),
-                        ))?,
-                    },
+                    }
+                    Vote::YesNoVote(yes_no_vote) => {
+                        let (root_hash, proved_vote) = Drive::verify_masternode_yes_no_vote(
+                            proof,
+                            pro_tx_hash.to_buffer(),
+                            yes_no_vote,
+                            false,
+                            platform_version,
+                        )?;
+                        (root_hash, proved_vote.map(Vote::YesNoVote))
+                    }
                 };
-
-                // we expect to get a vote that matches the state transition
-                let (root_hash, vote) = Drive::verify_masternode_vote(
-                    proof,
-                    pro_tx_hash.to_buffer(),
-                    vote,
-                    &contract,
-                    false,
-                    platform_version,
-                )?;
                 let vote = vote.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain actual vote for masternode {} expected to exist because of state transition (masternode vote)", masternode_vote.pro_tx_hash()))))?;
                 Ok((root_hash, VerifiedMasternodeVote(vote)))
             }
@@ -4799,6 +4815,125 @@ mod tests {
                 Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
             ),
             "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // --- MasternodeVote on a yes/no poll: the prover's path query and the verifier agree,
+    // so a registered vote is proved executed and an unregistered one is refused.
+    #[test]
+    fn verify_masternode_yes_no_vote_executed_round_trip() {
+        use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use dpp::platform_value::BinaryData;
+        use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+        use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+        use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+        use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+        use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
+        use dpp::voting::votes::yes_no_vote::YesNoVote;
+        use dpp::voting::votes::Vote;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let vote_poll = YesNoVotePoll {
+            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: 400,
+        };
+        drive
+            .open_yes_no_vote_poll(
+                &vote_poll,
+                1_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        let voter = [1u8; 32];
+        drive
+            .register_yes_no_identity_vote(
+                voter,
+                4,
+                ResolvedYesNoVote {
+                    vote_poll: vote_poll.clone(),
+                    vote_choice: YesNoAbstainVoteChoice::Yes,
+                    previous_vote_choice_to_remove: None,
+                },
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to register the vote");
+
+        let transition_for = |voter: [u8; 32], vote_choice: YesNoAbstainVoteChoice| {
+            StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                MasternodeVoteTransitionV0 {
+                    pro_tx_hash: dpp::prelude::Identifier::from(voter),
+                    voter_identity_id: dpp::prelude::Identifier::from([2u8; 32]),
+                    vote: Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+                        vote_poll: vote_poll.clone(),
+                        vote_choice,
+                    })),
+                    nonce: 1,
+                    signature_public_key_id: 0,
+                    signature: Default::default(),
+                },
+            ))
+        };
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let executed = transition_for(voter, YesNoAbstainVoteChoice::Yes);
+        let proof = drive
+            .prove_state_transition(&executed, None, platform_version)
+            .expect("expected to prove the vote")
+            .into_data()
+            .expect("expected proof bytes");
+        let (root_hash, verified) = Drive::verify_state_transition_was_executed_with_proof(
+            &executed,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        )
+        .expect("expected the executed vote to verify");
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("root hash")
+        );
+        let StateTransition::MasternodeVote(masternode_vote) = &executed else {
+            unreachable!()
+        };
+        assert_eq!(
+            verified.into_result(),
+            VerifiedMasternodeVote(masternode_vote.vote().clone())
+        );
+
+        // A vote the state does not hold is not proved executed.
+        let not_executed = transition_for([9u8; 32], YesNoAbstainVoteChoice::No);
+        let proof = drive
+            .prove_state_transition(&not_executed, None, platform_version)
+            .expect("expected to prove the absence")
+            .into_data()
+            .expect("expected proof bytes");
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &not_executed,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(ProofError::IncorrectProof(_)))
+            ),
+            "expected IncorrectProof, got {:?}",
             result
         );
     }

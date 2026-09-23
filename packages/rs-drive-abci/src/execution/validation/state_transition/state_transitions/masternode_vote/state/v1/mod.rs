@@ -4,6 +4,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use dpp::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
 use dpp::consensus::ConsensusError;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -16,6 +17,8 @@ use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
+use dpp::voting::vote_polls::VotePoll;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
 use drive::drive::votes::resolved::votes::ResolvedVote;
@@ -113,6 +116,45 @@ impl MasternodeVoteStateTransitionStateValidationV1 for MasternodeVoteTransition
                             }
                         }
                     }
+                    ResolvedVotePoll::YesNoVotePoll(_) => {
+                        // A resource vote choice answers no yes/no poll: no contested
+                        // document resource poll named by this vote exists.
+                        Ok(ConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(StateError::VotePollNotFoundError(
+                                VotePollNotFoundError::new(vote_poll.into()),
+                            )),
+                        ))
+                    }
+                }
+            }
+            ResolvedVote::YesNoVote(yes_no_vote) => {
+                let vote_poll = &yes_no_vote.vote_poll;
+                let Some(stored_info) = platform.drive.fetch_yes_no_vote_poll_stored_info(
+                    vote_poll,
+                    tx,
+                    platform_version,
+                )?
+                else {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::VotePollNotFoundError(
+                            VotePollNotFoundError::new(VotePoll::YesNoVotePoll(vote_poll.clone())),
+                        )),
+                    ));
+                };
+                match stored_info.status() {
+                    YesNoVotePollStatus::Started(_) => Ok(
+                        ConsensusValidationResult::new_with_data(masternode_vote_action.into()),
+                    ),
+                    status @ YesNoVotePollStatus::Finished(_) => Ok(
+                        ConsensusValidationResult::new_with_error(ConsensusError::StateError(
+                            StateError::YesNoVotePollNotAvailableForVotingError(
+                                YesNoVotePollNotAvailableForVotingError::new(
+                                    vote_poll.clone(),
+                                    *status,
+                                ),
+                            ),
+                        )),
+                    ),
                 }
             }
         }

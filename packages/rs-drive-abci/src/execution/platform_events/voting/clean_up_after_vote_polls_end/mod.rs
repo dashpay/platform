@@ -10,6 +10,7 @@ use drive::grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -37,9 +38,16 @@ where
                 transaction,
                 platform_version,
             ),
+            1 => self.clean_up_after_vote_polls_end_v1(
+                block_info,
+                vote_polls,
+                clean_up_testnet_corrupted_reference_issue,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "clean_up_after_vote_polls_end".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

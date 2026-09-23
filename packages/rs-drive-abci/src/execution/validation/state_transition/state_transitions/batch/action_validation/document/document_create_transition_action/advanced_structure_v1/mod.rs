@@ -16,6 +16,7 @@ use dpp::voting::vote_polls::VotePoll;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStructureValidationV1 {
@@ -119,6 +120,13 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                 }
                 // -->> End Introduced in V1 <<--
                 (None, None) => {}
+                // A document type's contested index only ever resolves to a contested
+                // document resource poll.
+                (Some(VotePoll::YesNoVotePoll(_)), Some(_)) => {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "a contested index never resolves to a yes/no vote poll",
+                    )));
+                }
             }
         }
 

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 
@@ -66,9 +67,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.register_identity_vote_v1(
+                voter_pro_tx_hash,
+                strength,
+                vote,
+                previous_resource_vote_choice_to_remove,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "register_identity_vote".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -123,9 +133,17 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.register_identity_vote_operations_v1(
+                voter_pro_tx_hash,
+                strength,
+                vote,
+                previous_resource_vote_choice_to_remove,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "register_identity_vote_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

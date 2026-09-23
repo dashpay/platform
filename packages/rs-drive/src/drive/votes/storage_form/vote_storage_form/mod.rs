@@ -60,8 +60,11 @@ impl TreePathStorageForm for VoteStorageForm {
             CONTESTED_RESOURCE_TREE_KEY => Ok(VoteStorageForm::ContestedDocumentResource(
                 ContestedDocumentResourceVoteStorageForm::try_from_tree_path(path)?,
             )),
+            // A yes/no vote is keyed by the hash of its poll, which a tree path cannot be
+            // turned back into. The identity votes index of the decisions branch stores the
+            // choice itself instead of a reference.
             VOTE_DECISIONS_TREE_KEY => Err(ProtocolError::NotSupported(
-                "decision votes not supported yet".to_string(),
+                "yes/no votes are not addressed by tree path".to_string(),
             )),
             _ => Err(ProtocolError::VoteError(format!(
                 "path {} second element must be a byte for CONTESTED_RESOURCE_TREE_KEY {}, got {}",
@@ -175,7 +178,7 @@ mod tests {
         };
         match err {
             ProtocolError::NotSupported(msg) => {
-                assert!(msg.contains("decision votes"), "msg: {msg}");
+                assert!(msg.contains("yes/no votes"), "msg: {msg}");
             }
             other => panic!("expected NotSupported, got {other:?}"),
         }

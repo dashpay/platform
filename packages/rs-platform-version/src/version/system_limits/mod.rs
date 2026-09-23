@@ -136,6 +136,12 @@ pub struct SystemLimits {
     /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
+    /// The most segments a yes/no vote poll's resource path may have, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 14).
+    pub max_yes_no_vote_poll_resource_path_segments: u8,
+    /// The most bytes a yes/no vote poll's resource path may hold across its segments, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 14). Every vote carries the poll.
+    pub max_yes_no_vote_poll_resource_path_bytes: u16,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never

@@ -11,7 +11,6 @@ use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use rs_dapi_client::{DapiRequest, IntoInner};
 
@@ -116,8 +115,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
 
         let settings = settings.unwrap_or_default();
 
-        let Vote::ResourceVote(resource_vote) = self;
-        let vote_poll_id = resource_vote.vote_poll().unique_id()?;
+        let vote_poll_id = self.vote_poll_unique_id()?;
 
         let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
             self.clone(),

@@ -103,6 +103,7 @@ use crate::consensus::state::voting::masternode_voted_too_many_times::Masternode
 use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use crate::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -592,6 +593,10 @@ pub enum StateError {
     // Requirements on a referenced identity key (protocol version 14).
     #[error(transparent)]
     ReferencedIdentityKeyRequirementNotMetError(ReferencedIdentityKeyRequirementNotMetError),
+
+    // Yes/no vote polls (protocol version 14).
+    #[error(transparent)]
+    YesNoVotePollNotAvailableForVotingError(YesNoVotePollNotAvailableForVotingError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -603,6 +608,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block::block_info::BlockInfo;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::ContractModerationList;
@@ -614,9 +620,11 @@ mod tests {
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
     use crate::voting::vote_polls::VotePoll;
-    use platform_value::Identifier;
+    use platform_value::{BinaryData, Identifier};
 
     /// `StateError` is encoded by variant position, so inserting a variant
     /// anywhere but the end silently reassigns the discriminant of every
@@ -1067,7 +1075,7 @@ mod tests {
             )),
             140
         );
-        // Elected moderation teams (protocol version 14): the tail of the enum.
+        // Elected moderation teams (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ContractModeratedDocumentTypeNotYetUsableError(
                 ContractModeratedDocumentTypeNotYetUsableError::new(group_id, "post".to_string())
@@ -1103,7 +1111,7 @@ mod tests {
             )),
             143
         );
-        // Requirements on a referenced identity key (protocol version 14): the tail of the enum.
+        // Requirements on a referenced identity key (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedIdentityKeyRequirementNotMetError(
                 ReferencedIdentityKeyRequirementNotMetError::new(
@@ -1117,6 +1125,21 @@ mod tests {
                 )
             )),
             144
+        );
+        // Yes/no vote polls (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::YesNoVotePollNotAvailableForVotingError(
+                YesNoVotePollNotAvailableForVotingError::new(
+                    YesNoVotePoll {
+                        resource_path: vec![BinaryData::new(vec![1; 32])],
+                        supermajority_numerator: 2,
+                        supermajority_denominator: 3,
+                        minimum_voting_power: 400,
+                    },
+                    YesNoVotePollStatus::Started(BlockInfo::default())
+                )
+            )),
+            145
         );
     }
 }

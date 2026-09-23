@@ -183,6 +183,7 @@ mod tests {
                             assert_eq!(v0.resource_vote_choice, ResourceVoteChoice::Abstain);
                         }
                     },
+                    ResolvedVote::YesNoVote(_) => panic!("expected a resource vote"),
                 }
             }
             other => panic!("expected MasternodeCastVote, got {:?}", other),
@@ -291,6 +292,7 @@ mod tests {
                             assert_eq!(v0.resource_vote_choice, ResourceVoteChoice::Abstain);
                         }
                     },
+                    ResolvedVote::YesNoVote(_) => panic!("expected a resource vote"),
                 }
             }
             other => panic!("expected MasternodeCastVote, got {:?}", other),

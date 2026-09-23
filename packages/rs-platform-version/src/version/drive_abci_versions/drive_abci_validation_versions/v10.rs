@@ -112,8 +112,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: None,
                 nonce: Some(1),
-                state: 1, // changed in v14: refuses a Lock vote on a contested index resolved without locking
-                transform_into_action: 0,
+                state: 1, // changed in v14: refuses a Lock vote on a contested index resolved without locking; a vote on a yes/no poll checks that poll's stored info
+                transform_into_action: 1, // changed in v14: a vote on a yes/no poll looks up the masternode's previous yes/no vote
             },
             masternode_vote_state_transition_balance_pre_check: 0,
             contract_create_state_transition: DriveAbciStateTransitionValidationVersion {

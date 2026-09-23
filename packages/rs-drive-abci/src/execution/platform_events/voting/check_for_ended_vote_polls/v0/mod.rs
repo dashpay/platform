@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -175,6 +176,11 @@ where
                                 identifiers_voting_for_contenders,
                             ))
                         }
+                        ResolvedVotePoll::YesNoVotePoll(_) => Err(Error::Execution(
+                            ExecutionError::CorruptedCodeExecution(
+                                "yes/no vote polls need check_for_ended_vote_polls version 1",
+                            ),
+                        )),
                     }
                 }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
                 Ok((end_date, vote_polls_with_votes))
@@ -300,6 +306,11 @@ where
                             )?;
                             Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
                         }
+                        ResolvedVotePoll::YesNoVotePoll(_) => Err(Error::Execution(
+                            ExecutionError::CorruptedCodeExecution(
+                                "yes/no vote polls need check_for_ended_vote_polls version 1",
+                            ),
+                        )),
                     }
                 }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
                 Ok((end_date, vote_polls_with_votes))

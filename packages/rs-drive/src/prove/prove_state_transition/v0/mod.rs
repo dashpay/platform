@@ -48,7 +48,9 @@ use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVote
 use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
+use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
 use dpp::voting::votes::Vote;
 use grovedb::{PathQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -430,20 +432,22 @@ impl Drive {
             StateTransition::MasternodeVote(st) => {
                 let pro_tx_hash = st.pro_tx_hash();
 
-                match st.vote() {
-                    Vote::ResourceVote(resource_vote) => {
-                        let query = IdentityBasedVoteDriveQuery {
-                            identity_id: pro_tx_hash,
-                            vote_poll: resource_vote.vote_poll().clone(),
-                        };
-
-                        // The path query construction can only fail if the serialization fails.
-                        // Because the serialization will pretty much never fail, we can do this.
-                        let mut path_query = query.construct_path_query()?;
-                        path_query.query.limit = None;
-                        path_query
+                let vote_poll = match st.vote() {
+                    Vote::ResourceVote(resource_vote) => resource_vote.vote_poll().clone(),
+                    Vote::YesNoVote(yes_no_vote) => {
+                        VotePoll::YesNoVotePoll(yes_no_vote.vote_poll().clone())
                     }
-                }
+                };
+                let query = IdentityBasedVoteDriveQuery {
+                    identity_id: pro_tx_hash,
+                    vote_poll,
+                };
+
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = query.construct_path_query()?;
+                path_query.query.limit = None;
+                path_query
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_query = Drive::revision_and_balance_path_query(

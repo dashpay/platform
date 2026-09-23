@@ -5,15 +5,37 @@
 ///
 /// |- End date Queries [key: "e"]
 /// |- Decisions [key: "d"]
+///    |- Active polls [key: "p"]
+///    |- Identifier Votes Query [key: "i"]
 /// |- Contested Resource [key: "c"]
 ///    |- Active polls [key: "p"]
 ///    |- Identifier Votes Query [key: "i"]
+/// ```
+///
+/// Decisions are yes/no vote polls (protocol version 14). Each active poll is a tree keyed by
+/// the poll's unique id under the active polls tree:
+///
+/// ```text
+/// Active polls [key: "p"]
+/// |- <poll unique id>
+///    |- Stored info [key: 0]: serialized YesNoVotePollStoredInfo
+///    |- Yes votes [key: 1]: sum tree of pro_tx_hash -> vote strength
+///    |- No votes [key: 2]: sum tree of pro_tx_hash -> vote strength
+///    |- Abstain votes [key: 3]: sum tree of pro_tx_hash -> vote strength
+/// ```
+///
+/// and each masternode's votes are indexed by its pro tx hash under the identity votes tree:
+///
+/// ```text
+/// Identifier Votes Query [key: "i"]
+/// |- <pro_tx_hash>
+///    |- <poll unique id>: serialized YesNoVoteReferenceStorageForm (choice + times voted)
 /// ```
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
     ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
 };
-use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
+use crate::drive::votes::{ResourceVoteChoiceToKeyTrait, YesNoAbstainVoteChoiceToKeyTrait};
 use crate::drive::RootTree;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -23,6 +45,8 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::IndexProperty;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use platform_version::version::PlatformVersion;
 
 /// A subtree made for polls to the network that represent decisions.
@@ -63,6 +87,18 @@ pub const CONTESTED_DOCUMENT_INDEXES_TREE_KEY: u8 = 1;
 
 /// The tree key for storage
 pub const VOTING_STORAGE_TREE_KEY: u8 = 1;
+
+/// In a yes/no vote poll tree, the key of the item holding the poll's stored info
+pub const YES_NO_VOTE_POLL_STORED_INFO_KEY: u8 = 0;
+
+/// In a yes/no vote poll tree, the key of the sum tree of yes votes
+pub const YES_NO_VOTE_POLL_YES_VOTES_TREE_KEY: u8 = 1;
+
+/// In a yes/no vote poll tree, the key of the sum tree of no votes
+pub const YES_NO_VOTE_POLL_NO_VOTES_TREE_KEY: u8 = 2;
+
+/// In a yes/no vote poll tree, the key of the sum tree of abstaining votes
+pub const YES_NO_VOTE_POLL_ABSTAIN_VOTES_TREE_KEY: u8 = 3;
 
 /// Convenience methods to be easily able to get a path when we know the vote poll
 pub trait VotePollPaths {
@@ -301,6 +337,35 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBor
         contender_voting_path.push(key);
         contender_voting_path.push(vec![VOTING_STORAGE_TREE_KEY]);
         Ok(contender_voting_path)
+    }
+}
+
+/// The paths of a yes/no vote poll's storage, derived from its unique id.
+pub trait YesNoVotePollPaths {
+    /// The poll's tree, holding its stored info and its three vote sum trees.
+    fn poll_path_vec(&self) -> Result<Vec<Vec<u8>>, Error>;
+
+    /// The sum tree holding the votes for one choice.
+    fn choice_votes_path_vec(
+        &self,
+        vote_choice: YesNoAbstainVoteChoice,
+    ) -> Result<Vec<Vec<u8>>, Error>;
+}
+
+impl YesNoVotePollPaths for YesNoVotePoll {
+    fn poll_path_vec(&self) -> Result<Vec<Vec<u8>>, Error> {
+        Ok(vote_decisions_active_polls_poll_tree_path_vec(
+            self.unique_id()?.as_bytes(),
+        ))
+    }
+
+    fn choice_votes_path_vec(
+        &self,
+        vote_choice: YesNoAbstainVoteChoice,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let mut path = self.poll_path_vec()?;
+        path.push(vec![vote_choice.to_tree_key()]);
+        Ok(path)
     }
 }
 
@@ -543,6 +608,84 @@ pub fn vote_contested_resource_identity_votes_tree_path_for_identity_vec(
         vec![CONTESTED_RESOURCE_TREE_KEY as u8],
         vec![IDENTITY_VOTES_TREE_KEY as u8],
         identity_id.to_vec(),
+    ]
+}
+
+/// the active yes/no vote polls of the decisions branch
+pub fn vote_decisions_active_polls_tree_path<'a>() -> [&'a [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[VOTE_DECISIONS_TREE_KEY as u8],
+        &[ACTIVE_POLLS_TREE_KEY as u8],
+    ]
+}
+
+/// the active yes/no vote polls of the decisions branch as a vec
+pub fn vote_decisions_active_polls_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![VOTE_DECISIONS_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+    ]
+}
+
+/// the tree of one yes/no vote poll, keyed by its unique id
+pub fn vote_decisions_active_polls_poll_tree_path(poll_id: &[u8; 32]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[VOTE_DECISIONS_TREE_KEY as u8],
+        &[ACTIVE_POLLS_TREE_KEY as u8],
+        poll_id,
+    ]
+}
+
+/// the tree of one yes/no vote poll, keyed by its unique id, as a vec
+pub fn vote_decisions_active_polls_poll_tree_path_vec(poll_id: &[u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![VOTE_DECISIONS_TREE_KEY as u8],
+        vec![ACTIVE_POLLS_TREE_KEY as u8],
+        poll_id.to_vec(),
+    ]
+}
+
+/// the identity votes of the decisions branch
+pub fn vote_decisions_identity_votes_tree_path<'a>() -> [&'a [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[VOTE_DECISIONS_TREE_KEY as u8],
+        &[IDENTITY_VOTES_TREE_KEY as u8],
+    ]
+}
+
+/// the identity votes of the decisions branch as a vec
+pub fn vote_decisions_identity_votes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![VOTE_DECISIONS_TREE_KEY as u8],
+        vec![IDENTITY_VOTES_TREE_KEY as u8],
+    ]
+}
+
+/// the yes/no votes of one masternode, by its pro tx hash
+pub fn vote_decisions_identity_votes_tree_path_for_identity(pro_tx_hash: &[u8; 32]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Votes),
+        &[VOTE_DECISIONS_TREE_KEY as u8],
+        &[IDENTITY_VOTES_TREE_KEY as u8],
+        pro_tx_hash,
+    ]
+}
+
+/// the yes/no votes of one masternode, by its pro tx hash, as a vec
+pub fn vote_decisions_identity_votes_tree_path_for_identity_vec(
+    pro_tx_hash: &[u8; 32],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![VOTE_DECISIONS_TREE_KEY as u8],
+        vec![IDENTITY_VOTES_TREE_KEY as u8],
+        pro_tx_hash.to_vec(),
     ]
 }
 

@@ -1,4 +1,5 @@
 pub mod resource_vote;
+pub mod yes_no_vote;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
@@ -6,6 +7,8 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use crate::voting::votes::resource_vote::ResourceVote;
+use crate::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
+use crate::voting::votes::yes_no_vote::YesNoVote;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -40,6 +43,9 @@ use serde::{Deserialize, Serialize};
 #[platform_serialize(limit = 15000, unversioned)]
 pub enum Vote {
     ResourceVote(ResourceVote),
+    /// A vote on a yes/no poll (protocol version 14). Appended: the bincode discriminant is
+    /// the variant position.
+    YesNoVote(YesNoVote),
 }
 
 // Manual impl because Vote is a flat enum (not versioned V0/V1).
@@ -56,11 +62,15 @@ impl Vote {
     pub fn specialized_balance_id(&self) -> Result<Option<Identifier>, ProtocolError> {
         match self {
             Vote::ResourceVote(resource_vote) => resource_vote.vote_poll().specialized_balance_id(),
+            Vote::YesNoVote(yes_no_vote) => {
+                Ok(Some(yes_no_vote.vote_poll().specialized_balance_id()?))
+            }
         }
     }
     pub fn vote_poll_unique_id(&self) -> Result<Identifier, ProtocolError> {
         match self {
             Vote::ResourceVote(resource_vote) => resource_vote.vote_poll().unique_id(),
+            Vote::YesNoVote(yes_no_vote) => yes_no_vote.vote_poll().unique_id(),
         }
     }
 }

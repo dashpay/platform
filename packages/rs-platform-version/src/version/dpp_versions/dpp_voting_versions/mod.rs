@@ -8,4 +8,6 @@ pub struct DPPVotingVersions {
     pub default_vote_poll_time_duration_mainnet_ms: u64,
     pub default_vote_poll_time_duration_test_network_ms: u64,
     pub contested_document_vote_poll_stored_info_version: FeatureVersion,
+    /// The stored info of a yes/no poll (protocol version 14).
+    pub yes_no_vote_poll_stored_info_version: FeatureVersion,
 }

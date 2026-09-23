@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;
@@ -20,7 +21,9 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Checks for ended vote polls, awarding a tie to the earliest contender
+    /// Checks for ended vote polls, awarding a tie to the earliest contender. Version 1
+    /// (protocol version 14) also closes yes/no polls: it records their result, hands it to
+    /// the feature that opened them and cleans their votes up.
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v1(
         &self,
@@ -172,6 +175,13 @@ where
                             )?;
                             Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
                         }
+                        ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll) => self
+                            .finish_yes_no_vote_poll(
+                                block_info,
+                                yes_no_vote_poll,
+                                transaction,
+                                platform_version,
+                            ),
                     }
                 }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
                 Ok((end_date, vote_polls_with_votes))
@@ -191,5 +201,41 @@ where
         }
 
         Ok(())
+    }
+
+    /// Closes one yes/no poll whose time has come: tallies it, records the result in its
+    /// stored info, hands the result to the feature that opened the poll, and returns the
+    /// voters so the clean-up can remove their votes.
+    fn finish_yes_no_vote_poll(
+        &self,
+        block_info: &BlockInfo,
+        vote_poll: YesNoVotePoll,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedVotePollWithVotes, Error> {
+        let tally =
+            self.tally_votes_for_yes_no_vote_poll(&vote_poll, transaction, platform_version)?;
+        let result = self.keep_record_of_finished_yes_no_vote_poll(
+            block_info,
+            &vote_poll,
+            &tally,
+            transaction,
+            platform_version,
+        )?;
+        self.on_yes_no_vote_poll_finished(
+            block_info,
+            &vote_poll,
+            &result,
+            transaction,
+            platform_version,
+        )?;
+        let voters = self.drive.fetch_identities_voting_in_yes_no_vote_poll(
+            &vote_poll,
+            transaction,
+            platform_version,
+        )?;
+        Ok(ResolvedVotePollWithVotes::YesNoVotePollWithVotes(
+            vote_poll, voters,
+        ))
     }
 }
