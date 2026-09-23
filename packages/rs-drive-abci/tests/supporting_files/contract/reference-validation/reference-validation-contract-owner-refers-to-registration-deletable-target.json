@@ -1,0 +1,59 @@
+{
+  "$formatVersion": "1",
+  "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "moderator": {
+      "type": "object",
+      "documentsMutable": false,
+      "properties": {
+        "memberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        }
+      },
+      "indices": [
+        {
+          "name": "byMember",
+          "properties": [
+            {
+              "memberId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "memberId"
+      ],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "permanentDocument",
+        "documentType": "moderator",
+        "lookup": {
+          "index": "byMember",
+          "keys": {
+            "memberId": "."
+          }
+        }
+      },
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

@@ -156,54 +156,126 @@ impl DocumentType {
         // registration, and a reference naming a document type this contract does not have
         // is left to that validation too, which reports it.
         //
+        // The type's `ownerRefersTo` or `creatorRefersTo` declaration, whose lookup key
+        // takes the writer or the creator for `"."`, is checked the same way.
+        //
         // Inert for every protocol version before 14 for the same reason as the check above:
         // a parsed reference carries a `lookup` only where the tables carry
+        // `apply_property_reference: Some(_)`, so the loop below finds none there. The same
+        // holds for the leaves of a reference expression (`anyOf` / `allOf`), walked through
+        // `leaves_with_paths()`, which parse from the same version only (for a single
+        // declaration it is the declaration itself, at an empty path, so the walk and the
+        // error are unchanged where no expression exists). Only parser generation 3,
+        // selected from protocol version 14, sets an owner or creator reference, so before it
+        // `reference_declarations` yields the properties' references alone, in the order the
+        // loop walked them, and names them as it did.
+        for (name, document_type) in &contract_document_types {
+            let declaring = document_type.as_ref();
+            // On the writer or the creator, on an identifier property or on the elements
+            // of a typed array
+            for (holder, reference) in declaring.reference_declarations() {
+                let Some(declaration) = reference.target() else {
+                    continue;
+                };
+                // Each leaf of a reference expression is judged as it would be alone,
+                // and the error names the leaf (`refersTo anyOf[1] lookup`)
+                for (leaf_path, target) in declaration.leaves_with_paths() {
+                    let Some(DocumentReferenceDeclaration {
+                        contract_id,
+                        document_type_name,
+                        lookup: Some(lookup),
+                        ..
+                    }) = target.as_any_document_reference()
+                    else {
+                        continue;
+                    };
+                    if contract_id.is_some_and(|contract_id| contract_id != data_contract_id) {
+                        continue;
+                    }
+                    let Some(referenced_document_type) =
+                        contract_document_types.get(document_type_name)
+                    else {
+                        continue;
+                    };
+                    // A lookup is only declared on a permanentDocument reference, and a
+                    // deletable target fails that reference whatever its indexes say:
+                    // registration reports it (ReferencedDocumentTypeDeletableError), so the
+                    // lookup is not judged against a type it could never reference
+                    let referenced = referenced_document_type.as_ref();
+                    if referenced.documents_can_be_deleted()
+                        || referenced.documents_can_be_deleted_by_moderators()
+                    {
+                        continue;
+                    }
+                    if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {
+                        let at = if leaf_path.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {leaf_path}")
+                        };
+                        return Err(consensus_or_protocol_data_contract_error(
+                            DataContractError::InvalidContractStructure(format!(
+                                "document type \"{name}\" {}{at} lookup: {reason}",
+                                holder.describe()
+                            )),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Protocol version 14 and later: a `refersTo: listElement` whose list lives in a
+        // document type of this contract must find a list there that holds identifiers and
+        // never changes: its documents cannot be deleted, `inList` is a stored typed array of
+        // identifiers of it, and the list is fixed once a document is written (see
+        // `ListElementReference::referenced_side_error`). The `$id` pair naming the list's
+        // document was checked by the document type parse under full validation, and the
+        // other agreement pairs are checked at registration as every agreement is; a list in
+        // another contract is checked against that contract's state at registration, and one
+        // in a document type this contract does not have is left to the reference validation,
+        // which reports it. A leaf of a reference expression is judged as it would be alone.
+        //
+        // Inert for every protocol version before 14 for the same reason as the checks above:
+        // a parsed reference is a `listElement` only where the tables carry
         // `apply_property_reference: Some(_)`, so the loop below finds none there.
         for (name, document_type) in &contract_document_types {
-            for (path, property) in document_type.as_ref().flattened_properties() {
-                // On an identifier property or on the elements of a typed array
-                let Some(target) = property
-                    .property_type
-                    .reference()
-                    .and_then(|reference| reference.target())
-                else {
+            let declaring = document_type.as_ref();
+            // On the writer or the creator, on an identifier property or on the elements of
+            // a typed array
+            for (holder, declaration) in declaring.reference_declarations() {
+                let Some(declaration) = declaration.target() else {
                     continue;
                 };
-                let Some(DocumentReferenceDeclaration {
-                    contract_id,
-                    document_type_name,
-                    lookup: Some(lookup),
-                    ..
-                }) = target.as_any_document_reference()
-                else {
-                    continue;
-                };
-                if contract_id.is_some_and(|contract_id| contract_id != data_contract_id) {
-                    continue;
-                }
-                let Some(referenced_document_type) =
-                    contract_document_types.get(document_type_name)
-                else {
-                    continue;
-                };
-                // A lookup is only declared on a permanentDocument reference, and a
-                // deletable target fails that reference whatever its indexes say:
-                // registration reports it (ReferencedDocumentTypeDeletableError), so the
-                // lookup is not judged against a type it could never reference
-                let referenced = referenced_document_type.as_ref();
-                if referenced.documents_can_be_deleted()
-                    || referenced.documents_can_be_deleted_by_moderators()
-                {
-                    continue;
-                }
-                if let Some(reason) =
-                    lookup.referenced_side_error(document_type.as_ref(), referenced)
-                {
-                    return Err(consensus_or_protocol_data_contract_error(
-                        DataContractError::InvalidContractStructure(format!(
-                            "document type \"{name}\" property \"{path}\" refersTo lookup: {reason}"
-                        )),
-                    ));
+                for (leaf_path, target) in declaration.leaves_with_paths() {
+                    let Some(reference) = target.as_list_element_reference() else {
+                        continue;
+                    };
+                    if reference
+                        .contract_id
+                        .is_some_and(|contract_id| contract_id != data_contract_id)
+                    {
+                        continue;
+                    }
+                    let Some(referenced_document_type) =
+                        contract_document_types.get(&reference.document_type_name)
+                    else {
+                        continue;
+                    };
+                    if let Some(reason) =
+                        reference.referenced_side_error(referenced_document_type.as_ref())
+                    {
+                        let at = if leaf_path.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {leaf_path}")
+                        };
+                        return Err(consensus_or_protocol_data_contract_error(
+                            DataContractError::InvalidContractStructure(format!(
+                                "document type \"{name}\" {}{at} listElement: {reason}",
+                                holder.describe()
+                            )),
+                        ));
+                    }
                 }
             }
         }

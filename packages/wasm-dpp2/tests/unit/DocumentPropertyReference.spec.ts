@@ -140,7 +140,9 @@ function buildContract(platformVersion: number, fullValidation = true) {
 
 type Reference = {
   path: string;
-  type: string;
+  type?: string;
+  anyOf?: Omit<Reference, 'path'>[];
+  allOf?: Omit<Reference, 'path'>[];
   contractId?: { toBase58(): string };
   documentType?: string;
   keyIdProperty?: string;
@@ -148,6 +150,7 @@ type Reference = {
   identityProperty?: string;
   propertyAgreement?: Record<string, string>;
   lookup?: { index: string; keys: Record<string, string> };
+  inList?: string;
 };
 
 /**
@@ -452,6 +455,368 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
+  describe('listElement', () => {
+    /**
+     * An `electedCharter` that can be neither deleted nor replaced holds its
+     * `members`, and a `resignation` names its charter (`electedCharterId`)
+     * and a `memberId` that must be one of that charter's members.
+     */
+    const listElementSchemas = {
+      electedCharter: {
+        type: 'object',
+        canBeDeleted: false,
+        // The list must be fixed once the charter is written
+        documentsMutable: false,
+        properties: {
+          members: {
+            type: 'array',
+            maxItems: 15,
+            items: {
+              type: 'array',
+              byteArray: true,
+              minItems: 32,
+              maxItems: 32,
+              contentMediaType: 'application/x.dash.dpp.identifier',
+            },
+            position: 0,
+          },
+        },
+        required: ['members'],
+        additionalProperties: false,
+      },
+      resignation: {
+        type: 'object',
+        properties: {
+          electedCharterId: plainIdentifier,
+          memberId: identifierProperty(1, {
+            type: 'listElement',
+            documentType: 'electedCharter',
+            propertyAgreement: { electedCharterId: '$id' },
+            inList: 'members',
+          }),
+        },
+        required: ['electedCharterId'],
+        additionalProperties: false,
+      },
+    };
+    const buildListElementContract = (schemas: object) => new wasm.DataContract({
+      ownerId,
+      identityNonce: BigInt(2),
+      schemas,
+      definitions: null,
+      fullValidation: true,
+      platformVersion: new PlatformVersion(14),
+    });
+
+    it('should carry the list and the agreement pair naming its document', () => {
+      const contract = buildListElementContract(listElementSchemas);
+      const member = (contract.documentTypeReferences('resignation') as Reference[]).find(
+        (reference) => reference.path === 'memberId',
+      )!;
+
+      expect(member.type).to.equal('listElement');
+      expect(member.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(member.documentType).to.equal('electedCharter');
+      expect(member.propertyAgreement).to.deep.equal({ electedCharterId: '$id' });
+      expect(member.inList).to.equal('members');
+    });
+
+    it('should refuse a list the document holding it can replace', () => {
+      const replaceable = structuredClone(listElementSchemas);
+      replaceable.electedCharter.documentsMutable = true;
+
+      expect(() => buildListElementContract(replaceable)).to.throw(/can be changed by a replace/);
+    });
+  });
+
+  describe('reference expressions', () => {
+    /**
+     * The moderation charter's resignation: the member is either the owner of
+     * a join request for the charter, or the moderator an `addedModerator`
+     * document names.
+     */
+    const expressionSchemas = {
+      joinRequest: lookupSchemas.joinRequest,
+      addedModerator: {
+        type: 'object',
+        canBeDeleted: false,
+        documentsMutable: false,
+        properties: {
+          submittedCharterId: plainIdentifier,
+          moderatorId: { ...plainIdentifier, position: 1 },
+        },
+        indices: [
+          {
+            name: 'byModerator',
+            properties: [{ submittedCharterId: 'asc' }, { moderatorId: 'asc' }],
+            unique: true,
+          },
+        ],
+        required: ['submittedCharterId', 'moderatorId'],
+        additionalProperties: false,
+      },
+      resignation: {
+        type: 'object',
+        properties: {
+          submittedCharterId: plainIdentifier,
+          memberId: identifierProperty(1, {
+            anyOf: [
+              (lookupSchemas.charter.properties.memberId as { refersTo: object }).refersTo,
+              {
+                type: 'permanentDocument',
+                documentType: 'addedModerator',
+                lookup: {
+                  index: 'byModerator',
+                  keys: { submittedCharterId: 'submittedCharterId', moderatorId: '.' },
+                },
+              },
+            ],
+          }),
+        },
+        required: ['submittedCharterId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildExpressionContract(documentSchemas: object) {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: documentSchemas,
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+    }
+
+    it('should carry the operands of an anyOf in declared order, tagged anyOf', () => {
+      const contract = buildExpressionContract(expressionSchemas);
+      const [member] = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(member.path).to.equal('memberId');
+      expect(member.type).to.equal('anyOf');
+      expect(member).to.not.have.property('allOf');
+      expect(member.anyOf).to.have.lengthOf(2);
+      const [joinRequest, addedModerator] = member.anyOf!;
+      expect(joinRequest.type).to.equal('permanentDocument');
+      expect(joinRequest.documentType).to.equal('joinRequest');
+      expect(joinRequest.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(joinRequest.lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+      expect(addedModerator.documentType).to.equal('addedModerator');
+      expect(addedModerator.lookup).to.deep.equal({
+        index: 'byModerator',
+        keys: { moderatorId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+      // Each target is a target object of its own, never a nested anyOf
+      expect(joinRequest).to.not.have.property('anyOf');
+      expect(joinRequest).to.not.have.property('path');
+    });
+
+    it('should carry an anyOf the elements of a typed array declare', () => {
+      const withMembers = structuredClone(expressionSchemas);
+      const properties = withMembers.resignation.properties as Record<string, object>;
+      properties.members = {
+        type: 'array',
+        maxItems: 15,
+        items: {
+          type: 'array',
+          byteArray: true,
+          minItems: 32,
+          maxItems: 32,
+          contentMediaType: 'application/x.dash.dpp.identifier',
+          refersTo: { anyOf: [{ type: 'identity' }, { type: 'permanentDocument', documentType: 'joinRequest' }] },
+        },
+        position: 2,
+      };
+      const contract = buildExpressionContract(withMembers);
+      const members = (contract.documentTypeReferences('resignation') as Reference[]).find(
+        (reference) => reference.path === 'members[]',
+      )!;
+
+      expect(members.type).to.equal('anyOf');
+      expect(members.anyOf!.map((target) => target.type)).to.deep.equal(['identity', 'permanentDocument']);
+      expect(members.anyOf![1].documentType).to.equal('joinRequest');
+    });
+
+    it('should carry an allOf nested in an anyOf, each list under its own key and tagged', () => {
+      const nested = structuredClone(expressionSchemas);
+      const memberId = nested.resignation.properties.memberId as { refersTo: { anyOf: object[] } };
+      const [joinRequest, addedModerator] = memberId.refersTo.anyOf;
+      memberId.refersTo = {
+        anyOf: [addedModerator, { allOf: [{ type: 'identity' }, joinRequest] }],
+      };
+      const contract = buildExpressionContract(nested);
+      const [member] = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(member.type).to.equal('anyOf');
+      expect(member.anyOf).to.have.lengthOf(2);
+      expect(member.anyOf![0].documentType).to.equal('addedModerator');
+      const allOf = member.anyOf![1];
+      expect(allOf.type).to.equal('allOf');
+      expect(allOf).to.not.have.property('anyOf');
+      expect(allOf.allOf!.map((operand) => operand.type)).to.deep.equal(['identity', 'permanentDocument']);
+      expect(allOf.allOf![1].documentType).to.equal('joinRequest');
+    });
+
+    it('should refuse a leaf of a type an expression does not take', () => {
+      const withContract = structuredClone(expressionSchemas);
+      (withContract.resignation.properties.memberId as { refersTo: object }).refersTo = {
+        anyOf: [{ type: 'identity' }, { type: 'contract' }],
+      };
+
+      expect(() => buildExpressionContract(withContract)).to.throw(
+        /refersTo anyOf\[1\] is a reference of type contract, which a reference expression does not take/,
+      );
+    });
+
+    it('should refuse an anyOf directly inside an anyOf', () => {
+      const flat = structuredClone(expressionSchemas);
+      const memberId = flat.resignation.properties.memberId as { refersTo: { anyOf: object[] } };
+      memberId.refersTo = {
+        anyOf: [{ type: 'identity' }, { anyOf: memberId.refersTo.anyOf }],
+      };
+
+      expect(() => buildExpressionContract(flat)).to.throw(
+        /refersTo anyOf\[1\] is an anyOf directly inside an anyOf/,
+      );
+    });
+  });
+
+  describe('ownerRefersTo and creatorRefersTo', () => {
+    /**
+     * A `resignation` may only be written by the owner of a join request for
+     * its own `submittedCharterId`: the document type's own reference, whose
+     * value is the writer rather than a property's value.
+     */
+    const ownerSchemas = {
+      joinRequest: lookupSchemas.joinRequest,
+      resignation: {
+        type: 'object',
+        ownerRefersTo: {
+          type: 'permanentDocument',
+          documentType: 'joinRequest',
+          lookup: {
+            index: 'bySubmittedCharter',
+            keys: { submittedCharterId: 'submittedCharterId', $ownerId: '.' },
+          },
+        },
+        properties: {
+          submittedCharterId: plainIdentifier,
+          author: identifierProperty(1, { type: 'identity' }),
+        },
+        required: ['submittedCharterId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildOwnerContract(
+      resignation: object,
+      platformVersion = 14,
+      fullValidation = true,
+    ) {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: { joinRequest: ownerSchemas.joinRequest, resignation },
+        definitions: null,
+        fullValidation,
+        platformVersion: new PlatformVersion(platformVersion),
+      });
+    }
+
+    it('should list the owner reference first, at the path $ownerId', () => {
+      const contract = buildOwnerContract(ownerSchemas.resignation);
+      const references = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(references.map((reference) => reference.path)).to.deep.equal([
+        '$ownerId',
+        'author',
+      ]);
+      const [writer] = references;
+      expect(writer.type).to.equal('permanentDocument');
+      expect(writer.documentType).to.equal('joinRequest');
+      expect(writer.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(writer.lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+      expect(
+        (contract.documentReferences as Map<string, Reference[]>).get('resignation')!
+          .map((reference) => reference.path),
+      ).to.deep.equal(['$ownerId', 'author']);
+    });
+
+    it('should report a document type declaring only an owner reference', () => {
+      const onlyOwner = structuredClone(ownerSchemas.resignation) as {
+        ownerRefersTo: object;
+        properties: Record<string, object>;
+      };
+      delete onlyOwner.properties.author;
+      onlyOwner.ownerRefersTo = { type: 'identity' };
+      const contract = buildOwnerContract(onlyOwner);
+
+      expect(contract.documentTypeReferences('resignation')).to.deep.equal([
+        { path: '$ownerId', type: 'identity' },
+      ]);
+    });
+
+    it('should refuse an owner reference to a target the writer can never be', () => {
+      for (const ownerRefersTo of [
+        { type: 'contract' },
+        { type: 'token' },
+        { type: 'identityPublicKey', identityProperty: '$ownerId' },
+      ]) {
+        const refused = { ...ownerSchemas.resignation, ownerRefersTo };
+        expect(() => buildOwnerContract(refused)).to.throw();
+        // The stored path refuses it too, where no meta-schema runs
+        expect(() => buildOwnerContract(refused, 14, false)).to.throw(/ownerRefersTo does not take/);
+      }
+    });
+
+    it('should list a creator reference first, at the path $creatorId', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const badge = { ...rest, transferable: 1, creatorRefersTo: ownerRefersTo };
+      const contract = buildOwnerContract(badge);
+      const references = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(references.map((reference) => reference.path)).to.deep.equal([
+        '$creatorId',
+        'author',
+      ]);
+      expect(references[0].type).to.equal('permanentDocument');
+      expect(references[0].lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+    });
+
+    it('should refuse a creator reference on a type that records no creator ids', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const notTransferable = { ...rest, creatorRefersTo: ownerRefersTo };
+
+      expect(() => buildOwnerContract(notTransferable)).to.throw(/records no creator ids/);
+    });
+
+    it('should list an owner reference expression at the path $ownerId', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const expression = { ...rest, ownerRefersTo: { anyOf: [ownerRefersTo, { type: 'identity' }] } };
+      const contract = buildOwnerContract(expression);
+      const [writer] = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(writer.path).to.equal('$ownerId');
+      expect(writer.type).to.equal('anyOf');
+    });
+
+    it('should report no owner reference on a pre-v14 contract', () => {
+      const contract = buildOwnerContract(ownerSchemas.resignation, 13, false);
+
+      expect(contract.documentTypeReferences('resignation')).to.deep.equal([]);
+    });
+  });
+
   describe('documentReferences', () => {
     it('should key declarations by document type and omit types with none', () => {
       const contract = buildContract(14);
@@ -494,6 +859,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedContractRequirementNotMet).to.equal(40135);
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentListInvalid).to.equal(40138);
     });
 
     it('should resolve a code back to its name', () => {

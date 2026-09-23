@@ -2282,6 +2282,273 @@ mod tests {
             }
         }
 
+        /// A reference expression is frozen like a single target: documents were checked
+        /// against the expression they were written under, so turning a target into an
+        /// expression or back, adding, removing or reordering an operand (the order decides
+        /// which error a writer sees), swapping `anyOf` for `allOf`, nesting deeper, or
+        /// changing a leaf is an incompatible schema change. `anyOf` and `allOf` inside
+        /// `refersTo` are the declaration's data, never read as the JSON Schema keywords.
+        #[test]
+        fn should_return_invalid_result_when_a_reference_expression_changes() {
+            let platform_version = PlatformVersion::latest();
+            let identity = platform_value!({ "type": "identity" });
+            let note = platform_value!({ "type": "permanentDocument", "documentType": "note" });
+            let memo = platform_value!({ "type": "permanentDocument", "documentType": "memo" });
+            let any_of = |targets: Vec<platform_value::Value>| platform_value!({ "anyOf": platform_value::Value::Array(targets) });
+            let all_of = |targets: Vec<platform_value::Value>| platform_value!({ "allOf": platform_value::Value::Array(targets) });
+
+            for (old_refers_to, new_refers_to) in [
+                (
+                    identity.clone(),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (any_of(vec![identity.clone(), note.clone()]), note.clone()),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![note.clone(), identity.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    all_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![
+                        identity.clone(),
+                        all_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                ),
+                (
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![memo.clone(), note.clone()]),
+                    ]),
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_refers_to.clone()), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_refers_to.clone()), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert!(
+                    !result.errors.is_empty(),
+                    "{old_refers_to:?} -> {new_refers_to:?} should be incompatible"
+                );
+                for error in &result.errors {
+                    assert_matches!(
+                        error,
+                        ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        ) if e.property_path().starts_with("/properties/toUserId/refersTo"),
+                        "{old_refers_to:?} -> {new_refers_to:?}"
+                    );
+                }
+            }
+
+            // An unchanged expression is no change
+            let document_type = identifier_document_type(
+                Some(any_of(vec![identity, all_of(vec![note, memo])])),
+                platform_version,
+            );
+            let result = document_type
+                .as_ref()
+                .validate_schema(document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// The same holds on the elements of a typed array.
+        #[test]
+        fn should_refuse_a_contract_update_that_changes_an_element_reference_expression() {
+            let platform_version = PlatformVersion::latest();
+            let reason = platform_value!({ "type": "permanentDocument", "documentType": "reason" });
+            let any_of = platform_value!({
+                "anyOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
+
+            let all_of = platform_value!({
+                "allOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
+            for (old_refers_to, new_refers_to) in [
+                (reason.clone(), any_of.clone()),
+                (any_of.clone(), reason.clone()),
+                (any_of.clone(), all_of.clone()),
+            ] {
+                let old_document_type =
+                    element_reference_document_type(Some(old_refers_to), platform_version);
+                let new_document_type =
+                    element_reference_document_type(Some(new_refers_to), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_update(new_document_type.as_ref(), 2, platform_version)
+                    .expect("validate_update should not error");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    ), ..] if e.property_path().starts_with("/properties/reasons/items/refersTo"),
+                    "{:?}",
+                    result.errors
+                );
+            }
+        }
+
+        /// `reasons`, a typed array of identifiers, with `refersTo` on its items as given,
+        /// parsed as a contract read back from state is, so a `listElement` declaration
+        /// needs no `$id` property to exist beside it.
+        fn element_list_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut items = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            });
+            if let Some(refers_to) = refers_to {
+                items
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "reasons": { "type": "array", "maxItems": 8, "items": items, "position": 0 }
+                },
+                "additionalProperties": false,
+            });
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "resignation",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// A list element reference is frozen like every other declaration: stored
+        /// documents were checked against the list it names, on the document its `$id`
+        /// pair names, so adding, removing or changing it (on an identifier property or on
+        /// the elements of a typed array) is an incompatible schema change.
+        #[test]
+        fn should_return_invalid_result_when_a_list_element_reference_changes() {
+            let platform_version = PlatformVersion::latest();
+            let list_element = |id_property: &str, in_list: &str| {
+                platform_value!({
+                    "type": "listElement",
+                    "documentType": "electedCharter",
+                    "propertyAgreement": { id_property: "$id" },
+                    "inList": in_list
+                })
+            };
+            let members = list_element("electedCharterId", "members");
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (None, Some(members.clone()), "/refersTo"),
+                (Some(members.clone()), None, "/refersTo"),
+                (
+                    Some(platform_value!({
+                        "type": "permanentDocument",
+                        "documentType": "electedCharter"
+                    })),
+                    Some(members.clone()),
+                    "/refersTo/type",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("electedCharterId", "seats")),
+                    "/refersTo/inList",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("otherCharterId", "members")),
+                    "/refersTo/propertyAgreement",
+                ),
+            ] {
+                for (old_document_type, new_document_type, property_path) in [
+                    (
+                        identifier_document_type(old_refers_to.clone(), platform_version),
+                        identifier_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/toUserId",
+                    ),
+                    (
+                        element_list_document_type(old_refers_to.clone(), platform_version),
+                        element_list_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/reasons/items",
+                    ),
+                ] {
+                    let result = old_document_type
+                        .as_ref()
+                        .validate_update(new_document_type.as_ref(), 2, platform_version)
+                        .expect("validate_update should not error");
+
+                    // Swapping the target kind also adds the keywords only a
+                    // list element takes, each its own incompatible change;
+                    // a renamed pair is a removal and an addition under
+                    // propertyAgreement
+                    let expected_path = format!("{property_path}{changed_path}");
+                    let changed_paths: Vec<&str> = result
+                        .errors
+                        .iter()
+                        .map(|error| match error {
+                            ConsensusError::BasicError(
+                                BasicError::IncompatibleDocumentTypeSchemaError(e),
+                            ) => e.property_path(),
+                            other => panic!("expected an incompatible schema change, got {other}"),
+                        })
+                        .collect();
+                    assert!(
+                        changed_paths
+                            .iter()
+                            .any(|changed| changed.starts_with(expected_path.as_str())),
+                        "{old_refers_to:?} -> {new_refers_to:?}: {changed_paths:?}"
+                    );
+                }
+            }
+
+            // An unchanged declaration is no change
+            let document_type = identifier_document_type(Some(members), platform_version);
+            let result = document_type
+                .as_ref()
+                .validate_update(document_type.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
         /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
         /// `delegateId` as given.
         fn distinct_from_document_type(

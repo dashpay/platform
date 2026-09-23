@@ -6,6 +6,8 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_value_depth: None,
     max_typed_array_items: 1024,
     max_references_per_document: 256,
+    max_reference_operands: 4,
+    max_reference_expression_depth: 4,
     max_state_transition_size: 20480, //20 KiB
     // TODO: this is currently capped at 1 because the batch state-transition
     // pipeline has known correctness issues with multi-transition batches:

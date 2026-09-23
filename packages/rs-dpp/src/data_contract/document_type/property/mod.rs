@@ -17,9 +17,10 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::property_names;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::DataContract;
-use crate::document::property_names::{CREATOR_ID, OWNER_ID};
+use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::{IdentityPublicKey, Purpose};
@@ -40,9 +41,16 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod list_element_reference;
+pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use list_element_reference::ListElementReference;
+pub use reference_expression::{
+    ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
+    MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
+};
 pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
 
 #[cfg(test)]
@@ -845,11 +853,56 @@ pub enum DocumentPropertyReferenceTarget {
         /// How the referenced document is found.
         lookup: DocumentReferenceLookup,
     },
+    /// Two or more operands, declared as `{ "anyOf": [operand, ...] }`: the
+    /// reference holds if at least one of them holds. An operand is a leaf,
+    /// an ordinary declaration of an `identity` or a `permanentDocument` (by
+    /// id or through a lookup), or an [`Self::AllOf`] (see
+    /// [`ReferenceOperands`] for the rules and why the other kinds are left
+    /// out). At write time the operands are checked in declared order and
+    /// the first that holds ends the check; every read is billed, and when
+    /// none holds the write is refused with the error of the last operand,
+    /// so a reference error never carries this variant. A
+    /// `propertyAgreement` belongs to its leaf and is checked only against
+    /// that leaf's document.
+    ///
+    /// Not a document reference as a whole
+    /// ([`Self::as_any_document_reference`] is `None`): code that checks
+    /// each declaration walks [`Self::leaves`], and code that needs one
+    /// target (joins, preallocated indexes) refuses it.
+    #[serde(rename = "anyOf")]
+    AnyOf(ReferenceOperands),
+    /// Two or more operands, declared as `{ "allOf": [operand, ...] }`: the
+    /// reference holds if every one of them holds for the same value. An
+    /// operand is a leaf, as for [`Self::AnyOf`], or an [`Self::AnyOf`]. At
+    /// write time the operands are checked in declared order and the first
+    /// that fails ends the check, refusing the write with its error; every
+    /// read is billed. Otherwise as [`Self::AnyOf`].
+    #[serde(rename = "allOf")]
+    AllOf(ReferenceOperands),
+    /// An element of a list: the value must be one of the identifiers the
+    /// typed array [`ListElementReference::in_list`] holds on the one
+    /// document of a permanent document type that agrees with the referring
+    /// document on every `propertyAgreement` pair, found by the pair whose
+    /// referenced side is `$id`. A document reference in every other respect
+    /// ([`Self::as_any_document_reference`] carries it with `in_list` set):
+    /// the value is neither the document's id nor a lookup key, so
+    /// [`Self::as_document_reference`] leaves it out. The list's document can
+    /// never be deleted and its list never changes (checked at registration),
+    /// so an accepted value stays an element for good. Appended, so every
+    /// earlier variant keeps its consensus encoding.
+    #[serde(rename = "listElement")]
+    ListElement(ListElementReference),
 }
 
-/// The declaration content the two document reference targets,
+/// The declaration content every document reference target shares:
 /// [`DocumentPropertyReferenceTarget::PermanentDocument`] and
-/// [`DocumentPropertyReferenceTarget::DeletableDocument`], share.
+/// [`DocumentPropertyReferenceTarget::DeletableDocument`], whose value is the
+/// referenced document's id, [`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]
+/// (`lookup` set), whose value is one part of a key, and
+/// [`DocumentPropertyReferenceTarget::ListElement`] (`in_list` set), whose
+/// value is an element of the referenced document's list. Only
+/// [`DocumentPropertyReferenceTarget::as_document_reference`] promises the
+/// value is a document id.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct DocumentReferenceDeclaration<'a> {
     /// The contract the referenced document type lives in; `None` means
@@ -860,7 +913,8 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// The `{referring property: referenced property}` equalities
     pub property_agreement: &'a BTreeMap<String, String>,
     /// Whether the referenced document type must forbid deletion
-    /// (`permanentDocument`) or must allow it (`deletableDocument`)
+    /// (`permanentDocument`, by id or through a lookup, and `listElement`)
+    /// or must allow it (`deletableDocument`)
     pub permanent: bool,
     /// How the referenced document is found when the value is not its id
     /// ([`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]); `None`
@@ -868,23 +922,31 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
     /// returns a declaration carrying one.
     pub lookup: Option<&'a DocumentReferenceLookup>,
+    /// The typed array of identifiers the value must be an element of
+    /// ([`DocumentPropertyReferenceTarget::ListElement`]); `None` when the
+    /// value is the referenced document's id or a lookup key part. Only
+    /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
+    /// returns a declaration carrying one.
+    pub in_list: Option<&'a str>,
 }
 
 impl DocumentPropertyReferenceTarget {
     /// The declaration of a reference whose value is a DOCUMENT's id, of
-    /// either kind; `None` for every other target, a lookup reference
-    /// included, whose value is not a document id. This is the accessor for
-    /// code that treats the value as the referenced document's `$id` (by-id
-    /// joins); code that validates every kind of document reference uses
-    /// [`Self::as_any_document_reference`].
+    /// either kind; `None` for every other target, a lookup reference or a
+    /// list element included, whose value is not a document id. This is the
+    /// accessor for code that treats the value as the referenced document's
+    /// `$id` (by-id joins); code that validates every kind of document
+    /// reference uses [`Self::as_any_document_reference`].
     pub fn as_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
         self.as_any_document_reference()
-            .filter(|declaration| declaration.lookup.is_none())
+            .filter(|declaration| declaration.lookup.is_none() && declaration.in_list.is_none())
     }
 
     /// The declaration of any reference to a DOCUMENT: of either kind, and
-    /// found by its id or through a `lookup` (then `lookup` is `Some`, and
-    /// the value is not the document's id). `None` for every other target.
+    /// found by its id, through a `lookup` (then `lookup` is `Some`, and the
+    /// value is not the document's id) or by a `$id` agreement pair with the
+    /// value an element of its list (then `in_list` is `Some`). `None` for
+    /// every other target.
     pub fn as_any_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
         match self {
             DocumentPropertyReferenceTarget::PermanentDocument {
@@ -897,6 +959,7 @@ impl DocumentPropertyReferenceTarget {
                 property_agreement,
                 permanent: true,
                 lookup: None,
+                in_list: None,
             }),
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id,
@@ -909,6 +972,7 @@ impl DocumentPropertyReferenceTarget {
                 property_agreement,
                 permanent: true,
                 lookup: Some(lookup),
+                in_list: None,
             }),
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id,
@@ -920,11 +984,102 @@ impl DocumentPropertyReferenceTarget {
                 property_agreement,
                 permanent: false,
                 lookup: None,
+                in_list: None,
             }),
+            DocumentPropertyReferenceTarget::ListElement(reference) => {
+                Some(DocumentReferenceDeclaration {
+                    contract_id: reference.contract_id,
+                    document_type_name: &reference.document_type_name,
+                    property_agreement: &reference.property_agreement,
+                    permanent: true,
+                    lookup: None,
+                    in_list: Some(&reference.in_list),
+                })
+            }
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
-            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => None,
+            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
+            | DocumentPropertyReferenceTarget::AnyOf(_)
+            | DocumentPropertyReferenceTarget::AllOf(_) => None,
+        }
+    }
+
+    /// The declaration of a `listElement` reference; `None` for every other
+    /// target.
+    pub fn as_list_element_reference(&self) -> Option<&ListElementReference> {
+        match self {
+            DocumentPropertyReferenceTarget::ListElement(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
+    /// The combinator and operands of a reference expression, `None` for a
+    /// single target (a leaf).
+    pub fn combinator(&self) -> Option<(ReferenceCombinator, &ReferenceOperands)> {
+        match self {
+            DocumentPropertyReferenceTarget::AnyOf(operands) => {
+                Some((ReferenceCombinator::AnyOf, operands))
+            }
+            DocumentPropertyReferenceTarget::AllOf(operands) => {
+                Some((ReferenceCombinator::AllOf, operands))
+            }
+            _ => None,
+        }
+    }
+
+    /// The single targets this declaration is made of, in declared order,
+    /// depth first: the leaves of a reference expression, or the declaration
+    /// itself. Code that checks every declaration (registration, the lookup
+    /// sources) walks these, so a leaf of an expression is checked exactly as
+    /// the same target declared alone. A leaf appearing twice is listed twice.
+    pub fn leaves(&self) -> Vec<&DocumentPropertyReferenceTarget> {
+        self.leaves_with_paths()
+            .into_iter()
+            .map(|(_, leaf)| leaf)
+            .collect()
+    }
+
+    /// [`Self::leaves`] with where each sits in the expression, as an error
+    /// names it: `anyOf[1].allOf[0]`, the empty string for a single target.
+    pub fn leaves_with_paths(&self) -> Vec<(String, &DocumentPropertyReferenceTarget)> {
+        fn walk<'a>(
+            target: &'a DocumentPropertyReferenceTarget,
+            path: String,
+            leaves: &mut Vec<(String, &'a DocumentPropertyReferenceTarget)>,
+        ) {
+            match target.combinator() {
+                None => leaves.push((path, target)),
+                Some((combinator, operands)) => {
+                    for (index, operand) in operands.operands().iter().enumerate() {
+                        let separator = if path.is_empty() { "" } else { "." };
+                        walk(
+                            operand,
+                            format!("{path}{separator}{}[{index}]", combinator.wire_name()),
+                            leaves,
+                        );
+                    }
+                }
+            }
+        }
+        let mut leaves = Vec::new();
+        walk(self, String::new(), &mut leaves);
+        leaves
+    }
+
+    /// How many combinators the deepest leaf sits under: 0 for a single
+    /// target, 1 for a flat `anyOf` or `allOf`.
+    pub fn expression_depth(&self) -> usize {
+        match self.combinator() {
+            None => 0,
+            Some((_, operands)) => {
+                1 + operands
+                    .operands()
+                    .iter()
+                    .map(DocumentPropertyReferenceTarget::expression_depth)
+                    .max()
+                    .unwrap_or(0)
+            }
         }
     }
 }
@@ -966,25 +1121,104 @@ impl<'a> PropertyReference<'a> {
         }
     }
 
-    /// How many referenced values one document can carry through this
-    /// declaration: `max_items` for a typed array, one otherwise.
+    /// How many references one document can carry through this declaration,
+    /// each a billed state read when the document is written: `max_items`
+    /// for a typed array, one otherwise, times the number of leaves of a
+    /// reference expression, every one of which may be read for one value.
     pub fn max_references(&self) -> u32 {
-        match self {
+        let values = match self {
             PropertyReference::Elements { max_items, .. } => u32::from(*max_items),
             PropertyReference::Value(_) | PropertyReference::KeyId(_) => 1,
+        };
+        let leaves = self.target().map_or(1, |target| target.leaves().len());
+        values.saturating_mul(u32::try_from(leaves).unwrap_or(u32::MAX))
+    }
+}
+
+/// Where a reference declaration of a document type sits, and so where the
+/// value it checks comes from. Paired with each declaration by
+/// [`DocumentTypeRef::reference_declarations`].
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ReferenceHolder<'a> {
+    /// The document type's `ownerRefersTo`: the value is the document's
+    /// `$ownerId`, the writer.
+    Owner,
+    /// The document type's `creatorRefersTo`: the value is the document's
+    /// `$creatorId`, its creator, which never changes.
+    Creator,
+    /// A property, by its flattened path: the value is the property's, or each
+    /// element's for a typed array.
+    Property(&'a str),
+}
+
+impl<'a> ReferenceHolder<'a> {
+    /// The path the reference errors name the declaration by: the property's,
+    /// `$ownerId` for the owner reference or `$creatorId` for the creator one.
+    pub fn path(&self) -> &'a str {
+        match self {
+            ReferenceHolder::Owner => OWNER_ID,
+            ReferenceHolder::Creator => CREATOR_ID,
+            ReferenceHolder::Property(path) => path,
         }
+    }
+
+    /// How contract structure errors name the declaration.
+    pub fn describe(&self) -> String {
+        match self {
+            ReferenceHolder::Owner => property_names::OWNER_REFERS_TO.to_string(),
+            ReferenceHolder::Creator => property_names::CREATOR_REFERS_TO.to_string(),
+            ReferenceHolder::Property(path) => format!("property \"{path}\" refersTo"),
+        }
+    }
+}
+
+impl<'a> DocumentTypeRef<'a> {
+    /// Every reference declaration of the document type with its holder: the
+    /// type's `ownerRefersTo` and `creatorRefersTo` first (a type declares at
+    /// most one of them), then each property's own
+    /// ([`DocumentPropertyType::reference`]) in schema order. This is how the
+    /// registration and write-time validators, the per-document reference
+    /// bound and the client bindings enumerate a type's references, so none of
+    /// them can skip a holder.
+    pub fn reference_declarations(
+        self,
+    ) -> impl Iterator<Item = (ReferenceHolder<'a>, PropertyReference<'a>)> {
+        let (owner_reference, creator_reference, flattened_properties) = match self {
+            DocumentTypeRef::V0(v0) => (None, None, &v0.flattened_properties),
+            DocumentTypeRef::V1(v1) => (None, None, &v1.flattened_properties),
+            DocumentTypeRef::V2(v2) => (
+                v2.owner_reference.as_ref(),
+                v2.creator_reference.as_ref(),
+                &v2.flattened_properties,
+            ),
+        };
+        owner_reference
+            .map(|target| (ReferenceHolder::Owner, PropertyReference::Value(target)))
+            .into_iter()
+            .chain(
+                creator_reference
+                    .map(|target| (ReferenceHolder::Creator, PropertyReference::Value(target))),
+            )
+            .chain(flattened_properties.iter().filter_map(|(path, property)| {
+                property
+                    .property_type
+                    .reference()
+                    .map(|reference| (ReferenceHolder::Property(path.as_str()), reference))
+            }))
     }
 }
 
 /// The system properties of a referenced document that the referenced side
 /// of a `propertyAgreement` pair may name, next to the referenced document
 /// type's schema properties: `$ownerId`, the current owner (which follows
-/// the document through transfers), and `$creatorId`, the original creator
+/// the document through transfers), `$creatorId`, the original creator
 /// (set once, and only recorded by transferable or tradeable document types
-/// of a format-1 contract). Both are identifiers, so the referring side must
-/// be an identifier property. The referring side is a schema property or
-/// the writer's own `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
-pub const REFERENCED_SYSTEM_AGREEMENT_PROPERTIES: [&str; 2] = [OWNER_ID, CREATOR_ID];
+/// of a format-1 contract), and `$id`, the document's own id, which never
+/// changes (a `listElement` reference finds its document by such a pair).
+/// All are identifiers, so the referring side must be an identifier
+/// property. The referring side is a schema property or the writer's own
+/// `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
+pub const REFERENCED_SYSTEM_AGREEMENT_PROPERTIES: [&str; 3] = [OWNER_ID, CREATOR_ID, ID];
 
 /// Whether `name` is one of [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referenced_system_agreement_property(name: &str) -> bool {
@@ -1009,6 +1243,18 @@ pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
 /// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referring_system_agreement_property(name: &str) -> bool {
     REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
+}
+
+/// Whether the property at the dotted `path` of `document_type`, or an object
+/// around it, is transient: either way its value is never stored.
+/// `transient_fields()` holds the paths as declared, so a leaf of a transient
+/// object is found only through the object's path, a prefix of its own.
+pub(crate) fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
+    let transient_fields = document_type.transient_fields();
+    path.match_indices('.')
+        .map(|(end, _)| &path[..end])
+        .chain(std::iter::once(path))
+        .any(|prefix| transient_fields.contains(prefix))
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
@@ -1082,6 +1328,22 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 document_type_name,
                 ..
             } => write_document_reference(f, "deletable", *contract_id, document_type_name, None),
+            DocumentPropertyReferenceTarget::ListElement(reference) => reference.fmt(f),
+            DocumentPropertyReferenceTarget::AnyOf(operands)
+            | DocumentPropertyReferenceTarget::AllOf(operands) => {
+                let (name, joiner) = match self {
+                    DocumentPropertyReferenceTarget::AnyOf(_) => ("any of", " or "),
+                    _ => ("all of", " and "),
+                };
+                write!(f, "{name} (")?;
+                for (index, operand) in operands.operands().iter().enumerate() {
+                    if index > 0 {
+                        write!(f, "{joiner}")?;
+                    }
+                    write!(f, "{operand}")?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -9681,6 +9943,121 @@ mod tests {
         );
     }
 
+    fn note() -> DocumentPropertyReferenceTarget {
+        DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: Default::default(),
+        }
+    }
+
+    fn identity_or_note() -> DocumentPropertyReferenceTarget {
+        DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+            DocumentPropertyReferenceTarget::Identity,
+            note(),
+        ]))
+    }
+
+    /// `anyOf(note, allOf(identity, anyOf(note, identity)))`: depth 3, four
+    /// leaves.
+    fn nested_expression() -> DocumentPropertyReferenceTarget {
+        DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+            note(),
+            DocumentPropertyReferenceTarget::AllOf(ReferenceOperands::new(vec![
+                DocumentPropertyReferenceTarget::Identity,
+                DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+                    note(),
+                    DocumentPropertyReferenceTarget::Identity,
+                ])),
+            ])),
+        ]))
+    }
+
+    /// An expression is no document reference as a whole: code that needs one
+    /// target sees none, and code that checks every declaration walks its
+    /// leaves, depth first, each with where it sits; a single declaration is
+    /// its own one leaf.
+    #[test]
+    fn should_walk_the_leaves_of_an_expression_and_expose_no_single_document_reference() {
+        let expression = nested_expression();
+        assert_eq!(expression.as_document_reference(), None);
+        assert_eq!(expression.as_any_document_reference(), None);
+        assert_eq!(expression.expression_depth(), 3);
+        assert_eq!(
+            expression
+                .leaves_with_paths()
+                .into_iter()
+                .map(|(path, leaf)| (path, leaf.clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("anyOf[0]".to_string(), note()),
+                (
+                    "anyOf[1].allOf[0]".to_string(),
+                    DocumentPropertyReferenceTarget::Identity
+                ),
+                ("anyOf[1].allOf[1].anyOf[0]".to_string(), note()),
+                (
+                    "anyOf[1].allOf[1].anyOf[1]".to_string(),
+                    DocumentPropertyReferenceTarget::Identity
+                ),
+            ]
+        );
+        assert_eq!(expression.leaves().len(), 4);
+        assert_eq!(
+            expression
+                .combinator()
+                .map(|(combinator, operands)| (combinator, operands.operands().len())),
+            Some((ReferenceCombinator::AnyOf, 2))
+        );
+
+        let single = DocumentPropertyReferenceTarget::Identity;
+        assert_eq!(single.leaves(), vec![&single]);
+        assert_eq!(single.leaves_with_paths(), vec![(String::new(), &single)]);
+        assert_eq!(single.expression_depth(), 0);
+        assert_eq!(single.combinator(), None);
+    }
+
+    #[test]
+    fn should_display_an_expression_in_declared_order() {
+        assert_eq!(
+            identity_or_note().to_string(),
+            "any of (identity or permanent document (own contract, document type note))"
+        );
+        assert_eq!(
+            nested_expression().to_string(),
+            "any of (permanent document (own contract, document type note) or all of (identity \
+             and any of (permanent document (own contract, document type note) or identity)))"
+        );
+    }
+
+    /// Registration counts every leaf of an expression: each may be read for
+    /// one value when the document is written.
+    #[test]
+    fn should_count_every_leaf_of_an_expression_as_a_reference() {
+        let any_of = identity_or_note();
+        assert_eq!(PropertyReference::Value(&any_of).max_references(), 2);
+        assert_eq!(
+            PropertyReference::Elements {
+                target: &any_of,
+                max_items: 15,
+            }
+            .max_references(),
+            30
+        );
+        let nested = nested_expression();
+        assert_eq!(PropertyReference::Value(&nested).max_references(), 4);
+        let single = DocumentPropertyReferenceTarget::Identity;
+        assert_eq!(PropertyReference::Value(&single).max_references(), 1);
+        assert_eq!(
+            PropertyReference::Elements {
+                target: &single,
+                max_items: 15,
+            }
+            .max_references(),
+            15
+        );
+    }
+
     fn key_with(purpose: Purpose, contract_bounds: Option<ContractBounds>) -> IdentityPublicKey {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 2,
@@ -9832,8 +10209,8 @@ mod tests {
     /// notably by wasm-dpp2's `DocumentPropertyReference` TypeScript union
     /// and the conversion that builds it. Those live behind a `match` that
     /// a new variant would not break, because they can fall back to a
-    /// catch-all. This exhaustive `match` has no catch-all, so adding an
-    /// eighth variant fails to compile *here*, in the crate that owns the
+    /// catch-all. This exhaustive `match` has no catch-all, so adding a
+    /// tenth variant fails to compile *here*, in the crate that owns the
     /// enum, where whoever adds it will see it.
     #[test]
     fn reference_targets_are_exhaustively_mirrored() {
@@ -9866,6 +10243,28 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                 },
             },
+            DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+                DocumentPropertyReferenceTarget::Identity,
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: None,
+                    document_type_name: "note".to_string(),
+                    property_agreement: Default::default(),
+                },
+            ])),
+            DocumentPropertyReferenceTarget::AllOf(ReferenceOperands::new(vec![
+                DocumentPropertyReferenceTarget::Identity,
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: None,
+                    document_type_name: "note".to_string(),
+                    property_agreement: Default::default(),
+                },
+            ])),
+            DocumentPropertyReferenceTarget::ListElement(ListElementReference {
+                contract_id: None,
+                document_type_name: "electedCharter".to_string(),
+                property_agreement: [("electedCharterId".to_string(), "$id".to_string())].into(),
+                in_list: "members".to_string(),
+            }),
         ];
 
         for target in &targets {
@@ -9880,10 +10279,15 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => {
                     "permanentDocument"
                 }
+                // Not a `type`: the schema declares them under their own keys
+                DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
+                DocumentPropertyReferenceTarget::AnyOf(_) => "anyOf",
+                DocumentPropertyReferenceTarget::AllOf(_) => "allOf",
             };
 
-            // The tag is the `refersTo` schema keyword's own `type` value,
-            // which is what the JS surface reports verbatim.
+            // The tag is the `refersTo` schema keyword's own `type` value
+            // (or `anyOf` / `allOf`), which is what the JS surface reports
+            // verbatim.
             assert!(!json_tag.is_empty());
             assert!(!target.to_string().is_empty());
         }

@@ -70,6 +70,7 @@ use crate::consensus::state::document::referenced_document_type_not_deletable_er
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -597,6 +598,10 @@ pub enum StateError {
     // Document references resolved through a unique index (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentLookupInvalidError(ReferencedDocumentLookupInvalidError),
+
+    // References to an element of a list of a referenced document (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentListInvalidError(ReferencedDocumentListInvalidError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -618,7 +623,8 @@ mod tests {
         ActionFeePricing, ContractFeePot, DocumentActionFee,
     };
     use crate::data_contract::document_type::{
-        DocumentPropertyReferenceTarget, DocumentReferenceLookup, LookupKeySource,
+        DocumentPropertyReferenceTarget, DocumentReferenceLookup, ListElementReference,
+        LookupKeySource,
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -693,6 +699,20 @@ mod tests {
                 },
             }),
             6
+        );
+        // A list element reference is appended after the expressions (anyOf
+        // 7, allOf 8, pinned in `reference_expression.rs`)
+        assert_eq!(
+            target_variant(&DocumentPropertyReferenceTarget::ListElement(
+                ListElementReference {
+                    contract_id: None,
+                    document_type_name: "electedCharter".to_string(),
+                    property_agreement: [("electedCharterId".to_string(), "$id".to_string())]
+                        .into(),
+                    in_list: "members".to_string(),
+                }
+            )),
+            9
         );
     }
 
@@ -1182,8 +1202,7 @@ mod tests {
             )),
             144
         );
-        // Document references resolved through a unique index (protocol version 14): the
-        // tail of the enum.
+        // Document references resolved through a unique index (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentLookupInvalidError(
                 ReferencedDocumentLookupInvalidError::new(
@@ -1193,6 +1212,18 @@ mod tests {
                 )
             )),
             145
+        );
+        // References to an element of a list of a referenced document (protocol version
+        // 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentListInvalidError(
+                ReferencedDocumentListInvalidError::new(
+                    "resignation.memberId".to_string(),
+                    "members".to_string(),
+                    "is not a typed array of identifiers".to_string(),
+                )
+            )),
+            146
         );
     }
 }

@@ -165,6 +165,7 @@ use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, Tra
 use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use dpp::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -698,6 +699,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentLookupInvalidError(e) => {
             generic_consensus_error!(ReferencedDocumentLookupInvalidError, e).into()
+        }
+        StateError::ReferencedDocumentListInvalidError(e) => {
+            generic_consensus_error!(ReferencedDocumentListInvalidError, e).into()
         }
     }
 }

@@ -40,7 +40,11 @@ pub(crate) trait DocumentReferenceValidation {
     /// Validates the document's `refersTo` references against platform state:
     /// an identifier property's value, and each element of a typed array whose
     /// `items` declare one, which is refused with the error a single reference
-    /// would give and named by its list path (`reasons[2]`).
+    /// would give and named by its list path (`reasons[2]`). A value declared
+    /// by a reference expression is checked operand by operand in declared
+    /// order: an `anyOf` holds when one operand does and is otherwise refused
+    /// with the last operand's error, an `allOf` holds when every operand does
+    /// and is otherwise refused with the first failing operand's error.
     ///
     /// When `changed_fields` is provided (replace transitions), only references on
     /// those fields are validated. A reference also counts as changed when a
@@ -53,12 +57,15 @@ pub(crate) trait DocumentReferenceValidation {
     /// property changed, a writer gate applies or its target is deletable.
     ///
     /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
-    /// whose referring side is `$ownerId` compares it, and an `identityPublicKey`
+    /// whose referring side is `$ownerId` compares it, an `identityPublicKey`
     /// reference on a key id property with `identityProperty: $ownerId` names
-    /// its key, since it lives on the transition rather than in `document_data`.
-    /// `creator_id` is the document's creator for the `$creatorId` form: the
-    /// writer on a create, the stored creator on a replace, `None` when the
-    /// document type records none (registration then admits no such form).
+    /// its key, and the document type's `ownerRefersTo` declaration is checked
+    /// with it as the value (under the replace rules of its target), since it
+    /// lives on the transition rather than in `document_data`.
+    /// `creator_id` is the document's creator for the `$creatorId` form and
+    /// the value of the document type's `creatorRefersTo`: the writer on a
+    /// create, the stored creator on a replace, `None` when the document type
+    /// records none (registration then admits neither).
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,

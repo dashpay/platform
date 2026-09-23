@@ -2,7 +2,9 @@
 //!
 //! Generation 3 is generation 2 plus the ranked index keywords
 //! (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
-//! indexOnly grammar, and the doctype-level `immutable` property list.
+//! indexOnly grammar, the doctype-level `immutable` property list and the
+//! doctype-level `ownerRefersTo` and `creatorRefersTo` references on the
+//! writer and the creator.
 //!
 //! It exists as its own generation — rather than as a version gate inside the
 //! shipped ones — because that is what keeps a historical block from ever
@@ -27,9 +29,10 @@ use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::{
-    DocumentPropertyReferenceTarget, PropertyReference,
+    DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder, ReferenceOperands,
 };
 use crate::data_contract::document_type::property_names;
+use crate::data_contract::document_type::reference_lookup::owner_can_change;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -48,7 +51,10 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 use crate::consensus::ConsensusError;
 
 use super::common;
-use super::{validate_encrypted_for_declarations, validate_reference_lookup_sources};
+use super::{
+    parse_doctype_reference, validate_encrypted_for_declarations, validate_list_element_sources,
+    validate_reference_lookup_sources,
+};
 
 mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
@@ -397,6 +403,56 @@ fn try_from_schema_generation_3(
     let mut v2: DocumentTypeV2 = v1.into();
     v2.action_fees = action_fees;
     v2.entry_payload = entry_payload;
+    // Read from the stored schema once the core parse has run the meta-schema,
+    // so under full validation a malformed declaration is the meta-schema's to
+    // report, as a malformed `refersTo` on a property is
+    let owner_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::OWNER_REFERS_TO,
+        "the writer",
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    let creator_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::CREATOR_REFERS_TO,
+        "the creator",
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    // A document that can change owner, by a transfer or a purchase, would end
+    // up held by an owner the declaration never checked, since neither is a
+    // write: the owner's declaration is only admitted where the writer stays
+    // the owner. The creator's is only admitted where the creator is recorded,
+    // on a type that can change owner, since elsewhere the creator is the
+    // owner and `ownerRefersTo` says it. So a type takes at most one of them
+    if owner_reference.is_some() && owner_can_change(DocumentTypeRef::V2(&v2)) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares ownerRefersTo, but its documents can be \
+                 transferred or traded: a transfer or a purchase would hand a document to an \
+                 owner the declaration never checked; creatorRefersTo checks the creator, who \
+                 never changes",
+            )),
+        ));
+    }
+    if creator_reference.is_some()
+        && !DocumentTypeRef::V2(&v2).should_use_creator_id(
+            data_contract_system_version,
+            contract_config_version,
+            platform_version,
+        )?
+    {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares creatorRefersTo, but it records no creator \
+                 ids: only a transferable or tradeable document type of a format-1 contract \
+                 does; ownerRefersTo checks the writer of a type whose documents stay with it",
+            )),
+        ));
+    }
+    v2.owner_reference = owner_reference;
+    v2.creator_reference = creator_reference;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
@@ -417,7 +473,8 @@ fn try_from_schema_generation_3(
     // properties it names. Generation 3 is the only one admitting the keyword.
     validate_encrypted_for_declarations(&v2, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
-    // The same for the properties a `refersTo` lookup reads to assemble its key.
+    // The same for the properties a `refersTo` lookup reads to assemble its key,
+    // the lookup of the `ownerRefersTo` declaration included.
     validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
         .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -453,8 +510,17 @@ fn try_from_schema_generation_3(
     #[cfg(feature = "validation")]
     if full_validation {
         validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
+    }
+    // The property a `listElement` reads the list's document through; the list
+    // itself is checked where the referenced type is in hand. In every build,
+    // like the lookup sources above: without it a same-contract list check
+    // would silently skip a declaration whose property finds no document
+    if full_validation {
+        validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
     Ok(v2)
@@ -492,10 +558,150 @@ fn validate_typed_array_max_items(
     Ok(())
 }
 
+/// Every reference expression (`anyOf` / `allOf`), on an identifier property,
+/// on the elements of a typed array or in the type's `ownerRefersTo` or
+/// `creatorRefersTo`, stays inside the registration limits:
+/// at most `SystemLimits::max_reference_expression_depth` combinators on any
+/// path from the declaration to a leaf, and at most
+/// `SystemLimits::max_reference_operands` operands in any one list (the parse
+/// already requires two or more). No two operands of one list may be alike,
+/// which would bill the same reads twice for nothing, with a leaf naming the
+/// declaring contract (`contract_id`) explicitly taken as the same as one
+/// that omits it, which the parse, knowing no contract id, cannot see. Every
+/// leaf also counts against `max_references_per_document`, checked next.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_expressions(
+    document_type: &DocumentTypeV2,
+    contract_id: Identifier,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let max_depth = platform_version
+        .system_limits
+        .max_reference_expression_depth;
+    let max_operands = platform_version.system_limits.max_reference_operands;
+    // The owner's or the creator's declaration too, named by its keyword
+    for (holder, reference) in DocumentTypeRef::V2(document_type).reference_declarations() {
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let subject = match holder {
+            ReferenceHolder::Property(path) => format!("property \"{path}\""),
+            ReferenceHolder::Owner | ReferenceHolder::Creator => holder.describe(),
+        };
+        let refuse = |reason: String| {
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "{subject} of document type \"{name}\" declares a refersTo {reason}"
+                )),
+            ))
+        };
+        let depth = target.expression_depth();
+        if depth > usize::from(max_depth) {
+            return refuse(format!(
+                "expression nested {depth} deep, above the maximum of {max_depth}"
+            ));
+        }
+        for (list_path, operands) in operand_lists(target, String::new()) {
+            let count = operands.len();
+            if count > usize::from(max_operands) {
+                return refuse(format!(
+                    "{list_path} of {count} operands, above the maximum of {max_operands}"
+                ));
+            }
+            let normalized: Vec<DocumentPropertyReferenceTarget> = operands
+                .iter()
+                .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                .collect();
+            for (index, operand) in normalized.iter().enumerate() {
+                if normalized[..index].contains(operand) {
+                    return refuse(format!(
+                        "{list_path} whose operand {index} repeats an earlier one"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every operand list of a reference expression, with where it sits
+/// (`anyOf`, `anyOf[1].allOf`); none for a single target.
+#[cfg(feature = "validation")]
+fn operand_lists(
+    target: &DocumentPropertyReferenceTarget,
+    path: String,
+) -> Vec<(String, &[DocumentPropertyReferenceTarget])> {
+    let Some((combinator, operands)) = target.combinator() else {
+        return Vec::new();
+    };
+    let separator = if path.is_empty() { "" } else { "." };
+    let here = format!("{path}{separator}{}", combinator.wire_name());
+    let mut lists = vec![(here.clone(), operands.operands())];
+    for (index, operand) in operands.operands().iter().enumerate() {
+        lists.extend(operand_lists(operand, format!("{here}[{index}]")));
+    }
+    lists
+}
+
+/// `target` with every document leaf naming `contract_id` itself rewritten to
+/// omit it, which means the same, so two spellings of one target compare
+/// equal.
+#[cfg(feature = "validation")]
+fn with_own_contract_id_omitted(
+    target: &DocumentPropertyReferenceTarget,
+    contract_id: Identifier,
+) -> DocumentPropertyReferenceTarget {
+    let mut target = target.clone();
+    match &mut target {
+        DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocument {
+            contract_id: referenced,
+            ..
+        } => {
+            if *referenced == Some(contract_id) {
+                *referenced = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            if reference.contract_id == Some(contract_id) {
+                reference.contract_id = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::AnyOf(operands)
+        | DocumentPropertyReferenceTarget::AllOf(operands) => {
+            *operands = ReferenceOperands::new(
+                operands
+                    .operands()
+                    .iter()
+                    .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                    .collect(),
+            );
+        }
+        DocumentPropertyReferenceTarget::Identity
+        | DocumentPropertyReferenceTarget::Contract { .. }
+        | DocumentPropertyReferenceTarget::Token
+        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => {}
+    }
+    target
+}
+
 /// The references one document of the type can carry, one for each
 /// property declaring `refersTo` (an identifier, or a key id with a key
-/// reference) and `maxItems` for each typed array whose elements declare it,
-/// are at most
+/// reference), `maxItems` for each typed array whose elements declare it and
+/// one for the type's `ownerRefersTo` or `creatorRefersTo`, each times the
+/// number of leaves when the declaration is a reference expression, are at
+/// most
 /// `SystemLimits::max_references_per_document`. Every reference is a billed
 /// state read when the document is created or replaced, so the sum bounds
 /// the reads one write can cause; `max_typed_array_items` alone would let a
@@ -510,18 +716,17 @@ fn validate_reference_count(
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     let limit = platform_version.system_limits.max_references_per_document;
-    let references: u32 = document_type
-        .flattened_properties()
-        .values()
-        .filter_map(|property| property.property_type.reference())
-        .map(|reference| reference.max_references())
-        .sum();
+    let references: u32 = DocumentTypeRef::V2(document_type)
+        .reference_declarations()
+        .map(|(_, reference)| reference.max_references())
+        .fold(0, u32::saturating_add);
     if references > u32::from(limit) {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{name}\" declares references for up to {references} values per \
                  document (one per property with refersTo, maxItems per typed array of \
-                 referencing elements), above the maximum of {limit}",
+                 referencing elements, one for ownerRefersTo or creatorRefersTo, each times the \
+                 leaves of a reference expression), above the maximum of {limit}",
             )),
         ));
     }
@@ -619,6 +824,8 @@ mod index_only_tests;
 
 #[cfg(test)]
 mod keep_history_tests;
+#[cfg(all(test, feature = "validation"))]
+mod list_element_reference_tests;
 #[cfg(test)]
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]
@@ -626,7 +833,13 @@ mod moderators_delete_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
 #[cfg(all(test, feature = "validation"))]
+mod owner_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_expression_tests;
+#[cfg(all(test, feature = "validation"))]
 mod reference_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]

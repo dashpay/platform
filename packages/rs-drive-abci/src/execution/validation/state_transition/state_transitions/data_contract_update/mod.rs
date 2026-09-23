@@ -4077,6 +4077,7 @@ mod tests {
     mod permanent_document_reference_declarations {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::errors::DataContractError;
         use drive::util::test_helpers::setup_contract;
 
         const V1_PATH: &str =
@@ -4089,6 +4090,18 @@ mod tests {
         /// from the given fixture at version 2 and returns the execution
         /// result.
         async fn run_contract_update(updated_fixture_path: &str) -> StateTransitionExecutionResult {
+            run_contract_update_from(V1_PATH, updated_fixture_path, true).await
+        }
+
+        /// [`run_contract_update`] from the contract at `v1_path`. The updated
+        /// fixture is only checked by the test itself when
+        /// `validate_updated_fixture` is set: one the contract parse refuses
+        /// has to reach the node to be refused there.
+        async fn run_contract_update_from(
+            v1_path: &str,
+            updated_fixture_path: &str,
+            validate_updated_fixture: bool,
+        ) -> StateTransitionExecutionResult {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_genesis_state();
@@ -4110,7 +4123,7 @@ mod tests {
                 None,
             );
 
-            let mut contract = json_document_to_contract(V1_PATH, true, platform_version)
+            let mut contract = json_document_to_contract(v1_path, true, platform_version)
                 .expect("expected to get data contract");
 
             contract.set_owner_id(identity.id());
@@ -4128,9 +4141,12 @@ mod tests {
                 )
                 .expect("expected to apply contract successfully");
 
-            let mut updated_contract =
-                json_document_to_contract(updated_fixture_path, true, platform_version)
-                    .expect("expected to get updated data contract");
+            let mut updated_contract = json_document_to_contract(
+                updated_fixture_path,
+                validate_updated_fixture,
+                platform_version,
+            )
+            .expect("expected to get updated data contract");
 
             updated_contract.set_owner_id(identity.id());
             updated_contract
@@ -4214,6 +4230,51 @@ mod tests {
                     ),
                     ..
                 }
+            );
+        }
+
+        /// The contract whose immutable `electedCharter` holds the `members`
+        /// list, updated below with an `appeal` type reading it.
+        const LIST_ELEMENT_V1_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element.json";
+
+        #[tokio::test]
+        async fn should_update_contract_adding_a_list_element_into_a_fixed_list() {
+            let result = run_contract_update_from(
+                LIST_ELEMENT_V1_PATH,
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-update-good.json",
+                true,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_update_adding_a_list_element_into_a_property_that_is_no_list(
+        ) {
+            // The updated contract's parse runs the list checks as a
+            // registration's does
+            let result = run_contract_update_from(
+                LIST_ELEMENT_V1_PATH,
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-update-bad.json",
+                false,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains(
+                    "document type \"appeal\" property \"appellantId\" refersTo listElement: \"title\" of \"electedCharter\" is not a typed array of identifiers"
+                )
             );
         }
     }

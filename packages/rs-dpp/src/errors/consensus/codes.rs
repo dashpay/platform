@@ -368,6 +368,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedContractRequirementNotMetError(_) => 40135,
             Self::ReferencedIdentityKeyRequirementNotMetError(_) => 40136,
             Self::ReferencedDocumentLookupInvalidError(_) => 40137,
+            Self::ReferencedDocumentListInvalidError(_) => 40138,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

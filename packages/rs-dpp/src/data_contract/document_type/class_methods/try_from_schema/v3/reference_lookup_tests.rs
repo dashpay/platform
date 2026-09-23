@@ -4,9 +4,11 @@
 //! level for a document type of the same contract, the protocol version gate and
 //! the platform serialization round trip.
 
+use super::reference_test_helpers::{
+    assert_refused, contract, contract_on, identifier, join_request_schema, CONTRACT_ID,
+};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceLookup, DocumentType,
@@ -17,25 +19,11 @@ use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
-use crate::ProtocolError;
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde_json::json;
 use std::collections::BTreeMap;
-
-const CONTRACT_ID: [u8; 32] = [7; 32];
-
-fn identifier(position: u32) -> serde_json::Value {
-    json!({
-        "type": "array",
-        "byteArray": true,
-        "minItems": 32,
-        "maxItems": 32,
-        "contentMediaType": "application/x.dash.dpp.identifier",
-        "position": position
-    })
-}
 
 /// The lookup of the moderation charter's `members`: the member is the owner of
 /// a `joinRequest` for the same submitted charter.
@@ -60,25 +48,7 @@ fn charter_contract(refers_to: serde_json::Value) -> serde_json::Value {
         "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
         "version": 1,
         "documentSchemas": {
-            "joinRequest": {
-                "type": "object",
-                "canBeDeleted": false,
-                "documentsMutable": false,
-                "properties": {
-                    "submittedCharterId": identifier(0),
-                    "message": { "type": "string", "maxLength": 63, "position": 1 }
-                },
-                "indices": [
-                    {
-                        "name": "bySubmittedCharter",
-                        "properties": [{ "submittedCharterId": "asc" }, { "$ownerId": "asc" }],
-                        "unique": true
-                    },
-                    { "name": "byMessage", "properties": [{ "message": "asc" }] }
-                ],
-                "required": ["submittedCharterId", "message"],
-                "additionalProperties": false
-            },
+            "joinRequest": join_request_schema(),
             "electedCharter": {
                 "type": "object",
                 "properties": {
@@ -96,19 +66,6 @@ fn charter_contract(refers_to: serde_json::Value) -> serde_json::Value {
 
 fn permanent_join_request(lookup: serde_json::Value) -> serde_json::Value {
     json!({ "type": "permanentDocument", "documentType": "joinRequest", "lookup": lookup })
-}
-
-fn contract_on(
-    contract: serde_json::Value,
-    full_validation: bool,
-    platform_version: &PlatformVersion,
-) -> Result<DataContract, ProtocolError> {
-    let value = platform_value::to_value(contract).expect("the contract should convert");
-    DataContract::from_value(value, full_validation, platform_version)
-}
-
-fn contract(contract: serde_json::Value) -> Result<DataContract, ProtocolError> {
-    contract_on(contract, true, PlatformVersion::latest())
 }
 
 fn member_id_type(contract: &DataContract) -> DocumentPropertyType {
@@ -130,14 +87,6 @@ fn expected_lookup(keys: &[(&str, LookupKeySource)]) -> DocumentReferenceLookup 
             .map(|(index_property, source)| (index_property.to_string(), source.clone()))
             .collect(),
     }
-}
-
-fn assert_refused(result: Result<DataContract, ProtocolError>, fragment: &str) {
-    let error = result.expect_err("the contract should be refused");
-    assert!(
-        error.to_string().contains(fragment),
-        "expected {fragment:?} in: {error}"
-    );
 }
 
 #[test]
@@ -366,6 +315,37 @@ fn should_refuse_an_optional_transient_or_missing_lookup_source_property() {
     nested["documentSchemas"]["electedCharter"]["required"] =
         json!(["submittedCharterId", "title", "meta"]);
     contract(nested).expect("a required leaf of a required object is a valid source");
+}
+
+/// `transient` names the object, not the leaf the key reads, and the whole
+/// object is stripped before storage, so a reader could never reassemble the
+/// key from the stored document.
+#[test]
+fn should_refuse_a_lookup_source_inside_a_transient_required_object() {
+    let mut schema = charter_contract(permanent_join_request(json!({
+        "index": "bySubmittedCharter",
+        "keys": { "submittedCharterId": "meta.charterId", "$ownerId": "." }
+    })));
+    let elected_charter = &mut schema["documentSchemas"]["electedCharter"];
+    elected_charter["properties"]["meta"] = json!({
+        "type": "object",
+        "position": 4,
+        "properties": { "charterId": identifier(0) },
+        "required": ["charterId"],
+        "additionalProperties": false
+    });
+    elected_charter["required"] = json!(["submittedCharterId", "title", "meta"]);
+    contract(schema.clone()).expect("a stored, required leaf of a required object is a source");
+
+    schema["documentSchemas"]["electedCharter"]["transient"] = json!(["meta"]);
+    for full_validation in [true, false] {
+        assert_refused(
+            contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+            "document type \"electedCharter\" property \"memberId\" refersTo lookup: key \
+             \"submittedCharterId\" reads \"meta.charterId\", which is transient or inside a \
+             transient object",
+        );
+    }
 }
 
 #[test]
