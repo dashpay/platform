@@ -39,7 +39,7 @@ impl PublicKeyWasm {
                 public_key_bytes.try_into().map_err(|_| {
                     WasmDppError::invalid_argument("compressed public key must contain 33 bytes")
                 })?;
-            secp256k1::PublicKey::from_byte_array_compressed(&bytes)
+            secp256k1::PublicKey::from_byte_array_compressed(bytes)
         } else {
             if public_key_bytes.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
                 return Err(WasmDppError::invalid_argument(format!(
@@ -53,7 +53,7 @@ impl PublicKeyWasm {
                     WasmDppError::invalid_argument("uncompressed public key must contain 65 bytes")
                 })?;
 
-            secp256k1::PublicKey::from_byte_array_uncompressed(&bytes)
+            secp256k1::PublicKey::from_byte_array_uncompressed(bytes)
         }
         .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
@@ -87,7 +87,7 @@ impl PublicKeyWasm {
             })?;
 
             self.0.compressed = true;
-            self.0.inner = secp256k1::PublicKey::from_byte_array_compressed(&bytes)
+            self.0.inner = secp256k1::PublicKey::from_byte_array_compressed(bytes)
                 .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
         } else {
             if inner.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
@@ -103,7 +103,7 @@ impl PublicKeyWasm {
                 })?;
 
             self.0.compressed = false;
-            self.0.inner = secp256k1::PublicKey::from_byte_array_uncompressed(&bytes)
+            self.0.inner = secp256k1::PublicKey::from_byte_array_uncompressed(bytes)
                 .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
         }
 

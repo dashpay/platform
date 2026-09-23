@@ -4,7 +4,7 @@
 //! instead of the standard 31-bit limitation.
 
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
-use dash_sdk::dpp::dashcore::secp256k1::{self, PublicKey, Scalar, Secp256k1, SecretKey};
+use dash_sdk::dpp::dashcore::secp256k1::{self, PublicKey, Scalar, SecretKey};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::key_wallet;
 use dash_sdk::dpp::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
@@ -97,8 +97,6 @@ impl Dip14ExtendedPrivKey {
 
     /// Derive a child key using DIP14 extended derivation
     pub fn derive_child(&self, index: &[u8; 32], hardened: bool) -> Result<Self, Dip14Error> {
-        let secp = Secp256k1::new();
-
         // Prepare HMAC input based on hardened flag
         let mut hmac = HmacSha512::new_from_slice(&self.chain_code)
             .map_err(|_| Dip14Error::DerivationFailed("Invalid chain code".to_string()))?;
@@ -106,11 +104,11 @@ impl Dip14ExtendedPrivKey {
         if hardened {
             // Hardened: 0x00 || ser256(k_parent) || ser256(i)
             hmac.update(&[0x00]);
-            hmac.update(&self.private_key.secret_bytes());
+            hmac.update(&self.private_key.to_secret_bytes());
             hmac.update(&ser256(index));
         } else {
             // Non-hardened: ser_P(point(k_parent)) || ser256(i)
-            let public_key = PublicKey::from_secret_key(&secp, &self.private_key);
+            let public_key = PublicKey::from_secret_key(&self.private_key);
             hmac.update(&public_key.serialize());
             hmac.update(&ser256(index));
         }
@@ -122,7 +120,10 @@ impl Dip14ExtendedPrivKey {
         // This is the core of BIP32/DIP14 child key derivation
 
         // First, try to create a secret key from IL
-        let il_scalar = match SecretKey::from_slice(il_bytes) {
+        let il_scalar = match <[u8; 32]>::try_from(il_bytes)
+            .map_err(|_| secp256k1::Error::InvalidSecretKey)
+            .and_then(SecretKey::from_secret_bytes)
+        {
             Ok(key) => key,
             Err(_) => {
                 return Err(Dip14Error::DerivationFailed(
@@ -134,7 +135,7 @@ impl Dip14ExtendedPrivKey {
         // Add parent key to IL
         // In secp256k1, we perform scalar addition: child_key = parent_key + IL (mod n)
         // Convert IL to a Scalar for the tweak operation
-        let il_scalar_bytes = il_scalar.secret_bytes();
+        let il_scalar_bytes = il_scalar.to_secret_bytes();
         let tweak = Scalar::from_be_bytes(il_scalar_bytes).map_err(|_| {
             Dip14Error::DerivationFailed("Failed to convert IL to scalar".to_string())
         })?;
@@ -146,7 +147,7 @@ impl Dip14ExtendedPrivKey {
             .map_err(|e| Dip14Error::DerivationFailed(format!("Failed to add tweak: {}", e)))?;
 
         // Calculate parent fingerprint (first 4 bytes of parent pubkey hash160)
-        let parent_pubkey = PublicKey::from_secret_key(&secp, &self.private_key);
+        let parent_pubkey = PublicKey::from_secret_key(&self.private_key);
         // Use sha256 then ripemd160 to create hash160
         let sha256_hash = sha256::Hash::hash(&parent_pubkey.serialize());
         let parent_pubkey_hash =
@@ -167,8 +168,8 @@ impl Dip14ExtendedPrivKey {
     }
 
     /// Get the extended public key
-    pub fn to_extended_pub_key(&self, secp: &Secp256k1<secp256k1::All>) -> Dip14ExtendedPubKey {
-        let public_key = PublicKey::from_secret_key(secp, &self.private_key);
+    pub fn to_extended_pub_key(&self) -> Dip14ExtendedPubKey {
+        let public_key = PublicKey::from_secret_key(&self.private_key);
 
         Dip14ExtendedPubKey {
             network: self.network,

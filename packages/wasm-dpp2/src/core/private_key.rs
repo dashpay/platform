@@ -9,8 +9,6 @@ use crate::public_key::PublicKeyWasm;
 use crate::utils::try_vec_to_fixed_bytes;
 use dpp::dashcore::PrivateKey;
 use dpp::dashcore::hashes::hex::FromHex;
-use dpp::dashcore::key::Secp256k1;
-use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PrivateKey")]
@@ -78,9 +76,7 @@ impl PrivateKeyWasm {
 
     #[wasm_bindgen(js_name = "getPublicKey")]
     pub fn get_public_key(&self) -> PublicKeyWasm {
-        let secp = Secp256k1::new();
-
-        let public_key = self.0.public_key(&secp);
+        let public_key = self.0.public_key();
 
         public_key.into()
     }
@@ -100,14 +96,12 @@ impl PrivateKeyWasm {
 
     #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(&self) -> String {
-        self.0.to_bytes().to_hex_string(Case::Upper)
+        hex::encode_upper(self.0.to_bytes())
     }
 
     #[wasm_bindgen(js_name = "getPublicKeyHash")]
     pub fn get_public_key_hash(&self) -> String {
-        let secp = Secp256k1::new();
-
-        self.0.public_key(&secp).pubkey_hash().to_hex()
+        self.0.public_key().pubkey_hash().to_hex()
     }
 }
 

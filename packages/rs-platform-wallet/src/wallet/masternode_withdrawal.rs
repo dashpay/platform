@@ -30,7 +30,7 @@ use std::fmt;
 use async_trait::async_trait;
 use dashcore::hashes::{hash160, sha256d, Hash};
 use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use dashcore::secp256k1::{Message, Secp256k1};
+use dashcore::secp256k1::Message;
 use dashcore::signer::CompactSignature;
 use dashcore::{Address as DashAddress, AddressType, Network, ScriptBuf};
 use dpp::address_funds::AddressWitness;
@@ -533,7 +533,7 @@ pub struct RawSecretCoreSigner {
 impl RawSecretCoreSigner {
     /// `secret` must be a valid secp256k1 scalar (32 bytes).
     pub fn from_bytes(secret: &[u8; 32]) -> Result<Self, PlatformWalletError> {
-        let secret = dashcore::secp256k1::SecretKey::from_slice(secret).map_err(|_| {
+        let secret = dashcore::secp256k1::SecretKey::from_secret_bytes(*secret).map_err(|_| {
             PlatformWalletError::InvalidParameter("not a valid secp256k1 private key".to_string())
         })?;
         Ok(Self { secret })
@@ -541,8 +541,7 @@ impl RawSecretCoreSigner {
 
     /// hash160 of this key's compressed public key.
     pub fn public_key_hash160(&self) -> [u8; 20] {
-        let secp = Secp256k1::signing_only();
-        let public = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.secret);
+        let public = dashcore::secp256k1::PublicKey::from_secret_key(&self.secret);
         hash160::Hash::hash(&public.serialize()).to_byte_array()
     }
 }
@@ -573,11 +572,10 @@ impl CoreSigner for RawSecretCoreSigner {
         ),
         Self::Error,
     > {
-        let secp = Secp256k1::new();
         let msg = Message::from_digest(sighash);
         Ok((
-            secp.sign_ecdsa(&msg, &self.secret),
-            dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.secret),
+            self.secret.sign_ecdsa(msg),
+            dashcore::secp256k1::PublicKey::from_secret_key(&self.secret),
         ))
     }
 
@@ -586,7 +584,6 @@ impl CoreSigner for RawSecretCoreSigner {
         _path: &DerivationPath,
     ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
         Ok(dashcore::secp256k1::PublicKey::from_secret_key(
-            &Secp256k1::new(),
             &self.secret,
         ))
     }
@@ -703,14 +700,14 @@ where
             )));
         }
 
-        let secp = Secp256k1::verification_only();
         let msg = Message::from_digest(digest);
         let compact = signature.serialize_compact();
         let recoverable = (0..4i32)
             .filter_map(|id| RecoveryId::try_from(id).ok())
             .filter_map(|recid| RecoverableSignature::from_compact(&compact, recid).ok())
             .find(|candidate| {
-                secp.recover_ecdsa(&msg, candidate)
+                candidate
+                    .recover_ecdsa(msg)
                     .is_ok_and(|recovered| recovered == public_key)
             })
             .ok_or_else(|| {
@@ -763,22 +760,21 @@ mod tests {
             _path: &DerivationPath,
             sighash: [u8; 32],
         ) -> Result<(dashcore::secp256k1::ecdsa::Signature, PublicKey), Self::Error> {
-            let secp = Secp256k1::new();
             let msg = Message::from_digest(sighash);
             Ok((
-                secp.sign_ecdsa(&msg, &self.secret),
-                PublicKey::from_secret_key(&secp, &self.secret),
+                self.secret.sign_ecdsa(msg),
+                PublicKey::from_secret_key(&self.secret),
             ))
         }
 
         async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-            Ok(PublicKey::from_secret_key(&Secp256k1::new(), &self.secret))
+            Ok(PublicKey::from_secret_key(&self.secret))
         }
     }
 
     fn fixture() -> (FixedKeySigner, [u8; 20], IdentityPublicKey) {
-        let secret = SecretKey::from_slice(&[0x42u8; 32]).expect("valid scalar");
-        let pubkey = PublicKey::from_secret_key(&Secp256k1::new(), &secret);
+        let secret = SecretKey::from_secret_bytes([0x42u8; 32]).expect("valid scalar");
+        let pubkey = PublicKey::from_secret_key(&secret);
         let hash: [u8; 20] = hash160::Hash::hash(&pubkey.serialize()).to_byte_array();
         let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 0,

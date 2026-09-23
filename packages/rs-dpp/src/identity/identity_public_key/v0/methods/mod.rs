@@ -7,7 +7,6 @@ use anyhow::anyhow;
 #[cfg(feature = "ed25519-dalek")]
 use dashcore::ed25519_dalek;
 use dashcore::hashes::Hash;
-use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
@@ -83,14 +82,13 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 ) -> Result<bool, ProtocolError> {
     match key_type {
         KeyType::ECDSA_SECP256K1 => {
-            let secp = Secp256k1::new();
-            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
             let private_key = dashcore::PrivateKey::new(secret_key, network);
 
-            Ok(private_key.public_key(&secp).to_bytes() == data.as_slice())
+            Ok(private_key.public_key().to_bytes() == data.as_slice())
         }
         KeyType::BLS12_381 => {
             #[cfg(feature = "bls-signatures")]
@@ -111,15 +109,14 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
             ));
         }
         KeyType::ECDSA_HASH160 => {
-            let secp = Secp256k1::new();
-            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
             let private_key = dashcore::PrivateKey::new(secret_key, network);
 
             Ok(
-                ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).as_slice()
+                ripemd160_sha256(private_key.public_key().to_bytes().as_slice()).as_slice()
                     == data.as_slice(),
             )
         }

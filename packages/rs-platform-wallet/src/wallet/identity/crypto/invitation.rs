@@ -41,7 +41,7 @@
 //! and its network is validated against the wallet at claim (a wrong-network WIF
 //! is a valid key on the wrong chain, caught before the funding fetch).
 
-use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use dashcore::secp256k1::{PublicKey, SecretKey};
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{Network, PrivateKey, ScriptBuf, Transaction};
 use dpp::prelude::AssetLockProof;
@@ -160,8 +160,7 @@ fn invalid(msg: impl Into<String>) -> PlatformWalletError {
 /// is the selector that binds the voucher key to its funded credit output.
 /// `pub(crate)` so the claim-side proof-assembly tests can build a funding tx.
 pub(crate) fn voucher_credit_script(voucher_key: &SecretKey) -> ScriptBuf {
-    let secp = Secp256k1::new();
-    let pubkey = PublicKey::from_secret_key(&secp, voucher_key);
+    let pubkey = PublicKey::from_secret_key(voucher_key);
     let hash = dashcore::PublicKey::new(pubkey).pubkey_hash();
     ScriptBuf::new_p2pkh(&hash)
 }
@@ -541,7 +540,7 @@ mod tests {
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 
     fn voucher() -> SecretKey {
-        SecretKey::from_slice(&[0x11u8; 32]).expect("valid scalar")
+        SecretKey::from_secret_bytes([0x11u8; 32]).expect("valid scalar")
     }
 
     fn inviter_info() -> InviterInfo {
@@ -555,7 +554,7 @@ mod tests {
     /// Build an asset-lock tx whose credit output at `index` pays the voucher
     /// key (and `index` decoy outputs before it that do not).
     fn asset_lock_tx_paying_voucher_at(key: &SecretKey, index: usize) -> Transaction {
-        let decoy = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let decoy = SecretKey::from_secret_bytes([0x22u8; 32]).unwrap();
         let mut credit_outputs = Vec::new();
         for _ in 0..index {
             credit_outputs.push(TxOut {
@@ -593,7 +592,7 @@ mod tests {
             let decoded = PrivateKey::from_wif(&wif).expect("wif decodes");
             assert!(decoded.compressed, "voucher WIF must be compressed");
             assert_eq!(decoded.network, network, "network preserved");
-            assert_eq!(decoded.inner.secret_bytes(), voucher().secret_bytes());
+            assert_eq!(decoded.inner.to_secret_bytes(), voucher().to_secret_bytes());
             // Network byte matches bitcoinj/legacy (0xCC mainnet, 0xEF testnet).
             let raw = bs58::decode(&wif).into_vec().unwrap();
             assert_eq!(raw[0], first_byte);
@@ -609,7 +608,10 @@ mod tests {
         assert!(uri.starts_with("dashpay://invite?"));
 
         let parsed = parse_invitation_uri(&uri).expect("parse");
-        assert_eq!(parsed.voucher_key.secret_bytes(), voucher().secret_bytes());
+        assert_eq!(
+            parsed.voucher_key.to_secret_bytes(),
+            voucher().to_secret_bytes()
+        );
         assert_eq!(parsed.inviter, Some(info));
         assert!(parsed.islock_hex.is_some());
         // The parsed txid matches the proof's transaction id (big-endian).
@@ -771,7 +773,7 @@ mod tests {
     #[test]
     fn voucher_output_index_rejects_no_match() {
         let key = voucher();
-        let other = SecretKey::from_slice(&[0x33u8; 32]).unwrap();
+        let other = SecretKey::from_secret_bytes([0x33u8; 32]).unwrap();
         let tx = asset_lock_tx_paying_voucher_at(&other, 0);
         let err = voucher_output_index(&tx, &key).unwrap_err();
         assert!(err.to_string().contains("does not control"));
@@ -811,7 +813,7 @@ mod tests {
     fn parse_rejects_duplicate_required_keys() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let other = PrivateKey::new(
-            SecretKey::from_slice(&[0x44u8; 32]).unwrap(),
+            SecretKey::from_secret_bytes([0x44u8; 32]).unwrap(),
             Network::Testnet,
         )
         .to_wif();

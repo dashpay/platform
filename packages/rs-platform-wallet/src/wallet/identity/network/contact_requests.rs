@@ -241,7 +241,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             PlatformWalletError::InvalidIdentityData(format!("test accountRef derive: {e}"))
         })?;
         Ok(platform_encryption::calculate_account_reference(
-            &xprv.private_key.secret_bytes(),
+            &xprv.private_key.to_secret_bytes(),
             compact_xpub,
             account_index,
             version,
@@ -259,7 +259,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         })?;
         Ok(platform_encryption::unmask_account_reference(
             account_reference,
-            &xprv.private_key.secret_bytes(),
+            &xprv.private_key.to_secret_bytes(),
             compact_xpub,
         ))
     }
@@ -340,7 +340,7 @@ impl SeedCryptoProvider {
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!("test contactInfo derive: {e}"))
             })?;
-        Ok(xprv.private_key.secret_bytes())
+        Ok(xprv.private_key.to_secret_bytes())
     }
 }
 
@@ -5551,7 +5551,7 @@ mod contact_info_provider_tests {
     /// the resident `derive_shared_key_ecdh` at the same path.
     #[tokio::test]
     async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
-        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        use dashcore::secp256k1::{PublicKey, SecretKey};
 
         let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
@@ -5563,8 +5563,7 @@ mod contact_info_provider_tests {
                 .expect("auth path");
 
         let peer = PublicKey::from_secret_key(
-            &Secp256k1::new(),
-            &SecretKey::from_slice(&[0x42u8; 32]).expect("peer secret"),
+            &SecretKey::from_secret_bytes([0x42u8; 32]).expect("peer secret"),
         );
 
         let provider = SeedCryptoProvider::from_seed(seed, network);

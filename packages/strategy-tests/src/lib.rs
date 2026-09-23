@@ -761,7 +761,7 @@ impl Strategy {
                 let funding_transition =
                     AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                         asset_lock_proof,
-                        private_key.inner.secret_bytes().as_slice(),
+                        private_key.inner.to_secret_bytes().as_slice(),
                         BTreeMap::new(), // no additional inputs
                         outputs,
                         vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
@@ -2206,7 +2206,7 @@ impl Strategy {
                             let funding_transition =
                                 AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                                     asset_lock_proof,
-                                    private_key.inner.secret_bytes().as_slice(),
+                                    private_key.inner.to_secret_bytes().as_slice(),
                                     BTreeMap::new(), // no additional inputs
                                     outputs,
                                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
