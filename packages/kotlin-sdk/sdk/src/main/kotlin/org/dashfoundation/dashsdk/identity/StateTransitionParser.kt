@@ -185,9 +185,9 @@ class ParsedStateTransition(
     /** The decoded bytes, tagged. */
     val serialized: ByteArray,
     /**
-     * A structured multi-line dump: of the whole transition for
-     * [ParsedStateTransitionKind.Other], of the whole contract for a data
-     * contract create / update. Null otherwise.
+     * A single-line dump with every dApp-controlled string quoted: of the whole
+     * transition for [ParsedStateTransitionKind.Other] and for a data contract
+     * create / update. Null otherwise.
      */
     val details: String?,
     val kind: ParsedStateTransitionKind,
@@ -263,7 +263,7 @@ object StateTransitionParser {
             KIND_IDENTITY_UPDATE -> {
                 val identityId = readId32(buf)
                 val added = List(readCount(buf, "added keys")) { readPublicKey(buf) }
-                val disabled = List(readCount(buf, "disabled keys")) { buf.int }
+                val disabled = List(readCount(buf, "disabled keys")) { readKeyId(buf) }
                 ParsedStateTransitionKind.IdentityUpdate(identityId, added, disabled)
             }
             KIND_BATCH -> {
@@ -288,7 +288,7 @@ object StateTransitionParser {
     }
 
     private fun readPublicKey(buf: ByteBuffer): IdentityPubkey {
-        val keyId = buf.int
+        val keyId = readKeyId(buf)
         val keyType = buf.get().toInt() and 0xFF
         val purpose = buf.get().toInt() and 0xFF
         val securityLevel = buf.get().toInt() and 0xFF
@@ -381,6 +381,18 @@ object StateTransitionParser {
         val len = buf.short.toInt() and 0xFFFF
         val bytes = ByteArray(len).also { buf.get(it) }
         return String(bytes, Charsets.UTF_8)
+    }
+
+    /**
+     * A protocol u32 key id. Key ids are `Int` in this SDK (see [IdentityPubkey]),
+     * so one above `Int.MAX_VALUE` is refused rather than read as negative.
+     */
+    private fun readKeyId(buf: ByteBuffer): Int {
+        val id = buf.int
+        require(id >= 0) {
+            "unsupported parsed transition: key id ${id.toUInt()} exceeds ${Int.MAX_VALUE}"
+        }
+        return id
     }
 
     /** A protocol u64, big-endian. */
