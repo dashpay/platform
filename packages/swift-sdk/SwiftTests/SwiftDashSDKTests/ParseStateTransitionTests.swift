@@ -48,28 +48,45 @@ final class ParseStateTransitionTests: XCTestCase {
         XCTAssertEqual(batch.ownerId, owner)
         XCTAssertEqual(batch.transitions.count, 4)
 
-        XCTAssertEqual(
-            batch.transitions[0],
-            .document(
-                dataContractId: contract, documentType: "post",
-                documentId: Data(repeating: 0x0D, count: 32), action: "Create",
-                amount: nil, recipientId: nil))
+        // The document create carries data with no typed projection, so the
+        // row is incomplete and renders it.
+        guard case .document(let create) = batch.transitions[0] else {
+            return XCTFail("expected a document row")
+        }
+        XCTAssertEqual(create.action, "Create")
+        XCTAssertEqual(create.documentType, "post")
+        XCTAssertEqual(create.dataContractId, contract)
+        XCTAssertEqual(create.documentId, Data(repeating: 0x0D, count: 32))
+        XCTAssertNil(create.amount)
+        XCTAssertNil(create.recipientId)
+        XCTAssertFalse(create.complete)
+        XCTAssertTrue(create.details?.contains("\"message\"") == true, "\(create.details ?? "")")
+        XCTAssertFalse(batch.transitions[0].complete)
+
         XCTAssertEqual(
             batch.transitions[1],
             .document(
-                dataContractId: contract, documentType: "profile",
-                documentId: Data(repeating: 0x0D, count: 32), action: "Transfer",
-                amount: nil, recipientId: recipient))
+                .init(
+                    dataContractId: contract, documentType: "profile",
+                    documentId: Data(repeating: 0x0D, count: 32), action: "Transfer",
+                    amount: nil, recipientId: recipient, complete: true, details: nil)))
         XCTAssertEqual(
             batch.transitions[2],
             .token(
-                dataContractId: contract, tokenId: token, tokenContractPosition: 3,
-                action: "Transfer", amount: 250, recipientId: recipient))
+                .init(
+                    dataContractId: contract, tokenId: token, tokenContractPosition: 3,
+                    action: "Transfer", amount: 250, recipientId: recipient, tokenCount: nil,
+                    complete: true, details: nil)))
         XCTAssertEqual(
             batch.transitions[3],
             .token(
-                dataContractId: contract, tokenId: token, tokenContractPosition: 3,
-                action: "DirectPurchase", amount: 100_000_000, recipientId: nil))
+                .init(
+                    dataContractId: contract, tokenId: token, tokenContractPosition: 3,
+                    action: "DirectPurchase", amount: 100_000_000, recipientId: nil,
+                    tokenCount: 100, complete: true, details: nil)))
+        XCTAssertEqual(parsed.userFeeIncrease, 1)
+        XCTAssertFalse(parsed.complete, "the create row renders its data")
+        XCTAssertNil(parsed.details, "described kinds carry no common details")
         XCTAssertEqual(batch.transitions.map(\.action), ["Create", "Transfer", "Transfer", "DirectPurchase"])
     }
 
@@ -122,6 +139,7 @@ final class ParseStateTransitionTests: XCTestCase {
 
         XCTAssertEqual(parsed.kindName, "IdentityCreditTransfer")
         XCTAssertFalse(parsed.isSigned)
+        XCTAssertEqual(parsed.userFeeIncrease, 0)
         XCTAssertEqual(
             parsed.kind,
             .creditTransfer(
@@ -129,6 +147,8 @@ final class ParseStateTransitionTests: XCTestCase {
                     identityId: Data(repeating: 0x11, count: 32),
                     recipientId: recipient,
                     amount: 1_000)))
+        XCTAssertTrue(parsed.complete)
+        XCTAssertNil(parsed.details)
     }
 
     func testParsesDataContractCreateAndUpdate() throws {
@@ -139,6 +159,8 @@ final class ParseStateTransitionTests: XCTestCase {
             let parsed = try wallet.parseStateTransition(try fixture(name))
             XCTAssertEqual(parsed.kindName, kindName)
             XCTAssertEqual(parsed.ownerId, owner)
+            XCTAssertFalse(parsed.complete, "tokens, groups and schemas are in details")
+            XCTAssertTrue(parsed.details?.contains("niceDocument") == true)
 
             let contract: ManagedPlatformWallet.ParsedDataContractTransition
             switch parsed.kind {
@@ -158,6 +180,34 @@ final class ParseStateTransitionTests: XCTestCase {
                     "withByteArrays",
                 ])
         }
+    }
+
+    /// The user fee increase scales the processing fee and is part of the
+    /// signed bytes, so a maxed-out transfer must not parse to the same
+    /// approval fields as a plain one. Both fixtures are the same credit
+    /// transfer, serialized on the Rust side with `user_fee_increase` 0 and
+    /// 65535.
+    func testUserFeeIncreaseIsExposed() throws {
+        let plain = try wallet.parseStateTransition(try fixture("credit_transfer"))
+        let maxed = try wallet.parseStateTransition(try fixture("credit_transfer_max_fee"))
+        XCTAssertEqual(plain.userFeeIncrease, 0)
+        XCTAssertEqual(maxed.userFeeIncrease, 65535)
+        guard case .creditTransfer(let a) = plain.kind, case .creditTransfer(let b) = maxed.kind
+        else { return XCTFail("expected credit transfers") }
+        XCTAssertEqual(a, b, "everything but the fee multiplier is identical")
+        XCTAssertNotEqual(plain, maxed, "the parsed results differ in the multiplier")
+    }
+
+    /// Kinds without a describer carry the decoded transition as a
+    /// structured dump so a withdrawal's amount and destination can be shown.
+    func testOtherKindCarriesStructuredDetails() throws {
+        let parsed = try wallet.parseStateTransition(try fixture("credit_withdrawal"))
+        XCTAssertEqual(parsed.kindName, "IdentityCreditWithdrawal")
+        XCTAssertEqual(parsed.kind, .other)
+        XCTAssertFalse(parsed.complete)
+        let details = try XCTUnwrap(parsed.details)
+        XCTAssertTrue(details.contains("amount: 123456789"), details)
+        XCTAssertTrue(details.contains("output_script"), details)
     }
 
     func testRejectsEmptyAndMalformedBytes() {

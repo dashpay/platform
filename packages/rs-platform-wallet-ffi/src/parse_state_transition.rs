@@ -1,10 +1,10 @@
-//! FFI parser for raw DPP state transitions handed to the wallet by a dApp
-//! (DashConnect `dash-st:` links / QRs, DashPay Connect `sign`).
+//! FFI projection of [`summarize_state_transition`] for raw DPP state
+//! transitions handed to the wallet by a dApp (DashConnect `dash-st:` links /
+//! QRs, DashPay Connect `sign`).
 //!
-//! The wallet must never sign opaque bytes a web page hands it without
-//! showing the user what they are. This module decodes any state transition
-//! kind with the bounded untrusted decoder and projects a typed summary the
-//! approval sheet can describe:
+//! Decoding and deciding what the user has to see live in `platform-wallet`
+//! ([`StateTransitionSummary`]); this module copies the summary into owned C
+//! structs:
 //!
 //! - `Batch`: one row per batched transition (contract id, document type,
 //!   action, and for token transitions the amount and recipient),
@@ -13,59 +13,35 @@
 //! - `IdentityCreditTransfer`: recipient and amount,
 //! - `DataContractCreate` / `DataContractUpdate`: contract id and document
 //!   type names,
-//! - everything else: the kind name only.
+//! - everything else: `OTHER`, with the whole decoded transition in `details`.
 //!
-//! Every result also carries the kind name, the owner id, whether the
-//! transition is already signed, and the exact bytes that were decoded (with
-//! the variant tag, so the caller can sign what it showed). Nothing is
-//! refused on kind: the sheet shows what is asked and the user decides.
-//! Kinds without a describer are shown as a structured dump behind an
-//! advanced setting on the client side.
+//! **Completeness contract.** A batched row whose typed fields do not cover
+//! every material field carries `complete == false` and renders the rest in
+//! its `details`; a wallet must not approve such a row from the typed summary
+//! alone. The `OTHER` kind likewise carries the whole decoded transition in
+//! the common `details`.
 //!
 //! This module does not sign and does not broadcast.
 
-use std::borrow::Cow;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformDeserializableUntrusted;
-use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionTypeGetter;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionTypeGetter;
-use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
-use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::{DocumentTransition, TokenTransition};
-use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
-use dpp::state_transition::{StateTransition, StateTransitionOwned};
+use platform_wallet::error::PlatformWalletError;
+use platform_wallet::wallet::identity::network::{
+    summarize_state_transition, BatchedTransitionSummary, BatchedTransitionTarget,
+    DataContractSummary, StateTransitionSummary, StateTransitionSummaryKind,
+};
 
 use crate::check_ptr;
 use crate::error::*;
 use crate::identity_update::{
     platform_wallet_parse_identity_update_transition_free, project_parsed_identity_update,
-    ParsedIdentityUpdateFFI, IDENTITY_UPDATE_VARIANT_TAG,
+    ParsedIdentityUpdateFFI,
 };
 use crate::unwrap_result_or_return;
-
-/// Positional bincode variant tag of `StateTransition::Batch`.
-pub(crate) const BATCH_VARIANT_TAG: u8 = 2;
 
 /// `ParsedStateTransitionFFI::kind`: nothing was parsed (default state).
 pub const PARSED_STATE_TRANSITION_KIND_NONE: u8 = 0;
@@ -81,9 +57,8 @@ pub const PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE: u8 = 4;
 /// `ParsedStateTransitionFFI::kind`: `data_contract` is populated and the
 /// transition updates the contract.
 pub const PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_UPDATE: u8 = 5;
-/// `ParsedStateTransitionFFI::kind`: a kind this module has no describer
-/// for. Only the common fields (`kind_name`, `owner_id`, `is_signed`,
-/// `serialized`) are populated.
+/// `ParsedStateTransitionFFI::kind`: a kind without a describer; the common
+/// fields are populated, with the whole transition in `details`.
 pub const PARSED_STATE_TRANSITION_KIND_OTHER: u8 = 255;
 
 /// `ParsedBatchedTransitionFFI::family`: a document transition.
@@ -91,35 +66,11 @@ pub const PARSED_BATCHED_TRANSITION_FAMILY_DOCUMENT: u8 = 0;
 /// `ParsedBatchedTransitionFFI::family`: a token transition.
 pub const PARSED_BATCHED_TRANSITION_FAMILY_TOKEN: u8 = 1;
 
-/// Variant tags tried when the payload appears to use a tagless framing.
-/// `IdentityUpdate` first: it is the framing Yappr has actually been observed
-/// to send tagless; `Batch` payloads have so far arrived properly tagged.
-const TAGLESS_FRAMING_CANDIDATES: &[(u8, &str)] = &[
-    (IDENTITY_UPDATE_VARIANT_TAG, "IdentityUpdate"),
-    (BATCH_VARIANT_TAG, "Batch"),
-];
-
-/// One transition inside a parsed `BatchTransition`.
-///
-/// `action` is a Rust-owned NUL-terminated string naming the action as
-/// `DocumentTransitionActionType` / `TokenTransitionActionType` spell it
-/// (`Create`, `Replace`, `Delete`, `Transfer`, `Purchase`, `UpdatePrice`,
-/// `IndexOnlyDelete`; `Burn`, `Mint`, `Transfer`, `Freeze`, `Unfreeze`,
-/// `DestroyFrozenFunds`, `Claim`, `EmergencyAction`, `ConfigUpdate`,
-/// `DirectPurchase`, `SetPriceForDirectPurchase`). `document_type` is set
-/// for document transitions and null for token ones. Both are released by
-/// [`platform_wallet_parse_state_transition_free`].
-///
-/// `has_amount` / `amount` carry the credits or tokens the transition
-/// moves: a document purchase price, an update-price value, a token
-/// transfer / mint / burn amount, or a direct purchase's total agreed
-/// price. `has_recipient` / `recipient_id` carry the identity on the other
-/// side: a document transfer's new owner, a token transfer's recipient, a
-/// mint's issued-to identity, or the frozen identity of a freeze / unfreeze
-/// / destroy. Both are interpreted against `action`: the sheet should say
-/// "freeze the tokens of X" for a `Freeze`, not "send to X".
-/// `token_contract_position` and `token_id` are set for every token
-/// transition.
+/// One transition inside a parsed `BatchTransition`; the fields mirror
+/// `BatchedTransitionSummary`. `action`, `document_type` (null for token rows)
+/// and `details` are owned, NUL-terminated, and released by
+/// [`platform_wallet_parse_state_transition_free`]. A row with
+/// `complete == false` must not be approved without rendering `details`.
 #[repr(C)]
 pub struct ParsedBatchedTransitionFFI {
     /// `PARSED_BATCHED_TRANSITION_FAMILY_DOCUMENT` or `_TOKEN`.
@@ -140,6 +91,16 @@ pub struct ParsedBatchedTransitionFFI {
     pub amount: u64,
     pub has_recipient: bool,
     pub recipient_id: [u8; 32],
+    /// Whether a direct purchase's token count is set.
+    pub has_token_count: bool,
+    /// Tokens bought by a `DirectPurchase`.
+    pub token_count: u64,
+    /// Whether the typed fields describe every material field. See the
+    /// struct doc.
+    pub complete: bool,
+    /// Rendering of the material fields the typed fields do not cover, when
+    /// `complete` is false; null otherwise. Owned, NUL-terminated.
+    pub details: *mut c_char,
 }
 
 impl Default for ParsedBatchedTransitionFFI {
@@ -156,6 +117,10 @@ impl Default for ParsedBatchedTransitionFFI {
             amount: 0,
             has_recipient: false,
             recipient_id: [0u8; 32],
+            has_token_count: false,
+            token_count: 0,
+            complete: true,
+            details: ptr::null_mut(),
         }
     }
 }
@@ -234,11 +199,19 @@ pub struct ParsedStateTransitionFFI {
     /// Whether the transition already carries a non-empty signature. A
     /// `sign` request must arrive unsigned.
     pub is_signed: bool,
-    /// The bytes that were decoded, always in tagged framing (the variant
-    /// tag was prepended when the input arrived tagless). These, not the
-    /// input, are what a caller should sign after approval.
+    /// Percentage added to the processing fee; part of the signed bytes.
+    pub user_fee_increase: u16,
+    /// Whether the typed payload shows every material field
+    /// (`StateTransitionSummary::is_complete`); when false, render `details`
+    /// (or the rows' `details`) before approval.
+    pub complete: bool,
+    /// The decoded transition re-serialized, tagged: what a caller signs
+    /// after approval.
     pub serialized: *mut u8,
     pub serialized_len: usize,
+    /// `OTHER`: `Debug` dump of the whole transition; data contract create /
+    /// update: of the whole contract. Null otherwise. Owned, NUL-terminated.
+    pub details: *mut c_char,
     /// Populated when `kind == PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE`.
     pub identity_update: ParsedIdentityUpdateFFI,
     /// Populated when `kind == PARSED_STATE_TRANSITION_KIND_BATCH`.
@@ -257,8 +230,11 @@ impl Default for ParsedStateTransitionFFI {
             has_owner_id: false,
             owner_id: [0u8; 32],
             is_signed: false,
+            user_fee_increase: 0,
+            complete: false,
             serialized: ptr::null_mut(),
             serialized_len: 0,
+            details: ptr::null_mut(),
             identity_update: ParsedIdentityUpdateFFI::default(),
             batch: ParsedBatchFFI::default(),
             credit_transfer: ParsedCreditTransferFFI::default(),
@@ -267,70 +243,12 @@ impl Default for ParsedStateTransitionFFI {
     }
 }
 
-/// Deserializes `bytes` as a `StateTransition`, tolerating both normal
-/// tagged DPP framing and the tagless framing Yappr sends, where the
-/// positional bincode enum variant tag has to be prepended first.
-///
-/// Every framing is tried: the bytes as they are, and the bytes with each
-/// of the `candidates` tags prepended. Exactly one must decode. A payload
-/// that decodes under two framings is refused rather than described under
-/// whichever was tried first: the caller signs what the user was shown,
-/// so an ambiguous payload could otherwise be approved as one transition
-/// and broadcast as another. In practice a tagless body only decodes with
-/// its own tag prepended and a tagged body only decodes as-is, so the
-/// happy path has exactly one hit.
-///
-/// Returns the transition together with the bytes that decoded it (tagged).
-pub(crate) fn deserialize_transition_with_flexible_framing(
-    bytes: &[u8],
-    candidates: &[(u8, &str)],
-) -> Result<(StateTransition, Vec<u8>), PlatformWalletFFIResult> {
-    let as_is: (Cow<'_, [u8]>, String) = (Cow::Borrowed(bytes), "as-is".to_string());
-    let prepended = candidates.iter().map(|(tag, name)| {
-        let mut prefixed = Vec::with_capacity(bytes.len() + 1);
-        prefixed.push(*tag);
-        prefixed.extend_from_slice(bytes);
-        (
-            Cow::Owned(prefixed),
-            format!("{name} variant tag prepended"),
-        )
-    });
-    let attempts: Vec<(Cow<'_, [u8]>, String)> = std::iter::once(as_is).chain(prepended).collect();
-
-    let mut decoded: Vec<(StateTransition, Vec<u8>, &str)> = Vec::new();
-    let mut failures: Vec<String> = Vec::with_capacity(attempts.len());
-    for (payload, label) in &attempts {
-        match StateTransition::deserialize_from_bytes_untrusted(payload) {
-            Ok(state_transition) => decoded.push((state_transition, payload.to_vec(), label)),
-            Err(error) => failures.push(format!("{label}: {error}")),
-        }
-    }
-
-    match decoded.len() {
-        1 => {
-            let (transition, payload, _) = decoded.remove(0);
-            Ok((transition, payload))
-        }
-        0 => Err(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorDeserialization,
-            format!(
-                "Failed to deserialize state transition in any supported framing ({})",
-                failures.join("; ")
-            ),
-        )),
-        _ => Err(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorDeserialization,
-            format!(
-                "Ambiguous state transition framing: the bytes decode under more than one \
-                 framing ({}); refusing to guess which one the sender meant",
-                decoded
-                    .iter()
-                    .map(|(transition, _, label)| format!("{label} as {}", transition.name()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        )),
-    }
+/// Bytes the summary could not decode.
+pub(crate) fn deserialization_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorDeserialization,
+        error.to_string(),
+    )
 }
 
 /// A string that cannot cross the FFI as a C string is an error rather than
@@ -349,6 +267,13 @@ fn owned_c_string(value: &str, what: &str) -> Result<CString, PlatformWalletFFIR
     })
 }
 
+fn optional_c_string(
+    value: Option<&str>,
+    what: &str,
+) -> Result<Option<CString>, PlatformWalletFFIResult> {
+    value.map(|value| owned_c_string(value, what)).transpose()
+}
+
 unsafe fn free_c_string(ptr: &mut *mut c_char) {
     if !ptr.is_null() {
         drop(CString::from_raw(*ptr));
@@ -356,95 +281,65 @@ unsafe fn free_c_string(ptr: &mut *mut c_char) {
     }
 }
 
-fn project_document_transition(
-    transition: &DocumentTransition,
+fn project_batched_transition(
+    row: &BatchedTransitionSummary,
 ) -> Result<ParsedBatchedTransitionFFI, PlatformWalletFFIResult> {
-    let (amount, recipient) = match transition {
-        DocumentTransition::Transfer(t) => (None, Some(t.recipient_owner_id())),
-        DocumentTransition::Purchase(t) => (Some(t.price()), None),
-        DocumentTransition::UpdatePrice(t) => (Some(t.price()), None),
-        DocumentTransition::Create(_)
-        | DocumentTransition::Replace(_)
-        | DocumentTransition::Delete(_)
-        | DocumentTransition::IndexOnlyDelete(_) => (None, None),
-    };
-    let action = owned_c_string(
-        &format!("{:?}", transition.action_type()),
-        "Batched document transition action",
-    )?;
-    let document_type = owned_c_string(
-        transition.document_type_name(),
-        "Batched document transition document type",
-    )?;
-
-    Ok(ParsedBatchedTransitionFFI {
-        family: PARSED_BATCHED_TRANSITION_FAMILY_DOCUMENT,
-        data_contract_id: transition.data_contract_id().to_buffer(),
-        action: action.into_raw(),
-        document_type: document_type.into_raw(),
-        document_id: transition.get_id().to_buffer(),
-        has_amount: amount.is_some(),
-        amount: amount.unwrap_or_default(),
-        has_recipient: recipient.is_some(),
-        recipient_id: recipient.map(|id| id.to_buffer()).unwrap_or_default(),
+    let action = owned_c_string(&row.action, "Batched transition action")?;
+    let details = optional_c_string(row.details.as_deref(), "Batched transition details")?;
+    let mut out = ParsedBatchedTransitionFFI {
+        data_contract_id: row.data_contract_id.to_buffer(),
+        has_amount: row.amount.is_some(),
+        amount: row.amount.unwrap_or_default(),
+        has_recipient: row.recipient_id.is_some(),
+        recipient_id: row
+            .recipient_id
+            .map(|id| id.to_buffer())
+            .unwrap_or_default(),
+        has_token_count: row.token_count.is_some(),
+        token_count: row.token_count.unwrap_or_default(),
+        complete: row.is_complete(),
         ..ParsedBatchedTransitionFFI::default()
-    })
-}
-
-fn project_token_transition(
-    transition: &TokenTransition,
-) -> Result<ParsedBatchedTransitionFFI, PlatformWalletFFIResult> {
-    let (amount, recipient): (Option<u64>, Option<Identifier>) = match transition {
-        TokenTransition::Transfer(t) => (Some(t.amount()), Some(t.recipient_id())),
-        TokenTransition::Mint(t) => (Some(t.amount()), t.issued_to_identity_id()),
-        TokenTransition::Burn(t) => (Some(t.burn_amount()), None),
-        TokenTransition::Freeze(t) => (None, Some(t.frozen_identity_id())),
-        TokenTransition::Unfreeze(t) => (None, Some(t.frozen_identity_id())),
-        TokenTransition::DestroyFrozenFunds(t) => (None, Some(t.frozen_identity_id())),
-        TokenTransition::DirectPurchase(t) => (Some(t.total_agreed_price()), None),
-        TokenTransition::Claim(_)
-        | TokenTransition::EmergencyAction(_)
-        | TokenTransition::ConfigUpdate(_)
-        | TokenTransition::SetPriceForDirectPurchase(_) => (None, None),
     };
-    let action = owned_c_string(
-        &transition.action_type().to_string(),
-        "Batched token transition action",
-    )?;
-    let base = transition.base();
-
-    Ok(ParsedBatchedTransitionFFI {
-        family: PARSED_BATCHED_TRANSITION_FAMILY_TOKEN,
-        data_contract_id: transition.data_contract_id().to_buffer(),
-        action: action.into_raw(),
-        document_type: ptr::null_mut(),
-        token_contract_position: base.token_contract_position(),
-        token_id: transition.token_id().to_buffer(),
-        has_amount: amount.is_some(),
-        amount: amount.unwrap_or_default(),
-        has_recipient: recipient.is_some(),
-        recipient_id: recipient.map(|id| id.to_buffer()).unwrap_or_default(),
-        ..ParsedBatchedTransitionFFI::default()
-    })
+    match &row.target {
+        BatchedTransitionTarget::Document {
+            document_type,
+            document_id,
+        } => {
+            let document_type =
+                owned_c_string(document_type, "Batched document transition document type")?;
+            out.family = PARSED_BATCHED_TRANSITION_FAMILY_DOCUMENT;
+            out.document_type = document_type.into_raw();
+            out.document_id = document_id.to_buffer();
+        }
+        BatchedTransitionTarget::Token {
+            token_id,
+            token_contract_position,
+        } => {
+            out.family = PARSED_BATCHED_TRANSITION_FAMILY_TOKEN;
+            out.token_id = token_id.to_buffer();
+            out.token_contract_position = *token_contract_position;
+        }
+    }
+    out.action = action.into_raw();
+    out.details = details.map(CString::into_raw).unwrap_or(ptr::null_mut());
+    Ok(out)
 }
 
 unsafe fn free_batched_transitions(rows: &mut [ParsedBatchedTransitionFFI]) {
     for row in rows.iter_mut() {
         free_c_string(&mut row.action);
         free_c_string(&mut row.document_type);
+        free_c_string(&mut row.details);
     }
 }
 
 fn project_parsed_batch(
-    batch: &BatchTransition,
+    owner_id: &Identifier,
+    transitions: &[BatchedTransitionSummary],
 ) -> Result<ParsedBatchFFI, PlatformWalletFFIResult> {
-    let mut rows: Vec<ParsedBatchedTransitionFFI> = Vec::with_capacity(batch.transitions_len());
-    for transition in batch.transitions_iter() {
-        let projected = match transition {
-            BatchedTransitionRef::Document(document) => project_document_transition(document),
-            BatchedTransitionRef::Token(token) => project_token_transition(token),
-        };
-        match projected {
+    let mut rows: Vec<ParsedBatchedTransitionFFI> = Vec::with_capacity(transitions.len());
+    for transition in transitions {
+        match project_batched_transition(transition) {
             Ok(row) => rows.push(row),
             Err(error) => {
                 // The caller never receives this struct, so nothing else will
@@ -463,7 +358,7 @@ fn project_parsed_batch(
     };
 
     Ok(ParsedBatchFFI {
-        owner_id: batch.owner_id().to_buffer(),
+        owner_id: owner_id.to_buffer(),
         transitions,
         transitions_count,
     })
@@ -479,14 +374,15 @@ unsafe fn free_parsed_batch(batch: &mut ParsedBatchFFI) {
 }
 
 fn project_parsed_data_contract(
-    contract: &dpp::data_contract::serialized_version::DataContractInSerializationFormat,
+    contract: &DataContractSummary,
 ) -> Result<ParsedDataContractFFI, PlatformWalletFFIResult> {
     // `Vec<CString>` owns every name until all of them have converted, so a
     // failure partway through frees what was built with no manual cleanup.
-    let mut names: Vec<CString> = Vec::with_capacity(contract.document_schemas().len());
-    for name in contract.document_schemas().keys() {
-        names.push(owned_c_string(name, "Data contract document type name")?);
-    }
+    let names = contract
+        .document_type_names
+        .iter()
+        .map(|name| owned_c_string(name, "Data contract document type name"))
+        .collect::<Result<Vec<CString>, _>>()?;
 
     let document_type_names_count = names.len();
     let document_type_names = if document_type_names_count == 0 {
@@ -497,8 +393,8 @@ fn project_parsed_data_contract(
     };
 
     Ok(ParsedDataContractFFI {
-        contract_id: contract.id().to_buffer(),
-        owner_id: contract.owner_id().to_buffer(),
+        contract_id: contract.contract_id.to_buffer(),
+        owner_id: contract.owner_id.to_buffer(),
         document_type_names,
         document_type_names_count,
     })
@@ -518,121 +414,104 @@ unsafe fn free_parsed_data_contract(contract: &mut ParsedDataContractFFI) {
     *contract = ParsedDataContractFFI::default();
 }
 
-/// Projects a decoded transition into the C struct. Everything allocated
-/// is owned by `out` on success; on failure nothing is left allocated.
+/// Copies a summary into the C struct. Everything allocated is owned by the
+/// result on success; on failure nothing is left allocated.
 fn project_parsed_state_transition(
-    transition: &StateTransition,
-    serialized: Vec<u8>,
+    summary: StateTransitionSummary,
 ) -> Result<ParsedStateTransitionFFI, PlatformWalletFFIResult> {
+    // Kept as owned `CString`s until nothing below can fail, so an error
+    // return drops them.
+    let kind_name = owned_c_string(&summary.kind_name, "State transition kind name")?;
+    let details = match &summary.kind {
+        StateTransitionSummaryKind::Other { details }
+        | StateTransitionSummaryKind::DataContractCreate(DataContractSummary { details, .. })
+        | StateTransitionSummaryKind::DataContractUpdate(DataContractSummary { details, .. }) => {
+            Some(owned_c_string(details, "State transition details")?)
+        }
+        _ => None,
+    };
+
+    // Each arm stores at most one payload, and only on success, so an error
+    // leaves nothing to free.
     let mut out = ParsedStateTransitionFFI::default();
-
-    let payload = match transition {
-        StateTransition::IdentityUpdate(identity_update) => {
-            project_parsed_identity_update(identity_update).map(|parsed| {
-                out.identity_update = parsed;
-                PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE
-            })
+    out.kind = match &summary.kind {
+        StateTransitionSummaryKind::IdentityUpdate {
+            identity_id,
+            add_public_keys,
+            disable_public_key_ids,
+        } => {
+            out.identity_update = project_parsed_identity_update(
+                identity_id,
+                add_public_keys,
+                disable_public_key_ids,
+            )?;
+            PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE
         }
-        StateTransition::Batch(batch) => project_parsed_batch(batch).map(|parsed| {
-            out.batch = parsed;
+        StateTransitionSummaryKind::Batch {
+            owner_id,
+            transitions,
+        } => {
+            out.batch = project_parsed_batch(owner_id, transitions)?;
             PARSED_STATE_TRANSITION_KIND_BATCH
-        }),
-        StateTransition::IdentityCreditTransfer(transfer) => {
+        }
+        StateTransitionSummaryKind::CreditTransfer {
+            identity_id,
+            recipient_id,
+            amount,
+        } => {
             out.credit_transfer = ParsedCreditTransferFFI {
-                identity_id: transfer.identity_id().to_buffer(),
-                recipient_id: transfer.recipient_id().to_buffer(),
-                amount: transfer.amount(),
+                identity_id: identity_id.to_buffer(),
+                recipient_id: recipient_id.to_buffer(),
+                amount: *amount,
             };
-            Ok(PARSED_STATE_TRANSITION_KIND_CREDIT_TRANSFER)
+            PARSED_STATE_TRANSITION_KIND_CREDIT_TRANSFER
         }
-        StateTransition::DataContractCreate(create) => {
-            project_parsed_data_contract(create.data_contract()).map(|parsed| {
-                out.data_contract = parsed;
-                PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE
-            })
+        StateTransitionSummaryKind::DataContractCreate(contract) => {
+            out.data_contract = project_parsed_data_contract(contract)?;
+            PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE
         }
-        StateTransition::DataContractUpdate(update) => {
-            project_parsed_data_contract(update.data_contract()).map(|parsed| {
-                out.data_contract = parsed;
-                PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_UPDATE
-            })
+        StateTransitionSummaryKind::DataContractUpdate(contract) => {
+            out.data_contract = project_parsed_data_contract(contract)?;
+            PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_UPDATE
         }
-        _ => Ok(PARSED_STATE_TRANSITION_KIND_OTHER),
-    };
-    let kind = match payload {
-        Ok(kind) => kind,
-        Err(error) => {
-            // Nothing kind-specific was stored on a failure, so only the
-            // default (empty) payloads are released here.
-            unsafe { free_parsed_state_transition_payloads(&mut out) };
-            return Err(error);
-        }
+        StateTransitionSummaryKind::Other { .. } => PARSED_STATE_TRANSITION_KIND_OTHER,
     };
 
-    let kind_name = match owned_c_string(&transition.name(), "State transition kind name") {
-        Ok(name) => name.into_raw(),
-        Err(error) => {
-            unsafe { free_parsed_state_transition_payloads(&mut out) };
-            return Err(error);
-        }
-    };
-
-    let owner_id = transition.owner_id();
-    let serialized_len = serialized.len();
-    let serialized_ptr = Box::into_raw(serialized.into_boxed_slice()) as *mut u8;
-
-    out.kind = kind;
-    out.kind_name = kind_name;
-    out.has_owner_id = owner_id.is_some();
-    out.owner_id = owner_id.map(|id| id.to_buffer()).unwrap_or_default();
-    out.is_signed = transition.signature().is_some_and(|sig| !sig.is_empty());
-    out.serialized = serialized_ptr;
-    out.serialized_len = serialized_len;
+    out.complete = summary.is_complete();
+    out.kind_name = kind_name.into_raw();
+    out.has_owner_id = summary.owner_id.is_some();
+    out.owner_id = summary
+        .owner_id
+        .map(|id| id.to_buffer())
+        .unwrap_or_default();
+    out.is_signed = summary.is_signed;
+    out.user_fee_increase = summary.user_fee_increase;
+    out.serialized_len = summary.serialized.len();
+    out.serialized = Box::into_raw(summary.serialized.into_boxed_slice()) as *mut u8;
+    out.details = details.map(CString::into_raw).unwrap_or(ptr::null_mut());
     Ok(out)
 }
 
-unsafe fn free_parsed_state_transition_payloads(parsed: &mut ParsedStateTransitionFFI) {
-    platform_wallet_parse_identity_update_transition_free(&mut parsed.identity_update);
-    free_parsed_batch(&mut parsed.batch);
-    free_parsed_data_contract(&mut parsed.data_contract);
-    parsed.credit_transfer = ParsedCreditTransferFFI::default();
-}
-
-/// Deserializes a raw DPP state transition (as carried by a DashConnect
-/// `dash-st:` link / QR or a DashPay Connect `sign` request) into its
-/// inspectable parts, reporting which kind it found in `out.kind` so the
-/// caller can branch without probing kind-specific parsers.
-///
-/// Every kind decodes. `IdentityUpdate`, `Batch`, `IdentityCreditTransfer`
-/// and the two data contract transitions get a typed summary (see the
-/// module doc); every other kind is reported as
-/// `PARSED_STATE_TRANSITION_KIND_OTHER` with the common fields only
-/// (`kind_name`, `owner_id`, `is_signed`, `serialized`), so the client can
-/// show a structured dump rather than refuse.
-///
-/// Accepts both normal tagged DPP state-transition bytes and Yappr's
-/// tagless framing, where the positional bincode enum variant tag has to be
-/// prepended before deserialization; `out.serialized` always holds the
-/// tagged bytes that actually decoded.
-///
-/// Does NOT sign and does NOT broadcast.
+/// Decodes a raw DPP state transition (a DashConnect `dash-st:` link / QR or a
+/// DashPay Connect `sign` request) and copies [`summarize_state_transition`]'s
+/// summary into `out`. Accepts tagged bytes and an identity update or batch
+/// serialized without the `StateTransition` variant tag; trailing bytes are
+/// refused. Does NOT sign and does NOT broadcast.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_parse_state_transition(
     transition_bytes: *const u8,
     transition_len: usize,
     out: *mut ParsedStateTransitionFFI,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(transition_bytes);
     check_ptr!(out);
-
     *out = ParsedStateTransitionFFI::default();
+    check_ptr!(transition_bytes);
 
     let bytes = slice::from_raw_parts(transition_bytes, transition_len);
-    let (transition, serialized) = unwrap_result_or_return!(
-        deserialize_transition_with_flexible_framing(bytes, TAGLESS_FRAMING_CANDIDATES)
-    );
+    let summary =
+        unwrap_result_or_return!(summarize_state_transition(bytes).map_err(deserialization_error));
 
-    *out = unwrap_result_or_return!(project_parsed_state_transition(&transition, serialized));
+    *out = unwrap_result_or_return!(project_parsed_state_transition(summary));
 
     PlatformWalletFFIResult::ok()
 }
@@ -649,8 +528,11 @@ pub unsafe extern "C" fn platform_wallet_parse_state_transition_free(
     }
 
     let parsed = &mut *out;
-    free_parsed_state_transition_payloads(parsed);
+    platform_wallet_parse_identity_update_transition_free(&mut parsed.identity_update);
+    free_parsed_batch(&mut parsed.batch);
+    free_parsed_data_contract(&mut parsed.data_contract);
     free_c_string(&mut parsed.kind_name);
+    free_c_string(&mut parsed.details);
     if !parsed.serialized.is_null() && parsed.serialized_len > 0 {
         drop(Box::from_raw(ptr::slice_from_raw_parts_mut(
             parsed.serialized,
@@ -663,6 +545,11 @@ pub unsafe extern "C" fn platform_wallet_parse_state_transition_free(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::state_transition::batch_transition::batched_transition::{
+        DocumentTransition, TokenTransition,
+    };
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::StateTransition;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
@@ -824,13 +711,17 @@ mod tests {
     }
 
     fn credit_transfer_bytes() -> Vec<u8> {
+        credit_transfer_bytes_with_fee_increase(0)
+    }
+
+    fn credit_transfer_bytes_with_fee_increase(user_fee_increase: u16) -> Vec<u8> {
         StateTransition::IdentityCreditTransfer(
             IdentityCreditTransferTransitionV0 {
                 identity_id: Identifier::from([0x11; 32]),
                 recipient_id: Identifier::from(RECIPIENT),
                 amount: 1_000,
                 nonce: 1,
-                user_fee_increase: 0,
+                user_fee_increase,
                 signature_public_key_id: 0,
                 signature: BinaryData::new(vec![]),
             }
@@ -951,12 +842,20 @@ mod tests {
         assert_eq!(create.document_id, [0x0D; 32]);
         assert!(!create.has_amount);
         assert!(!create.has_recipient);
+        // The document data has no typed projection, so the row is
+        // incomplete and renders it.
+        assert!(!create.complete);
+        let create_details = unsafe { c_str(create.details) };
+        assert!(create_details.contains("\"message\""), "{create_details}");
+        assert!(create_details.contains("\"hi\""), "{create_details}");
 
         let transfer = &rows[1];
         assert_eq!(unsafe { c_str(transfer.action) }, "Transfer");
         assert_eq!(unsafe { c_str(transfer.document_type) }, "profile");
         assert!(transfer.has_recipient);
         assert_eq!(transfer.recipient_id, RECIPIENT);
+        assert!(transfer.complete);
+        assert!(transfer.details.is_null());
 
         let token_transfer = &rows[2];
         assert_eq!(
@@ -978,6 +877,11 @@ mod tests {
         assert!(purchase.has_amount);
         assert_eq!(purchase.amount, 100_000_000);
         assert!(!purchase.has_recipient);
+        assert!(purchase.has_token_count);
+        assert_eq!(purchase.token_count, 100);
+        assert!(purchase.complete);
+        assert_eq!(out.user_fee_increase, 1);
+        assert!(!out.complete, "the create row renders its data");
 
         // The unused payloads stay in their default state.
         assert!(out.identity_update.add_public_keys.is_null());
@@ -1000,24 +904,6 @@ mod tests {
         assert_eq!(out.batch.transitions_count, 0);
         assert!(out.batch.transitions.is_null());
         assert!(!out.is_signed);
-        unsafe { platform_wallet_parse_state_transition_free(&mut out) };
-    }
-
-    #[test]
-    fn parses_a_tagless_batch_by_prepending_the_batch_tag_and_reports_tagged_bytes() {
-        let tagged = batch_transition_bytes(vec![direct_purchase()], vec![0x88; 65]);
-        assert_eq!(
-            tagged[0], BATCH_VARIANT_TAG,
-            "StateTransition::Batch variant tag drifted"
-        );
-        let tagless = tagged[1..].to_vec();
-
-        let (result, mut out) = parse(&tagless);
-
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(out.kind, PARSED_STATE_TRANSITION_KIND_BATCH);
-        assert_eq!(unsafe { serialized(&out) }, tagged.as_slice());
-
         unsafe { platform_wallet_parse_state_transition_free(&mut out) };
     }
 
@@ -1119,6 +1005,8 @@ mod tests {
                 .collect()
             };
             assert_eq!(names, expected_names);
+            assert!(!out.complete);
+            assert!(unsafe { c_str(out.details) }.contains("niceDocument"));
 
             unsafe { platform_wallet_parse_state_transition_free(&mut out) };
             assert!(out.data_contract.document_type_names.is_null());
@@ -1168,11 +1056,55 @@ mod tests {
         assert!(out.has_owner_id);
         assert!(out.is_signed);
         assert_eq!(unsafe { serialized(&out) }, bytes.as_slice());
+        // The structured dump names the vote's material fields.
+        let details = unsafe { c_str(out.details) };
+        assert!(details.contains("parentNameAndLabel"), "{details}");
+        assert!(details.contains("Abstain"), "{details}");
 
         unsafe { platform_wallet_parse_state_transition_free(&mut out) };
         assert!(out.kind_name.is_null());
+        assert!(out.details.is_null());
     }
 
+    /// An `OTHER` kind the wallet is likely to be asked to sign; shared with
+    /// the client suites as the `credit_withdrawal` fixture.
+    fn credit_withdrawal_bytes() -> Vec<u8> {
+        use dpp::identity::core_script::CoreScript;
+        use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+        use dpp::withdrawal::Pooling;
+
+        StateTransition::IdentityCreditWithdrawal(
+            IdentityCreditWithdrawalTransitionV1 {
+                identity_id: Identifier::from([0x11; 32]),
+                amount: 123_456_789,
+                core_fee_per_byte: 7,
+                pooling: Pooling::Never,
+                output_script: Some(CoreScript::from_bytes(vec![0x76, 0xa9, 0x14, 0xAB])),
+                nonce: 3,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::new(vec![]),
+            }
+            .into(),
+        )
+        .serialize_to_bytes()
+        .expect("fixture withdrawal serializes")
+    }
+
+    /// The user fee increase is part of the signed bytes and scales the
+    /// processing fee, so two otherwise identical transfers must not parse
+    /// to the same approval fields.
+    /// A token config update naming one action taker must not parse to the
+    /// same row as one naming another; the change item is rendered in
+    /// `details` and the row is marked incomplete.
+    /// Emergency action, price schedule and claim distribution type were
+    /// exposed by the old single-purchase parser's predecessor and must not
+    /// be lost: each renders in `details` with the row marked incomplete.
+    /// The tagged 2,340-byte contract create also decodes as a 47-byte
+    /// identity update when the IdentityUpdate tag is prepended; only the
+    /// framing that consumes every byte counts, so the contract parses.
+    /// Trailing bytes after a complete transition are refused, since the
+    /// summary would not show whatever they carry.
     /// The serialized fixtures the Swift (`ParseStateTransitionTests`) and
     /// Kotlin (`StateTransitionParserTest`) suites decode through the same
     /// FFI. Pinned as hex so a change to the fixtures or to DPP's wire
@@ -1196,6 +1128,8 @@ mod tests {
             hex::encode(credit_transfer_bytes()),
             hex::encode(contract_create),
             hex::encode(contract_update),
+            hex::encode(credit_transfer_bytes_with_fee_increase(65_535)),
+            hex::encode(credit_withdrawal_bytes()),
         ];
         let expected = [
             FIXTURE_IDENTITY_UPDATE_HEX,
@@ -1203,6 +1137,8 @@ mod tests {
             FIXTURE_CREDIT_TRANSFER_HEX,
             FIXTURE_DATA_CONTRACT_CREATE_HEX,
             FIXTURE_DATA_CONTRACT_UPDATE_HEX,
+            FIXTURE_CREDIT_TRANSFER_MAX_FEE_HEX,
+            FIXTURE_CREDIT_WITHDRAWAL_HEX,
         ]
         .map(|hex| hex.trim().to_string());
         assert_eq!(
@@ -1231,77 +1167,8 @@ mod tests {
     const FIXTURE_CREDIT_TRANSFER_HEX: &str = client_fixture!("credit_transfer");
     const FIXTURE_DATA_CONTRACT_CREATE_HEX: &str = client_fixture!("data_contract_create");
     const FIXTURE_DATA_CONTRACT_UPDATE_HEX: &str = client_fixture!("data_contract_update");
-
-    /// Tagged bytes of every described kind decode as themselves: the
-    /// tagless candidates are also tried, and none may happen to decode as
-    /// well, or the parse would be refused as ambiguous. This is the
-    /// guarantee the approval sheet rests on: what is described is the
-    /// transition the bytes carry.
-    #[test]
-    fn tagged_bytes_of_every_kind_decode_unambiguously_as_their_own_kind() {
-        let (contract_create, _, _) = data_contract_create_bytes();
-        let (contract_update, _, _) = data_contract_update_bytes();
-        let fixtures = [
-            (
-                identity_update_transition_bytes(),
-                PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE,
-            ),
-            (
-                batch_transition_bytes(vec![document_create("post"), token_transfer()], vec![]),
-                PARSED_STATE_TRANSITION_KIND_BATCH,
-            ),
-            (
-                credit_transfer_bytes(),
-                PARSED_STATE_TRANSITION_KIND_CREDIT_TRANSFER,
-            ),
-            (
-                contract_create,
-                PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE,
-            ),
-            (
-                contract_update,
-                PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_UPDATE,
-            ),
-        ];
-        for (bytes, expected_kind) in fixtures {
-            let (result, mut out) = parse(&bytes);
-            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-            assert_eq!(out.kind, expected_kind);
-            assert_eq!(unsafe { serialized(&out) }, bytes.as_slice());
-            unsafe { platform_wallet_parse_state_transition_free(&mut out) };
-        }
-    }
-
-    /// A payload that decodes under two framings is refused. Built by
-    /// hand: a tagless identity update whose first body byte happens to be
-    /// a valid tag would be the real-world case; here the ambiguity is
-    /// forced by asking the helper to try a candidate that reproduces the
-    /// as-is bytes.
-    #[test]
-    fn ambiguous_framing_is_refused() {
-        let tagged = credit_transfer_bytes();
-        let tagless = tagged[1..].to_vec();
-        // Candidate `7` (IdentityCreditTransfer's tag) makes the tagless body
-        // decode; asking for the same tag twice means two framings decode.
-        let result = deserialize_transition_with_flexible_framing(
-            &tagless,
-            &[
-                (tagged[0], "CreditTransfer"),
-                (tagged[0], "CreditTransfer again"),
-            ],
-        );
-        let mut error = match result {
-            Ok(_) => panic!("two decoding framings must be refused"),
-            Err(error) => error,
-        };
-        assert_eq!(
-            error.code,
-            PlatformWalletFFIResultCode::ErrorDeserialization
-        );
-        let message = unsafe { CStr::from_ptr(error.message) }.to_str().unwrap();
-        assert!(message.contains("Ambiguous"), "{message}");
-        unsafe { platform_wallet_ffi_result_free(&mut error) };
-    }
+    const FIXTURE_CREDIT_TRANSFER_MAX_FEE_HEX: &str = client_fixture!("credit_transfer_max_fee");
+    const FIXTURE_CREDIT_WITHDRAWAL_HEX: &str = client_fixture!("credit_withdrawal");
 
     #[test]
     fn rejects_malformed_state_transition_bytes() {
