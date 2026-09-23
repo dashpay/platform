@@ -10,7 +10,8 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, ListElementReference, PropertyReference,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    ListElementReference, PropertyReference,
 };
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -217,9 +218,7 @@ fn should_parse_a_list_element_reference_on_an_identifier_property() {
     assert_eq!(declaration.in_list, Some("members"));
 }
 
-fn reference_declaration(
-    property_type: &DocumentPropertyType,
-) -> crate::data_contract::document_type::DocumentReferenceDeclaration<'_> {
+fn reference_declaration(property_type: &DocumentPropertyType) -> DocumentReferenceDeclaration<'_> {
     let DocumentPropertyType::IdentifierWithReference(target) = property_type else {
         panic!("expected a reference");
     };
@@ -403,6 +402,54 @@ fn should_refuse_an_id_pair_reading_a_missing_or_non_identifier_property_or_the_
     }
 }
 
+/// The `$id` property needs no reference, but one it carries must name the
+/// list's document type by id in the list's contract, or its value could
+/// never be the id of the document holding the list.
+#[test]
+fn should_refuse_an_id_property_whose_reference_names_something_else() {
+    let refused = |refers_to: serde_json::Value| {
+        let mut schema = charter_contract(list_element(json!({ "otherId": "$id" }), "members"));
+        schema["documentSchemas"]["resignation"]["properties"]["otherId"] =
+            identifier_referring_to(6, refers_to);
+        assert_refused(
+            contract(schema),
+            "the $id pair reads \"otherId\", whose refersTo is not a reference by id to \
+             \"electedCharter\" in the list's contract",
+        );
+    };
+    // An identity, another document type, another contract, a lookup key
+    // part and an expression hold values no charter has as its id
+    refused(json!({ "type": "identity" }));
+    refused(json!({ "type": "permanentDocument", "documentType": "joinRequest" }));
+    refused(json!({
+        "type": "permanentDocument",
+        "contractId": Identifier::from([9; 32]).to_string(Encoding::Base58),
+        "documentType": "electedCharter"
+    }));
+    refused(json!({
+        "type": "permanentDocument",
+        "documentType": "electedCharter",
+        "lookup": { "index": "bySubmittedCharter", "keys": { "submittedCharterId": "." } }
+    }));
+    refused(json!({ "anyOf": [
+        { "type": "permanentDocument", "documentType": "electedCharter" },
+        { "type": "identity" }
+    ] }));
+
+    // Naming the declaring contract explicitly is the same contract
+    let mut own_contract = charter_contract(list_element(json!({ "otherId": "$id" }), "members"));
+    own_contract["documentSchemas"]["resignation"]["properties"]["otherId"] =
+        identifier_referring_to(
+            6,
+            json!({
+                "type": "permanentDocument",
+                "contractId": Identifier::from(CONTRACT_ID).to_string(Encoding::Base58),
+                "documentType": "electedCharter"
+            }),
+        );
+    contract(own_contract).expect("the declaring contract named explicitly is the same contract");
+}
+
 #[test]
 fn should_refuse_an_agreement_without_exactly_one_id_pair() {
     for (agreement, found) in [
@@ -542,11 +589,10 @@ fn should_refuse_a_list_held_by_a_deletable_or_mutable_document_type() {
 #[test]
 fn should_leave_a_list_in_another_contract_to_registration() {
     // The list's document type is in another contract, so the parse cannot
-    // see it: registration checks it against that contract in state
-    let mut schema = charter_contract(list_element(
-        json!({ "electedCharterId": "$id" }),
-        "anything",
-    ));
+    // see it: registration checks it against that contract in state. The `$id`
+    // property is a plain identifier, as `electedCharterId` refers to this
+    // contract's charter
+    let mut schema = charter_contract(list_element(json!({ "plainCharterId": "$id" }), "anything"));
     schema["documentSchemas"]["resignation"]["properties"]["memberId"]["refersTo"]["contractId"] =
         json!(Identifier::from([9; 32]).to_string(Encoding::Base58));
     let parsed = contract(schema).expect("parses");

@@ -6081,6 +6081,29 @@ mod tests {
             );
         }
 
+        /// `$id`, the referenced document's own id, is an identifier like
+        /// `$ownerId` and `$creatorId`: an agreement pair facing it with a
+        /// string could never hold.
+        #[tokio::test]
+        async fn should_reject_an_id_agreement_facing_a_non_identifier_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-id-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referring_property() == "authorId"
+                    && e.referenced_property() == "$id"
+                    && e.reason().contains("$ownerId, $creatorId and $id are identifiers")
+            );
+        }
+
         /// `{ "$ownerId": "$ownerId" }` makes the writer the referring side:
         /// only the note's current owner may write a message on it.
         #[tokio::test]
@@ -6448,7 +6471,7 @@ mod tests {
                     ),
                     ..
                 } if e.path() == "ballot.voterId"
-                    && e.list() == "submittedCharterId"
+                    && e.in_list() == "submittedCharterId"
                     && e.reason().contains("is not a typed array of identifiers")
             );
         }

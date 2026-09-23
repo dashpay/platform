@@ -26,7 +26,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("invalid refersTo listElement into list {list} declared at {path}: {reason}")]
+#[error("invalid refersTo listElement into inList {in_list} declared at {path}: {reason}")]
 #[platform_serialize(unversioned)]
 pub struct ReferencedDocumentListInvalidError {
     /*
@@ -35,13 +35,17 @@ pub struct ReferencedDocumentListInvalidError {
 
     */
     path: String,
-    list: String,
+    in_list: String,
     reason: String,
 }
 
 impl ReferencedDocumentListInvalidError {
-    pub fn new(path: String, list: String, reason: String) -> Self {
-        Self { path, list, reason }
+    pub fn new(path: String, in_list: String, reason: String) -> Self {
+        Self {
+            path,
+            in_list,
+            reason,
+        }
     }
 
     /// The declaring property, as `documentTypeName.propertyPath`.
@@ -49,9 +53,9 @@ impl ReferencedDocumentListInvalidError {
         &self.path
     }
 
-    /// The list the declaration names.
-    pub fn list(&self) -> &str {
-        &self.list
+    /// The list the declaration names, its `inList`.
+    pub fn in_list(&self) -> &str {
+        &self.in_list
     }
 
     pub fn reason(&self) -> &str {

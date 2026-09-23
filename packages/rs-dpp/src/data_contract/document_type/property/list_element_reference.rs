@@ -83,8 +83,11 @@ impl ListElementReference {
     /// and it must be stored (it and every object around it not transient),
     /// so a reader can tell from the stored document which list the value was
     /// checked against. It may be optional: a value set while it is not is
-    /// refused when the document is written. The other pairs are checked as
-    /// every agreement is, at registration.
+    /// refused when the document is written. It needs no `refersTo` of its
+    /// own, but one it carries must be a reference by id to
+    /// `document_type_name` in the list's contract, or the pair could never
+    /// hold. The other pairs are checked as every agreement is, at
+    /// registration.
     pub fn referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
         let Some(document_id_property) = self.document_id_property() else {
             return Some(
@@ -120,6 +123,27 @@ impl ListElementReference {
                 "the $id pair reads \"{document_id_property}\", which is transient: the stored \
                  document must name the document whose list the value was checked against"
             ));
+        }
+        // A reference of its own must agree that the value is the id of a
+        // document of the list's type in the list's contract: anything else
+        // (an identity, a lookup key part, a list element, another type or
+        // contract, an expression) holds a value no such document has, and
+        // every write setting the list element would be refused
+        if let DocumentPropertyType::IdentifierWithReference(target) = &property.property_type {
+            let declaring_contract_id = declaring.data_contract_id();
+            let names_the_list_document = target.as_document_reference().is_some_and(|reference| {
+                reference.document_type_name == self.document_type_name
+                    && reference.contract_id.unwrap_or(declaring_contract_id)
+                        == self.contract_id.unwrap_or(declaring_contract_id)
+            });
+            if !names_the_list_document {
+                return Some(format!(
+                    "the $id pair reads \"{document_id_property}\", whose refersTo is not a \
+                     reference by id to \"{}\" in the list's contract: its value could never be \
+                     the id of the document holding the list",
+                    self.document_type_name
+                ));
+            }
         }
         None
     }

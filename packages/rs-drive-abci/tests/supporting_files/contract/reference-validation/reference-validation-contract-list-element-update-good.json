@@ -227,6 +227,29 @@
           "type": "string",
           "maxLength": 63,
           "position": 10
+        },
+        "echoCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 11
+        },
+        "echoedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 12,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "electedCharter",
+            "propertyAgreement": {
+              "echoCharterId": "$id"
+            }
+          }
         }
       },
       "additionalProperties": false

@@ -515,6 +515,47 @@ mod list_element_reference_tests {
         );
     }
 
+    /// `$id` on the referenced side of an ordinary reference's agreement:
+    /// `echoCharterId` must repeat the id of the charter `echoedCharterId`
+    /// refers to.
+    #[tokio::test]
+    async fn should_check_an_id_agreement_on_an_ordinary_reference() {
+        let mut fixture = ListElementFixture::new();
+        let member = fixture.id(Who::Member);
+        let charter = fixture
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
+            .await;
+        let other_charter = fixture
+            .seat_charter(submitted_charter_id(2), "beta", &[member])
+            .await;
+
+        let (_, agreeing) = fixture
+            .resign(&[
+                ("echoedCharterId", id_value(charter)),
+                ("echoCharterId", id_value(charter)),
+            ])
+            .await;
+        assert_succeeded(agreeing);
+
+        let (_, disagreeing) = fixture
+            .resign(&[
+                ("echoedCharterId", id_value(charter)),
+                ("echoCharterId", id_value(other_charter)),
+            ])
+            .await;
+        assert_matches!(
+            disagreeing,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(e)
+                ),
+                ..
+            } if e.path() == "echoedCharterId"
+                && e.referring_property() == "echoCharterId"
+                && e.referenced_property() == "$id"
+        );
+    }
+
     #[tokio::test]
     async fn should_refuse_a_replace_that_points_the_id_property_at_a_charter_not_listing_the_value(
     ) {
@@ -754,6 +795,9 @@ mod list_element_reference_tests {
         let charter = fixture
             .seat_charter(submitted_charter_id(1), "alpha", &[founder, member])
             .await;
+        let other_charter = fixture
+            .seat_charter(submitted_charter_id(2), "beta", &[founder])
+            .await;
 
         let (_, contract_fetch_info) = fixture
             .platform
@@ -844,5 +888,26 @@ mod list_element_reference_tests {
         ]);
         assert!(result.is_valid(), "{:?}", result.errors);
         assert_eq!(plain, charter_only);
+        // Two ordinary references naming the same charter share one fetch,
+        // and naming two charters fetch both
+        let meta = |charter: Identifier| {
+            Value::Map(vec![(
+                Value::Text("charterId".to_string()),
+                id_value(charter),
+            )])
+        };
+        let (result, same_charter) = validate(&[
+            ("electedCharterId", id_value(charter)),
+            ("meta", meta(charter)),
+        ]);
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_eq!(same_charter, charter_only);
+
+        let (result, two_charters) = validate(&[
+            ("electedCharterId", id_value(charter)),
+            ("meta", meta(other_charter)),
+        ]);
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_eq!(two_charters.len(), 2, "one fetch per charter");
     }
 }

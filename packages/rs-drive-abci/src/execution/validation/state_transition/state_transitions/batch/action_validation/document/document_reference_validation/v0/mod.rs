@@ -13,7 +13,8 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceLookup, DocumentTypeRef,
-    IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, PropertyReference,
+    IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
+    PropertyReference,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
@@ -471,17 +472,86 @@ fn validate_document_type_references_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// The documents one write's references fetched by id, by (contract, type,
-/// id), and the lists collected from them for its list elements, by
-/// (document, list path): a document two references name (a
-/// `permanentDocument` reference to a charter and a `listElement` read
-/// through the same `$id` property, or the elements of one typed array) is
-/// fetched and billed once, and a list is collected into a set once. Lookup
-/// results are not kept: a key is not an id.
+/// The documents one write's references fetched by id, by (contract,
+/// document id) and then document type name, each with the lists collected
+/// from it for its list elements, by list path: a document two references
+/// name (a `permanentDocument` reference to a charter and a `listElement`
+/// read through the same `$id` property, or the elements of one typed array)
+/// is fetched and billed once, and a list is collected into a set once. A
+/// hit allocates nothing. Lookup results are not kept: a key is not an id.
 #[derive(Default)]
 struct FetchedDocuments {
-    documents: BTreeMap<(Identifier, String, Identifier), Option<Document>>,
-    lists: BTreeMap<(Identifier, String), BTreeSet<[u8; 32]>>,
+    documents: BTreeMap<(Identifier, Identifier), BTreeMap<String, FetchedDocument>>,
+}
+
+/// One document fetched by id (`None` when it does not exist) and the lists
+/// read from it.
+struct FetchedDocument {
+    document: Option<Document>,
+    lists: BTreeMap<String, BTreeSet<[u8; 32]>>,
+}
+
+impl FetchedDocuments {
+    /// The document `document_type_name` of `contract_id` holds under
+    /// `document_id`, fetched with `fetch` the first time this write asks.
+    fn document(
+        &mut self,
+        contract_id: Identifier,
+        document_type_name: &str,
+        document_id: Identifier,
+        fetch: impl FnOnce() -> Result<Option<Document>, Error>,
+    ) -> Result<Option<&Document>, Error> {
+        let by_type = self
+            .documents
+            .entry((contract_id, document_id))
+            .or_default();
+        if !by_type.contains_key(document_type_name) {
+            let document = fetch()?;
+            by_type.insert(
+                document_type_name.to_string(),
+                FetchedDocument {
+                    document,
+                    lists: BTreeMap::new(),
+                },
+            );
+        }
+        Ok(by_type
+            .get(document_type_name)
+            .and_then(|fetched| fetched.document.as_ref()))
+    }
+
+    /// Whether `value` is an element of `list_reference`'s list on the
+    /// document [`Self::document`] fetched for the same key, collected into a
+    /// set the first time; `false` when no such document was fetched or it
+    /// does not exist.
+    fn is_listed(
+        &mut self,
+        contract_id: Identifier,
+        document_type_name: &str,
+        document_id: Identifier,
+        list_reference: &ListElementReference,
+        value: &[u8; 32],
+    ) -> bool {
+        let Some(FetchedDocument {
+            document: Some(document),
+            lists,
+        }) = self
+            .documents
+            .get_mut(&(contract_id, document_id))
+            .and_then(|by_type| by_type.get_mut(document_type_name))
+        else {
+            return false;
+        };
+        if !lists.contains_key(&list_reference.in_list) {
+            lists.insert(
+                list_reference.in_list.clone(),
+                list_reference.listed_values(document.properties()),
+            );
+        }
+        lists
+            .get(&list_reference.in_list)
+            .is_some_and(|listed| listed.contains(value))
+    }
 }
 
 /// Whether a replace that changed `changed_fields` must re-validate a
@@ -926,14 +996,12 @@ fn validate_reference_target_v0(
                     )?;
                     looked_up_document.as_ref()
                 }
-                (None, Some(document_id)) => {
-                    let key = (
-                        effective_contract_id,
-                        document_type_name.to_string(),
-                        Identifier::from(document_id),
-                    );
-                    if !fetched_documents.documents.contains_key(&key) {
-                        let document = fetch_document_with_id(
+                (None, Some(document_id)) => fetched_documents.document(
+                    effective_contract_id,
+                    document_type_name,
+                    Identifier::from(document_id),
+                    || {
+                        fetch_document_with_id(
                             platform.drive,
                             referenced_contract,
                             referenced_document_type,
@@ -942,14 +1010,9 @@ fn validate_reference_target_v0(
                             execution_context,
                             transaction,
                             platform_version,
-                        )?;
-                        fetched_documents.documents.insert(key.clone(), document);
-                    }
-                    fetched_documents
-                        .documents
-                        .get(&key)
-                        .and_then(|document| document.as_ref())
-                }
+                        )
+                    },
+                )?,
             };
 
             // Property agreement: the referenced document is already in
@@ -971,6 +1034,11 @@ fn validate_reference_target_v0(
             // consistently absent for untagged targets.
             if let Some(referenced_document) = referenced_document {
                 for (referring_property, referenced_property) in property_agreement {
+                    // A list element's document is the one its `$id` pair
+                    // names, fetched by that very id: the pair holds
+                    if list_reference.is_some() && referenced_property == ID {
+                        continue;
+                    }
                     let mismatch = || {
                         SimpleConsensusValidationResult::new_with_error(
                             ReferencedDocumentPropertyMismatchError::new(
@@ -1064,14 +1132,18 @@ fn validate_reference_target_v0(
             // A list element exists when the document does and its list
             // holds the value; the list is collected once per document and
             // path, so each value is a set lookup
-            match (referenced_document, list_reference) {
-                (None, _) => false,
-                (Some(_), None) => true,
-                (Some(document), Some(list_reference)) => fetched_documents
-                    .lists
-                    .entry((document.id(), list_reference.in_list.clone()))
-                    .or_insert_with(|| list_reference.listed_values(document.properties()))
-                    .contains(&referenced_id),
+            let document_exists = referenced_document.is_some();
+            match (list_reference, document_id) {
+                (Some(list_reference), Some(document_id)) if document_exists => fetched_documents
+                    .is_listed(
+                        effective_contract_id,
+                        document_type_name,
+                        Identifier::from(document_id),
+                        list_reference,
+                        &referenced_id,
+                    ),
+                (Some(_), _) => false,
+                (None, _) => document_exists,
             }
         }
         DocumentPropertyReferenceTarget::IdentityPublicKey {

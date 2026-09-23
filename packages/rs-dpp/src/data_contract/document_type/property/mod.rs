@@ -894,9 +894,15 @@ pub enum DocumentPropertyReferenceTarget {
     ListElement(ListElementReference),
 }
 
-/// The declaration content the two document reference targets,
+/// The declaration content every document reference target shares:
 /// [`DocumentPropertyReferenceTarget::PermanentDocument`] and
-/// [`DocumentPropertyReferenceTarget::DeletableDocument`], share.
+/// [`DocumentPropertyReferenceTarget::DeletableDocument`], whose value is the
+/// referenced document's id, [`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]
+/// (`lookup` set), whose value is one part of a key, and
+/// [`DocumentPropertyReferenceTarget::ListElement`] (`in_list` set), whose
+/// value is an element of the referenced document's list. Only
+/// [`DocumentPropertyReferenceTarget::as_document_reference`] promises the
+/// value is a document id.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct DocumentReferenceDeclaration<'a> {
     /// The contract the referenced document type lives in; `None` means
@@ -907,7 +913,8 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// The `{referring property: referenced property}` equalities
     pub property_agreement: &'a BTreeMap<String, String>,
     /// Whether the referenced document type must forbid deletion
-    /// (`permanentDocument`) or must allow it (`deletableDocument`)
+    /// (`permanentDocument`, by id or through a lookup, and `listElement`)
+    /// or must allow it (`deletableDocument`)
     pub permanent: bool,
     /// How the referenced document is found when the value is not its id
     /// ([`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]); `None`
