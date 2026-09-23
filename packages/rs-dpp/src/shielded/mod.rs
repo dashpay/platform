@@ -51,7 +51,8 @@ pub use sighash::{
     identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, token_burn_from_pool_extra_sighash_data,
     token_burn_from_pool_extra_sighash_data_v0, token_pool_fee_bundle_extra_sighash_data,
-    token_pool_fee_bundle_extra_sighash_data_v0,
+    token_pool_fee_bundle_extra_sighash_data_v0, token_pool_output_only_extra_sighash_data,
+    token_pool_output_only_extra_sighash_data_v0,
     token_purchase_from_shielded_pool_extra_sighash_data,
     token_purchase_from_shielded_pool_extra_sighash_data_v0,
     token_shielded_transfer_extra_sighash_data, token_shielded_transfer_extra_sighash_data_v0,
@@ -60,8 +61,10 @@ pub use sighash::{
     token_unshield_extra_sighash_data, token_unshield_extra_sighash_data_v0,
     token_unshield_with_shielded_fee_extra_sighash_data,
     token_unshield_with_shielded_fee_extra_sighash_data_v0, unshield_extra_sighash_data,
-    unshield_extra_sighash_data_v0, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
-    TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
+    unshield_extra_sighash_data_v0, TOKEN_CLAIM_TO_POOL_BUNDLE_TAG,
+    TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG, TOKEN_MINT_TO_POOL_BUNDLE_TAG,
+    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
+    TOKEN_SHIELD_BUNDLE_TAG, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
 };
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a

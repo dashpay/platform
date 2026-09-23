@@ -15,6 +15,8 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::IdentityDoesNotHaveEnoughTokenBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::prelude::Identifier;
+use dpp::shielded::token_pool_output_only_extra_sighash_data;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
@@ -112,9 +114,16 @@ impl TokenShieldTransitionActionStateValidationV0 for TokenShieldTransitionActio
             return Ok(validation_result);
         }
 
-        // Outputs-only bundle entering the pool: value balance is `-amount`. The identity
-        // signature over the batch already binds the bundle to this token, owner and amount, so
-        // no extra sighash data is bound (exactly like `ShieldFromIdentity`).
+        // Outputs-only bundle entering the pool: value balance is `-amount`.
+        // An outputs-only bundle carries no anchor pinning it to a pool — every token pool
+        // starts from the same empty-tree anchor — and the identity signature over the batch
+        // only binds it inside this batch. The extra sighash data is what stops the authorized
+        // bundle bytes from being lifted into another pool or another transition kind.
+        let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+            TokenTransitionActionType::Shield,
+            token_id.as_bytes(),
+            platform_version,
+        )?;
         verify_token_pool_bundle(
             validation_mode,
             self.actions(),
@@ -123,7 +132,7 @@ impl TokenShieldTransitionActionStateValidationV0 for TokenShieldTransitionActio
             self.anchor(),
             self.proof(),
             self.binding_signature(),
-            &[],
+            &extra_sighash_data,
         )
     }
 }

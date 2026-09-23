@@ -734,12 +734,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` and gated by
 ///     `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
 ///     identity balance, the supply and the pool or inside it; the identity
-///     signs and pays the fee in credits, and every spend bundle binds the
-///     token id and the batch owner (a burn binds the burner: the batch owner,
-///     or the proposer of a group action), plus the recipient and amount where
-///     tokens leave the pool, into the Orchard sighash. The pool balances are a
-///     term of the token conservation check (`calculate_total_tokens_balance` v1
-///     in `DRIVE_TOKEN_METHOD_VERSIONS_V2`). `record_token_shielded_pool_anchors`
+///     signs and pays the fee in credits, and every bundle binds its pool into
+///     the Orchard sighash, since all pools share the empty-tree anchor an
+///     unbound bundle would verify against: a spend bundle binds the token id
+///     and the batch owner (a burn binds the burner: the batch owner, or the
+///     proposer of a group action), plus the recipient and amount where tokens
+///     leave the pool; an outputs-only bundle (`TokenShield`,
+///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
+///     which has no anchor of its own, binds a per-kind tag and the token id.
+///     The pool balances are a term of the token conservation check
+///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
+///     `record_token_shielded_pool_anchors`
 ///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) records and prunes the anchors of the
 ///     pools a block touched. The pools root tree is inserted by
 ///     `transition_to_version_14` and by `create_initial_state_structure` v4;

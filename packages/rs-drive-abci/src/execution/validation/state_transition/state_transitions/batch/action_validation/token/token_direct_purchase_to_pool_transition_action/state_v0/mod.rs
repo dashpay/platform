@@ -5,6 +5,8 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::Identifier;
+use dpp::shielded::token_pool_output_only_extra_sighash_data;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
@@ -120,6 +122,15 @@ impl TokenDirectPurchaseToPoolTransitionActionStateValidationV0
             }
         }
 
+        // An outputs-only bundle carries no anchor pinning it to a pool — every token pool
+        // starts from the same empty-tree anchor — and the identity signature over the batch
+        // only binds it inside this batch. The extra sighash data is what stops the authorized
+        // bundle bytes from being lifted into another pool or another transition kind.
+        let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+            TokenTransitionActionType::DirectPurchaseToPool,
+            token_id.as_bytes(),
+            platform_version,
+        )?;
         verify_token_pool_bundle(
             validation_mode,
             self.actions(),
@@ -128,7 +139,7 @@ impl TokenDirectPurchaseToPoolTransitionActionStateValidationV0
             self.anchor(),
             self.proof(),
             self.binding_signature(),
-            &[],
+            &extra_sighash_data,
         )
     }
 }

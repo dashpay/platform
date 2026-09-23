@@ -6,7 +6,8 @@ use crate::data_contract::associated_token::token_distribution_key::TokenDistrib
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
-use crate::shielded::OrchardBundleParams;
+use crate::shielded::{token_pool_output_only_extra_sighash_data, OrchardBundleParams};
+use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::StateTransition;
@@ -64,7 +65,20 @@ pub async fn build_token_claim_to_pool_transition<
         ));
     }
 
-    let bundle = build_output_only_bundle(recipient, amount, memo, sender_ovk, 0, prover)?;
+    let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+        TokenTransitionActionType::ClaimToPool,
+        token_id.as_bytes(),
+        platform_version,
+    )?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        amount,
+        memo,
+        sender_ovk,
+        0,
+        &extra_sighash_data,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     if sb.value_balance != -(amount as i64) {

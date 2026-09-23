@@ -24,9 +24,11 @@ mod token_shielded_pool_tests {
     use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::shielded::{
-        compute_platform_sighash, token_shielded_transfer_extra_sighash_data_v0,
-        token_unshield_extra_sighash_data_v0, OrchardBundleParams,
+        compute_platform_sighash, token_pool_output_only_extra_sighash_data,
+        token_shielded_transfer_extra_sighash_data_v0, token_unshield_extra_sighash_data_v0,
+        OrchardBundleParams,
     };
+    use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
@@ -78,7 +80,15 @@ mod token_shielded_pool_tests {
 
     /// An outputs-only bundle paying `amount` to the test wallet: what a token shield carries.
     /// The bundle has no spends, so no extra sighash data is bound.
-    pub(super) fn build_shield_bundle(amount: u64, seed: u64) -> OrchardBundleParams {
+    /// Builds the outputs-only bundle of a token pool transition that only creates notes.
+    /// `action_type` and `token_id` are what the bundle's sighash commits to, so a bundle built
+    /// for one pool or one transition kind will not verify as another.
+    pub(super) fn build_shield_bundle(
+        amount: u64,
+        seed: u64,
+        action_type: TokenTransitionActionType,
+        token_id: Identifier,
+    ) -> OrchardBundleParams {
         let mut rng = StdRng::seed_from_u64(seed);
         let (fvk, _, address) = spend_keys();
         let mut builder = Builder::<DashMemo>::new(
@@ -98,7 +108,13 @@ mod token_shielded_pool_tests {
             .unwrap();
         let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
         let commitment: [u8; 32] = unauthorized.commitment().into();
-        let sighash = compute_platform_sighash(&commitment, &[]);
+        let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+            action_type,
+            &token_id.to_buffer(),
+            PlatformVersion::latest(),
+        )
+        .expect("outputs-only token pool sighash data");
+        let sighash = compute_platform_sighash(&commitment, &extra_sighash_data);
         let proven = unauthorized
             .create_proof(get_proving_key(), &mut rng)
             .unwrap();
@@ -404,7 +420,12 @@ mod token_shielded_pool_tests {
         assert_tokens_conserved(&platform);
 
         // Shield: identity balance to pool.
-        let shield_bundle = build_shield_bundle(SHIELD_AMOUNT, 11);
+        let shield_bundle = build_shield_bundle(
+            SHIELD_AMOUNT,
+            11,
+            TokenTransitionActionType::Shield,
+            token_id,
+        );
         let shield = BatchTransition::new_token_shield_transition(
             token_id,
             identity.id(),
@@ -723,9 +744,17 @@ mod token_shielded_pool_tests {
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9004);
 
-        let bundle = build_shield_bundle(SHIELD_AMOUNT, 13);
+        // The identity has to be funded before the contract exists, but the fee depends only on
+        // the action count, which does not depend on the token. Probe it with a throwaway pool
+        // id, then assert below that the real bundle has the same count.
+        let fee_probe = build_shield_bundle(
+            SHIELD_AMOUNT,
+            13,
+            TokenTransitionActionType::Shield,
+            Identifier::from([0u8; 32]),
+        );
         let compute_fee = dpp::shielded::compute_shielded_verification_fee(
-            bundle.actions.len(),
+            fee_probe.actions.len(),
             platform_version,
         )
         .expect("shielded compute fee");
@@ -742,6 +771,18 @@ mod token_shielded_pool_tests {
             None,
             None,
             platform_version,
+        );
+
+        let bundle = build_shield_bundle(
+            SHIELD_AMOUNT,
+            13,
+            TokenTransitionActionType::Shield,
+            token_id,
+        );
+        assert_eq!(
+            bundle.actions.len(),
+            fee_probe.actions.len(),
+            "the funded figure must be this bundle's compute fee"
         );
 
         let shield = BatchTransition::new_token_shield_transition(
@@ -1037,6 +1078,81 @@ mod token_shielded_pool_tests {
         );
     }
 
+    /// An outputs-only bundle carries no anchor, so nothing in the proved bytes themselves says
+    /// which pool they were built for: the proof and the binding signature verify against every
+    /// token pool, all of which start from the same empty-tree anchor. Only the sighash tells
+    /// them apart. Without it anyone could lift a shield bundle out of the mempool into a shield
+    /// of their own, funded by their own tokens, and mint a second note with the same commitment
+    /// and the same nullifier as the original — of which only one can ever be spent.
+    #[tokio::test]
+    async fn test_token_shield_rejects_a_bundle_proved_for_another_tokens_pool() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9103);
+
+        let (victim, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (_contract_a, token_a) = create_token_contract_with_owner_identity(
+            &mut platform,
+            victim.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        // A second owner, because a contract id derives from its owner: the same owner would
+        // give back the same contract and the same pool, and the test would prove nothing.
+        let (attacker, attacker_signer, attacker_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract_b, token_b) = create_token_contract_with_owner_identity(
+            &mut platform,
+            attacker.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        assert_ne!(token_a, token_b, "the two tokens must own separate pools");
+
+        // Proved for the victim's pool, then replayed into the attacker's own, paid for with
+        // the attacker's own tokens.
+        let stolen_bundle = build_shield_bundle(
+            SHIELD_AMOUNT,
+            31,
+            TokenTransitionActionType::Shield,
+            token_a,
+        );
+        let replay = BatchTransition::new_token_shield_transition(
+            token_b,
+            attacker.id(),
+            contract_b.id(),
+            0,
+            SHIELD_AMOUNT,
+            stolen_bundle,
+            &attacker_key,
+            2,
+            0,
+            &attacker_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+
+        let result = process(&platform, &replay);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
+        );
+        assert_eq!(pool_balance(&platform, token_b), 0);
+        assert_eq!(pool_notes_count(&platform, token_b), 0);
+        assert_tokens_conserved(&platform);
+    }
+
     /// Spent nullifiers are namespaced by token id too: spending a note in one token's pool must
     /// not mark that nullifier spent in another's, or the first token to use a nullifier would
     /// make every other pool's note with the same nullifier unspendable.
@@ -1079,7 +1195,12 @@ mod token_shielded_pool_tests {
             contract_a.id(),
             0,
             SHIELD_AMOUNT,
-            build_shield_bundle(SHIELD_AMOUNT, 23),
+            build_shield_bundle(
+                SHIELD_AMOUNT,
+                23,
+                TokenTransitionActionType::Shield,
+                token_a,
+            ),
             &key,
             2,
             0,
@@ -1505,6 +1626,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::shielded::{serialized_actions_digest, token_burn_from_pool_extra_sighash_data_v0};
+    use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
     use dpp::state_transition::batch_transition::{
         TokenBurnFromPoolTransition, TokenSetPriceForDirectPurchaseTransition,
     };
@@ -1518,6 +1640,70 @@ mod token_pool_mint_burn_claim_purchase_tests {
             .fetch_token_total_supply(token_id.to_buffer(), None, PlatformVersion::latest())
             .expect("total supply")
             .expect("supply exists")
+    }
+
+    /// Binding the token id alone would not be enough. A shield and a mint into the same pool
+    /// produce outputs-only bundles that agree on everything the proof covers — same flags, same
+    /// empty-tree anchor, same `value_balance` — so without a per-kind tag in the sighash the
+    /// very same proved bytes would satisfy both. A shield bundle would then be resubmittable as
+    /// a mint of the same token, which prints supply against a proof its author never made for
+    /// that purpose.
+    #[tokio::test]
+    async fn test_token_mint_to_pool_rejects_a_bundle_proved_as_a_shield_of_the_same_token() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9113);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        let supply_before = total_supply(&platform, token_id);
+
+        // Same pool, same amount, same flags — only the transition kind differs.
+        let shield_bundle =
+            build_shield_bundle(1_337, 21, TokenTransitionActionType::Shield, token_id);
+        let mint = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            1_337,
+            shield_bundle,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool transition");
+
+        let result = process(&platform, &mint);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            supply_before,
+            "a rejected mint must not print supply"
+        );
+        assert_tokens_conserved(&platform);
     }
 
     #[tokio::test]
@@ -1538,7 +1724,8 @@ mod token_pool_mint_burn_claim_purchase_tests {
             platform_version,
         );
 
-        let bundle = build_shield_bundle(1_337, 21);
+        let bundle =
+            build_shield_bundle(1_337, 21, TokenTransitionActionType::MintToPool, token_id);
         let mint = BatchTransition::new_token_mint_to_pool_transition(
             token_id,
             identity.id(),
@@ -1613,7 +1800,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             contract.id(),
             0,
             1_337,
-            build_shield_bundle(1_337, 27),
+            build_shield_bundle(1_337, 27, TokenTransitionActionType::MintToPool, token_id),
             None,
             None,
             &key,
@@ -1761,7 +1948,8 @@ mod token_pool_mint_burn_claim_purchase_tests {
         let token = token_id.to_buffer();
 
         // Fund the pool first.
-        let shield_bundle = build_shield_bundle(10_000, 22);
+        let shield_bundle =
+            build_shield_bundle(10_000, 22, TokenTransitionActionType::Shield, token_id);
         let shield = BatchTransition::new_token_shield_transition(
             token_id,
             identity.id(),
@@ -1914,7 +2102,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             contract.id(),
             0,
             10_000,
-            build_shield_bundle(10_000, 24),
+            build_shield_bundle(10_000, 24, TokenTransitionActionType::Shield, token_id),
             &proposer_key,
             2,
             0,
@@ -2189,7 +2377,12 @@ mod token_pool_mint_burn_claim_purchase_tests {
             0,
             TokenDistributionType::Perpetual,
             None,
-            build_shield_bundle(accrued, 27),
+            build_shield_bundle(
+                accrued,
+                27,
+                TokenTransitionActionType::ClaimToPool,
+                token_id,
+            ),
             None,
             &key,
             2,
@@ -2229,7 +2422,12 @@ mod token_pool_mint_burn_claim_purchase_tests {
         assert_eq!(pool_balance(&platform, token_id), 0);
 
         // Pinned to the current cycle, the bundle proves exactly the accrued rewards.
-        let claim_bundle = build_shield_bundle(accrued, 28);
+        let claim_bundle = build_shield_bundle(
+            accrued,
+            28,
+            TokenTransitionActionType::ClaimToPool,
+            token_id,
+        );
         let pinned = BatchTransition::new_token_claim_to_pool_transition(
             token_id,
             owner.id(),
@@ -2347,7 +2545,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             0,
             distribution_type,
             None,
-            build_shield_bundle(444, 24),
+            build_shield_bundle(444, 24, TokenTransitionActionType::ClaimToPool, token_id),
             None,
             &key,
             2,
@@ -2385,7 +2583,8 @@ mod token_pool_mint_burn_claim_purchase_tests {
             .unwrap()
             .expect("commit");
 
-        let claim_bundle = build_shield_bundle(445, 25);
+        let claim_bundle =
+            build_shield_bundle(445, 25, TokenTransitionActionType::ClaimToPool, token_id);
         let claim = BatchTransition::new_token_claim_to_pool_transition(
             token_id,
             claimant_id,
@@ -2451,7 +2650,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             0,
             distribution_type,
             None,
-            build_shield_bundle(445, 26),
+            build_shield_bundle(445, 26, TokenTransitionActionType::ClaimToPool, token_id),
             None,
             &key,
             4,
@@ -2560,7 +2759,12 @@ mod token_pool_mint_burn_claim_purchase_tests {
             .expect("balance")
             .expect("seller exists");
 
-        let purchase_bundle = build_shield_bundle(3, 27);
+        let purchase_bundle = build_shield_bundle(
+            3,
+            27,
+            TokenTransitionActionType::DirectPurchaseToPool,
+            token_id,
+        );
         let purchase = BatchTransition::new_token_direct_purchase_to_pool_transition(
             token_id,
             buyer.id(),
@@ -2613,7 +2817,12 @@ mod token_pool_mint_burn_claim_purchase_tests {
             0,
             3,
             dash_to_credits!(0.02),
-            build_shield_bundle(3, 28),
+            build_shield_bundle(
+                3,
+                28,
+                TokenTransitionActionType::DirectPurchaseToPool,
+                token_id,
+            ),
             &key,
             3,
             0,
@@ -2647,7 +2856,12 @@ mod token_pool_mint_burn_claim_purchase_tests {
             0,
             3,
             dash_to_credits!(0.03),
-            build_shield_bundle(3, 29),
+            build_shield_bundle(
+                3,
+                29,
+                TokenTransitionActionType::DirectPurchaseToPool,
+                token_id,
+            ),
             &poor_key,
             1,
             0,
@@ -2694,6 +2908,7 @@ mod document_shielded_token_payment_tests {
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::prelude::IdentityNonce;
     use dpp::shielded::{document_token_payment_extra_sighash_data_v0, OrchardBundleParams};
+    use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_payment_info::v1::{TokenPaymentInfoV1, TokenShieldedPayment};
@@ -2826,7 +3041,7 @@ mod document_shielded_token_payment_tests {
             contract.id(),
             0,
             SHIELDED,
-            build_shield_bundle(SHIELDED, seed),
+            build_shield_bundle(SHIELDED, seed, TokenTransitionActionType::Shield, token_id),
             key,
             1,
             0,
@@ -3233,6 +3448,7 @@ mod token_pool_paid_transitions_tests {
         build_token_unshield_with_shielded_fee_transition, OrchardProver, ShieldedFeePayer,
         SpendableNote, TokenPoolSpender,
     };
+    use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
     use dpp::state_transition::StateTransition;
@@ -3306,7 +3522,7 @@ mod token_pool_paid_transitions_tests {
             contract.id(),
             0,
             SHIELDED,
-            build_shield_bundle(SHIELDED, seed),
+            build_shield_bundle(SHIELDED, seed, TokenTransitionActionType::Shield, token_id),
             key,
             2,
             0,

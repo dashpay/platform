@@ -52,6 +52,7 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
         memo,
         sender_ovk,
         dummy_outputs,
+        &[],
         prover,
     )?;
     let sb = serialize_authorized_bundle(&bundle);
@@ -133,6 +134,7 @@ where
         memo,
         sender_ovk,
         dummy_outputs,
+        &[],
         prover,
     )?;
     let sb = serialize_authorized_bundle(&bundle);
@@ -177,8 +179,9 @@ mod tests {
         let recipient = test_orchard_address();
         let amount = 50_000u64;
 
-        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
-            .expect("bundle should build successfully");
+        let bundle =
+            build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &[], &TestProver)
+                .expect("bundle should build successfully");
         let sb = serialize_authorized_bundle(&bundle);
 
         // Output-only bundles have negative value_balance (value entering the pool)
@@ -206,7 +209,7 @@ mod tests {
     fn test_output_only_bundle_serializes_to_min_actions() {
         let recipient = test_orchard_address();
         let bundle =
-            build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, 0, &TestProver)
+            build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, 0, &[], &TestProver)
                 .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
         assert_eq!(
@@ -249,7 +252,7 @@ mod tests {
         for amount in [1u64, 100, 1_000_000, u32::MAX as u64] {
             let recipient = test_orchard_address();
             let bundle =
-                build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
+                build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &[], &TestProver)
                     .expect("bundle should build");
             let sb = serialize_authorized_bundle(&bundle);
             assert_eq!(

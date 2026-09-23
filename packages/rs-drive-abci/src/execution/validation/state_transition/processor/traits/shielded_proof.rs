@@ -29,9 +29,10 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::shielded::{
-    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
+    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_pool_output_only_extra_sighash_data, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
 };
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_shield_transition::v0::v0_methods::TokenShieldTransitionV0Methods;
@@ -928,6 +929,11 @@ fn validate_batch_token_shielded_proofs(
     for transition in batch.transitions_iter() {
         let result = match transition {
             BatchedTransitionRef::Token(TokenTransition::Shield(t)) => {
+                let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+                    TokenTransitionActionType::Shield,
+                    &t.base().token_id().to_buffer(),
+                    platform_version,
+                )?;
                 reconstruct_and_verify_bundle(
                     t.actions(),
                     FLAGS_OUTPUTS_ONLY,
@@ -935,7 +941,7 @@ fn validate_batch_token_shielded_proofs(
                     t.anchor(),
                     t.proof(),
                     t.binding_signature(),
-                    &[],
+                    &extra_sighash_data,
                 )
             }
             BatchedTransitionRef::Token(TokenTransition::Unshield(t)) => {
@@ -973,6 +979,11 @@ fn validate_batch_token_shielded_proofs(
                 )
             }
             BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
+                let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+                    TokenTransitionActionType::MintToPool,
+                    &t.base().token_id().to_buffer(),
+                    platform_version,
+                )?;
                 reconstruct_and_verify_bundle(
                     t.actions(),
                     FLAGS_OUTPUTS_ONLY,
@@ -980,7 +991,7 @@ fn validate_batch_token_shielded_proofs(
                     t.anchor(),
                     t.proof(),
                     t.binding_signature(),
-                    &[],
+                    &extra_sighash_data,
                 )
             }
             BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
@@ -1012,6 +1023,11 @@ fn validate_batch_token_shielded_proofs(
             // verified in block validation only; its proof is still admitted per nonce.
             BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => continue,
             BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
+                let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+                    TokenTransitionActionType::DirectPurchaseToPool,
+                    &t.base().token_id().to_buffer(),
+                    platform_version,
+                )?;
                 reconstruct_and_verify_bundle(
                     t.actions(),
                     FLAGS_OUTPUTS_ONLY,
@@ -1019,7 +1035,7 @@ fn validate_batch_token_shielded_proofs(
                     t.anchor(),
                     t.proof(),
                     t.binding_signature(),
-                    &[],
+                    &extra_sighash_data,
                 )
             }
             // A document whose token cost is paid from the token's shielded pool: the payment

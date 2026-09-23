@@ -54,7 +54,8 @@ pub async fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProve
 
     // Shield (Type 15) never pads with anonymity-set fillers — only the
     // Type 18 ShieldFromAssetLock pool-seeding path does (`dummy_outputs`).
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, 0, prover)?;
+    let bundle =
+        build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, 0, &[], prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldTransition::try_from_bundle_with_signer(

@@ -219,6 +219,7 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     memo: [u8; 36],
     sender_ovk: Option<OutgoingViewingKey>,
     dummy_outputs: usize,
+    extra_sighash_data: &[u8],
     prover: &P,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
@@ -251,7 +252,7 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
             })?;
     }
 
-    prove_and_sign_bundle(builder, prover, &[], &[])
+    prove_and_sign_bundle(builder, prover, &[], extra_sighash_data)
 }
 
 /// Builds a spend+output Orchard bundle.
@@ -533,8 +534,9 @@ mod mod_tests {
     #[test]
     fn output_only_bundle_flags_and_value_balance() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, 0, &TestProver)
-            .expect("bundle should build");
+        let bundle =
+            build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, 0, &[], &TestProver)
+                .expect("bundle should build");
 
         // Spends are disabled for Shield / ShieldFromAssetLock bundles.
         assert!(!bundle.flags().spends_enabled());
@@ -567,9 +569,16 @@ mod mod_tests {
 
         // (dummy_outputs, expected on-wire action count).
         for (dummies, expected_actions) in [(0usize, 2usize), (1, 2), (5, 6)] {
-            let bundle =
-                build_output_only_bundle(&recipient, amount, [0u8; 36], None, dummies, &TestProver)
-                    .expect("bundle should build");
+            let bundle = build_output_only_bundle(
+                &recipient,
+                amount,
+                [0u8; 36],
+                None,
+                dummies,
+                &[],
+                &TestProver,
+            )
+            .expect("bundle should build");
             assert_eq!(
                 bundle.actions().len(),
                 expected_actions,
@@ -592,8 +601,9 @@ mod mod_tests {
     #[test]
     fn serialize_authorized_bundle_preserves_fields() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, 0, &TestProver)
-            .expect("bundle should build");
+        let bundle =
+            build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, 0, &[], &TestProver)
+                .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
 
         assert_eq!(sb.value_balance, *bundle.value_balance());
@@ -641,6 +651,7 @@ mod mod_tests {
             memo,
             Some(sender_ovk.clone()),
             0,
+            &[],
             &TestProver,
         )
         .expect("bundle should build");

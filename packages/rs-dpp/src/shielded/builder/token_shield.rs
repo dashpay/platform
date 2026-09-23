@@ -5,7 +5,8 @@ use crate::balances::credits::TokenAmount;
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
-use crate::shielded::OrchardBundleParams;
+use crate::shielded::{token_pool_output_only_extra_sighash_data, OrchardBundleParams};
+use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::StateTransition;
@@ -19,9 +20,11 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// a batch transition signed by `owner_id`, the identity whose token balance funds the shield.
 ///
 /// The identity pays the fee in credits; `amount` tokens leave its balance for the pool at
-/// execution. The bundle has no spends, so it carries no anchor of the pool and no extra
-/// sighash data: the identity signature over the whole batch binds it. `sender_ovk` lets the
-/// sending wallet recover the note it created (recipient, value, memo) from chain data.
+/// execution. The bundle has no spends, so it carries no anchor pinning it to a pool, and the
+/// identity signature over the batch only binds it inside *this* batch — the authorized bundle
+/// bytes on their own would verify in any pool. The extra sighash data pins them to this token
+/// and to the shield kind. `sender_ovk` lets the sending wallet recover the note it created
+/// (recipient, value, memo) from chain data.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_token_shield_transition<S: Signer<IdentityPublicKey>, P: OrchardProver>(
     token_id: Identifier,
@@ -52,7 +55,20 @@ pub async fn build_token_shield_transition<S: Signer<IdentityPublicKey>, P: Orch
         )));
     }
 
-    let bundle = build_output_only_bundle(recipient, amount, memo, sender_ovk, 0, prover)?;
+    let extra_sighash_data = token_pool_output_only_extra_sighash_data(
+        TokenTransitionActionType::Shield,
+        token_id.as_bytes(),
+        platform_version,
+    )?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        amount,
+        memo,
+        sender_ovk,
+        0,
+        &extra_sighash_data,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     if sb.value_balance != -(amount as i64) {

@@ -38,7 +38,8 @@ pub async fn build_shield_from_identity_transition<
         ));
     }
 
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, 0, prover)?;
+    let bundle =
+        build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, 0, &[], prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldFromIdentityTransition::try_from_bundle_with_identity_signer(

@@ -37,6 +37,11 @@ use wasm_bindgen::prelude::wasm_bindgen;
 /// - For shield and shielded_transfer transitions, `extraData` should be empty.
 /// - For unshield transitions, `extraData` = serialized `outputAddress` bytes.
 /// - For shielded withdrawal transitions, `extraData` = `outputScript` bytes.
+/// - For token pool transitions, `extraData` is the layout that transition binds. An
+///   outputs-only one — token shield, and mint, claim or direct purchase into the pool —
+///   binds its one-byte kind tag followed by the 32-byte token id; leaving it empty is
+///   rejected, since all token pools share the empty-tree anchor such a bundle proves
+///   against and nothing else would say which pool it was built for.
 #[wasm_bindgen(js_name = computePlatformSighash)]
 pub fn compute_platform_sighash_wasm(
     bundle_commitment: Vec<u8>,
