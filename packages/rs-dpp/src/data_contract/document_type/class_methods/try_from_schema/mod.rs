@@ -9,7 +9,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    is_referenced_system_agreement_property, is_referring_system_agreement_property,
+    is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
     property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
@@ -1385,11 +1385,12 @@ fn apply_encrypted_for_v0(
 /// identifier property (or `$ownerId`), the two key properties integers whose
 /// schema declares `minimum` at least 0 and `maximum` at most 4294967295 (read
 /// from the schema itself, so the rule holds whatever `sizedIntegerTypes` the
-/// contract sets), none of them may be `transient` (a transient property is
-/// stripped before storage, which would leave the stored ciphertext without
-/// its recipe), and the byte array's own `maxItems` must hold the scheme's
-/// shortest ciphertext. Paths are looked up among the flattened properties,
-/// so a nested property is named by its dotted path.
+/// contract sets), none of them may be `transient` or sit inside a transient
+/// object (a transient value is stripped before storage, which would leave
+/// the stored ciphertext without its recipe), and the byte array's own
+/// `maxItems` must hold the scheme's shortest ciphertext. Paths are looked up
+/// among the flattened properties, so a nested property is named by its
+/// dotted path.
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_encrypted_for_declarations(
@@ -1439,10 +1440,11 @@ pub(super) fn validate_encrypted_for_declarations(
                     )));
                 }
             }
-            if document_type.transient_fields.contains(recipient_path) {
+            if is_transient(DocumentTypeRef::V2(document_type), recipient_path) {
                 return Err(structure_error(format!(
-                    "recipient \"{recipient_path}\" is transient: a transient property is never \
-                     stored, so a reader could not tell whom the bytes are for"
+                    "recipient \"{recipient_path}\" is transient or inside a transient object: \
+                     a transient value is never stored, so a reader could not tell whom the \
+                     bytes are for"
                 )));
             }
         }
@@ -1463,10 +1465,11 @@ pub(super) fn validate_encrypted_for_declarations(
                     u32::MAX
                 )));
             }
-            if document_type.transient_fields.contains(key_path) {
+            if is_transient(DocumentTypeRef::V2(document_type), key_path) {
                 return Err(structure_error(format!(
-                    "{key} \"{key_path}\" is transient: a transient property is never stored, \
-                     so a reader could not tell which key decrypts the bytes"
+                    "{key} \"{key_path}\" is transient or inside a transient object: a \
+                     transient value is never stored, so a reader could not tell which key \
+                     decrypts the bytes"
                 )));
             }
         }
@@ -4093,6 +4096,63 @@ mod tests {
             let err = try_document_type_from_schema(schema).expect_err("should be refused");
             assert!(err.to_string().contains(fragment), "{transient}: got {err}");
         }
+    }
+
+    /// `transient` lists the object, not its leaves, and the whole object is
+    /// stripped before storage: a recipient or key id inside it is gone from
+    /// the stored document however required it is.
+    #[test]
+    fn should_reject_encrypted_for_naming_a_recipient_or_key_inside_a_transient_object() {
+        for (key, path) in [
+            ("recipient", "meta.authorId"),
+            ("recipientKey", "meta.keyId"),
+            ("senderKey", "meta.keyId"),
+        ] {
+            let mut declaration = encrypted_for_declaration();
+            declaration[key] = json!(path);
+            let mut schema = encrypted_schema(declaration);
+            schema["properties"]["meta"]["properties"]["keyId"] = json!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295_u64,
+                "position": 1
+            });
+            schema["properties"]["meta"]["required"] = json!(["authorId", "keyId"]);
+            schema["required"] = json!(["meta"]);
+
+            // Stored with the document, the nested path is accepted
+            try_document_type_from_schema_full_validation(schema.clone())
+                .unwrap_or_else(|err| panic!("{key}={path} should parse: {err}"));
+
+            schema["transient"] = json!(["meta"]);
+            let fragment = format!("{key} \"{path}\" is transient or inside a transient object");
+            for err in [
+                try_document_type_from_schema(schema.clone()).expect_err("should be refused"),
+                try_document_type_from_schema_full_validation(schema.clone())
+                    .expect_err("should be refused under full validation"),
+            ] {
+                assert!(
+                    err.to_string().contains(&fragment),
+                    "{key}={path}: expected {fragment:?}, got {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_find_a_path_transient_through_itself_or_an_enclosing_object_only() {
+        let mut schema = encrypted_schema(encrypted_for_declaration());
+        schema["transient"] = json!(["meta", "note"]);
+        let document_type = try_document_type_from_schema(schema).expect("should parse");
+        let document_type = document_type.as_ref();
+
+        assert!(is_transient(document_type, "note"));
+        assert!(is_transient(document_type, "meta"));
+        assert!(is_transient(document_type, "meta.authorId"));
+        assert!(is_transient(document_type, "meta.inner.leaf"));
+        // A prefix counts only up to a dot: "metadata" is not inside "meta"
+        assert!(!is_transient(document_type, "metadata.authorId"));
+        assert!(!is_transient(document_type, "recipientId"));
     }
 
     #[test]
