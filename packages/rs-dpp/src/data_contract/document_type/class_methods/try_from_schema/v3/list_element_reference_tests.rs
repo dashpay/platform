@@ -6,7 +6,9 @@
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, ListElementReference, PropertyReference,
 };
@@ -312,6 +314,41 @@ fn should_parse_a_list_element_as_a_leaf_of_a_reference_expression() {
             ]
         }))),
         "refersTo anyOf[0] listElement: \"title\" of \"electedCharter\" is not a typed array",
+    );
+}
+
+/// The moderation charters' owner rule: the writer must be one of the
+/// charter's members. A list element is a target an identity can be (an
+/// element of a list of identities), so `ownerRefersTo` takes it, alone or as a
+/// leaf of an expression, and its `$id` pair is checked as a property's is.
+#[test]
+fn should_accept_a_list_element_on_the_writer() {
+    let mut schema = charter_contract(json!({ "type": "identity" }));
+    schema["documentSchemas"]["resignation"]["ownerRefersTo"] = members_of_the_charter();
+    let parsed = contract(schema).expect("parses");
+    assert_eq!(
+        parsed
+            .document_type_for_name("resignation")
+            .expect("the resignation document type")
+            .owner_reference(),
+        Some(&expected_reference(
+            &[("electedCharterId", "$id")],
+            "members"
+        ))
+    );
+
+    let mut expression = charter_contract(json!({ "type": "identity" }));
+    expression["documentSchemas"]["resignation"]["ownerRefersTo"] = json!({
+        "anyOf": [members_of_the_charter(), { "type": "identity" }]
+    });
+    contract(expression).expect("an expression with a list element leaf parses");
+
+    let mut bad_id_property = charter_contract(json!({ "type": "identity" }));
+    bad_id_property["documentSchemas"]["resignation"]["ownerRefersTo"] =
+        list_element(json!({ "note": "$id" }), "members");
+    assert_refused(
+        contract(bad_id_property),
+        "ownerRefersTo listElement: the $id pair reads \"note\", which is not an identifier property",
     );
 }
 

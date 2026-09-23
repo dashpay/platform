@@ -10,6 +10,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostSettersV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
@@ -148,6 +149,22 @@ pub struct DocumentTypeV2 {
     /// clock: `$updatedAt`, or `$createdAt` when its documents never change
     /// (`apply_can_be_deleted_by_moderators_for`).
     pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
+    /// The `refersTo` declaration whose value is the document's `$ownerId`,
+    /// the writer (`ownerRefersTo` keyword, protocol version 14), `None` when
+    /// the type declares none. Checked with the writer's id as the value, as a
+    /// property reference is checked with the property's value. Only an
+    /// `identity` or a `permanentDocument` lookup target, and only on a type
+    /// whose documents can be neither transferred nor traded, which the parser
+    /// (`parse_owner_reference` and generation 3) enforces.
+    pub(in crate::data_contract) owner_reference: Option<DocumentPropertyReferenceTarget>,
+    /// The `refersTo` declaration whose value is the document's `$creatorId`,
+    /// its creator (`creatorRefersTo` keyword, protocol version 14), `None`
+    /// when the type declares none. The counterpart of
+    /// [`Self::owner_reference`] for a type whose documents can change owner:
+    /// the same two targets, only on a type that records creator ids (a
+    /// transferable or tradeable type of a format-1 contract), where the
+    /// creator never changes.
+    pub(in crate::data_contract) creator_reference: Option<DocumentPropertyReferenceTarget>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -236,6 +253,8 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            owner_reference: None,
+            creator_reference: None,
         }
     }
 }
@@ -284,6 +303,8 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            owner_reference: None,
+            creator_reference: None,
         }
     }
 }

@@ -26,7 +26,7 @@
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::{is_transient, DocumentPropertyType};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -400,15 +400,11 @@ impl DocumentReferenceLookup {
 /// Whether a document of `document_type` can change owner after it was
 /// written, by a transfer or a purchase. Both flags are immutable on contract
 /// update, so the answer holds for good.
-fn owner_can_change(document_type: DocumentTypeRef) -> bool {
+pub(crate) fn owner_can_change(document_type: DocumentTypeRef) -> bool {
     document_type.documents_transferable().is_transferable()
         || document_type.trade_mode() != TradeMode::None
 }
 
-/// Whether the property at `path` of `document_type`, or an object around it,
-/// is transient: either way its value is never stored. `transient_fields()`
-/// holds the paths as declared, so a leaf of a transient object is found only
-/// through the object's path, a prefix of its own.
 /// Whether the schema property at `path` of a document of `document_type` can
 /// never change once the document is written: the type is immutable
 /// (`documentsMutable: false`), or the property's top-level property is listed
@@ -423,14 +419,6 @@ pub(crate) fn schema_property_is_fixed_once_written(
 ) -> bool {
     let top_level = path.split('.').next().unwrap_or(path);
     !document_type.documents_mutable() || document_type.immutable_fields().contains(top_level)
-}
-
-pub(crate) fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
-    let transient_fields = document_type.transient_fields();
-    path.match_indices('.')
-        .map(|(end, _)| &path[..end])
-        .chain(std::iter::once(path))
-        .any(|prefix| transient_fields.contains(prefix))
 }
 
 /// The kind of value an index property of `document_type` holds: a system

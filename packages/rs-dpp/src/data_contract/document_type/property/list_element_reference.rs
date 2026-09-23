@@ -32,10 +32,8 @@
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property::reference_lookup::{
-    is_transient, schema_property_is_fixed_once_written,
-};
-use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
+use crate::data_contract::document_type::property::{is_transient, DocumentPropertyType};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::ID;
 use bincode::{Decode, DecodeUntrusted, Encode};

@@ -9,8 +9,10 @@
 //! identifier with no reference of its own; `titledMemberId` also agrees on
 //! `charterTitle` with the charter's `title`; `metaMemberId` reads the nested
 //! `seats.members` through the nested `meta.charterId`; and
-//! `memberOrCharterId` is an `anyOf` of a member and the charter itself. The
-//! second contract's `ballot` reads a charter of the first contract.
+//! `memberOrCharterId` is an `anyOf` of a member and the charter itself. A
+//! `seatedNote` may only be written by a member of the charter it names
+//! (`ownerRefersTo`). The second contract's `ballot` reads a charter of the
+//! first contract.
 //!
 //! A value the list does not hold is refused, paid, with
 //! `ReferencedEntityNotFoundError` (40120) naming the property, or the element
@@ -152,10 +154,11 @@ mod list_element_reference_tests {
         }
 
         /// The document type named `type_name`, in whichever fixture contract
-        /// has it, with the contract's id, the founder's writer and the random
+        /// has it, with the contract's id, `who`'s writer and the random
         /// source: the parts a transition is built from, borrowed at once.
         fn parts(
             &mut self,
+            who: Who,
             type_name: &str,
         ) -> (DocumentTypeRef<'_>, Identifier, &mut Writer, &mut StdRng) {
             let (document_type, contract_id) = [&self.contract, &self.ballot_contract]
@@ -166,7 +169,12 @@ mod list_element_reference_tests {
                         .map(|document_type| (document_type, contract.id()))
                 })
                 .expect("expected the document type");
-            (document_type, contract_id, &mut self.founder, &mut self.rng)
+            let writer = match who {
+                Who::Founder => &mut self.founder,
+                Who::Member => &mut self.member,
+                Who::Stranger => &mut self.stranger,
+            };
+            (document_type, contract_id, writer, &mut self.rng)
         }
 
         fn process(&self, transition: &StateTransition) -> StateTransitionExecutionResult {
@@ -205,9 +213,19 @@ mod list_element_reference_tests {
             type_name: &str,
             values: &[(&str, Value)],
         ) -> (Document, StateTransitionExecutionResult) {
+            self.create_as(Who::Founder, type_name, values).await
+        }
+
+        /// [`Self::create`], written and owned by `who`.
+        async fn create_as(
+            &mut self,
+            who: Who,
+            type_name: &str,
+            values: &[(&str, Value)],
+        ) -> (Document, StateTransitionExecutionResult) {
             let platform_version = PlatformVersion::latest();
-            let owner_id = self.id(Who::Founder);
-            let (document_type, contract_id, writer, rng) = self.parts(type_name);
+            let owner_id = self.id(who);
+            let (document_type, contract_id, writer, rng) = self.parts(who, type_name);
             let entropy = Bytes32::random_with_rng(rng);
             let mut document = document_type
                 .random_document_with_identifier_and_entropy(
@@ -257,7 +275,7 @@ mod list_element_reference_tests {
                 .increment_revision()
                 .expect("the revision increments");
             change(&mut replacement);
-            let (document_type, contract_id, writer, _) = self.parts(type_name);
+            let (document_type, contract_id, writer, _) = self.parts(Who::Founder, type_name);
             let nonce = writer.next_nonce(contract_id);
             let transition = BatchTransition::new_document_replacement_transition_from_document(
                 replacement.clone(),
@@ -656,6 +674,37 @@ mod list_element_reference_tests {
                     DocumentPropertyReferenceTarget::PermanentDocument { .. }
                 )
         );
+    }
+
+    /// Composing with `ownerRefersTo` (#4941): the moderation charters' owner
+    /// rule, the writer must be one of the charter's members. The value is the
+    /// writer, so a refusal names `$ownerId`.
+    #[tokio::test]
+    async fn should_accept_only_a_writer_the_referenced_list_holds() {
+        let mut fixture = ListElementFixture::new();
+        let member = fixture.id(Who::Member);
+        let stranger = fixture.id(Who::Stranger);
+        let charter = fixture
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
+            .await;
+
+        let (_, seated) = fixture
+            .create_as(
+                Who::Member,
+                "seatedNote",
+                &[("electedCharterId", id_value(charter))],
+            )
+            .await;
+        assert_succeeded(seated);
+
+        let (_, not_seated) = fixture
+            .create_as(
+                Who::Stranger,
+                "seatedNote",
+                &[("electedCharterId", id_value(charter))],
+            )
+            .await;
+        assert_not_listed(not_seated, "$ownerId", stranger);
     }
 
     /// A list in another contract is read from that contract's document.

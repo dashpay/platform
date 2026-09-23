@@ -14,7 +14,7 @@ use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, PropertyReference,
-    ReferenceCombinator, ReferringWrite,
+    ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
@@ -230,15 +230,23 @@ fn validate_document_type_references_v0(
     // The documents this write's references fetch by id, shared among them
     let mut fetched_documents = FetchedDocuments::default();
 
-    for (path, property) in document_type.flattened_properties() {
-        // A reference is an identifier property's value, or each element of
-        // a typed array of identifiers whose `items` declare it (protocol
-        // version 14, the version whose document create and replace state
-        // validation call this; no document type of an earlier version can
-        // hold a typed array, so the element arm is never reached there)
-        let Some(reference) = property.property_type.reference() else {
-            continue;
-        };
+    // A reference is the writer's (`ownerRefersTo`, whose value is the
+    // document's `$ownerId` and which the errors name by that path), the
+    // creator's (`creatorRefersTo`, `$creatorId`), an identifier property's
+    // value, or each element of a typed array of identifiers whose `items`
+    // declare it. The first two and the last are protocol version 14
+    // declarations, the version whose document create and replace state
+    // validation call this: no document type of an earlier version has an
+    // owner or creator reference or a typed array, so none of those arms is
+    // reached there. The owner and creator references follow the replace
+    // rules of the target they declare, as a property's does: their value
+    // never changes (the writer is the owner on a type that can be neither
+    // transferred nor traded, which generation 3 requires of `ownerRefersTo`,
+    // and the creator is set once), so a replace re-validates one when a
+    // property its lookup or a `propertyAgreement` reads changed, or always
+    // for a writer gate.
+    for (holder, reference) in document_type.reference_declarations() {
+        let path = holder.path();
         let (reference_target, holds_elements) = match reference {
             // A key reference on the key id property itself: the value is the
             // key id and the declaration names whose key it is. A transfer
@@ -315,15 +323,47 @@ fn validate_document_type_references_v0(
         let mut referenced_contracts = BTreeMap::new();
 
         if !holds_elements {
-            let referenced_id = match document_data.get_optional_identifier_at_path(path) {
-                Ok(Some(referenced_id)) => referenced_id,
-                // A reference property that is not set is not validated; whether it may be
-                // absent at all is enforced by the document type's required fields
-                Ok(None) => continue,
-                Err(err) => {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
-                    ))
+            let referenced_id = match holder {
+                // The writer: an identity target has nothing to fetch, the
+                // transition already proved the writer exists
+                ReferenceHolder::Owner => {
+                    if matches!(reference_target, DocumentPropertyReferenceTarget::Identity) {
+                        continue;
+                    }
+                    owner_id.to_buffer()
+                }
+                // The creator: the writer on a create, which the transition
+                // proved exists, and the stored creator on a replace, which
+                // existed when it wrote the document (an identity is never
+                // removed), so an identity target has nothing to fetch either
+                ReferenceHolder::Creator => {
+                    if matches!(reference_target, DocumentPropertyReferenceTarget::Identity) {
+                        continue;
+                    }
+                    // Generation 3 admits `creatorRefersTo` only on a document
+                    // type that records creator ids, so a document of such a
+                    // type has one
+                    creator_id
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "a creatorRefersTo declaration needs a document type that records \
+                             creator ids",
+                        )))?
+                        .to_buffer()
+                }
+                ReferenceHolder::Property(path) => {
+                    match document_data.get_optional_identifier_at_path(path) {
+                        Ok(Some(referenced_id)) => referenced_id,
+                        // A reference property that is not set is not validated; whether it
+                        // may be absent at all is enforced by the document type's required
+                        // fields
+                        Ok(None) => continue,
+                        Err(err) => {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidIdentifierError::new(path.to_string(), err.to_string())
+                                    .into(),
+                            ))
+                        }
+                    }
                 }
             };
             let result = validate_reference_v0(

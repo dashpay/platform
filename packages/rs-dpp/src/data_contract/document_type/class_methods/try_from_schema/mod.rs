@@ -1,5 +1,4 @@
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::reference_lookup::{
@@ -27,7 +26,7 @@ use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use indexmap::IndexMap;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::{Identifier, Value};
+use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1078,30 +1077,27 @@ pub(super) fn validate_list_element_sources(
     document_type: DocumentTypeRef,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
-    for (path, property) in document_type.flattened_properties() {
-        // On an identifier property or on the elements of a typed array
-        let Some(target) = property
-            .property_type
-            .reference()
-            .and_then(|reference| reference.target())
-        else {
+    // On the writer or the creator, on an identifier property or on the
+    // elements of a typed array
+    for (holder, reference) in document_type.reference_declarations() {
+        let Some(target) = reference.target() else {
             continue;
         };
         // Each leaf of a reference expression is checked as it would be
         // alone, and the error names the leaf (`refersTo anyOf[1] listElement`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
-            let Some(reference) = leaf.as_list_element_reference() else {
+            let Some(list_reference) = leaf.as_list_element_reference() else {
                 continue;
             };
-            if let Some(reason) = reference.referring_side_error(document_type) {
+            if let Some(reason) = list_reference.referring_side_error(document_type) {
                 let at = if leaf_path.is_empty() {
                     String::new()
                 } else {
                     format!(" {leaf_path}")
                 };
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "document type \"{document_type_name}\" property \"{path}\" refersTo{at} \
-                     listElement: {reason}"
+                    "document type \"{document_type_name}\" {}{at} listElement: {reason}",
+                    holder.describe()
                 )));
             }
         }
@@ -1227,6 +1223,126 @@ fn apply_element_reference_v0(
     apply_property_reference_v0(items, element_type)
 }
 
+/// Reads one of a document type's own `refersTo` keywords, `keyword`: one
+/// declaration whose value is an identity of the document rather than a
+/// property's value, `ownerRefersTo` the document's `$ownerId` (the writer)
+/// and `creatorRefersTo` its `$creatorId` (the creator), named `value` in the
+/// errors. The declaration goes through [`apply_property_reference`] as one
+/// declared on an identifier property does, `propertyAgreement` and `lookup`
+/// included (where `"."` is that identity), but only two targets can hold an
+/// identity: `identity`, a `permanentDocument` found through a `lookup`, and a
+/// `listElement` (the identity an element of the list), alone or as the leaves
+/// of an `anyOf` / `allOf` expression.
+/// The others are refused: `contract`, `token` and a document by id, since an
+/// identity id is never a contract, token or document id, so a type declaring
+/// one could never be written, and `identityPublicKey`, which pairs the value
+/// with a key id the document does not carry.
+///
+/// Only parser generation 3 calls it, once the core parse has run the
+/// meta-schema, on every parse, validating or not, like its other
+/// doctype-level keywords. Versioned through `apply_property_reference`, the
+/// gate of the declaration it reads: `None` leaves the keyword unread, as it
+/// leaves `refersTo` on a property, refusals included.
+pub(super) fn parse_doctype_reference(
+    schema: &Value,
+    keyword: &str,
+    value: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
+    if platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_property_reference
+        .is_none()
+    {
+        return Ok(None);
+    }
+    // A schema that is not an object carries no keyword: the core parser
+    // refuses it, and a value error here must not replace that refusal
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(None);
+    };
+    let Some(declaration) = schema_map.get_optional_key(keyword) else {
+        return Ok(None);
+    };
+
+    let reference_type = declaration
+        .to_btree_ref_string_map()?
+        .get(property_names::TYPE)
+        .and_then(|reference_type| reference_type.as_text())
+        .map(str::to_string);
+    let refusal = match reference_type.as_deref() {
+        Some("contract") => Some(format!(
+            "{keyword} does not take a contract reference: its value is {value}, an identity, \
+             which is never a contract"
+        )),
+        Some("identityPublicKey") => Some(format!(
+            "{keyword} does not take an identityPublicKey reference: it pairs the value with a \
+             key id, which {value} does not carry"
+        )),
+        Some("token") => Some(format!(
+            "{keyword} does not take a token reference: its value, {value}'s identity id, is \
+             never a token id"
+        )),
+        Some("deletableDocument") => Some(format!(
+            "{keyword} does not take a deletableDocument reference: its value, {value}'s \
+             identity id, is never a document id, and only a permanentDocument reference takes \
+             the lookup that could find one"
+        )),
+        _ => None,
+    };
+    if let Some(refusal) = refusal {
+        return Err(DataContractError::InvalidContractStructure(refusal));
+    }
+
+    let inner_properties = BTreeMap::from([(property_names::REFERS_TO.to_string(), declaration)]);
+    let target = match apply_property_reference(
+        &inner_properties,
+        DocumentPropertyType::Identifier,
+        platform_version,
+    )? {
+        DocumentPropertyType::IdentifierWithReference(target) => target,
+        // The declaration is not read where the keyword is not active
+        DocumentPropertyType::Identifier => return Ok(None),
+        _ => {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "{keyword} must declare what {value} refers to"
+            )))
+        }
+    };
+    // A single target, or every leaf of an `anyOf` / `allOf` expression, must
+    // be one the identity can be: a leaf by id could never hold either
+    for (leaf_path, leaf) in target.leaves_with_paths() {
+        let at = if leaf_path.is_empty() {
+            String::new()
+        } else {
+            format!(" {leaf_path}")
+        };
+        match leaf {
+            // An identity id can be an element of a list of identities: the
+            // charters' "the writer is a seated member"
+            DocumentPropertyReferenceTarget::Identity
+            | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
+            | DocumentPropertyReferenceTarget::ListElement(_) => {}
+            DocumentPropertyReferenceTarget::PermanentDocument { .. } => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "{keyword}{at} takes a permanentDocument reference only with a lookup: its \
+                     value, {value}'s identity id, is never a document id"
+                )))
+            }
+            _ => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "{keyword}{at} takes an identity reference, a permanentDocument reference \
+                     with a lookup or a listElement reference"
+                )))
+            }
+        }
+    }
+    Ok(Some(target))
+}
+
 /// The `lookup` of a `permanentDocument` reference: `index`, the name of an index of the
 /// referenced document type, and `keys`, every property of that index mapped to
 /// its referring-side source (`"."`, `"$ownerId"` or a property path), with `"."`
@@ -1319,7 +1435,11 @@ fn parse_document_reference_lookup(
 /// once all its properties are parsed: each property a key reads must exist,
 /// be a stored, required, single value (with every object around it
 /// required), and not be the reference property itself. See
-/// [`DocumentReferenceLookup::referring_side_error`].
+/// [`DocumentReferenceLookup::referring_side_error`]. The lookup of the type's
+/// `ownerRefersTo` or `creatorRefersTo` follows the same rules: the owner's
+/// `"$ownerId"` sources pass the owner rule, since that type cannot change
+/// owner (generation 3 refuses the keyword otherwise), and the creator's are
+/// refused by it, since that type can.
 ///
 /// Runs on every parse, validating or not, like the `encryptedFor` check: the
 /// rule is a property of the document type, and the write-time lookup reads
@@ -1329,14 +1449,13 @@ pub(super) fn validate_reference_lookup_sources(
     document_type: DocumentTypeRef,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
-    for (path, property) in document_type.flattened_properties() {
-        // On an identifier property or on the elements of a typed array: the
-        // key's other parts are the same for every element
-        let Some(target) = property
-            .property_type
-            .reference()
-            .and_then(|reference| reference.target())
-        else {
+    // On the writer or the creator, on an identifier property or on the
+    // elements of a typed array: the key's other parts are the same for every
+    // element, and the owner or creator reference's `"."` is that identity,
+    // named by the path `$ownerId` or `$creatorId`, which no property source
+    // can be
+    for (holder, reference) in document_type.reference_declarations() {
+        let Some(target) = reference.target() else {
             continue;
         };
         // Each leaf of a reference expression reads its key as it would
@@ -1348,15 +1467,15 @@ pub(super) fn validate_reference_lookup_sources(
             else {
                 continue;
             };
-            if let Some(reason) = lookup.referring_side_error(document_type, path) {
+            if let Some(reason) = lookup.referring_side_error(document_type, holder.path()) {
                 let at = if leaf_path.is_empty() {
                     String::new()
                 } else {
                     format!(" {leaf_path}")
                 };
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "document type \"{document_type_name}\" property \"{path}\" refersTo{at} \
-                     lookup: {reason}"
+                    "document type \"{document_type_name}\" {}{at} lookup: {reason}",
+                    holder.describe()
                 )));
             }
         }

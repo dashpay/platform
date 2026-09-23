@@ -230,6 +230,36 @@
         }
       },
       "additionalProperties": false
+    },
+    "seatedNote": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "listElement",
+        "documentType": "electedCharter",
+        "propertyAgreement": {
+          "electedCharterId": "$id"
+        },
+        "inList": "members"
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": [
+        "electedCharterId"
+      ],
+      "additionalProperties": false
     }
   }
 }

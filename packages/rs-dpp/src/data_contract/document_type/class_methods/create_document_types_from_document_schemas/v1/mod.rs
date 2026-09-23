@@ -156,21 +156,25 @@ impl DocumentType {
         // registration, and a reference naming a document type this contract does not have
         // is left to that validation too, which reports it.
         //
+        // The type's `ownerRefersTo` or `creatorRefersTo` declaration, whose lookup key
+        // takes the writer or the creator for `"."`, is checked the same way.
+        //
         // Inert for every protocol version before 14 for the same reason as the check above:
         // a parsed reference carries a `lookup` only where the tables carry
         // `apply_property_reference: Some(_)`, so the loop below finds none there. The same
         // holds for the leaves of a reference expression (`anyOf` / `allOf`), walked through
         // `leaves_with_paths()`, which parse from the same version only (for a single
         // declaration it is the declaration itself, at an empty path, so the walk and the
-        // error are unchanged where no expression exists).
+        // error are unchanged where no expression exists). Only parser generation 3,
+        // selected from protocol version 14, sets an owner or creator reference, so before it
+        // `reference_declarations` yields the properties' references alone, in the order the
+        // loop walked them, and names them as it did.
         for (name, document_type) in &contract_document_types {
-            for (path, property) in document_type.as_ref().flattened_properties() {
-                // On an identifier property or on the elements of a typed array
-                let Some(declaration) = property
-                    .property_type
-                    .reference()
-                    .and_then(|reference| reference.target())
-                else {
+            let declaring = document_type.as_ref();
+            // On the writer or the creator, on an identifier property or on the elements
+            // of a typed array
+            for (holder, reference) in declaring.reference_declarations() {
+                let Some(declaration) = reference.target() else {
                     continue;
                 };
                 // Each leaf of a reference expression is judged as it would be alone,
@@ -203,9 +207,7 @@ impl DocumentType {
                     {
                         continue;
                     }
-                    if let Some(reason) =
-                        lookup.referenced_side_error(document_type.as_ref(), referenced)
-                    {
+                    if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {
                         let at = if leaf_path.is_empty() {
                             String::new()
                         } else {
@@ -213,7 +215,8 @@ impl DocumentType {
                         };
                         return Err(consensus_or_protocol_data_contract_error(
                             DataContractError::InvalidContractStructure(format!(
-                                "document type \"{name}\" property \"{path}\" refersTo{at} lookup: {reason}"
+                                "document type \"{name}\" {}{at} lookup: {reason}",
+                                holder.describe()
                             )),
                         ));
                     }
@@ -236,13 +239,11 @@ impl DocumentType {
         // a parsed reference is a `listElement` only where the tables carry
         // `apply_property_reference: Some(_)`, so the loop below finds none there.
         for (name, document_type) in &contract_document_types {
-            for (path, property) in document_type.as_ref().flattened_properties() {
-                // On an identifier property or on the elements of a typed array
-                let Some(declaration) = property
-                    .property_type
-                    .reference()
-                    .and_then(|reference| reference.target())
-                else {
+            let declaring = document_type.as_ref();
+            // On the writer or the creator, on an identifier property or on the elements of
+            // a typed array
+            for (holder, declaration) in declaring.reference_declarations() {
+                let Some(declaration) = declaration.target() else {
                     continue;
                 };
                 for (leaf_path, target) in declaration.leaves_with_paths() {
@@ -270,7 +271,8 @@ impl DocumentType {
                         };
                         return Err(consensus_or_protocol_data_contract_error(
                             DataContractError::InvalidContractStructure(format!(
-                                "document type \"{name}\" property \"{path}\" refersTo{at} listElement: {reason}"
+                                "document type \"{name}\" {}{at} listElement: {reason}",
+                                holder.describe()
                             )),
                         ));
                     }

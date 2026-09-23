@@ -799,13 +799,67 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     changed. A changed expression is an incompatible schema change on
 ///     update. Chained queries and composite by-id joins refuse an expression
 ///     join property, and preallocated indexes are never bound through one.
-/// 34. **References to an element of a list of a referenced document**: a
+/// 34. **References on the document's writer or creator (`ownerRefersTo`,
+///     `creatorRefersTo`)**: a document type may declare one `refersTo`
+///     declaration of its own, under the doctype-level `ownerRefersTo`
+///     keyword (meta-schema v3, which reuses the property declaration by
+///     `$ref`), whose value is the document's `$ownerId`, the writer, instead
+///     of a property's: a single target, or a reference expression (item 33)
+///     whose every leaf is one of the two targets that can hold a writer:
+///     `identity`, and a `permanentDocument` found through a `lookup`, where
+///     `.` is the writer; `contract`, `token` and a document by id (which the
+///     writer's identity id never is) and `identityPublicKey` (which needs a
+///     key id) are refused, as a leaf too. Parser generation 3 reads it from
+///     the stored schema once the core parse has run the meta-schema, on
+///     every parse, through the same `apply_property_reference` 0 an
+///     identifier property's goes through, onto
+///     `DocumentTypeV2::owner_reference`, and refuses it on a type whose
+///     documents can be transferred or traded, since neither is a write. Every
+///     enumeration of a type's references goes through
+///     `DocumentTypeRef::reference_declarations`, which yields it first: its
+///     lookup's referring side is checked on every parse, a lookup into a
+///     type of the same contract by
+///     `create_document_types_from_document_schemas` 1 (edited in place like
+///     for item 29, inert before this version, whose parsers never set an
+///     owner reference), and the whole declaration at registration by the
+///     contract reference validation (`data_contract_reference_validation` 0,
+///     extended in place, only reached from this version), which names it
+///     `<documentType>.$ownerId` and lets its `propertyAgreement` name the
+///     writer on the referring side. It counts one against
+///     `max_references_per_document`. Document create state validation 2 and
+///     replace state validation 1 (`document_reference_validation` 0, extended
+///     in place, both only reached from this version) check the writer against
+///     the target exactly as a property's value is checked: on every create,
+///     and on a replace under the rules of its target (a changed property its
+///     lookup or a `propertyAgreement` reads, every replace for a `$ownerId`
+///     pair), and refuse the write with the error the target reports for a
+///     property (40120 and the rest) at the path `$ownerId`; an `identity`
+///     target fetches nothing, the transition having proved the writer exists.
+///     Adding, removing or changing it is an incompatible schema change on
+///     update (`validate_schema_compatibility` 1 freezes it as the shared rule
+///     set freezes `refersTo`). Its counterpart for a type whose documents can
+///     be transferred or traded is `creatorRefersTo`, whose value is the
+///     document's `$creatorId`, the creator, which never changes: the same
+///     two targets (`.` the creator), only on a type that records creator ids
+///     (`should_use_creator_id`: a transferable or tradeable type of a
+///     format-1 contract), so a type declares at most one of the two; stored
+///     as `DocumentTypeV2::creator_reference`, enumerated second by
+///     `reference_declarations`, named `$creatorId` (and
+///     `<documentType>.$creatorId` at registration), checked against the
+///     writer on a create and the stored creator on a replace under the same
+///     rules, never on a transfer or a purchase, and frozen on update the same
+///     way.
+/// 35. **References to an element of a list of a referenced document**: a
 ///     new `refersTo` target, `listElement` (meta-schema v3,
 ///     `apply_property_reference` 0, parsed to the appended
 ///     `DocumentPropertyReferenceTarget::ListElement`, so every earlier
 ///     variant keeps its encoding), on an identifier property, on the
-///     elements of a typed array (item 31), or as a leaf of a reference
-///     expression (item 33): the value must be an element of the typed array
+///     elements of a typed array (item 31), as a leaf of a reference
+///     expression (item 33), or on the writer or the creator (item 34, whose
+///     identity then must be listed; a third target those two take next to
+///     `identity` and a `permanentDocument` lookup, since an identity id can
+///     be an element of a list of identities): the value must be an element
+///     of the typed array
 ///     of identifiers `inList` held by one document of `documentType`, the
 ///     document whose `$id` the `propertyAgreement` pair with `$id` on the
 ///     referenced side reads from an identifier property of the referring
@@ -837,6 +891,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `SystemLimits::max_references_per_document` like every other
 ///     reference. A changed `listElement` is an incompatible schema change on
 ///     update.
+///
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

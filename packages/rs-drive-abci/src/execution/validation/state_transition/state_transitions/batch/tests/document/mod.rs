@@ -14,6 +14,7 @@ mod list_element_reference;
 mod lookup_reference;
 mod nft;
 mod owner_balance_proof;
+mod owner_reference;
 mod ranked_group_drain;
 mod reference_expression;
 mod reference_test_setup;
