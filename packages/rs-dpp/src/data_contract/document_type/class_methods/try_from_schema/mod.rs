@@ -570,9 +570,14 @@ fn apply_property_reference_v0(
     // A typed array only exists from protocol version 14, where its element
     // reference is read off the items by the typed array parser
     if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
-        return Err(DataContractError::InvalidContractStructure(
+        let message = if is_identity_public_key_reference(refers_to_value)? {
+            "identityPublicKey refersTo is not allowed on a typed array or on its elements: it \
+             pairs one key id with the reference, which cannot pair with many elements"
+        } else {
             "refersTo on a typed array belongs on its items, where it applies to every element"
-                .to_string(),
+        };
+        return Err(DataContractError::InvalidContractStructure(
+            message.to_string(),
         ));
     }
 
@@ -826,6 +831,68 @@ fn apply_key_id_reference_v0(
         identity_property,
         key_requirements: parse_identity_key_reference_requirements(refers_to_map)?,
     }))
+}
+
+/// Whether a `refersTo` declaration names the `identityPublicKey` target.
+fn is_identity_public_key_reference(refers_to: &Value) -> Result<bool, DataContractError> {
+    Ok(refers_to
+        .to_btree_ref_string_map()?
+        .get(property_names::TYPE)
+        .and_then(|reference_type| reference_type.as_text())
+        == Some("identityPublicKey"))
+}
+
+/// Folds a `refersTo` declared on the `items` of a typed array into the
+/// element type, as [`apply_property_reference`] folds one into a scalar
+/// identifier, which the version 0 rules call for the declaration itself:
+/// only an identifier element may carry one, and never an
+/// `identityPublicKey` one, in either form, since that pairs one key id with
+/// the reference (a sibling `keyIdProperty`, or the key id itself through
+/// `identityProperty`), which cannot pair with many elements.
+///
+/// Versioned on `apply_property_reference`, the gate of the declarations it
+/// reads: `None` ignores the keyword on an element exactly as it does on a
+/// property.
+pub(in crate::data_contract::document_type::class_methods) fn apply_element_reference(
+    items: &BTreeMap<String, &Value>,
+    element_type: DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentPropertyType, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_property_reference
+    {
+        None => Ok(element_type),
+        Some(0) => apply_element_reference_v0(items, element_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_element_reference version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_element_reference_v0(
+    items: &BTreeMap<String, &Value>,
+    element_type: DocumentPropertyType,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let Some(refers_to) = items.get(property_names::REFERS_TO) else {
+        return Ok(element_type);
+    };
+    if !matches!(element_type, DocumentPropertyType::Identifier) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is only allowed on identifier elements of a typed array".to_string(),
+        ));
+    }
+    if is_identity_public_key_reference(refers_to)? {
+        return Err(DataContractError::InvalidContractStructure(
+            "identityPublicKey refersTo is not allowed on the elements of a typed array: it pairs \
+             one key id with the reference, which cannot pair with many elements"
+                .to_string(),
+        ));
+    }
+    apply_property_reference_v0(items, element_type)
 }
 
 /// Reads a property's `encryptedFor` declaration: how the bytes of a byte

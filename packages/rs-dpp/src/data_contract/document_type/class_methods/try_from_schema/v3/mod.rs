@@ -510,18 +510,8 @@ fn validate_reference_count(
     let references: u32 = document_type
         .flattened_properties()
         .values()
-        .map(
-            |property| match (&property.property_type, property.property_type.reference()) {
-                (
-                    DocumentPropertyType::TypedArray(typed_array),
-                    Some(PropertyReference::Elements(_)),
-                ) => u32::from(typed_array.max_items),
-                // A key reference declared on the key id itself is one key
-                // read, as an identifier's is
-                (_, Some(_)) | (DocumentPropertyType::KeyIdWithReference(_), None) => 1,
-                (_, None) => 0,
-            },
-        )
+        .filter_map(|property| property.property_type.reference())
+        .map(|reference| reference.max_references())
         .sum();
     if references > u32::from(limit) {
         return Err(consensus_or_protocol_data_contract_error(
@@ -535,35 +525,50 @@ fn validate_reference_count(
     Ok(())
 }
 
-/// An `immutable` property may not hold a typed array of `deletableDocument`
-/// references, directly or inside an immutable object. Every replace
-/// re-validates such a reference, so once one element's target is deleted
-/// the array would have to change, which an immutable property cannot: the
-/// document could never be replaced again. A single `deletableDocument`
-/// reference has a way out, the replace state validation lets a dead one be
-/// cleared, and that exception reads the one identifier the removed
-/// property held, which a list does not give it.
+/// An `immutable` property may not hold a `deletableDocument` reference the
+/// replace state validation could not clear: a typed array of them, at the
+/// top level or inside an immutable object, or a single one inside an
+/// immutable object. Every replace re-validates such a reference, so once a
+/// target is deleted the property would have to change, which an immutable
+/// property cannot: the document could never be replaced again. The one
+/// such reference that has a way out is a single one held by an immutable
+/// top-level property: a replace may remove it once its target is gone, an
+/// exception that reads the one identifier the removed top-level property
+/// held, which neither a list nor an object gives it.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_deletable_element_references(
     document_type: &DocumentTypeV2,
     name: &str,
 ) -> Result<(), ProtocolError> {
     for (path, property) in document_type.flattened_properties() {
-        let Some(PropertyReference::Elements(DocumentPropertyReferenceTarget::DeletableDocument {
-            ..
-        })) = property.property_type.reference()
-        else {
+        let Some(reference) = property.property_type.reference() else {
             continue;
         };
+        if !matches!(
+            reference.target(),
+            Some(DocumentPropertyReferenceTarget::DeletableDocument { .. })
+        ) {
+            continue;
+        }
         let top_level = path.split('.').next().unwrap_or(path);
+        let is_list = matches!(reference, PropertyReference::Elements { .. });
+        // A single reference that is itself the immutable property can be
+        // cleared once its target is gone
+        if !is_list && top_level == path {
+            continue;
+        }
         if document_type.immutable_fields.contains(top_level) {
+            let held_as = if is_list {
+                "a typed array of deletableDocument references"
+            } else {
+                "a deletableDocument reference inside an object"
+            };
             return Err(consensus_or_protocol_data_contract_error(
                 DataContractError::InvalidContractStructure(format!(
                     "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
-                     a typed array of deletableDocument references: every replace re-validates \
-                     them, so once one target is deleted the array would have to change and the \
-                     document could never be replaced again. Use permanentDocument references or \
-                     leave the array mutable",
+                     {held_as}: every replace re-validates it, so once a target is deleted the \
+                     property would have to change and the document could never be replaced \
+                     again. Use permanentDocument references, or leave the property mutable",
                 )),
             ));
         }
@@ -619,6 +624,8 @@ mod moderators_delete_tests;
 mod name_rules_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_test_helpers;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
 

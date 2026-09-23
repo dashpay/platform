@@ -253,7 +253,9 @@ describe('DataContract: typed arrays (v14)', () => {
         },
       };
 
-      expect(() => buildContract(schemasWithKeyReference)).to.throw();
+      expect(() => buildContract(schemasWithKeyReference)).to.throw(
+        /identityPublicKey refersTo is not allowed on the elements of a typed array/,
+      );
     });
   });
 

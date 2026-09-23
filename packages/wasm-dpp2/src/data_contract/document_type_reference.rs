@@ -15,8 +15,8 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
-    IdentityKeyReferenceRequirements, KeyIdReference, PropertyReference,
+    DocumentPropertyReferenceTarget, DocumentTypeRef, IdentityKeyReferenceRequirements,
+    KeyIdReference, PropertyReference,
 };
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
@@ -447,24 +447,22 @@ pub(crate) fn references_for_document_type(
     let references = Array::new();
 
     for (path, property) in document_type.flattened_properties() {
-        match &property.property_type {
-            DocumentPropertyType::KeyIdWithReference(reference) => {
+        match property.property_type.reference() {
+            Some(PropertyReference::KeyId(reference)) => {
                 references.push(&key_id_reference_to_js(path, reference)?);
             }
-            property_type => match property_type.reference() {
-                Some(PropertyReference::Value(target)) => {
-                    references.push(&reference_to_js(path, target, declaring_contract_id)?);
-                }
-                Some(PropertyReference::Elements(target)) => {
-                    let element_path = format!("{path}[]");
-                    references.push(&reference_to_js(
-                        &element_path,
-                        target,
-                        declaring_contract_id,
-                    )?);
-                }
-                None => {}
-            },
+            Some(PropertyReference::Value(target)) => {
+                references.push(&reference_to_js(path, target, declaring_contract_id)?);
+            }
+            Some(PropertyReference::Elements { target, .. }) => {
+                let element_path = format!("{path}[]");
+                references.push(&reference_to_js(
+                    &element_path,
+                    target,
+                    declaring_contract_id,
+                )?);
+            }
+            None => {}
         }
     }
 

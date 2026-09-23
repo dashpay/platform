@@ -9,10 +9,10 @@
 //! document type, the `propertyAgreement` sides and value kinds) run at
 //! registration in drive-abci and are tested there.
 
+use super::typed_array_test_helpers::{
+    expect_json_schema_error, expect_structure_error, parse_dispatched,
+};
 use super::*;
-use crate::consensus::basic::json_schema_error::JsonSchemaError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::array::TypedArrayProperty;
@@ -20,33 +20,14 @@ use crate::data_contract::document_type::{
     ContractReferenceModeration, ContractReferenceRequirements, DocumentPropertyReferenceTarget,
     DocumentPropertyType, PropertyReference,
 };
-use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::DataContract;
+use crate::serialization::{
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+    PlatformSerializableWithPlatformVersion,
+};
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
-
-fn parse_dispatched(
-    schema: Value,
-    platform_version: &PlatformVersion,
-    full_validation: bool,
-) -> Result<DocumentType, ProtocolError> {
-    let config = DataContractConfig::default_for_version(platform_version)
-        .expect("default config available on this platform version");
-    DocumentType::try_from_schema(
-        Identifier::new([1; 32]),
-        1,
-        config.version(),
-        "submittedCharter",
-        schema,
-        None,
-        &BTreeMap::new(),
-        &config,
-        full_validation,
-        &mut vec![],
-        platform_version,
-    )
-}
 
 /// An identifier element schema, carrying `refers_to` when given.
 fn identifier_items(refers_to: Option<Value>) -> Value {
@@ -98,37 +79,6 @@ fn reasons_type(document_type: &DocumentType) -> DocumentPropertyType {
         .get("reasons")
         .map(|property| property.property_type.clone())
         .expect("the reasons property is parsed")
-}
-
-fn expect_json_schema_error<T: std::fmt::Debug>(
-    result: Result<T, ProtocolError>,
-) -> JsonSchemaError {
-    match result {
-        Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
-            ConsensusError::BasicError(BasicError::JsonSchemaError(error)) => error,
-            other => panic!("expected a JSON schema error, got {other:?}"),
-        },
-        other => panic!("expected a JSON schema error, got {other:?}"),
-    }
-}
-
-fn expect_structure_error<T: std::fmt::Debug>(result: Result<T, ProtocolError>, needle: &str) {
-    let message = match result {
-        Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-            message,
-        ))) => message,
-        Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
-            ConsensusError::BasicError(BasicError::ContractError(
-                DataContractError::InvalidContractStructure(message),
-            )) => message,
-            other => panic!("expected InvalidContractStructure, got {other:?}"),
-        },
-        other => panic!("expected InvalidContractStructure, got {other:?}"),
-    };
-    assert!(
-        message.contains(needle),
-        "expected {needle:?} in the error, got: {message}"
-    );
 }
 
 /// Every target type a single identifier property takes, `identityPublicKey`
@@ -210,7 +160,10 @@ fn should_parse_an_element_reference_of_each_target_type() {
             assert_eq!(parsed, expected_type, "{refers_to:?}");
             assert_eq!(
                 parsed.reference(),
-                Some(PropertyReference::Elements(&expected)),
+                Some(PropertyReference::Elements {
+                    target: &expected,
+                    max_items: 64
+                }),
                 "{refers_to:?}"
             );
         }
@@ -314,6 +267,24 @@ fn should_refuse_refers_to_on_the_typed_array_itself() {
         parse_dispatched(schema, PlatformVersion::latest(), false),
         "refersTo on a typed array belongs on its items",
     );
+
+    // An identityPublicKey declaration is refused on the elements as well,
+    // so the error does not send the author there
+    let mut reasons = reasons_with_items(identifier_items(None));
+    reasons
+        .set_value(
+            "refersTo",
+            platform_value!({ "type": "identityPublicKey", "keyIdProperty": "topic" }),
+        )
+        .expect("refersTo applies");
+    expect_structure_error(
+        parse_dispatched(
+            schema_with_reasons(reasons),
+            PlatformVersion::latest(),
+            false,
+        ),
+        "identityPublicKey refersTo is not allowed on a typed array or on its elements",
+    );
 }
 
 /// The rules the parse itself holds for a `propertyAgreement`, identical for
@@ -362,9 +333,10 @@ fn should_refuse_an_element_reference_before_protocol_version_14_and_accept_it_a
         .expect("protocol version 14 admits an element reference");
     assert!(matches!(
         reasons_type(&document_type).reference(),
-        Some(PropertyReference::Elements(
-            DocumentPropertyReferenceTarget::PermanentDocument { .. }
-        ))
+        Some(PropertyReference::Elements {
+            target: DocumentPropertyReferenceTarget::PermanentDocument { .. },
+            ..
+        })
     ));
 }
 
@@ -419,6 +391,28 @@ fn should_bound_the_references_one_document_can_carry() {
     expect_structure_error(
         parse_dispatched(schema_with_references(limit + 1, 0), platform_version, true),
         &format!("above the maximum of {limit}"),
+    );
+
+    // A key reference declared on the key id itself is one read too
+    let mut schema = schema_with_references(limit, 0);
+    schema
+        .set_value_at_full_path(
+            "properties.senderKeyId",
+            platform_value!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295u64,
+                "position": 1,
+                "refersTo": { "type": "identityPublicKey", "identityProperty": "$ownerId" }
+            }),
+        )
+        .expect("the key id property applies");
+    expect_structure_error(
+        parse_dispatched(schema, platform_version, true),
+        &format!(
+            "declares references for up to {} values",
+            u32::from(limit) + 1
+        ),
     );
 
     // A stored contract was checked when it was registered
@@ -476,6 +470,68 @@ fn should_refuse_an_immutable_typed_array_of_deletable_document_references() {
         true,
     )
     .expect("a mutable array of deletableDocument references registers");
+
+    // Inside an immutable object, a list and a single reference alike: the
+    // replace could only clear either by changing the object
+    let deletable = platform_value!({ "type": "deletableDocument", "documentType": "draft" });
+    let mut single_reference = identifier_items(Some(deletable.clone()));
+    single_reference
+        .set_value("position", Value::U32(1))
+        .expect("position applies");
+    let mut drafts = reasons_with_items(identifier_items(Some(deletable.clone())));
+    drafts
+        .set_value("position", Value::U32(0))
+        .expect("position applies");
+    for (member, member_schema, held_as) in [
+        (
+            "drafts",
+            drafts,
+            "a typed array of deletableDocument references",
+        ),
+        (
+            "lead",
+            single_reference,
+            "a deletableDocument reference inside an object",
+        ),
+    ] {
+        let schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "immutable": ["team"],
+            "properties": {
+                "team": {
+                    "type": "object",
+                    "position": 0,
+                    "properties": { member: member_schema },
+                    "additionalProperties": false
+                }
+            },
+            "additionalProperties": false
+        });
+        expect_structure_error(
+            parse_dispatched(schema, PlatformVersion::latest(), true),
+            &format!("\"team.{member}\" is {held_as}"),
+        );
+    }
+
+    // A single reference that is itself the immutable property can be
+    // cleared once its target is gone, so it registers
+    let mut single_reference = identifier_items(Some(deletable));
+    single_reference
+        .set_value("position", Value::U32(0))
+        .expect("position applies");
+    parse_dispatched(
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "immutable": ["draftId"],
+            "properties": { "draftId": single_reference },
+            "additionalProperties": false
+        }),
+        PlatformVersion::latest(),
+        true,
+    )
+    .expect("an immutable top-level deletableDocument reference registers");
 }
 
 /// A contract with `reason` (never deleted) and `submittedCharter`, whose
@@ -521,11 +577,6 @@ fn charter_contract(platform_version: &PlatformVersion) -> DataContract {
 
 #[test]
 fn should_round_trip_a_contract_with_an_element_reference_through_platform_serialization() {
-    use crate::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
-        PlatformSerializableWithPlatformVersion,
-    };
-
     let platform_version = PlatformVersion::latest();
     let contract = charter_contract(platform_version);
 
@@ -550,16 +601,17 @@ fn should_round_trip_a_contract_with_an_element_reference_through_platform_seria
             .expect("reasons is parsed");
         assert_eq!(
             reasons.property_type.reference(),
-            Some(PropertyReference::Elements(
-                &DocumentPropertyReferenceTarget::PermanentDocument {
+            Some(PropertyReference::Elements {
+                target: &DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id: None,
                     document_type_name: "reason".to_string(),
                     property_agreement: BTreeMap::from([(
                         "topic".to_string(),
                         "topic".to_string()
                     )]),
-                }
-            ))
+                },
+                max_items: 64,
+            })
         );
     }
 }

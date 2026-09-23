@@ -5,7 +5,7 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
 use crate::data_contract::document_type::array::{ArrayItemConstraints, TypedArrayProperty};
-use crate::data_contract::document_type::class_methods::try_from_schema::apply_property_reference;
+use crate::data_contract::document_type::class_methods::try_from_schema::apply_element_reference;
 use crate::data_contract::document_type::{
     property_names, DocumentPropertyType, DocumentPropertyTypeParsingOptions,
 };
@@ -84,16 +84,16 @@ pub(super) fn parse_typed_array_v0(
 /// an identifier. Objects and arrays of arrays are refused.
 ///
 /// A `refersTo` on identifier elements is folded into the element type by
-/// `apply_property_reference`, the function (and the version of it) that
-/// folds one into a scalar identifier, so an element reference has the
-/// scalar's target types, keys and checks: the element becomes
-/// `IdentifierWithReference(target)`. The one target refused is
-/// `identityPublicKey`, in either form: its `keyIdProperty` names a single
+/// `apply_element_reference`, versioned with and calling the rules of
+/// `apply_property_reference` that fold one into a scalar identifier, so an
+/// element reference has the scalar's target types, keys and checks: the
+/// element becomes `IdentifierWithReference(target)`. The one target refused
+/// is `identityPublicKey`, in either form: its `keyIdProperty` names a single
 /// sibling key id, and an `identityProperty` declaration sits on the key id
-/// itself, neither of which can pair with many elements. The contract-level checks of the
-/// declaration (the referenced document type, the `propertyAgreement` sides
-/// and value kinds) need other contracts and run at registration in
-/// drive-abci, which visits element references too.
+/// itself, neither of which can pair with many elements. The contract-level
+/// checks of the declaration (the referenced document type, the
+/// `propertyAgreement` sides and value kinds) need other contracts and run at
+/// registration in drive-abci, which visits element references too.
 fn parse_element_type(
     items: &Value,
     options: &DocumentPropertyTypeParsingOptions,
@@ -133,32 +133,7 @@ fn parse_element_type(
     }
 
     let element_type = DocumentPropertyType::try_from_value_map(&items_map, options)?;
-    let element_type = match items_map.get(property_names::REFERS_TO) {
-        None => element_type,
-        Some(refers_to) => {
-            if !matches!(element_type, DocumentPropertyType::Identifier) {
-                return Err(DataContractError::InvalidContractStructure(
-                    "refersTo is only allowed on identifier elements of a typed array".to_string(),
-                ));
-            }
-            // Either identityPublicKey form pairs one key id with the
-            // reference, a sibling property (keyIdProperty) or the property
-            // itself (identityProperty), which cannot pair with many elements
-            let reference_type = refers_to
-                .to_btree_ref_string_map()?
-                .get(property_names::TYPE)
-                .and_then(|reference_type| reference_type.as_text());
-            if reference_type == Some("identityPublicKey") {
-                return Err(DataContractError::InvalidContractStructure(
-                    "identityPublicKey refersTo is not allowed on the elements of a typed array: \
-                     it pairs one key id with the reference, which cannot pair with many \
-                     elements"
-                        .to_string(),
-                ));
-            }
-            apply_property_reference(&items_map, element_type, platform_version)?
-        }
-    };
+    let element_type = apply_element_reference(&items_map, element_type, platform_version)?;
     match element_type {
         DocumentPropertyType::U128
         | DocumentPropertyType::I128

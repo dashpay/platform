@@ -704,17 +704,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     where the element arm is the only new path) check every element as a
 ///     single reference, refusing the first that fails with that
 ///     reference's error (40120, 40127, 40135 and the rest), its path the
-///     element's list path (`reasons[2]`). A replace re-validates the list
-///     when it changed, when a property bound by a `propertyAgreement`
-///     changed, and always for a `$ownerId` agreement or `deletableDocument`
-///     elements. A foreign contract holding the referenced document type is
-///     fetched once per list. Registration caps the references one document
+///     element's list path (`reasons[2]`). A replace re-validates the
+///     elements of a changed list the stored list did not hold (the replace
+///     action carries `stored_changed_values`), and all of them when a
+///     property bound by a `propertyAgreement` changed, for a `$ownerId`
+///     agreement or for `deletableDocument` elements. A repeated element and
+///     a foreign contract holding the referenced document type are fetched
+///     once per list. Registration caps the references one document
 ///     can carry at `SYSTEM_LIMITS_V4.max_references_per_document` (256; one
 ///     per property declaring a reference, key id references of item 30
 ///     included, `maxItems` per typed array of referencing elements;
 ///     backfilled into the earlier tables), and
-///     refuses an `immutable` typed array of `deletableDocument` references,
-///     which could never be replaced once one target is deleted. A changed
+///     refuses an `immutable` property holding a `deletableDocument`
+///     reference no replace could clear (a typed array of them, or a single
+///     one inside an immutable object), which could never be replaced once
+///     a target is deleted. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)

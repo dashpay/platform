@@ -80,6 +80,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
         owner_id: Identifier,
         creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
+        stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -172,6 +173,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         owner_id: Identifier,
         creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
+        stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -196,6 +198,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             owner_id,
             creator_id,
             changed_fields,
+            stored_values,
             platform,
             block_info,
             transaction,
@@ -213,6 +216,7 @@ fn validate_document_type_references_v0(
     owner_id: Identifier,
     creator_id: Option<Identifier>,
     changed_fields: Option<&BTreeSet<String>>,
+    stored_values: Option<&BTreeMap<String, Value>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     transaction: TransactionArg,
@@ -225,13 +229,16 @@ fn validate_document_type_references_v0(
         // version 14, the version whose document create and replace state
         // validation call this; no document type of an earlier version can
         // hold a typed array, so the element arm is never reached there)
-        let reference = match &property.property_type {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        let (reference_target, holds_elements) = match reference {
             // A key reference on the key id property itself: the value is the
             // key id and the declaration names whose key it is. A transfer
             // itself is not checked, so the reference governs writing, not
             // holding; which replaces re-validate it depends on where the
             // identity comes from.
-            DocumentPropertyType::KeyIdWithReference(reference) => {
+            PropertyReference::KeyId(reference) => {
                 let identity_property = &reference.identity_property;
                 if let Some(changed) = changed_fields {
                     let must_revalidate = match identity_property {
@@ -272,14 +279,11 @@ fn validate_document_type_references_v0(
                 }
                 continue;
             }
-            property_type => match property_type.reference() {
-                Some(reference) => reference,
-                None => continue,
-            },
+            PropertyReference::Value(target) => (target, false),
+            PropertyReference::Elements { target, .. } => (target, true),
         };
-        let reference_target = reference.target();
 
-        if let Some(changed) = changed_fields {
+        let bound_property_changed = if let Some(changed) = changed_fields {
             // Some targets bind a sibling property of the same document to
             // the reference; replacing that sibling must re-validate the
             // reference even when the reference property itself is untouched:
@@ -294,10 +298,9 @@ fn validate_document_type_references_v0(
             // unrelated field by a now-unauthorized owner must still fail.
             // The same rules hold for the elements of a typed array, which
             // share one declaration: the array is one field, so a replace
-            // that changes it, or a property bound to it, re-validates every
-            // element (the transition does not say which ones are new), and
-            // a writer gate or a deletableDocument target re-validates them
-            // all on every replace.
+            // that changes it re-validates the elements the stored list did
+            // not hold, and a changed bound property, a writer gate or a
+            // deletableDocument target re-validates them all.
             let bound_property_changed = match reference_target {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     property_agreement, ..
@@ -326,25 +329,105 @@ fn validate_document_type_references_v0(
             if !is_changed_field(changed, path) && !bound_property_changed {
                 continue;
             }
-        }
+            bound_property_changed
+        } else {
+            false
+        };
 
         // The referenced contracts this declaration resolved, so the
         // elements of a typed array fetch a foreign contract once
         let mut referenced_contracts = BTreeMap::new();
 
-        match reference {
-            PropertyReference::Value(_) => {
-                let referenced_id = match document_data.get_optional_identifier_at_path(path) {
-                    Ok(Some(referenced_id)) => referenced_id,
-                    // A reference property that is not set is not validated; whether it may be
-                    // absent at all is enforced by the document type's required fields
-                    Ok(None) => continue,
+        if !holds_elements {
+            let referenced_id = match document_data.get_optional_identifier_at_path(path) {
+                Ok(Some(referenced_id)) => referenced_id,
+                // A reference property that is not set is not validated; whether it may be
+                // absent at all is enforced by the document type's required fields
+                Ok(None) => continue,
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
+                    ))
+                }
+            };
+            let result = validate_reference_v0(
+                contract,
+                document_type,
+                document_data,
+                owner_id,
+                reference_target,
+                referenced_id,
+                path,
+                &mut referenced_contracts,
+                platform,
+                block_info,
+                transaction,
+                execution_context,
+                platform_version,
+            )?;
+            if !result.is_valid() {
+                return Ok(result);
+            }
+        } else {
+            let elements = match document_data.get_optional_at_path(path) {
+                Ok(Some(Value::Array(elements))) => elements,
+                // An absent list, like an absent reference, is not
+                // validated; an empty one has nothing to validate
+                Ok(None) => continue,
+                Ok(Some(_)) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidIdentifierError::new(
+                            path.to_string(),
+                            "a typed array of identifiers must be a list".to_string(),
+                        )
+                        .into(),
+                    ))
+                }
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
+                    ))
+                }
+            };
+            // Each element is checked as a single reference is, in list
+            // order, and the first that fails refuses the write with the
+            // error a single reference would give, naming the element by
+            // its list path (`reasons[2]` for the third). The count is
+            // bounded by `maxItems`, which registration counts against
+            // `SystemLimits::max_references_per_document` with the
+            // type's other references, and every fetch is billed as a
+            // single reference's is. A replace re-validating the list
+            // only because it changed leaves out the elements the stored
+            // list already held, unchanged references, as an unchanged
+            // single reference is left alone; a changed bound property,
+            // a writer gate or a deletableDocument target re-validates
+            // them all. An element repeating an earlier one has its
+            // outcome already, so it is not fetched again
+            let mut checked: BTreeSet<[u8; 32]> = BTreeSet::new();
+            if !bound_property_changed {
+                if let Some(Ok(Some(Value::Array(stored_elements)))) =
+                    stored_values.map(|stored| stored.get_optional_at_path(path))
+                {
+                    checked.extend(
+                        stored_elements
+                            .iter()
+                            .filter_map(|element| element.to_hash256().ok()),
+                    );
+                }
+            }
+            for (index, element) in elements.iter().enumerate() {
+                let element_path = format!("{path}[{index}]");
+                let referenced_id = match element.to_hash256() {
+                    Ok(referenced_id) => referenced_id,
                     Err(err) => {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
+                            InvalidIdentifierError::new(element_path, err.to_string()).into(),
                         ))
                     }
                 };
+                if !checked.insert(referenced_id) {
+                    continue;
+                }
                 let result = validate_reference_v0(
                     contract,
                     document_type,
@@ -352,7 +435,7 @@ fn validate_document_type_references_v0(
                     owner_id,
                     reference_target,
                     referenced_id,
-                    path,
+                    &element_path,
                     &mut referenced_contracts,
                     platform,
                     block_info,
@@ -362,65 +445,6 @@ fn validate_document_type_references_v0(
                 )?;
                 if !result.is_valid() {
                     return Ok(result);
-                }
-            }
-            PropertyReference::Elements(_) => {
-                let elements = match document_data.get_optional_at_path(path) {
-                    Ok(Some(Value::Array(elements))) => elements,
-                    // An absent list, like an absent reference, is not
-                    // validated; an empty one has nothing to validate
-                    Ok(None) => continue,
-                    Ok(Some(_)) => {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidIdentifierError::new(
-                                path.to_string(),
-                                "a typed array of identifiers must be a list".to_string(),
-                            )
-                            .into(),
-                        ))
-                    }
-                    Err(err) => {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
-                        ))
-                    }
-                };
-                // Each element is checked as a single reference is, in list
-                // order, and the first that fails refuses the write with the
-                // error a single reference would give, naming the element by
-                // its list path (`reasons[2]` for the third). The count is
-                // bounded by `maxItems`, which registration counts against
-                // `SystemLimits::max_references_per_document` with the
-                // type's other references, and every fetch is billed as a
-                // single reference's is
-                for (index, element) in elements.iter().enumerate() {
-                    let element_path = format!("{path}[{index}]");
-                    let referenced_id = match element.to_hash256() {
-                        Ok(referenced_id) => referenced_id,
-                        Err(err) => {
-                            return Ok(SimpleConsensusValidationResult::new_with_error(
-                                InvalidIdentifierError::new(element_path, err.to_string()).into(),
-                            ))
-                        }
-                    };
-                    let result = validate_reference_v0(
-                        contract,
-                        document_type,
-                        document_data,
-                        owner_id,
-                        reference_target,
-                        referenced_id,
-                        &element_path,
-                        &mut referenced_contracts,
-                        platform,
-                        block_info,
-                        transaction,
-                        execution_context,
-                        platform_version,
-                    )?;
-                    if !result.is_valid() {
-                        return Ok(result);
-                    }
                 }
             }
         }

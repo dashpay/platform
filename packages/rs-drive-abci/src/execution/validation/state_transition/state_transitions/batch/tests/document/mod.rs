@@ -13,6 +13,7 @@ mod keep_history;
 mod nft;
 mod owner_balance_proof;
 mod ranked_group_drain;
+mod reference_test_setup;
 mod replacement;
 mod required_since;
 mod system_agreement;

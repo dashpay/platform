@@ -115,6 +115,7 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             owner_id,
             self.creator_id(),
             Some(self.changed_data_fields()),
+            Some(self.stored_changed_values()),
             platform,
             block_info,
             transaction,

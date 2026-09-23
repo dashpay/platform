@@ -47,6 +47,10 @@ pub(crate) trait DocumentReferenceValidation {
     /// property bound to it changed: a `propertyAgreement` referring property
     /// or an `identityPublicKey` key id property. A writer gate, an agreement
     /// keyed by `$ownerId`, is validated on every replace regardless.
+    /// `stored_values` (replace transitions) holds the stored value of each
+    /// changed property: a changed typed array of references re-validates
+    /// only the elements the stored list did not hold, unless a bound
+    /// property changed, a writer gate applies or its target is deletable.
     ///
     /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
     /// whose referring side is `$ownerId` compares it, and an `identityPublicKey`
@@ -62,6 +66,7 @@ pub(crate) trait DocumentReferenceValidation {
         owner_id: Identifier,
         creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
+        stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -112,6 +117,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         owner_id: Identifier,
         creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
+        stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -130,6 +136,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 owner_id,
                 creator_id,
                 changed_fields,
+                stored_values,
                 platform,
                 block_info,
                 transaction,

@@ -93,11 +93,11 @@ pub(super) fn validate_data_contract_references_v0(
         for (path, property) in document_type.as_ref().flattened_properties() {
             let declaration_path = format!("{declaring_type_name}.{path}");
 
-            let (reference_target, declaration_path) = match &property.property_type {
+            let (reference_target, declaration_path) = match property.property_type.reference() {
                 // A key reference on the key id property: what `identityProperty`
                 // names must fit the document type; nothing else about the
                 // declaration is state-dependent
-                DocumentPropertyType::KeyIdWithReference(reference) => {
+                Some(PropertyReference::KeyId(reference)) => {
                     let invalid = |message: &str| {
                         SimpleConsensusValidationResult::new_with_error(
                             ReferencedKeyIdPropertyInvalidError::new(
@@ -172,16 +172,14 @@ pub(super) fn validate_data_contract_references_v0(
                     }
                     continue;
                 }
-                property_type => match property_type.reference() {
-                    Some(PropertyReference::Value(target)) => (target, declaration_path),
-                    // A typed array only parses from protocol version 14,
-                    // whose contract create and update state validation are
-                    // the only callers, so this arm is never reached before it
-                    Some(PropertyReference::Elements(target)) => {
-                        (target, format!("{declaring_type_name}.{path}[]"))
-                    }
-                    None => continue,
-                },
+                Some(PropertyReference::Value(target)) => (target, declaration_path),
+                // A typed array only parses from protocol version 14, whose
+                // contract create and update state validation are the only
+                // callers, so this arm is never reached before it
+                Some(PropertyReference::Elements { target, .. }) => {
+                    (target, format!("{declaring_type_name}.{path}[]"))
+                }
+                None => continue,
             };
 
             // The key id property must exist in the same document type and be
