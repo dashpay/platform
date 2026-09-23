@@ -193,7 +193,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // passes), certifying a range never matched for this wallet. Closing
         // it needs a public rust-dashcore API that lowers the checkpoint and
         // bumps the account generation together.
-        // TODO: link the tracking issue for that upstream API.
+        // Tracked in https://github.com/dashpay/platform/issues/4955.
         if let Some(floor) = floor {
             info.core_wallet.update_synced_height(floor);
         }
