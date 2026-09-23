@@ -20,6 +20,7 @@ use dpp::data_contract::document_type::{
 };
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
+use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -31,7 +32,10 @@ const DOCUMENT_PROPERTY_REFERENCE_TS: &'static str = r#"
  * Mirrors the `refersTo` keyword of the v3 document meta-schema, which is
  * active from protocol version 14. The field names are the schema keyword's
  * own, so what `contract.toJSON()` shows under `refersTo` and what these
- * accessors return line up key for key.
+ * accessors return line up key for key, with one addition: a reference
+ * expression, which the schema declares by its `anyOf` or `allOf` key alone,
+ * also carries `type: 'anyOf'` or `type: 'allOf'`, so every member of the
+ * union is tagged by `type`.
  */
 /**
  * What an `identityPublicKey` reference requires of the key it points at,
@@ -195,32 +199,61 @@ export type DocumentPropertyReferenceTarget =
   | {
       /**
        * An element of a list: the value (on a typed array, every element)
-       * must be one of the identifiers the typed array `list` holds on the
-       * `documentType` document that `documentProperty` refers to. Consensus
-       * validates `documentProperty`'s own `permanentDocument` reference,
-       * which fetches that document, and checks the value against its list
-       * with no further read; a value the list does not hold, or one set
-       * while `documentProperty` is not, refuses the write (code 40120). The
-       * list's document can never be deleted and the list never changes, so
-       * a value accepted once stays an element. To resolve it yourself, read
-       * the document `documentProperty` refers to and look in its `list`.
+       * must be one of the identifiers the typed array `inList` holds on the
+       * `documentType` document that `propertyAgreement`'s `$id` pair names.
+       * A document reference like `permanentDocument` (same `contractId`,
+       * `documentType` and agreement rules, the type forbids deletion),
+       * except that the value is not the document's id: consensus fetches
+       * the document whose id the `$id` pair's property holds, checks the
+       * other pairs against it, and refuses a value its list does not hold,
+       * or one set while that property is not (code 40120). The list's
+       * document can never be deleted and the list never changes, so a value
+       * accepted once stays an element. To resolve it yourself, fetch the
+       * document by that id and look in `inList`.
        */
       type: 'listElement';
-      /**
-       * Name of the document type holding the list: the one
-       * `documentProperty`'s reference names, in whichever contract that
-       * reference names (a list element declares no contract of its own).
-       */
+      /** The contract the document type holding the list lives in. Always present, resolved as for `permanentDocument`. */
+      contractId: Identifier;
+      /** Name of the document type holding the list; it must forbid deletion. */
       documentType: string;
       /**
-       * Dotted path of the identifier property of the same document type
-       * whose `permanentDocument` reference finds the document holding the
-       * list.
+       * The agreement pairs, always present: exactly one has `'$id'` on the
+       * referenced side, its referring side the dotted path of the identifier
+       * property holding the id of the document the list is read from; any
+       * other pair is checked against that document as for
+       * `permanentDocument`.
        */
-      documentProperty: string;
+      propertyAgreement: Record<string, string>;
       /** Dotted path of the typed array of identifiers on `documentType`. */
-      list: string;
-    };
+      inList: string;
+    }
+  | DocumentPropertyReferenceExpression;
+
+/**
+ * A reference expression, declared as `refersTo: { anyOf: [...] }` or
+ * `refersTo: { allOf: [...] }`. The operands sit under the combinator's own
+ * key, as in the schema, and `type` names the combinator, so the union stays
+ * internally tagged like every other: `switch (reference.type)` sees
+ * `'anyOf'` and `'allOf'` next to the target kinds. An `anyOf` holds when at
+ * least one operand holds: consensus checks the operands in this order,
+ * stops at the first that holds, and when none does refuses the write with
+ * the error of the last. An `allOf` holds when every operand holds for the
+ * same value: consensus stops at the first that fails and refuses the write
+ * with its error. Operands nest, the other combinator inside, up to the
+ * protocol's depth limit (4 from protocol version 14).
+ */
+export type DocumentPropertyReferenceExpression =
+  | { type: 'anyOf'; anyOf: Array<DocumentPropertyReferenceOperand> }
+  | { type: 'allOf'; allOf: Array<DocumentPropertyReferenceOperand> };
+
+/**
+ * One operand of a reference expression: a leaf, an `identity` or a
+ * `permanentDocument` (by id or with a `lookup`) with its own fields, a
+ * `propertyAgreement` belonging to its own leaf, or a nested expression.
+ */
+export type DocumentPropertyReferenceOperand =
+  | Extract<DocumentPropertyReferenceTarget, { type: 'identity' | 'permanentDocument' }>
+  | DocumentPropertyReferenceExpression;
 
 /**
  * The `lookup` of a document reference: the referenced document is the one
@@ -260,7 +293,9 @@ export type DocumentPropertyReference = {
    * index (`"reasons[2]"` for
    * the third). Note that contract *registration* errors prefix it with the
    * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
-   * while document *write* errors do not.
+   * and name one leaf of a reference expression by where it sits
+   * (`"<documentType>.<path>.anyOf[1].allOf[0]"`), while document *write*
+   * errors do neither.
    */
   path: string;
 } & DocumentPropertyReferenceTarget;
@@ -339,6 +374,27 @@ fn set_key_requirements_field(
     set_field(object, "keyRequirements", &fields, path)
 }
 
+/// The `propertyAgreement` field of a document reference: `{ referring
+/// property: referenced property }`, a consensus-enforced equality at write
+/// time (for a `listElement`, the `$id` pair names the document). Absent,
+/// not `{}`-valued, when the declaration carries none, matching the schema's
+/// own omission and the absent-field convention of the other optional target
+/// fields.
+fn set_property_agreement_field(
+    object: &Object,
+    property_agreement: &BTreeMap<String, String>,
+    path: &str,
+) -> WasmDppResult<()> {
+    if property_agreement.is_empty() {
+        return Ok(());
+    }
+    let agreement = Object::new();
+    for (referring, referenced) in property_agreement {
+        set_field(&agreement, referring, &JsValue::from_str(referenced), path)?;
+    }
+    set_field(object, "propertyAgreement", &agreement, path)
+}
+
 /// Build the flat, internally-tagged JS object for one declaration.
 fn reference_to_js(
     path: &str,
@@ -376,6 +432,23 @@ fn set_reference_target_fields(
     declaring_contract_id: Identifier,
     path: &str,
 ) -> WasmDppResult<()> {
+    // The operands sit under the combinator's own key, as in the schema,
+    // each an object of its own, and `type` names the combinator, so the
+    // union stays internally tagged (CONVENTIONS.md, "Tagged unions")
+    if let Some((combinator, operands)) = target.combinator() {
+        let objects = Array::new();
+        for operand in operands.operands() {
+            objects.push(&reference_target_to_js(
+                operand,
+                declaring_contract_id,
+                path,
+            )?);
+        }
+        let name = combinator.wire_name();
+        set_field(object, "type", &JsValue::from_str(name), path)?;
+        return set_field(object, name, &objects, path);
+    }
+
     let kind = match target {
         DocumentPropertyReferenceTarget::Identity => "identity",
         DocumentPropertyReferenceTarget::Contract { .. } => "contract",
@@ -385,11 +458,18 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
         DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
         DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
+        DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
+            return Err(WasmDppError::generic(format!(
+                "the reference expression declared at '{path}' has no single target kind"
+            )));
+        }
     };
     set_field(object, "type", &JsValue::from_str(kind), path)?;
 
     match target {
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
+        // Handled above, before the kind
+        DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {}
         DocumentPropertyReferenceTarget::Contract {
             contract_requirements,
         } => {
@@ -465,18 +545,7 @@ fn set_reference_target_fields(
                 &JsValue::from_str(document_type_name),
                 path,
             )?;
-            // `propertyAgreement` binds a referring property to a property
-            // of the referenced document (consensus-enforced equality at
-            // write time). Absent — not `{}`-valued — when the declaration
-            // carries none, matching the schema's own omission and the
-            // absent-field convention of the other optional target fields.
-            if !property_agreement.is_empty() {
-                let agreement = Object::new();
-                for (referring, referenced) in property_agreement {
-                    set_field(&agreement, referring, &JsValue::from_str(referenced), path)?;
-                }
-                set_field(object, "propertyAgreement", &agreement, path)?;
-            }
+            set_property_agreement_field(object, property_agreement, path)?;
             // Present only on a lookup reference, absent when the value is
             // the referenced document's id, as the schema omits it; the
             // sources keep their schema spelling.
@@ -502,6 +571,31 @@ fn set_reference_target_fields(
                 set_field(object, "lookup", &lookup_object, path)?;
             }
         }
+        // A document reference found by its `$id` agreement pair, whose list
+        // the value must be in: the same fields as `permanentDocument`, plus
+        // `inList`
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            let effective = reference.contract_id.unwrap_or(declaring_contract_id);
+            set_field(
+                object,
+                "contractId",
+                &JsValue::from(IdentifierWasm::from(effective)),
+                path,
+            )?;
+            set_field(
+                object,
+                "documentType",
+                &JsValue::from_str(&reference.document_type_name),
+                path,
+            )?;
+            set_property_agreement_field(object, &reference.property_agreement, path)?;
+            set_field(
+                object,
+                "inList",
+                &JsValue::from_str(&reference.in_list),
+                path,
+            )?;
+        }
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property,
             key_requirements,
@@ -513,24 +607,6 @@ fn set_reference_target_fields(
                 path,
             )?;
             set_key_requirements_field(object, key_requirements, path)?;
-        }
-        // The declaration's own keywords only: the list's contract is the one
-        // `documentProperty`'s reference names, which the caller finds under
-        // that property's own entry
-        DocumentPropertyReferenceTarget::ListElement(reference) => {
-            set_field(
-                object,
-                "documentType",
-                &JsValue::from_str(&reference.document_type_name),
-                path,
-            )?;
-            set_field(
-                object,
-                "documentProperty",
-                &JsValue::from_str(&reference.document_property),
-                path,
-            )?;
-            set_field(object, "list", &JsValue::from_str(&reference.list), path)?;
         }
     }
 

@@ -270,7 +270,7 @@ Revision 0 is never used for active documents. This allows `0` to serve as a sen
 
 ## Document References (`refersTo`)
 
-From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument`, `identityPublicKey` and `listElement` (see [An element of a list](#an-element-of-a-list-listelement)). Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
+From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument`, `identityPublicKey` and `listElement` (see [An element of a list](#an-element-of-a-list-listelement)), or a reference expression combining several with `anyOf` and `allOf` (see [Reference expressions](#reference-expressions-anyof-allof)). Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
 
 An `identityPublicKey` reference names one key of one identity, and comes in two forms that differ in which property carries what:
 
@@ -324,7 +324,7 @@ A `deletableDocument` reference takes no `lookup`. Once the document a key found
 What is checked when the contract enters the chain, on registration and on update:
 
 - `lookup` is only allowed on `permanentDocument` references (meta-schema v3 and the parser, `apply_property_reference` 0), on the property or on the `items` of a typed array.
-- Each property a key reads must exist on the referring type, be required (and so must every object around it), not be transient, and hold a single value, so a lookup never runs with a missing key part and a reader can assemble the same key from the stored document. A key that reads `"$ownerId"` needs a referring type whose documents can be neither transferred nor traded: the reference is judged when the document is written, and a transfer or purchase would move the writer part of its key without a write. These are properties of the referring type alone and are checked on every parse (generation 3).
+- Each property a key reads must exist on the referring type, be required (and so must every object around it), not be transient nor sit inside a transient object, and hold a single value, so a lookup never runs with a missing key part and a reader can assemble the same key from the stored document. A key that reads `"$ownerId"` needs a referring type whose documents can be neither transferred nor traded: the reference is judged when the document is written, and a transfer or purchase would move the writer part of its key without a write. These are properties of the referring type alone and are checked on every parse (generation 3).
 - The index must exist and be unique, so the key finds at most one document; it may not bucket a timestamp with `timeRange`, and the referenced type may not be `indexOnly`. `keys` must cover each property of the index exactly once and nothing else, and each source must hold the same kind of value as the index property it fills (the rule of `propertyAgreement`, `DocumentPropertyType::value_kind`).
 - The key must stay with the document it found, or the reference could dangle without the document being deleted: every schema property of the index must be fixed once written (the referenced type is immutable, or the property, or the top-level object holding it, is listed under `immutable`), `$ownerId` is only a key part on a type whose documents can be neither transferred nor traded, and the update and transfer times are refused where a replace, transfer or purchase moves them. `$id`, `$creatorId` and the creation times are always fixed.
 - A changed, added or removed `lookup` is an incompatible schema change on update, like the rest of a `refersTo`.
@@ -335,9 +335,52 @@ When the referring document is created or replaced, the document reference valid
 
 Joins cannot go through a lookup reference: a chained query or a composite by-id join needs the join property's values to be the outer documents' ids, so both refuse such a property, and a `preallocated` index cannot be bound through one. In Rust the declaration is its own variant, `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, appended to the enum rather than a field of `PermanentDocument`: the enum is embedded in the reference errors, so an id reference keeps its encoding, and code matching `PermanentDocument` as "the value is a document id" cannot mistake a lookup for one. The rules are on `DocumentReferenceLookup`. `as_document_reference` returns only references whose value is a document id, the accessor for joins; the validators use `as_any_document_reference`, whose declaration carries the lookup.
 
+### Reference expressions (`anyOf`, `allOf`)
+
+A `refersTo` may combine targets in place of naming one. `{ "anyOf": [...] }` holds if at least one operand holds, `{ "allOf": [...] }` if every operand holds for the same value. An operand is a leaf, an ordinary target with its own keys, or an expression of the other combinator, so the two nest:
+
+```json
+"memberId": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "refersTo": {
+    "anyOf": [
+      {
+        "type": "permanentDocument", "documentType": "addedModerator",
+        "lookup": { "index": "byModerator", "keys": { "submittedCharterId": "submittedCharterId", "moderatorId": "." } }
+      },
+      {
+        "allOf": [
+          { "type": "identity" },
+          {
+            "type": "permanentDocument", "documentType": "joinRequest",
+            "lookup": { "index": "bySubmittedCharter", "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." } }
+          }
+        ]
+      }
+    ]
+  },
+  "position": 2
+}
+```
+
+reads: the member was added to the charter, or it is an identity that asked to join it. The same form sits on the `items` of a typed array, where each element meets the expression on its own.
+
+What is checked when the contract enters the chain:
+
+- On every parse (meta-schema v3 and the parser, `apply_property_reference` 0): a combinator is the declaration's one key (a `propertyAgreement` or a `lookup` belongs to a leaf, inside it), a list names at least two operands (a single one is declared on its own), and an `anyOf` directly inside an `anyOf` (or an `allOf` inside an `allOf`) is refused, since it says what one flat list says.
+- Every leaf is an `identity` or a `permanentDocument` (by id or with a `lookup`). Both are existence checks against entities that are never deleted, so an expression of them holds for good once it holds, as a single one of them does, and a replace re-validates it only when its value or a property one of its leaves binds changed. The other types do not compose with other operands and are refused, as is the key id form (`identityProperty`): `deletableDocument` is re-validated on every replace and may be cleared once its document is deleted (the immutable-property exception), which assumes the property refers to that one target; `identityPublicKey` pairs the value with a key id property no other operand reads; a `contract` target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. Admitting one later takes a new `apply_property_reference` generation.
+- Under full validation (registration): at most `SystemLimits::max_reference_operands` operands in one list and at most `max_reference_expression_depth` combinators on any path from the declaration to a leaf (4 and 4 at protocol version 14; the example above is 2 deep), no two alike operands in one list (a leaf naming the declaring contract explicitly is the same as one omitting it), and every leaf counted against `max_references_per_document`: an `anyOf` of two on a typed array of `maxItems` 15 counts 30, since each leaf may be read for each element.
+- Every leaf is checked exactly as the same target declared alone: the referenced document type, its permanence, the `propertyAgreement` sides and the `lookup` rules, at the same places (the contract parse for a type of the same contract, the registration state validation for another contract's). Every leaf must pass, since each has to be a declaration that could hold. An error names the failing leaf by where it sits, `refersTo anyOf[1].allOf[1] lookup: ...` from the parse and `resignation.memberId.anyOf[1].allOf[1]` from registration.
+- A changed expression (an operand added, removed, changed or moved, `anyOf` swapped for `allOf`, a single target turned into an expression or back) is an incompatible schema change on update, like the rest of a `refersTo`. Inside `refersTo`, `anyOf` and `allOf` are the declaration's data; the schema compatibility rules never read them as JSON Schema keywords.
+
+When the referring document is created or replaced, the document reference validation evaluates each value (each element) operand by operand in declared order, a nested expression the same way. An `anyOf` stops at the first operand that holds; when none does, the write is refused, paid, with the last operand's result. An `allOf` stops at the first operand that fails and refuses the write with its result. A refusal is therefore always the error a leaf declared alone would give (for the example, `ReferencedEntityNotFoundError` (40120) for a lookup that found nothing, naming the property or the element), and the author's order decides which one a writer sees: put the most general operand of an `anyOf` last, and the cheapest or most telling one of an `allOf` first. There is no error of its own for "no operand held": each leaf's failure already has a precise error, and a combined one would have to nest one per leaf or lose their reasons. Every read is billed as it is made, so a value the second operand of an `anyOf` holds for pays for the first operand's query too, while an `allOf` whose first operand fails reads nothing more. A `propertyAgreement` is checked only against its own leaf's document: a value whose first leaf fails its agreement is still accepted through a second leaf without one.
+
+Joins and preallocated indexes need one target: a chained query or a composite by-id join refuses an expression join property, and a `preallocated` index is never bound through one. In Rust the combinators are `DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands)` and `AllOf(ReferenceOperands)`, appended to the enum so every single target keeps its encoding. An expression is no document reference as a whole (`as_any_document_reference` is `None`); code that checks every declaration walks `DocumentPropertyReferenceTarget::leaves` (or `leaves_with_paths`), the leaves of an expression or the declaration itself. Since the enum is embedded in consensus errors, which clients decode from bytes a node sends, decoding refuses a nesting deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH` (16, above every protocol version's registration limit, which a test holds it to), so no bytes can drive the decoder into unbounded recursion. A reference error never carries a combinator: a refusal is a leaf's error.
+
 ### An element of a list (`listElement`)
 
-A `listElement` reference says the value must be one of the identifiers a list of another document holds, the document another property of the same document refers to:
+A `listElement` reference says the value must be one of the identifiers a list of another document holds, the document an agreement pair names by its `$id`:
 
 ```json
 "resignation": {
@@ -355,8 +398,8 @@ A `listElement` reference says the value must be one of the identifiers a list o
       "refersTo": {
         "type": "listElement",
         "documentType": "electedCharter",
-        "documentProperty": "electedCharterId",
-        "list": "members"
+        "propertyAgreement": { "electedCharterId": "$id" },
+        "inList": "members"
       },
       "position": 1
     }
@@ -366,28 +409,28 @@ A `listElement` reference says the value must be one of the identifiers a list o
 }
 ```
 
-reads: `memberId` must be one of the `members` of the `electedCharter` document `electedCharterId` refers to. The moderation charters, whose elected charter holds its `members`, are the first users. The declaration sits on an identifier property or on the `items` of a typed array of identifiers, where every element must be listed (see [References on the Elements](#references-on-the-elements)).
+reads: `memberId` must be one of the `members` of the `electedCharter` document whose `$id` this document's `electedCharterId` holds. The moderation charters, whose elected charter holds its `members`, are the first users. The declaration sits on an identifier property, on the `items` of a typed array of identifiers, where every element must be listed (see [References on the Elements](#references-on-the-elements)), or as a leaf of a reference expression (see [Reference expressions](#reference-expressions-anyof-allof)), where the charters' owner rule composes it with a lookup.
 
-`documentProperty` names an identifier property of the same referring type that carries a `permanentDocument` reference to `documentType`, by id or through a `lookup`; the list's document is the one that reference finds, in whichever contract it names, so a `listElement` takes no `contractId` of its own. `list` names a typed array of identifiers of `documentType`. What is checked when the contract enters the chain:
+A list element is a document reference in every respect but one. It takes the `contractId`, `documentType` and `propertyAgreement` of a `permanentDocument` reference, with the same checks (the referenced type must forbid deletion, every pair must exist and share one value kind), and `$id` joins `$ownerId` and `$creatorId` as a system name the referenced side of any agreement pair may carry. What differs is what the value is: not the referenced document's id but an element of its list. The document is the one the pair with `$id` on the referenced side names, so a `listElement` holds exactly one such pair, read from an identifier property of the referring type (a schema property, never `$ownerId`: no document has the writer's id), and `inList` names the typed array of identifiers on the referenced type. What is checked when the contract enters the chain:
 
-- `documentProperty` exists, is a stored (not transient) identifier property, not a typed array, and carries a `permanentDocument` reference naming `documentType`: a reader can then tell from the stored document which list the value was checked against. It may be optional. Checked by the parse under full validation (generation 3).
-- The list's document type forbids deletion, and `list` is a stored typed array of identifiers on it that never changes once a document is written: the type is immutable (`documentsMutable: false`), or the list's top-level property is listed under `immutable`. An `immutableAllowSetting` entry can only be set on a document that has no value for it, against which no value was ever accepted, so it does not weaken the rule. For a type of the same contract the contract parse checks this (`create_document_types_from_document_schemas` 1); for a type of another contract, registration checks it against that contract in state and refuses a list that does not qualify with `ReferencedDocumentListInvalidError` (state code 40138). For a type of another contract, a missing or deletable one is left to `documentProperty`'s own reference, which refuses it (40121, 40122); for a type of the same contract, the parse refuses a deletable one itself, with the listElement reason ("documents of `<documentType>` can be deleted").
+- The `$id` pair reads a stored identifier property of the referring type (it and every object around it not transient), so a reader can tell from the stored document which list the value was checked against. It may be optional, and it needs no `refersTo` of its own. Checked by the parse under full validation (generation 3), a leaf of an expression as it would be alone.
+- The list's document type forbids deletion, and `inList` is a stored typed array of identifiers on it that never changes once a document is written: the type is immutable (`documentsMutable: false`), or the list's top-level property is listed under `immutable`, the rule a lookup's key parts are judged by. An `immutableAllowSetting` entry can only be set on a document that has no value for it, against which no value was ever accepted, so it does not weaken the rule. For a type of the same contract the contract parse checks this (`create_document_types_from_document_schemas` 1); for a type of another contract, registration checks it against that contract in state and refuses a list that does not qualify with `ReferencedDocumentListInvalidError` (state code 40138). A missing document type is refused as for any document reference (40121), and a deletable one by the parse for the same contract (with the list reason) or by registration for another (40122).
 - Each value counts against `SystemLimits::max_references_per_document`, one for a property, `maxItems` for a typed array, like every other reference.
 - A changed, added or removed `listElement` is an incompatible schema change on update.
 
-When the referring document is created or replaced, the document reference validation checks the list elements after every other reference. `documentProperty`'s reference fetches the list's document for its own existence check, and the list check reads that document, so it adds no read: the list is collected once (at most its `maxItems` identifiers), and each value is a set lookup. A value the list does not hold, or one set while `documentProperty` is not, refuses the write, paid, with `ReferencedEntityNotFoundError` (40120) naming the property, or the element by its list path (`witnesses[1]`); its target reads "list element (`<list>` of the `<documentType>` document `<documentProperty>` refers to)". A replace checks a list element again when its value changed, or when `documentProperty` may now find another document: it changed, or, for a `lookup`, a property its key reads changed. In the second case every value is checked (for a typed array, every element); otherwise only the elements the stored list did not hold. When `documentProperty`'s reference was left alone by the replace (only the value changed), the list's document is fetched for the check, billed as a document fetch, without judging that reference again. Nothing else can make a validated value unlisted: the list's document can never be deleted and its list never changes.
+When the referring document is created or replaced, the document reference validation fetches the document whose id the `$id` pair's property holds, by id, checks the other pairs against it exactly as for a `permanentDocument`, and requires the value to be in its list. Every by-id document fetch of one write is shared: a charter that `electedCharterId`'s own reference already fetched, or that the elements of one typed array all name, is fetched and billed once, and the list is collected once into a set, so each value is a set lookup. A value the list does not hold, a document the id names that does not exist, or a value set while the `$id` property is not, refuses the write, paid, with `ReferencedEntityNotFoundError` (40120) naming the property, or the element by its list path (`witnesses[1]`); its target reads "list element (`<inList>` of the `<documentType>` document `<property>` names)". A failing extra pair is `ReferencedDocumentPropertyMismatchError` (40127), as always. A replace checks a list element again when its value changed or when the referring side of any of its pairs changed (the `$id` property among them, since it may name another charter), the rule every agreement follows, and then every value, every element included; only a list that changed on its own leaves out the elements the stored list already held. Nothing else can make a validated value unlisted: the list's document can never be deleted and its list never changes.
 
 For example:
 
 ```text
-charter 7kX...: members [Alice, Bob]
+electedCharter 7kX...: members [Alice, Bob]
 resignation { electedCharterId: 7kX..., memberId: Alice }  -> accepted
 resignation { electedCharterId: 7kX..., memberId: Carol }  -> refused, 40120:
-  referenced list element (members of the electedCharter document electedCharterId refers to)
+  referenced list element (members of the electedCharter document electedCharterId names)
   <Carol> not found for path memberId
 ```
 
-In Rust the declaration is the appended variant `DocumentPropertyReferenceTarget::ListElement(ListElementReference)`, so every earlier variant keeps its encoding in the reference errors; the rules are on `ListElementReference` (`document_property_declaration`, `referring_side_error`, `referenced_side_error`, `listed_values`); the rule that a list is fixed once written is the one a lookup's key parts are judged by. It is not a document reference: `as_document_reference` and `as_any_document_reference` return `None` for it, so joins and `preallocated` indexes never go through it.
+In Rust the declaration is the appended variant `DocumentPropertyReferenceTarget::ListElement(ListElementReference)`, so every earlier variant keeps its encoding in the reference errors; the rules are on `ListElementReference` (`document_id_property`, `referring_side_error`, `referenced_side_error`, `listed_values`). `as_any_document_reference` carries it with `in_list` set, so the registration validator checks its contract, type and pairs through the same code as the other document references, while `as_document_reference` leaves it out, as it does a lookup: joins and `preallocated` indexes never go through it.
 
 ## Immutable Properties on Mutable Document Types
 
@@ -525,7 +568,7 @@ A byte array property may hold ciphertext that only one identity can read. Befor
 
 All four keys are required. `recipient` is the dotted path of an identifier property of the same document type whose value is the recipient identity's id, or `$ownerId` for a message the writer encrypts to themself. `recipientKey` and `senderKey` are dotted paths of integer properties of the same document type carrying the recipient's and the sender's identity key ids; each must declare `minimum` at least 0 and `maximum` at most 4294967295, read from the schema itself, so the rule holds whatever `sizedIntegerTypes` the contract sets. `scheme` is a closed set with one member today.
 
-The parser (generation 3, meta-schema v3) admits the keyword on byte array properties only, never on an identifier (`contentMediaType` set) or any other type, and checks at contract registration that the three named properties exist with those types, that none of them is `transient` (a transient property is stripped before storage, which would leave the stored ciphertext without its recipe), and that the byte array's own `maxItems` can hold the scheme's shortest ciphertext. A contract update that adds, removes or changes an `encryptedFor` declaration is an incompatible schema change (`IncompatibleDocumentTypeSchemaError`, 10246): documents already written under the old recipe could not be read under the new one. Contracts parsed before protocol version 14 ignore the keyword entirely.
+The parser (generation 3, meta-schema v3) admits the keyword on byte array properties only, never on an identifier (`contentMediaType` set) or any other type, and checks at contract registration that the three named properties exist with those types, that none of them is `transient` or sits inside a transient object (a transient value is stripped before storage, which would leave the stored ciphertext without its recipe), and that the byte array's own `maxItems` can hold the scheme's shortest ciphertext. A contract update that adds, removes or changes an `encryptedFor` declaration is an incompatible schema change (`IncompatibleDocumentTypeSchemaError`, 10246): documents already written under the old recipe could not be read under the new one. Contracts parsed before protocol version 14 ignore the keyword entirely.
 
 ### The `ecdh-secp256k1-aes256-cbc` layout
 

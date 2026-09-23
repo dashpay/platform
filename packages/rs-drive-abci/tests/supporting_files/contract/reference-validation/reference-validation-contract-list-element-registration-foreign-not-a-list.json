@@ -29,9 +29,12 @@
           "position": 1,
           "refersTo": {
             "type": "listElement",
+            "contractId": "9AJn2N8f1Sz9wNA9ShzGWBTwALcULn7QhGMBoesgg4zG",
             "documentType": "electedCharter",
-            "documentProperty": "electedCharterId",
-            "list": "submittedCharterId"
+            "propertyAgreement": {
+              "electedCharterId": "$id"
+            },
+            "inList": "submittedCharterId"
           }
         }
       },

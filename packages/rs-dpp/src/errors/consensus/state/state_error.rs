@@ -700,16 +700,19 @@ mod tests {
             }),
             6
         );
-        // A list element reference is appended after it
+        // A list element reference is appended after the expressions (anyOf
+        // 7, allOf 8, pinned in `reference_expression.rs`)
         assert_eq!(
             target_variant(&DocumentPropertyReferenceTarget::ListElement(
                 ListElementReference {
+                    contract_id: None,
                     document_type_name: "electedCharter".to_string(),
-                    document_property: "electedCharterId".to_string(),
-                    list: "members".to_string(),
+                    property_agreement: [("electedCharterId".to_string(), "$id".to_string())]
+                        .into(),
+                    in_list: "members".to_string(),
                 }
             )),
-            7
+            9
         );
     }
 

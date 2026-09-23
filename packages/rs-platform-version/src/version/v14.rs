@@ -758,40 +758,82 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     incompatible schema change on update. Chained queries and composite
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
-/// 33. **References to an element of a list of a referenced document**: a
+/// 33. **Reference expressions (`anyOf` / `allOf`)**: a `refersTo`, on an
+///     identifier property or on the elements of a typed array (item 31), may
+///     be `{ "anyOf": [operand, ...] }`, holding if at least one operand
+///     holds, or `{ "allOf": [operand, ...] }`, holding if every operand holds
+///     for the same value, in place of one target (meta-schema v3, which
+///     admits either combinator only as the declaration's one key,
+///     `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::AnyOf` and `AllOf`, so every single
+///     target keeps its variant and its encoding; decoding refuses a nesting
+///     deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH`, 16, so the bytes of
+///     a consensus error cannot recurse without bound). An operand is a leaf,
+///     an `identity` or a `permanentDocument` (by id or with a `lookup`, item
+///     32), or an expression of the other combinator; a list names two or more
+///     operands. `contract`, `token`, `deletableDocument` and
+///     `identityPublicKey` leaves, the key id form, a combinator directly
+///     inside the same combinator and keys beside a combinator are refused on
+///     every parse. Registration caps a list at
+///     `SYSTEM_LIMITS_V4.max_reference_operands` (4) and the nesting at
+///     `max_reference_expression_depth` (4 combinators on any path to a leaf),
+///     both backfilled into the earlier tables, refuses two alike operands of
+///     one list (a leaf naming the declaring contract explicitly counting as
+///     the one omitting it), counts every leaf against
+///     `max_references_per_document`, and checks each leaf as the same
+///     declaration alone (`create_document_types_from_document_schemas` 1 and
+///     `data_contract_reference_validation` 0, both walking
+///     `DocumentPropertyReferenceTarget::leaves_with_paths`, which is the
+///     declaration itself at an empty path for a single target, so their
+///     output is unchanged where no expression can parse), a failing leaf
+///     named by where it sits (`resignation.memberId.anyOf[1].allOf[0]`). The
+///     document reference validation (`document_reference_validation` 0,
+///     reached only from this version) evaluates each value operand by operand
+///     in declared order: an `anyOf` stops at the first operand that holds and
+///     otherwise refuses with the last operand's error, an `allOf` stops at the
+///     first that fails and refuses with its error, so a refusal is always a
+///     leaf's own error and no new error exists; every read is billed, the
+///     failed operands' included. A `propertyAgreement` belongs to its leaf and
+///     is checked only against that leaf's document. A replace re-validates an
+///     expression when its value, or a property one of its leaves binds,
+///     changed. A changed expression is an incompatible schema change on
+///     update. Chained queries and composite by-id joins refuse an expression
+///     join property, and preallocated indexes are never bound through one.
+/// 34. **References to an element of a list of a referenced document**: a
 ///     new `refersTo` target, `listElement` (meta-schema v3,
 ///     `apply_property_reference` 0, parsed to the appended
 ///     `DocumentPropertyReferenceTarget::ListElement`, so every earlier
-///     variant keeps its encoding), on an identifier property or on the
-///     elements of a typed array (item 31): the value must be an element of
-///     the typed array of identifiers `list` held by the `documentType`
-///     document that `documentProperty` refers to. `documentProperty` is an
-///     identifier property of the same referring type carrying a
-///     `permanentDocument` reference (by id or through a `lookup`, item 32)
-///     to that document type, stored (not transient), optional or not;
-///     generation 3 of the parser checks it under full validation. The list's
-///     document type is the one that reference names, in its contract (a
-///     list element takes no `contractId`): it must forbid deletion, and the
-///     list must be a stored typed array of identifiers fixed once a document
-///     is written (the type is immutable or lists the list's top-level
-///     property under `immutable`). `create_document_types_from_document_schemas`
-///     1, edited in place like for items 29 and 32 (inert before this
-///     version, where no parsed reference is a list element), checks a list
-///     in the same contract under full validation, and the contract reference
-///     validation checks one in another contract, refusing it with
+///     variant keeps its encoding), on an identifier property, on the
+///     elements of a typed array (item 31), or as a leaf of a reference
+///     expression (item 33): the value must be an element of the typed array
+///     of identifiers `inList` held by one document of `documentType`, the
+///     document whose `$id` the `propertyAgreement` pair with `$id` on the
+///     referenced side reads from an identifier property of the referring
+///     type (stored, optional or not; generation 3 of the parser checks it
+///     under full validation). `$id` joins `$ownerId` and `$creatorId` as a
+///     referenced-side agreement name for every document reference. In every
+///     other respect a list element is a document reference: `contractId`,
+///     `documentType` and its other agreement pairs are checked at
+///     registration as a `permanentDocument`'s are (the type must forbid
+///     deletion), and the list must be a stored typed array of identifiers
+///     fixed once a document is written (the type is immutable or lists the
+///     list's top-level property under `immutable`).
+///     `create_document_types_from_document_schemas` 1, edited in place like
+///     for items 29 and 32 (inert before this version, where no parsed
+///     reference is a list element), checks a list in the same contract
+///     under full validation, and the contract reference validation checks
+///     one in another contract, refusing it with
 ///     `ReferencedDocumentListInvalidError` (40138). The document reference
-///     validation (generation 0, reached only from this version) checks every
-///     list element once the other references are validated, against the
-///     document `documentProperty`'s own reference fetched, so it adds no
-///     read (the list is collected once, each value a set lookup); a value
-///     the list does not hold, or one set while `documentProperty` is not,
-///     refuses the write with `ReferencedEntityNotFoundError` (40120, the
-///     list element declaration as its entity type, an element named by its
-///     list path). A replace checks a list element again when its value
-///     changed, or when `documentProperty` may find another document (it, or
-///     a property its lookup key reads, changed), then every value; when
-///     `documentProperty`'s reference is left alone the list's document is
-///     fetched without judging that reference again. Each value counts against
+///     validation (generation 0, reached only from this version) fetches the
+///     list's document by the `$id` pair's value, once per write and shared
+///     with any other reference of the same document (every by-id document
+///     fetch of one write is now memoized), checks the other pairs against it,
+///     and refuses a value the list does not hold, or one set while the `$id`
+///     property is not, with `ReferencedEntityNotFoundError` (40120, the list
+///     element declaration as its entity type, an element named by its list
+///     path); the list is collected once, each value a set lookup. A replace
+///     checks it again when its value or a referring side of any pair
+///     changed, as every agreement is. Each value counts against
 ///     `SystemLimits::max_references_per_document` like every other
 ///     reference. A changed `listElement` is an incompatible schema change on
 ///     update.

@@ -1,15 +1,16 @@
 //! References to an element of a list of a referenced document (`refersTo:
 //! listElement`, protocol version 14) through the full ABCI pipeline. In the
-//! fixture an `electedCharter` holds its `members`, and it can never be
-//! deleted or replaced. A `resignation` names its charter by id
-//! (`electedCharterId`), and `memberId` must be one of that charter's
-//! members; each of `witnesses`, a typed array, must be too. `lookedUpMemberId`
-//! reads its list through `lookedUpCharterId`, which finds the charter through a
-//! unique index rather than by id, and `ownedCharterMemberId` through
-//! `ownedCharterId`, a lookup keyed by the charter's owner and the
-//! resignation's `charterKey`. `metaMemberId` reads the charter's nested
-//! `seats.members` through the nested `meta.charterId`. The second contract's
-//! `ballot` does the same with a charter of the first contract.
+//! fixture an `electedCharter` holds its `members` (and `seats.members`), and
+//! it can never be deleted or replaced. A `resignation` names its charter by
+//! id in `electedCharterId` (a `permanentDocument` reference of its own), and
+//! `memberId` must be one of that charter's members, found by the agreement
+//! pair `{ "electedCharterId": "$id" }`; each of `witnesses`, a typed array,
+//! must be too. `plainMemberId` reads its charter through `plainCharterId`, an
+//! identifier with no reference of its own; `titledMemberId` also agrees on
+//! `charterTitle` with the charter's `title`; `metaMemberId` reads the nested
+//! `seats.members` through the nested `meta.charterId`; and
+//! `memberOrCharterId` is an `anyOf` of a member and the charter itself. The
+//! second contract's `ballot` reads a charter of the first contract.
 //!
 //! A value the list does not hold is refused, paid, with
 //! `ReferencedEntityNotFoundError` (40120) naming the property, or the element
@@ -151,11 +152,10 @@ mod list_element_reference_tests {
         }
 
         /// The document type named `type_name`, in whichever fixture contract
-        /// has it, with the contract's id, `who`'s writer and the random source:
-        /// the parts a transition is built from, borrowed at once.
+        /// has it, with the contract's id, the founder's writer and the random
+        /// source: the parts a transition is built from, borrowed at once.
         fn parts(
             &mut self,
-            who: Who,
             type_name: &str,
         ) -> (DocumentTypeRef<'_>, Identifier, &mut Writer, &mut StdRng) {
             let (document_type, contract_id) = [&self.contract, &self.ballot_contract]
@@ -166,12 +166,7 @@ mod list_element_reference_tests {
                         .map(|document_type| (document_type, contract.id()))
                 })
                 .expect("expected the document type");
-            let writer = match who {
-                Who::Founder => &mut self.founder,
-                Who::Member => &mut self.member,
-                Who::Stranger => &mut self.stranger,
-            };
-            (document_type, contract_id, writer, &mut self.rng)
+            (document_type, contract_id, &mut self.founder, &mut self.rng)
         }
 
         fn process(&self, transition: &StateTransition) -> StateTransitionExecutionResult {
@@ -212,7 +207,7 @@ mod list_element_reference_tests {
         ) -> (Document, StateTransitionExecutionResult) {
             let platform_version = PlatformVersion::latest();
             let owner_id = self.id(Who::Founder);
-            let (document_type, contract_id, writer, rng) = self.parts(Who::Founder, type_name);
+            let (document_type, contract_id, writer, rng) = self.parts(type_name);
             let entropy = Bytes32::random_with_rng(rng);
             let mut document = document_type
                 .random_document_with_identifier_and_entropy(
@@ -262,7 +257,7 @@ mod list_element_reference_tests {
                 .increment_revision()
                 .expect("the revision increments");
             change(&mut replacement);
-            let (document_type, contract_id, writer, _) = self.parts(Who::Founder, type_name);
+            let (document_type, contract_id, writer, _) = self.parts(type_name);
             let nonce = writer.next_nonce(contract_id);
             let transition = BatchTransition::new_document_replacement_transition_from_document(
                 replacement.clone(),
@@ -281,11 +276,13 @@ mod list_element_reference_tests {
             (replacement, result)
         }
 
-        /// An elected charter for the submitted charter `submitted_charter_id`
-        /// seating `members`; returns its id.
+        /// An elected charter titled `title` for the submitted charter
+        /// `submitted_charter_id` seating `members` (in `seats.members` too);
+        /// returns its id.
         async fn seat_charter(
             &mut self,
             submitted_charter_id: Identifier,
+            title: &str,
             members: &[Identifier],
         ) -> Identifier {
             let (charter, result) = self
@@ -293,6 +290,7 @@ mod list_element_reference_tests {
                     "electedCharter",
                     &[
                         ("submittedCharterId", id_value(submitted_charter_id)),
+                        ("title", title.into()),
                         ("members", ids(members)),
                         (
                             "seats",
@@ -344,7 +342,7 @@ mod list_element_reference_tests {
         let mut fixture = ListElementFixture::new();
         let member = fixture.id(Who::Member);
         let charter = fixture
-            .seat_charter(submitted_charter_id(1), &[member])
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
             .await;
 
         let (_, result) = fixture
@@ -363,11 +361,11 @@ mod list_element_reference_tests {
         let member = fixture.id(Who::Member);
         let stranger = fixture.id(Who::Stranger);
         let charter = fixture
-            .seat_charter(submitted_charter_id(1), &[member])
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
             .await;
         // The stranger sits on another charter, which is not the one named
         fixture
-            .seat_charter(submitted_charter_id(2), &[stranger])
+            .seat_charter(submitted_charter_id(2), "beta", &[stranger])
             .await;
 
         let (_, result) = fixture
@@ -381,17 +379,54 @@ mod list_element_reference_tests {
     }
 
     #[tokio::test]
-    async fn should_refuse_a_value_set_while_the_document_property_is_not() {
+    async fn should_refuse_a_value_set_while_the_id_property_is_not_or_names_no_charter() {
         let mut fixture = ListElementFixture::new();
         let member = fixture.id(Who::Member);
         fixture
-            .seat_charter(submitted_charter_id(1), &[member])
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
             .await;
 
         // No charter is named, so no list holds the member
-        let (_, result) = fixture.resign(&[("memberId", id_value(member))]).await;
+        let (_, unnamed) = fixture.resign(&[("memberId", id_value(member))]).await;
+        assert_not_listed(unnamed, "memberId", member);
 
-        assert_not_listed(result, "memberId", member);
+        // A charter that does not exist holds no list either: `plainCharterId`
+        // carries no reference of its own, so the list element is what finds it
+        let (_, missing) = fixture
+            .resign(&[
+                ("plainCharterId", id_value(Identifier::from([0xEE; 32]))),
+                ("plainMemberId", id_value(member)),
+            ])
+            .await;
+        assert_not_listed(missing, "plainMemberId", member);
+    }
+
+    /// The `$id` property needs no reference of its own: the list element
+    /// fetches the charter itself.
+    #[tokio::test]
+    async fn should_read_the_list_through_a_plain_identifier() {
+        let mut fixture = ListElementFixture::new();
+        let member = fixture.id(Who::Member);
+        let stranger = fixture.id(Who::Stranger);
+        let charter = fixture
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
+            .await;
+
+        let (_, listed) = fixture
+            .resign(&[
+                ("plainCharterId", id_value(charter)),
+                ("plainMemberId", id_value(member)),
+            ])
+            .await;
+        assert_succeeded(listed);
+
+        let (_, unlisted) = fixture
+            .resign(&[
+                ("plainCharterId", id_value(charter)),
+                ("plainMemberId", id_value(stranger)),
+            ])
+            .await;
+        assert_not_listed(unlisted, "plainMemberId", stranger);
     }
 
     #[tokio::test]
@@ -401,7 +436,7 @@ mod list_element_reference_tests {
         let member = fixture.id(Who::Member);
         let stranger = fixture.id(Who::Stranger);
         let charter = fixture
-            .seat_charter(submitted_charter_id(1), &[founder, member])
+            .seat_charter(submitted_charter_id(1), "alpha", &[founder, member])
             .await;
 
         let (_, all_listed) = fixture
@@ -423,18 +458,57 @@ mod list_element_reference_tests {
         assert_not_listed(one_unlisted, "witnesses[1]", stranger);
     }
 
+    /// The other agreement pairs are checked against the charter the `$id`
+    /// pair names, as for any document reference.
     #[tokio::test]
-    async fn should_refuse_a_replace_that_points_the_document_property_at_a_charter_not_listing_the_value(
+    async fn should_check_the_other_agreement_pairs_against_the_charter() {
+        let mut fixture = ListElementFixture::new();
+        let member = fixture.id(Who::Member);
+        let charter = fixture
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
+            .await;
+
+        let (_, agreeing) = fixture
+            .resign(&[
+                ("electedCharterId", id_value(charter)),
+                ("charterTitle", "alpha".into()),
+                ("titledMemberId", id_value(member)),
+            ])
+            .await;
+        assert_succeeded(agreeing);
+
+        let (_, disagreeing) = fixture
+            .resign(&[
+                ("electedCharterId", id_value(charter)),
+                ("charterTitle", "beta".into()),
+                ("titledMemberId", id_value(member)),
+            ])
+            .await;
+        assert_matches!(
+            disagreeing,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(e)
+                ),
+                ..
+            } if e.path() == "titledMemberId"
+                && e.referring_property() == "charterTitle"
+                && e.referenced_property() == "title"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_replace_that_points_the_id_property_at_a_charter_not_listing_the_value(
     ) {
         let mut fixture = ListElementFixture::new();
         let founder = fixture.id(Who::Founder);
         let member = fixture.id(Who::Member);
         let stranger = fixture.id(Who::Stranger);
         let charter = fixture
-            .seat_charter(submitted_charter_id(1), &[member, founder])
+            .seat_charter(submitted_charter_id(1), "alpha", &[member, founder])
             .await;
         let other_charter = fixture
-            .seat_charter(submitted_charter_id(2), &[stranger])
+            .seat_charter(submitted_charter_id(2), "beta", &[stranger])
             .await;
         let (resignation, result) = fixture
             .resign(&[
@@ -471,8 +545,8 @@ mod list_element_reference_tests {
             .await;
         assert_not_listed(changed, "memberId", stranger);
 
-        // and to one it lists is accepted: the charter is fetched through the
-        // untouched `electedCharterId`, whose reference is validated with it
+        // and to one it lists is accepted: the charter is fetched again for
+        // the check, while its own reference is left alone
         let (resignation, changed_listed) = fixture
             .replace("resignation", &resignation, |resignation| {
                 resignation.set("memberId", id_value(founder));
@@ -501,81 +575,18 @@ mod list_element_reference_tests {
         assert_succeeded(repointed_listed);
     }
 
-    #[tokio::test]
-    async fn should_read_the_list_of_a_charter_found_through_a_lookup() {
-        let mut fixture = ListElementFixture::new();
-        let member = fixture.id(Who::Member);
-        let stranger = fixture.id(Who::Stranger);
-        fixture
-            .seat_charter(submitted_charter_id(1), &[member])
-            .await;
-
-        // `lookedUpCharterId` names the charter by the submitted charter it
-        // was elected for
-        let (_, listed) = fixture
-            .resign(&[
-                ("lookedUpCharterId", id_value(submitted_charter_id(1))),
-                ("lookedUpMemberId", id_value(member)),
-            ])
-            .await;
-        assert_succeeded(listed);
-
-        let (_, unlisted) = fixture
-            .resign(&[
-                ("lookedUpCharterId", id_value(submitted_charter_id(1))),
-                ("lookedUpMemberId", id_value(stranger)),
-            ])
-            .await;
-        assert_not_listed(unlisted, "lookedUpMemberId", stranger);
-    }
-
-    /// A replace that moves `ownedCharterId`'s lookup onto another charter
-    /// (its key reads `charterKey`, which the replace changes) checks the list
-    /// element again against the other charter's list, though neither the
-    /// value nor `ownedCharterId` itself changed.
-    #[tokio::test]
-    async fn should_check_a_list_element_again_when_a_lookup_key_moves_its_charter() {
-        let mut fixture = ListElementFixture::new();
-        let founder = fixture.id(Who::Founder);
-        let member = fixture.id(Who::Member);
-        let stranger = fixture.id(Who::Stranger);
-        fixture
-            .seat_charter(submitted_charter_id(1), &[member])
-            .await;
-        fixture
-            .seat_charter(submitted_charter_id(2), &[stranger])
-            .await;
-
-        // Both charters are the founder's: `charterKey` picks one
-        let (resignation, result) = fixture
-            .resign(&[
-                ("charterKey", id_value(submitted_charter_id(1))),
-                ("ownedCharterId", id_value(founder)),
-                ("ownedCharterMemberId", id_value(member)),
-            ])
-            .await;
-        assert_succeeded(result);
-
-        let (_, moved) = fixture
-            .replace("resignation", &resignation, |resignation| {
-                resignation.set("charterKey", id_value(submitted_charter_id(2)));
-            })
-            .await;
-        assert_not_listed(moved, "ownedCharterMemberId", member);
-    }
-
     /// `metaMemberId` reads `seats.members` through `meta.charterId`: nested
     /// paths on both sides, and a replace of the whole `meta` object moves it.
     #[tokio::test]
-    async fn should_read_a_nested_list_through_a_nested_document_property() {
+    async fn should_read_a_nested_list_through_a_nested_id_property() {
         let mut fixture = ListElementFixture::new();
         let member = fixture.id(Who::Member);
         let stranger = fixture.id(Who::Stranger);
         let charter = fixture
-            .seat_charter(submitted_charter_id(1), &[member])
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
             .await;
         let other_charter = fixture
-            .seat_charter(submitted_charter_id(2), &[stranger])
+            .seat_charter(submitted_charter_id(2), "beta", &[stranger])
             .await;
         let meta = |charter: Identifier| {
             Value::Map(vec![(
@@ -605,6 +616,48 @@ mod list_element_reference_tests {
         assert_not_listed(moved, "metaMemberId", member);
     }
 
+    /// A list element is a leaf a reference expression takes: `memberOrCharterId`
+    /// is a member of the named charter, or the charter itself.
+    #[tokio::test]
+    async fn should_compose_with_a_reference_expression() {
+        let mut fixture = ListElementFixture::new();
+        let member = fixture.id(Who::Member);
+        let stranger = fixture.id(Who::Stranger);
+        let charter = fixture
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
+            .await;
+
+        for value in [member, charter] {
+            let (_, held) = fixture
+                .resign(&[
+                    ("electedCharterId", id_value(charter)),
+                    ("memberOrCharterId", id_value(value)),
+                ])
+                .await;
+            assert_succeeded(held);
+        }
+
+        // Neither: refused with the last operand's error, the charter reference's
+        let (_, neither) = fixture
+            .resign(&[
+                ("electedCharterId", id_value(charter)),
+                ("memberOrCharterId", id_value(stranger)),
+            ])
+            .await;
+        assert_matches!(
+            neither,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
+                ..
+            } if e.path() == "memberOrCharterId"
+                && *e.entity_id() == stranger
+                && matches!(
+                    e.entity_type(),
+                    DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                )
+        );
+    }
+
     /// A list in another contract is read from that contract's document.
     #[tokio::test]
     async fn should_read_the_list_of_a_charter_of_another_contract() {
@@ -612,7 +665,7 @@ mod list_element_reference_tests {
         let member = fixture.id(Who::Member);
         let stranger = fixture.id(Who::Stranger);
         let charter = fixture
-            .seat_charter(submitted_charter_id(1), &[member])
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
             .await;
 
         let (_, listed) = fixture
@@ -638,18 +691,19 @@ mod list_element_reference_tests {
         assert_not_listed(unlisted, "voterId", stranger);
     }
 
-    /// The list check reads the charter `electedCharterId`'s own reference
-    /// fetched: a write with list elements is billed exactly what the same
-    /// write without them is, one document fetch.
+    /// The charter `electedCharterId`'s own reference fetches is shared with
+    /// the list elements read through it: a write with list elements is
+    /// billed exactly what the same write without them is, one document
+    /// fetch. A list element through a plain identifier is that one fetch.
     #[tokio::test]
-    async fn should_bill_no_read_for_the_list_check() {
+    async fn should_bill_one_fetch_for_the_charter_and_its_list_elements() {
         let mut fixture = ListElementFixture::new();
         let platform_version = PlatformVersion::latest();
         let founder = fixture.id(Who::Founder);
         let member = fixture.id(Who::Member);
         let stranger = fixture.id(Who::Stranger);
         let charter = fixture
-            .seat_charter(submitted_charter_id(1), &[founder, member])
+            .seat_charter(submitted_charter_id(1), "alpha", &[founder, member])
             .await;
 
         let (_, contract_fetch_info) = fixture
@@ -733,5 +787,13 @@ mod list_element_reference_tests {
             )]
         );
         assert_eq!(refused, charter_only);
+
+        // Through a plain identifier the list element's fetch is the one read
+        let (result, plain) = validate(&[
+            ("plainCharterId", id_value(charter)),
+            ("plainMemberId", id_value(member)),
+        ]);
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_eq!(plain, charter_only);
     }
 }

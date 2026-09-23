@@ -1,8 +1,8 @@
 //! References to an element of a list of a referenced document (`refersTo:
 //! listElement`, protocol version 14): the parse of the declaration, the checks
-//! of its referring side and, for a list in the same contract, of the list at
-//! contract level, all under full validation, the protocol version gate, the
-//! reference bound and the platform serialization round trip.
+//! of its `$id` pair under full validation, the check of its list at contract
+//! level for a document type of the same contract, the protocol version gate,
+//! the reference bound and the platform serialization round trip.
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -20,6 +20,7 @@ use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 const CONTRACT_ID: [u8; 32] = [7; 32];
 
@@ -61,28 +62,28 @@ fn identifier_list(
 }
 
 /// The declaration of the moderation charters' resignations: the value must be
-/// one of the `members` of the elected charter `electedCharterId` refers to.
+/// one of the `members` of the elected charter whose id `electedCharterId`
+/// holds.
 fn members_of_the_charter() -> serde_json::Value {
-    list_element("electedCharterId", "members")
+    list_element(json!({ "electedCharterId": "$id" }), "members")
 }
 
-fn list_element(document_property: &str, list: &str) -> serde_json::Value {
+fn list_element(property_agreement: serde_json::Value, in_list: &str) -> serde_json::Value {
     json!({
         "type": "listElement",
         "documentType": "electedCharter",
-        "documentProperty": document_property,
-        "list": list
+        "propertyAgreement": property_agreement,
+        "inList": in_list
     })
 }
 
 /// A contract with a permanent, immutable `electedCharter` type holding the
-/// `members` list (and a `tags` list of strings, a `title` and a unique
-/// `bySubmittedCharter` index a lookup can find a charter through), a
-/// permanent `joinRequest` type, and a `resignation` type whose `memberId`
-/// declares `refers_to`. Its other properties are what a declaration can name:
-/// `electedCharterId` refers to the charter by id, `lookedUpCharterId` through
-/// the index, `joinRequestId` to a join request, `identityId` to an identity,
-/// and `plainId` and `note` refer to nothing.
+/// `members` list (and a `tags` list of strings and a `title`), a permanent
+/// `joinRequest` type, and a `resignation` type whose `memberId` declares
+/// `refers_to`. Its other properties are what a `$id` pair can read:
+/// `electedCharterId` refers to the charter by id, `plainCharterId` is a
+/// plain identifier, `identityId` refers to an identity, and `note` is a
+/// string; `charterTitle` is a string another pair can agree on.
 fn charter_contract(refers_to: serde_json::Value) -> serde_json::Value {
     json!({
         "$formatVersion": "1",
@@ -105,13 +106,6 @@ fn charter_contract(refers_to: serde_json::Value) -> serde_json::Value {
                     },
                     "title": { "type": "string", "maxLength": 63, "position": 3 }
                 },
-                "indices": [
-                    {
-                        "name": "bySubmittedCharter",
-                        "properties": [{ "submittedCharterId": "asc" }],
-                        "unique": true
-                    }
-                ],
                 "required": ["submittedCharterId", "members"],
                 "additionalProperties": false
             },
@@ -132,21 +126,10 @@ fn charter_contract(refers_to: serde_json::Value) -> serde_json::Value {
                         json!({ "type": "permanentDocument", "documentType": "electedCharter" })
                     ),
                     "memberId": identifier_referring_to(1, refers_to),
-                    "lookedUpCharterId": identifier_referring_to(2, json!({
-                        "type": "permanentDocument",
-                        "documentType": "electedCharter",
-                        "lookup": {
-                            "index": "bySubmittedCharter",
-                            "keys": { "submittedCharterId": "." }
-                        }
-                    })),
-                    "joinRequestId": identifier_referring_to(
-                        3,
-                        json!({ "type": "permanentDocument", "documentType": "joinRequest" })
-                    ),
-                    "identityId": identifier_referring_to(4, json!({ "type": "identity" })),
-                    "plainId": identifier(5),
-                    "note": { "type": "string", "maxLength": 63, "position": 6 }
+                    "plainCharterId": identifier(2),
+                    "identityId": identifier_referring_to(3, json!({ "type": "identity" })),
+                    "note": { "type": "string", "maxLength": 63, "position": 4 },
+                    "charterTitle": { "type": "string", "maxLength": 63, "position": 5 }
                 },
                 "required": ["electedCharterId"],
                 "additionalProperties": false
@@ -179,11 +162,15 @@ fn resignation_property_type(contract: &DataContract, property: &str) -> Documen
         .clone()
 }
 
-fn expected_reference(document_property: &str, list: &str) -> DocumentPropertyReferenceTarget {
+fn expected_reference(pairs: &[(&str, &str)], in_list: &str) -> DocumentPropertyReferenceTarget {
     DocumentPropertyReferenceTarget::ListElement(ListElementReference {
+        contract_id: None,
         document_type_name: "electedCharter".to_string(),
-        document_property: document_property.to_string(),
-        list: list.to_string(),
+        property_agreement: pairs
+            .iter()
+            .map(|(referring, referenced)| (referring.to_string(), referenced.to_string()))
+            .collect(),
+        in_list: in_list.to_string(),
     })
 }
 
@@ -211,25 +198,65 @@ fn should_parse_a_list_element_reference_on_an_identifier_property() {
     assert_eq!(
         resignation_property_type(&parsed, "memberId"),
         DocumentPropertyType::IdentifierWithReference(expected_reference(
-            "electedCharterId",
+            &[("electedCharterId", "$id")],
             "members"
         ))
     );
+    let reference = expected_reference(&[("electedCharterId", "$id")], "members");
+    let DocumentPropertyReferenceTarget::ListElement(reference) = &reference else {
+        unreachable!()
+    };
+    assert_eq!(reference.document_id_property(), Some("electedCharterId"));
+    // A document reference, whose value is not the document's id
+    let member_id = resignation_property_type(&parsed, "memberId");
+    let declaration = reference_declaration(&member_id);
+    assert_eq!(declaration.document_type_name, "electedCharter");
+    assert!(declaration.permanent);
+    assert_eq!(declaration.in_list, Some("members"));
+}
+
+fn reference_declaration(
+    property_type: &DocumentPropertyType,
+) -> crate::data_contract::document_type::DocumentReferenceDeclaration<'_> {
+    let DocumentPropertyType::IdentifierWithReference(target) = property_type else {
+        panic!("expected a reference");
+    };
+    assert!(
+        target.as_document_reference().is_none(),
+        "a list element's value is not a document id"
+    );
+    target
+        .as_any_document_reference()
+        .expect("a list element is a document reference")
 }
 
 #[test]
-fn should_parse_a_list_element_reference_read_through_a_lookup_reference() {
-    // `documentProperty` may find the charter through a unique index rather
-    // than by its id
+fn should_parse_a_list_element_reference_through_a_plain_identifier_and_with_more_pairs() {
+    // The `$id` property needs no reference of its own: the list element
+    // fetches the document itself
     let parsed = contract(charter_contract(list_element(
-        "lookedUpCharterId",
+        json!({ "plainCharterId": "$id" }),
         "members",
     )))
     .expect("parses");
     assert_eq!(
         resignation_property_type(&parsed, "memberId"),
         DocumentPropertyType::IdentifierWithReference(expected_reference(
-            "lookedUpCharterId",
+            &[("plainCharterId", "$id")],
+            "members"
+        ))
+    );
+
+    // Other pairs are ordinary agreements, checked against the same document
+    let parsed = contract(charter_contract(list_element(
+        json!({ "electedCharterId": "$id", "charterTitle": "title" }),
+        "members",
+    )))
+    .expect("parses");
+    assert_eq!(
+        resignation_property_type(&parsed, "memberId"),
+        DocumentPropertyType::IdentifierWithReference(expected_reference(
+            &[("electedCharterId", "$id"), ("charterTitle", "title")],
             "members"
         ))
     );
@@ -239,26 +266,62 @@ fn should_parse_a_list_element_reference_read_through_a_lookup_reference() {
 fn should_parse_a_list_element_reference_on_the_elements_of_a_typed_array() {
     let mut schema = charter_contract(json!({ "type": "identity" }));
     schema["documentSchemas"]["resignation"]["properties"]["witnesses"] =
-        identifier_list(7, 4, Some(members_of_the_charter()));
+        identifier_list(6, 4, Some(members_of_the_charter()));
     let parsed = contract(schema).expect("parses");
 
     let witnesses = resignation_property_type(&parsed, "witnesses");
     assert_eq!(
         witnesses.reference(),
         Some(PropertyReference::Elements {
-            target: &expected_reference("electedCharterId", "members"),
+            target: &expected_reference(&[("electedCharterId", "$id")], "members"),
             max_items: 4,
         })
     );
 }
 
+/// A list element is an existence check against a document that is never
+/// deleted with a list that never changes, so it composes with the other
+/// permanent targets in a reference expression, checked as a leaf as it would
+/// be alone.
 #[test]
-fn should_accept_an_optional_document_property() {
-    // Only a value set while `documentProperty` is not is refused, when the
+fn should_parse_a_list_element_as_a_leaf_of_a_reference_expression() {
+    let parsed = contract(charter_contract(json!({
+        "anyOf": [
+            members_of_the_charter(),
+            { "type": "permanentDocument", "documentType": "electedCharter" }
+        ]
+    })))
+    .expect("parses");
+    let DocumentPropertyType::IdentifierWithReference(DocumentPropertyReferenceTarget::AnyOf(
+        operands,
+    )) = resignation_property_type(&parsed, "memberId")
+    else {
+        panic!("expected an anyOf");
+    };
+    assert_eq!(
+        operands.operands()[0],
+        expected_reference(&[("electedCharterId", "$id")], "members")
+    );
+
+    // The leaf's own checks still run, naming the leaf
+    assert_refused(
+        contract(charter_contract(json!({
+            "anyOf": [
+                list_element(json!({ "electedCharterId": "$id" }), "title"),
+                { "type": "permanentDocument", "documentType": "electedCharter" }
+            ]
+        }))),
+        "refersTo anyOf[0] listElement: \"title\" of \"electedCharter\" is not a typed array",
+    );
+}
+
+#[test]
+fn should_accept_an_optional_id_property() {
+    // Only a value set while the `$id` property is not is refused, when the
     // document is written
     let mut schema = charter_contract(members_of_the_charter());
     schema["documentSchemas"]["resignation"]["required"] = json!([]);
-    contract(schema).expect("an optional documentProperty is accepted");
+    contract(schema).expect("an optional $id property is accepted");
 }
 
 #[test]
@@ -274,60 +337,65 @@ fn should_refuse_a_list_element_reference_on_a_non_identifier_property() {
 }
 
 #[test]
-fn should_refuse_a_document_property_that_is_missing_or_carries_no_permanent_document_reference() {
-    for document_property in ["nothing", "plainId", "identityId", "note"] {
-        let schema = charter_contract(list_element(document_property, "members"));
-        let fragment = if document_property == "nothing" {
-            format!("documentProperty \"{document_property}\" is not a property")
-        } else {
-            format!(
-                "documentProperty \"{document_property}\" must be an identifier property \
-                 carrying a permanentDocument refersTo"
-            )
-        };
-        assert_refused(contract(schema.clone()), &fragment);
+fn should_refuse_an_id_pair_reading_a_missing_or_non_identifier_property_or_the_writer() {
+    for (id_property, fragment) in [
+        (
+            "nothing",
+            "the $id pair reads \"nothing\", which is not a property of the referring document type",
+        ),
+        (
+            "note",
+            "the $id pair reads \"note\", which is not an identifier property",
+        ),
+    ] {
+        let schema = charter_contract(list_element(json!({ id_property: "$id" }), "members"));
+        assert_refused(contract(schema.clone()), fragment);
         // Without full validation (a contract read back from state) the
         // referring side is not re-checked
         contract_on(schema, false, PlatformVersion::latest())
             .expect("a contract read back from state is not re-checked");
     }
 
-    // A deletableDocument reference does not qualify: the document holding the
-    // list could be deleted
-    let mut schema = charter_contract(members_of_the_charter());
-    schema["documentSchemas"]["resignation"]["properties"]["electedCharterId"]["refersTo"]
-        ["type"] = json!("deletableDocument");
-    schema = with_elected_charter(schema, "canBeDeleted", json!(true));
-    assert_refused(
-        contract(schema),
-        "documentProperty \"electedCharterId\" must be an identifier property carrying a \
-         permanentDocument refersTo",
-    );
+    // The writer's id is no document's id: refused on every parse
+    let schema = charter_contract(list_element(json!({ "$ownerId": "$id" }), "members"));
+    for full_validation in [true, false] {
+        assert_refused(
+            contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+            "listElement refersTo $id pair must read a property of the referring document type",
+        );
+    }
 }
 
 #[test]
-fn should_refuse_a_document_property_that_refers_to_another_document_type() {
-    assert_refused(
-        contract(charter_contract(list_element("joinRequestId", "members"))),
-        "documentProperty \"joinRequestId\" refers to document type \"joinRequest\", not \
-         \"electedCharter\"",
-    );
+fn should_refuse_an_agreement_without_exactly_one_id_pair() {
+    for (agreement, found) in [
+        (json!({ "charterTitle": "title" }), 0),
+        (
+            json!({ "electedCharterId": "$id", "plainCharterId": "$id" }),
+            2,
+        ),
+    ] {
+        let schema = charter_contract(list_element(agreement, "members"));
+        for full_validation in [true, false] {
+            assert_refused(
+                contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+                &format!("exactly one pair with $id on the referenced side, naming the property whose value is the id of the document holding the list, found {found}"),
+            );
+        }
+    }
 }
 
 #[test]
-fn should_refuse_a_transient_document_property() {
+fn should_refuse_a_transient_id_property_or_one_inside_a_transient_object() {
     let mut schema = charter_contract(members_of_the_charter());
     schema["documentSchemas"]["resignation"]["transient"] = json!(["electedCharterId"]);
     assert_refused(
         contract(schema),
-        "documentProperty \"electedCharterId\" is transient",
+        "the $id pair reads \"electedCharterId\", which is transient",
     );
-}
 
-/// An object listed as transient is never stored, and neither is anything in
-/// it, on either side of the declaration.
-#[test]
-fn should_refuse_a_document_property_or_a_list_inside_a_transient_object() {
+    // An object listed as transient is never stored, and neither is anything
+    // in it, on either side of the declaration
     let seats = json!({
         "type": "object",
         "properties": { "members": identifier_list(0, 15, None) },
@@ -343,31 +411,27 @@ fn should_refuse_a_document_property_or_a_list_inside_a_transient_object() {
             )
         },
         "additionalProperties": false,
-        "position": 7
+        "position": 6
     });
-    let with_objects = |refers_to: serde_json::Value| {
-        let mut schema = charter_contract(refers_to);
+    let with_objects = || {
+        let mut schema = charter_contract(list_element(
+            json!({ "meta.charterId": "$id" }),
+            "seats.members",
+        ));
         schema["documentSchemas"]["electedCharter"]["properties"]["seats"] = seats.clone();
         schema["documentSchemas"]["resignation"]["properties"]["meta"] = meta.clone();
         schema
     };
+    contract(with_objects()).expect("nested stored paths are accepted");
 
-    // Stored, the nested paths are accepted
-    contract(with_objects(list_element(
-        "meta.charterId",
-        "seats.members",
-    )))
-    .expect("nested stored paths are accepted");
-
-    let mut transient_document_property =
-        with_objects(list_element("meta.charterId", "seats.members"));
-    transient_document_property["documentSchemas"]["resignation"]["transient"] = json!(["meta"]);
+    let mut transient_id_property = with_objects();
+    transient_id_property["documentSchemas"]["resignation"]["transient"] = json!(["meta"]);
     assert_refused(
-        contract(transient_document_property),
-        "documentProperty \"meta.charterId\" is transient",
+        contract(transient_id_property),
+        "the $id pair reads \"meta.charterId\", which is transient",
     );
 
-    let mut transient_list = with_objects(list_element("meta.charterId", "seats.members"));
+    let mut transient_list = with_objects();
     transient_list["documentSchemas"]["electedCharter"]["transient"] = json!(["seats"]);
     assert_refused(
         contract(transient_list),
@@ -392,7 +456,7 @@ fn should_refuse_a_list_that_is_missing_or_not_a_typed_array_of_identifiers() {
             "\"submittedCharterId\" of \"electedCharter\" is not a typed array of identifiers",
         ),
     ] {
-        let schema = charter_contract(list_element("electedCharterId", list));
+        let schema = charter_contract(list_element(json!({ "electedCharterId": "$id" }), list));
         assert_refused(contract(schema.clone()), fragment);
         contract_on(schema, false, PlatformVersion::latest())
             .expect("a contract read back from state is not re-checked");
@@ -411,47 +475,52 @@ fn should_refuse_a_list_held_by_a_deletable_or_mutable_document_type() {
         "documents of \"electedCharter\" can be deleted",
     );
 
-    // A list a replace could change (the key `lookedUpCharterId` finds a
-    // charter by stays frozen, so the lookup beside it is not what refuses)
+    // A list a replace could change
     let mutable = with_elected_charter(
         charter_contract(members_of_the_charter()),
         "documentsMutable",
         json!(true),
     );
-    let frozen_except =
-        |frozen: &[&str]| with_elected_charter(mutable.clone(), "immutable", json!(frozen));
     assert_refused(
-        contract(frozen_except(&["submittedCharterId"])),
+        contract(mutable.clone()),
         "property \"memberId\" refersTo listElement: \"members\" of \"electedCharter\" can be \
          changed by a replace",
     );
 
     // Freezing the list on the mutable type is enough
-    contract(frozen_except(&["submittedCharterId", "members"]))
-        .expect("an immutable list on a mutable type is accepted");
+    contract(with_elected_charter(
+        mutable.clone(),
+        "immutable",
+        json!(["members"]),
+    ))
+    .expect("an immutable list on a mutable type is accepted");
 
     // Freezing another property is not
     assert_refused(
-        contract(frozen_except(&["submittedCharterId", "title"])),
+        contract(with_elected_charter(mutable, "immutable", json!(["title"]))),
         "\"members\" of \"electedCharter\" can be changed by a replace",
     );
 }
 
 #[test]
 fn should_leave_a_list_in_another_contract_to_registration() {
-    // `documentProperty` refers to a charter of another contract, so the parse
-    // cannot see its list: registration checks it against that contract in state
-    let mut schema = charter_contract(list_element("electedCharterId", "anything"));
-    schema["documentSchemas"]["resignation"]["properties"]["electedCharterId"]["refersTo"]
-        ["contractId"] = json!(Identifier::from([9; 32]).to_string(Encoding::Base58));
+    // The list's document type is in another contract, so the parse cannot
+    // see it: registration checks it against that contract in state
+    let mut schema = charter_contract(list_element(
+        json!({ "electedCharterId": "$id" }),
+        "anything",
+    ));
+    schema["documentSchemas"]["resignation"]["properties"]["memberId"]["refersTo"]["contractId"] =
+        json!(Identifier::from([9; 32]).to_string(Encoding::Base58));
     let parsed = contract(schema).expect("parses");
-    assert_eq!(
-        resignation_property_type(&parsed, "memberId"),
-        DocumentPropertyType::IdentifierWithReference(expected_reference(
-            "electedCharterId",
-            "anything"
-        ))
-    );
+    let DocumentPropertyType::IdentifierWithReference(
+        DocumentPropertyReferenceTarget::ListElement(reference),
+    ) = resignation_property_type(&parsed, "memberId")
+    else {
+        panic!("expected a list element reference");
+    };
+    assert_eq!(reference.contract_id, Some(Identifier::from([9; 32])));
+    assert_eq!(reference.in_list, "anything");
 }
 
 #[test]
@@ -484,7 +553,7 @@ fn should_refuse_a_list_element_below_protocol_version_14_and_accept_it_at_14() 
     assert_eq!(
         resignation_property_type(&accepted, "memberId"),
         DocumentPropertyType::IdentifierWithReference(expected_reference(
-            "electedCharterId",
+            &[("electedCharterId", "$id")],
             "members"
         ))
     );
@@ -495,13 +564,13 @@ fn should_count_list_elements_against_the_reference_bound() {
     let limit = PlatformVersion::latest()
         .system_limits
         .max_references_per_document;
-    // The type's other references: `electedCharterId`, `memberId`,
-    // `lookedUpCharterId`, `joinRequestId` and `identityId`
-    let others = 5;
+    // The type's other references: `electedCharterId`, `memberId` and
+    // `identityId`
+    let others = 3;
     let witnesses_up_to = |max_items: u16| {
         let mut schema = charter_contract(members_of_the_charter());
         schema["documentSchemas"]["resignation"]["properties"]["witnesses"] =
-            identifier_list(7, u32::from(max_items), Some(members_of_the_charter()));
+            identifier_list(6, u32::from(max_items), Some(members_of_the_charter()));
         schema
     };
 
@@ -515,9 +584,15 @@ fn should_count_list_elements_against_the_reference_bound() {
 #[test]
 fn should_round_trip_a_contract_through_platform_serialization_with_a_list_element() {
     let platform_version = PlatformVersion::latest();
-    let mut schema = charter_contract(members_of_the_charter());
-    schema["documentSchemas"]["resignation"]["properties"]["witnesses"] =
-        identifier_list(7, 4, Some(list_element("lookedUpCharterId", "members")));
+    let mut schema = charter_contract(list_element(
+        json!({ "electedCharterId": "$id", "charterTitle": "title" }),
+        "members",
+    ));
+    schema["documentSchemas"]["resignation"]["properties"]["witnesses"] = identifier_list(
+        6,
+        4,
+        Some(list_element(json!({ "plainCharterId": "$id" }), "members")),
+    );
 
     let original = contract(schema).expect("parses");
     let bytes = original
@@ -536,7 +611,7 @@ fn should_round_trip_a_contract_through_platform_serialization_with_a_list_eleme
     assert_eq!(
         resignation_property_type(&recovered, "memberId"),
         DocumentPropertyType::IdentifierWithReference(expected_reference(
-            "electedCharterId",
+            &[("electedCharterId", "$id"), ("charterTitle", "title")],
             "members"
         ))
     );
@@ -546,48 +621,32 @@ fn should_round_trip_a_contract_through_platform_serialization_with_a_list_eleme
 fn should_refuse_malformed_list_element_declarations_in_the_parser() {
     for (refers_to, fragment) in [
         (
-            json!({
-                "type": "listElement",
-                "contractId": Identifier::from([9; 32]).to_string(Encoding::Base58),
-                "documentType": "electedCharter",
-                "documentProperty": "electedCharterId",
-                "list": "members"
-            }),
-            "listElement refersTo does not take contractId",
+            json!({ "type": "listElement", "documentType": "electedCharter", "inList": "members" }),
+            "exactly one pair with $id on the referenced side",
         ),
         (
-            json!({ "type": "listElement", "documentType": "electedCharter", "list": "members" }),
-            "documentProperty",
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" } }),
+            "inList",
         ),
         (
-            json!({ "type": "listElement", "documentType": "electedCharter", "documentProperty": "electedCharterId" }),
-            "list",
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "$members" }),
+            "listElement refersTo inList must be a property path",
         ),
         (
-            list_element("$ownerId", "members"),
-            "listElement refersTo documentProperty must be a property path",
+            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members", "lookup": { "index": "x", "keys": { "a": "." } } }),
+            "listElement refersTo does not take lookup",
         ),
         (
-            json!({
-                "type": "listElement",
-                "documentType": "electedCharter",
-                "documentProperty": "electedCharterId",
-                "list": "members",
-                "propertyAgreement": { "note": "title" }
-            }),
-            "propertyAgreement is only allowed on permanentDocument and deletableDocument",
+            json!({ "type": "identity", "inList": "members" }),
+            "identity refersTo does not take inList",
         ),
         (
-            json!({ "type": "identity", "list": "members" }),
-            "identity refersTo does not take list",
+            json!({ "type": "permanentDocument", "documentType": "electedCharter", "inList": "members" }),
+            "permanentDocument refersTo does not take inList",
         ),
         (
-            json!({
-                "type": "permanentDocument",
-                "documentType": "electedCharter",
-                "documentProperty": "electedCharterId"
-            }),
-            "permanentDocument refersTo does not take documentProperty",
+            json!({ "type": "identity", "propertyAgreement": { "electedCharterId": "$id" } }),
+            "propertyAgreement is only allowed on permanentDocument, deletableDocument and listElement",
         ),
     ] {
         let schema = charter_contract(refers_to.clone());
@@ -603,9 +662,10 @@ fn should_refuse_malformed_list_element_declarations_in_the_parser() {
 #[test]
 fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
     let reference = ListElementReference {
+        contract_id: None,
         document_type_name: "electedCharter".to_string(),
-        document_property: "electedCharterId".to_string(),
-        list: "seats.members".to_string(),
+        property_agreement: BTreeMap::from([("meta.charterId".to_string(), "$id".to_string())]),
+        in_list: "seats.members".to_string(),
     };
     let listed = [1u8; 32];
     let unlisted = [2u8; 32];
@@ -628,8 +688,9 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
                 .expect("a map")
         )
         .is_empty());
+    assert_eq!(reference.document_id_property(), Some("meta.charterId"));
     assert_eq!(
         DocumentPropertyReferenceTarget::ListElement(reference).to_string(),
-        "list element (seats.members of the electedCharter document electedCharterId refers to)"
+        "list element (seats.members of the electedCharter document meta.charterId names)"
     );
 }

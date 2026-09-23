@@ -1196,6 +1196,16 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                         })),
                     )
                         .into(),
+                    // `anyOf` inside `refersTo` is the declaration's data, not the
+                    // JSON Schema keyword: dropping a target is refused like any change
+                    (
+                        json!({ "refersTo": { "anyOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "note" }] } }),
+                        json!({ "refersTo": { "anyOf": [{ "type": "identity" }] } }),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/refersTo/anyOf/1".to_string(),
+                        })),
+                    )
+                        .into(),
                 ],
             },
         ),

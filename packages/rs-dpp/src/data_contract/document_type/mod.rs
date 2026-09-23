@@ -122,13 +122,10 @@ pub(crate) mod property_names {
     pub const LOOKUP_INDEX: &str = "index";
     /// `lookup`: every index property mapped to its referring-side source.
     pub const LOOKUP_KEYS: &str = "keys";
-    /// `refersTo: listElement`: the property of the referring document type
-    /// whose `permanentDocument` reference finds the document holding the
-    /// list. Meta-schema v3+ (protocol version 14).
-    pub const DOCUMENT_PROPERTY: &str = "documentProperty";
     /// `refersTo: listElement`: the typed array of identifiers, on the
     /// referenced document type, the value must be an element of.
-    pub const LIST: &str = "list";
+    /// Meta-schema v3+ (protocol version 14).
+    pub const IN_LIST: &str = "inList";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";

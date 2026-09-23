@@ -27,7 +27,7 @@ use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::{
-    DocumentPropertyReferenceTarget, PropertyReference,
+    DocumentPropertyReferenceTarget, PropertyReference, ReferenceOperands,
 };
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -456,6 +456,7 @@ fn try_from_schema_generation_3(
     #[cfg(feature = "validation")]
     if full_validation {
         validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
     }
@@ -503,10 +504,147 @@ fn validate_typed_array_max_items(
     Ok(())
 }
 
+/// Every reference expression (`anyOf` / `allOf`), on an identifier property
+/// or on the elements of a typed array, stays inside the registration limits:
+/// at most `SystemLimits::max_reference_expression_depth` combinators on any
+/// path from the declaration to a leaf, and at most
+/// `SystemLimits::max_reference_operands` operands in any one list (the parse
+/// already requires two or more). No two operands of one list may be alike,
+/// which would bill the same reads twice for nothing, with a leaf naming the
+/// declaring contract (`contract_id`) explicitly taken as the same as one
+/// that omits it, which the parse, knowing no contract id, cannot see. Every
+/// leaf also counts against `max_references_per_document`, checked next.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_expressions(
+    document_type: &DocumentTypeV2,
+    contract_id: Identifier,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let max_depth = platform_version
+        .system_limits
+        .max_reference_expression_depth;
+    let max_operands = platform_version.system_limits.max_reference_operands;
+    for (path, property) in document_type.flattened_properties() {
+        let Some(target) = property
+            .property_type
+            .reference()
+            .and_then(|reference| reference.target())
+        else {
+            continue;
+        };
+        let refuse = |reason: String| {
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "property \"{path}\" of document type \"{name}\" declares a refersTo {reason}"
+                )),
+            ))
+        };
+        let depth = target.expression_depth();
+        if depth > usize::from(max_depth) {
+            return refuse(format!(
+                "expression nested {depth} deep, above the maximum of {max_depth}"
+            ));
+        }
+        for (list_path, operands) in operand_lists(target, String::new()) {
+            let count = operands.len();
+            if count > usize::from(max_operands) {
+                return refuse(format!(
+                    "{list_path} of {count} operands, above the maximum of {max_operands}"
+                ));
+            }
+            let normalized: Vec<DocumentPropertyReferenceTarget> = operands
+                .iter()
+                .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                .collect();
+            for (index, operand) in normalized.iter().enumerate() {
+                if normalized[..index].contains(operand) {
+                    return refuse(format!(
+                        "{list_path} whose operand {index} repeats an earlier one"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every operand list of a reference expression, with where it sits
+/// (`anyOf`, `anyOf[1].allOf`); none for a single target.
+#[cfg(feature = "validation")]
+fn operand_lists(
+    target: &DocumentPropertyReferenceTarget,
+    path: String,
+) -> Vec<(String, &[DocumentPropertyReferenceTarget])> {
+    let Some((combinator, operands)) = target.combinator() else {
+        return Vec::new();
+    };
+    let separator = if path.is_empty() { "" } else { "." };
+    let here = format!("{path}{separator}{}", combinator.wire_name());
+    let mut lists = vec![(here.clone(), operands.operands())];
+    for (index, operand) in operands.operands().iter().enumerate() {
+        lists.extend(operand_lists(operand, format!("{here}[{index}]")));
+    }
+    lists
+}
+
+/// `target` with every document leaf naming `contract_id` itself rewritten to
+/// omit it, which means the same, so two spellings of one target compare
+/// equal.
+#[cfg(feature = "validation")]
+fn with_own_contract_id_omitted(
+    target: &DocumentPropertyReferenceTarget,
+    contract_id: Identifier,
+) -> DocumentPropertyReferenceTarget {
+    let mut target = target.clone();
+    match &mut target {
+        DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocument {
+            contract_id: referenced,
+            ..
+        } => {
+            if *referenced == Some(contract_id) {
+                *referenced = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            if reference.contract_id == Some(contract_id) {
+                reference.contract_id = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::AnyOf(operands)
+        | DocumentPropertyReferenceTarget::AllOf(operands) => {
+            *operands = ReferenceOperands::new(
+                operands
+                    .operands()
+                    .iter()
+                    .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                    .collect(),
+            );
+        }
+        DocumentPropertyReferenceTarget::Identity
+        | DocumentPropertyReferenceTarget::Contract { .. }
+        | DocumentPropertyReferenceTarget::Token
+        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => {}
+    }
+    target
+}
+
 /// The references one document of the type can carry, one for each
 /// property declaring `refersTo` (an identifier, or a key id with a key
 /// reference) and `maxItems` for each typed array whose elements declare it,
-/// are at most
+/// each times the number of leaves when the declaration is a reference
+/// expression, are at most
 /// `SystemLimits::max_references_per_document`. Every reference is a billed
 /// state read when the document is created or replaced, so the sum bounds
 /// the reads one write can cause; `max_typed_array_items` alone would let a
@@ -526,13 +664,14 @@ fn validate_reference_count(
         .values()
         .filter_map(|property| property.property_type.reference())
         .map(|reference| reference.max_references())
-        .sum();
+        .fold(0, u32::saturating_add);
     if references > u32::from(limit) {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{name}\" declares references for up to {references} values per \
                  document (one per property with refersTo, maxItems per typed array of \
-                 referencing elements), above the maximum of {limit}",
+                 referencing elements, each times the leaves of a reference expression), above \
+                 the maximum of {limit}",
             )),
         ));
     }
@@ -639,7 +778,11 @@ mod moderators_delete_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
 #[cfg(all(test, feature = "validation"))]
+mod reference_expression_tests;
+#[cfg(all(test, feature = "validation"))]
 mod reference_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]
