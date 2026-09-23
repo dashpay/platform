@@ -36,35 +36,63 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
         return vm
     }
 
-    func test_coreFundingExcludesOtherAccountsAndAccountTypes() {
-        func balance(
-            type: UInt8 = 0,
-            standard: UInt8 = 0,
-            index: UInt32 = 0,
-            confirmed: UInt64
-        ) -> PlatformWalletManager.AccountBalance {
-            PlatformWalletManager.AccountBalance(
-                typeTag: type, standardTag: standard, index: index,
-                registrationIndex: 0, keyClass: 0, userIdentityId: Data(),
-                friendIdentityId: Data(), confirmed: confirmed, unconfirmed: 0,
-                immature: 0, locked: 0, keysUsed: 0, keysTotal: 0
-            )
-        }
-        let otherAccounts = [
-            balance(index: 1, confirmed: 1_000_000),
-            balance(type: 12, confirmed: 1_000_000),
-            balance(standard: 1, confirmed: 1_000_000)
+    private func balance(
+        type: UInt8 = 0,
+        standard: UInt8 = 0,
+        index: UInt32 = 0,
+        confirmed: UInt64
+    ) -> PlatformWalletManager.AccountBalance {
+        PlatformWalletManager.AccountBalance(
+            typeTag: type, standardTag: standard, index: index,
+            registrationIndex: 0, keyClass: 0, userIdentityId: Data(),
+            friendIdentityId: Data(), confirmed: confirmed, unconfirmed: 0,
+            immature: 0, locked: 0, keysUsed: 0, keysTotal: 0
+        )
+    }
+
+    /// The Core balance mirrors Rust's pooled funding set: BIP44 + BIP32 at
+    /// the funding index plus every DashPay receiving account (type 12).
+    func test_coreFundingPoolsTheRustSendSources() {
+        let pooled = [
+            balance(confirmed: 100_000), // BIP44 #0
+            balance(standard: 1, confirmed: 20_000), // BIP32 #0
+            balance(type: 12, index: 3, confirmed: 3_000) // DashPay receiving
         ]
-        XCTAssertEqual(SendViewModel.coreFundingBalance(otherAccounts), 0)
+        XCTAssertEqual(SendViewModel.coreFundingBalance(pooled), 123_000)
+    }
+
+    func test_coreFundingExcludesOtherIndicesAndAccountTypes() {
+        let excluded = [
+            balance(index: 1, confirmed: 1_000_000), // BIP44 #1
+            balance(standard: 1, index: 1, confirmed: 1_000_000), // BIP32 #1
+            balance(type: 1, confirmed: 1_000_000), // CoinJoin
+            balance(type: 13, confirmed: 1_000_000), // DashPay external
+            balance(type: 14, confirmed: 1_000_000) // Platform payment
+        ]
+        XCTAssertEqual(SendViewModel.coreFundingBalance(excluded), 0)
         XCTAssertEqual(SendViewModel.coreFundingBalance(
-            otherAccounts + [balance(confirmed: 0)]
-        ), 0)
-        XCTAssertEqual(SendViewModel.coreFundingBalance(
-            otherAccounts + [balance(confirmed: 100_500)]
+            excluded + [balance(confirmed: 100_500)]
         ), 100_500)
     }
 
-    func test_coreFundingRequiresBatchAndEstimatedFeeInSelectedAccount() {
+    func test_coreFundingBalanceSaturatesInsteadOfOverflowing() {
+        XCTAssertEqual(SendViewModel.coreFundingBalance([
+            balance(confirmed: UInt64.max),
+            balance(type: 12, confirmed: 1)
+        ]), UInt64.max)
+    }
+
+    func test_insufficientCoreFundsMessageIsPlainLanguage() {
+        let message = SendViewModel.insufficientCoreFundsMessage
+        XCTAssertEqual(
+            message,
+            "Not enough confirmed Core funds to cover this amount plus the network fee."
+        )
+        XCTAssertFalse(message.contains("BIP44"))
+        XCTAssertFalse(message.contains("account 0"))
+    }
+
+    func test_coreFundingRequiresBatchAndEstimatedFeeInFundingBalance() {
         let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
         vm.estimatedFee = 500
         XCTAssertFalse(vm.canSend(coreBalance: 100_000))

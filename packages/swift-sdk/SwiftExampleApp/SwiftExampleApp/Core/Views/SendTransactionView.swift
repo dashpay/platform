@@ -266,7 +266,7 @@ struct SendTransactionView: View {
                             let managed = walletManager.wallet(for: wallet.walletId)
                             let platformAddressWallet = try? managed?.platformAddressWallet()
                             // Platform payments select one account with sufficient funds.
-                            // Core sends use the view model's BIP44 funding account.
+                            // Core-funded sends use the view model's funding index.
                             let senderAccountIndex: UInt32
                             if viewModel.detectedFlow == .platformToPlatform {
                                 guard let resolved = resolvePlatformSenderAccountIndex() else {
@@ -275,7 +275,7 @@ struct SendTransactionView: View {
                                 }
                                 senderAccountIndex = resolved
                             } else {
-                                senderAccountIndex = 0
+                                senderAccountIndex = SendViewModel.coreFundingAccountIndex
                             }
                             // Input selection and surplus handling are owned
                             // by the Rust Auto path (surplus stays on the
@@ -454,13 +454,13 @@ struct SendTransactionView: View {
 
     // MARK: - Computed
 
-    /// Core sends display only the BIP44 account used by their builder.
+    /// Confirmed Core balance the send builders can spend
+    /// (`SendViewModel.coreFundingBalance`). Independent of the typed
+    /// destination, so it does not change while the user types. A function
+    /// rather than a computed property so callers snapshot the blocking FFI
+    /// read once per render and thread the value through.
     private func coreBalanceSnapshot() -> UInt64 {
-        let balances = walletManager.accountBalances(for: wallet.walletId)
-        if viewModel.detectedFlow == .coreToCore {
-            return SendViewModel.coreFundingBalance(balances)
-        }
-        return balances.reduce(0) { $0 + $1.confirmed }
+        SendViewModel.coreFundingBalance(walletManager.accountBalances(for: wallet.walletId))
     }
 
     /// Per-wallet shielded balance: sum of THIS wallet's unspent

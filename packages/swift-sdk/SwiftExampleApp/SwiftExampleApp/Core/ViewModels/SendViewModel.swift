@@ -380,23 +380,72 @@ class SendViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Core funding
+
+    /// Standard-account index every Core-funded flow draws from.
+    ///
+    /// One rule for every Core-funded flow: both Rust builders pool the same
+    /// default source set at this index (`SEND_FUNDING_SOURCES` ==
+    /// `ASSET_LOCK_FUNDING_SOURCES` in rs-platform-wallet) — the BIP44 and
+    /// BIP32 accounts at the index plus every DashPay receiving account.
+    /// `coreToCore` reaches it through `.allSpendable`, `coreToShielded`
+    /// through the asset lock's `fundingAccountIndex`.
     static let coreFundingAccountIndex: UInt32 = 0
 
-    /// Balance of the BIP44 account used by the Core send builder.
-    static func coreFundingBalance(_ balances: [PlatformWalletManager.AccountBalance]) -> UInt64 {
-        balances.first {
-            $0.typeTag == 0 && $0.standardTag == 0 && $0.index == coreFundingAccountIndex
-        }?.confirmed ?? 0
+    /// Shown when the pooled Core funding set can't cover a Core-funded send.
+    static let insufficientCoreFundsMessage =
+        "Not enough confirmed Core funds to cover this amount plus the network fee."
+
+    /// `AccountBalance.typeTag` values (Rust `AccountType` discriminants).
+    private enum AccountTypeTag {
+        static let standard: UInt8 = 0
+        static let dashpayReceivingFunds: UInt8 = 12
     }
 
-    /// The estimate is a UI preflight; Rust checks the finalized transaction fee.
+    /// Whether `balance` belongs to the pooled Core funding set described on
+    /// `coreFundingAccountIndex`. Standard accounts are BIP44 and BIP32 alike
+    /// (`standardTag` 0 and 1); CoinJoin, DashPay external (watch-only) and
+    /// every non-funds account type are excluded, as they are in Rust.
+    static func isCoreFundingSource(_ balance: PlatformWalletManager.AccountBalance) -> Bool {
+        switch balance.typeTag {
+        case AccountTypeTag.standard:
+            return balance.index == coreFundingAccountIndex
+        case AccountTypeTag.dashpayReceivingFunds:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Confirmed balance the Core builders can spend — the "Core" balance the
+    /// send screen shows for every flow, so it never changes with the typed
+    /// destination.
+    static func coreFundingBalance(_ balances: [PlatformWalletManager.AccountBalance]) -> UInt64 {
+        balances.lazy
+            .filter(isCoreFundingSource)
+            .reduce(UInt64(0)) { total, balance in
+                let (sum, overflow) = total.addingReportingOverflow(balance.confirmed)
+                return overflow ? UInt64.max : sum
+            }
+    }
+
+    /// Send gate including the Core funding balance. A UI preflight only:
+    /// Rust checks the finalized transaction fee.
     func canSend(coreBalance: UInt64) -> Bool {
         guard canSend else { return false }
-        guard detectedFlow == .coreToCore else { return true }
-        let (required, overflow) = coreSendTotalDuffs.addingReportingOverflow(
-            estimatedFee ?? SendFlow.coreToCore.estimatedFee
-        )
-        return !overflow && coreBalance >= required
+        switch detectedFlow {
+        case .coreToCore:
+            let (required, overflow) = coreSendTotalDuffs.addingReportingOverflow(
+                estimatedFee ?? SendFlow.coreToCore.estimatedFee
+            )
+            return !overflow && coreBalance >= required
+        case .coreToShielded:
+            // The typed amount is the lock size; its L1 fee is only known
+            // once Rust selects inputs, so gate on the lock alone.
+            return (amountDuffs ?? 0) <= coreBalance
+        default:
+            return true
+        }
     }
 
     /// Determine which fund sources are available based on destination and balances.
@@ -515,11 +564,14 @@ class SendViewModel: ObservableObject {
         modelContext: ModelContext
     ) async {
         guard let flow = detectedFlow else { return }
-        if flow == .coreToCore && !canSend(coreBalance: Self.coreFundingBalance(
-            walletManager.accountBalances(for: wallet.walletId)
-        )) {
-            error = "BIP44 account 0 cannot cover the recipients and estimated fee"
-            return
+        if flow == .coreToCore || flow == .coreToShielded {
+            let coreBalance = Self.coreFundingBalance(
+                walletManager.accountBalances(for: wallet.walletId)
+            )
+            if !canSend(coreBalance: coreBalance) {
+                error = Self.insufficientCoreFundsMessage
+                return
+            }
         }
 
         isSending = true
@@ -559,7 +611,7 @@ class SendViewModel: ObservableObject {
                 }
                 let signedTx = try builder.finalizeAtomic(
                     wallet: platformWallet,
-                    accountType: .bip44,
+                    accountType: .allSpendable,
                     accountIndex: Self.coreFundingAccountIndex
                 )
                 // Core acceptance, rather than a successful peer socket write,
@@ -829,22 +881,12 @@ class SendViewModel: ObservableObject {
                     error = "Recipient is not a shielded address"
                     return
                 }
-                // Asset locks draw UTXOs from a SINGLE Core account, so
-                // fund from the standard BIP44 account (typeTag/standardTag
-                // 0) with the largest confirmed balance. The screen's
-                // "Core" total sums across accounts, so an amount under
-                // the displayed total can still fail here when the balance
-                // is split across several accounts.
-                let funding = walletManager.accountBalances(for: wallet.walletId)
-                    .filter { $0.typeTag == 0 && $0.standardTag == 0 }
-                    .max(by: { $0.confirmed < $1.confirmed })
-                guard let funding, funding.confirmed > 0 else {
-                    error = "No spendable Core account to fund the shield"
-                    return
-                }
+                // The asset lock pools the same Core funding set as a Core
+                // payment (see `coreFundingAccountIndex`); the preflight at
+                // the top of this method checked its balance.
                 try await walletManager.shieldedFundFromAssetLock(
                     walletId: wallet.walletId,
-                    fundingAccountIndex: funding.index,
+                    fundingAccountIndex: Self.coreFundingAccountIndex,
                     amountDuffs: amountDuffs,
                     recipients: [
                         ShieldedFundFromAssetLockRecipient(recipientRaw43: recipientRaw)
