@@ -43,7 +43,7 @@ export interface YesNoVotePollFieldsObject {
               fractionOfTotal: {
                   numerator: number;
                   denominator: number;
-                  rounding: "up" | "down";
+                  rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
               };
           };
 }
@@ -61,7 +61,7 @@ export interface YesNoVotePollFieldsJSON {
               fractionOfTotal: {
                   numerator: number;
                   denominator: number;
-                  rounding: "up" | "down";
+                  rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
               };
           };
 }

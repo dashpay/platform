@@ -36,10 +36,15 @@ const YES_NO_VOTE_POLL_ID_DOMAIN: &[u8] = b"dash platform yes/no vote poll id";
     serde(rename_all = "camelCase")
 )]
 pub enum VotingPowerRounding {
-    /// Toward zero: 1/3 of 10 is 3.
+    /// Toward zero: 1/3 of 10 is 3, 1/3 of 9 is 3.
     Down,
-    /// Away from zero: 1/3 of 10 is 4.
+    /// Away from zero: 1/3 of 10 is 4, 1/3 of 9 is 3.
     Up,
+    /// Rounded down, plus one: 1/3 of 10 is 4, 1/3 of 9 is 4. Half the total this way is a
+    /// strict majority of it.
+    DownPlusOne,
+    /// Rounded up, minus one, never below zero: 1/3 of 10 is 3, 1/3 of 9 is 2.
+    UpMinusOne,
 }
 
 /// The least yes plus no voting power a yes/no poll needs to pass.
@@ -83,6 +88,10 @@ impl YesNoMinimumVotingPower {
                 let resolved = match rounding {
                     VotingPowerRounding::Down => share / denominator,
                     VotingPowerRounding::Up => share.div_ceil(denominator),
+                    VotingPowerRounding::DownPlusOne => share / denominator + 1,
+                    VotingPowerRounding::UpMinusOne => {
+                        share.div_ceil(denominator).saturating_sub(1)
+                    }
                 };
                 VotingPower::try_from(resolved).unwrap_or(VotingPower::MAX)
             }
@@ -106,6 +115,8 @@ impl fmt::Display for YesNoMinimumVotingPower {
                 match rounding {
                     VotingPowerRounding::Down => "down",
                     VotingPowerRounding::Up => "up",
+                    VotingPowerRounding::DownPlusOne => "down plus one",
+                    VotingPowerRounding::UpMinusOne => "up minus one",
                 }
             ),
         }
@@ -364,6 +375,22 @@ mod tests {
         assert_eq!(third(VotingPowerRounding::Down).resolve(9), 3);
         assert_eq!(third(VotingPowerRounding::Up).resolve(9), 3);
         assert_eq!(third(VotingPowerRounding::Up).resolve(0), 0);
+        // Rounded down plus one, and rounded up minus one (never below zero).
+        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve(10), 4);
+        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve(9), 4);
+        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve(0), 1);
+        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve(10), 3);
+        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve(9), 2);
+        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve(0), 0);
+        // Half rounded down plus one is a strict majority.
+        let majority = YesNoMinimumVotingPower::FractionOfTotal {
+            numerator: 1,
+            denominator: 2,
+            rounding: VotingPowerRounding::DownPlusOne,
+        };
+        assert_eq!(majority.resolve(10), 6);
+        assert_eq!(majority.resolve(9), 5);
+        assert_eq!(majority.resolve(u32::MAX), u32::MAX / 2 + 1);
         assert_eq!(YesNoMinimumVotingPower::Absolute(400).resolve(10), 400);
         // No overflow on the largest total.
         let half = YesNoMinimumVotingPower::FractionOfTotal {
@@ -626,6 +653,32 @@ mod json_convertible_tests {
         );
         let recovered = YesNoVotePoll::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn should_name_every_rounding_in_camel_case() {
+        use crate::serialization::JsonConvertible;
+        for (rounding, name) in [
+            (VotingPowerRounding::Down, "down"),
+            (VotingPowerRounding::Up, "up"),
+            (VotingPowerRounding::DownPlusOne, "downPlusOne"),
+            (VotingPowerRounding::UpMinusOne, "upMinusOne"),
+        ] {
+            let original = YesNoVotePoll {
+                minimum_voting_power: YesNoMinimumVotingPower::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 2,
+                    rounding,
+                },
+                ..fixture()
+            };
+            let json = original.to_json().expect("to_json");
+            assert_eq!(
+                json["minimumVotingPower"]["fractionOfTotal"]["rounding"],
+                json!(name)
+            );
+            assert_eq!(YesNoVotePoll::from_json(json).expect("from_json"), original);
+        }
     }
 
     #[test]
