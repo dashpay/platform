@@ -14,6 +14,13 @@
 /// the top 4 bits carry the version, the low 28 bits the masked account index.
 pub const ACCOUNT_REFERENCE_VERSION_SHIFT: u32 = 28;
 
+/// Rotation `version` of a masked `accountReference`. Unlike
+/// [`unmask_account_reference`] it needs no secret: the version bits are not
+/// masked, so any party can tell whether a request is a re-key (`version > 0`).
+pub const fn account_reference_version(account_reference: u32) -> u32 {
+    account_reference >> ACCOUNT_REFERENCE_VERSION_SHIFT
+}
+
 fn account_secret_key_28(sender_secret_key: &[u8; 32], compact_xpub: &[u8]) -> u32 {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
@@ -64,7 +71,7 @@ pub fn unmask_account_reference(
     compact_xpub: &[u8],
 ) -> (u32, u32) {
     let ask28 = account_secret_key_28(sender_secret_key, compact_xpub);
-    let version = account_reference >> ACCOUNT_REFERENCE_VERSION_SHIFT;
+    let version = account_reference_version(account_reference);
     let account_index = (account_reference & 0x0FFF_FFFF) ^ ask28;
     (version, account_index)
 }
@@ -85,18 +92,15 @@ mod tests {
         let secret_key = [1u8; 32];
         let compact = test_compact_xpub();
         assert_eq!(
-            calculate_account_reference(&secret_key, &compact, 0, 0)
-                >> ACCOUNT_REFERENCE_VERSION_SHIFT,
+            account_reference_version(calculate_account_reference(&secret_key, &compact, 0, 0)),
             0
         );
         assert_eq!(
-            calculate_account_reference(&secret_key, &compact, 0, 1)
-                >> ACCOUNT_REFERENCE_VERSION_SHIFT,
+            account_reference_version(calculate_account_reference(&secret_key, &compact, 0, 1)),
             1
         );
         assert_eq!(
-            calculate_account_reference(&secret_key, &compact, 0, 15)
-                >> ACCOUNT_REFERENCE_VERSION_SHIFT,
+            account_reference_version(calculate_account_reference(&secret_key, &compact, 0, 15)),
             15
         );
     }

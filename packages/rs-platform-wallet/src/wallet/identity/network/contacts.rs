@@ -8,7 +8,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Wallet;
-use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
+use platform_encryption::account_reference_version;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -73,7 +73,7 @@ pub(super) fn contact_scan_checkpoint(
     let Some(request) = request else {
         return birth_checkpoint;
     };
-    if request.account_reference >> ACCOUNT_REFERENCE_VERSION_SHIFT != 0 {
+    if account_reference_version(request.account_reference) != 0 {
         return birth_checkpoint;
     }
     request.core_height_created_at.max(birth_checkpoint)
