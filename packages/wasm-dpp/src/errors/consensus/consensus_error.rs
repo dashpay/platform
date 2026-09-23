@@ -159,6 +159,7 @@ use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShield
 use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError, ShieldedInvalidDenominationError};
 use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use dpp::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -686,6 +687,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedContractRequirementNotMetError(e) => {
             generic_consensus_error!(ReferencedContractRequirementNotMetError, e).into()
+        }
+        StateError::ReferencedIdentityKeyRequirementNotMetError(e) => {
+            generic_consensus_error!(ReferencedIdentityKeyRequirementNotMetError, e).into()
         }
     }
 }

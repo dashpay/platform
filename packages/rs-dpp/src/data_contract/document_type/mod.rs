@@ -136,6 +136,9 @@ pub(crate) mod property_names {
     pub const SENDER_KEY: &str = "senderKey";
     /// `encryptedFor`: the scheme name, one of `EncryptionScheme::ALL`.
     pub const SCHEME: &str = "scheme";
+    pub const KEY_REQUIREMENTS: &str = "keyRequirements";
+    pub const PURPOSE: &str = "purpose";
+    pub const BOUND_TO: &str = "boundTo";
     pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
     pub const RANGE_COUNTABLE: &str = "rangeCountable";
     /// Doctype-level flag naming the property whose values are summed into

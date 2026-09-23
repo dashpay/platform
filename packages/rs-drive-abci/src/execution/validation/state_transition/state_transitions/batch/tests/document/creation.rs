@@ -6991,6 +6991,253 @@ mod creation_tests {
         );
     }
 
+    /// Registers the key-requirements fixture contract, adds the keys of
+    /// [`IdentityKeyRequirementTargets`] to the test identity, then creates a `message`
+    /// document mutated by the test and returns the execution result.
+    async fn run_identity_key_requirement_creation<F>(mutator: F) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, &IdentityKeyRequirementTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_IDENTITY_KEY_REQUIREMENTS_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let targets = add_identity_key_requirement_targets(
+            &mut platform,
+            &identity,
+            key.id(),
+            contract.id(),
+            platform_version,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+
+        mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_key_meets_its_requirements() {
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set(
+                "recipientKeyId",
+                (targets.decryption_key_bound_to_inbox_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_key_has_the_wrong_purpose() {
+        let cases: [(fn(&IdentityKeyRequirementTargets) -> KeyID, &str); 2] = [
+            (
+                |t: &IdentityKeyRequirementTargets| t.encryption_key_bound_to_inbox_id,
+                "encryption",
+            ),
+            (
+                |t: &IdentityKeyRequirementTargets| t.authentication_key_id,
+                "authentication",
+            ),
+        ];
+        for (key_id, actual) in cases {
+            let result = run_identity_key_requirement_creation(|document, targets| {
+                document.set("recipientId", targets.identity_id.into());
+                document.set("recipientKeyId", (key_id(targets) as i64).into());
+            })
+            .await;
+
+            assert_matches!(
+                result,
+                PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                    ),
+                    ..
+                } if e.document_type_name() == "message"
+                    && e.path() == "recipientId"
+                    && e.field() == "purpose"
+                    && e.required() == "decryption"
+                    && e.actual() == actual
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_key_is_bound_to_another_document_type() {
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set(
+                "recipientKeyId",
+                (targets.decryption_key_bound_to_message_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                ),
+                ..
+            } if e.document_type_name() == "message"
+                && e.path() == "recipientId"
+                && e.key_id() == 4
+                && e.field() == "boundTo"
+                && e.required() == "inbox"
+                && e.actual().ends_with(" document type message")
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_key_has_no_contract_bounds() {
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set(
+                "recipientKeyId",
+                (targets.unbound_decryption_key_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                ),
+                ..
+            } if e.field() == "boundTo"
+                && e.required() == "inbox"
+                && e.actual() == "no contract bounds"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_as_key_not_found_when_required_key_is_missing() {
+        // A key that does not exist is still reported as missing, not as unmet
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set("recipientKeyId", 99i64.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    _
+                )),
+                ..
+            }
+        );
+
+        // And an unset key id property is still reported as invalid
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedKeyIdPropertyInvalidError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
     const REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key.json";
 
@@ -7233,6 +7480,153 @@ mod creation_tests {
     /// An unset key id is not a reference to validate; whether the property
     /// may be absent is the document type's required list (it is optional
     /// in the fixture).
+    const REFERENCE_VALIDATION_OWNER_KEY_REQUIREMENTS_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key-requirements.json";
+
+    /// Registers the owner-key fixture whose `senderKeyId` requires a
+    /// decryption key bound to the contract's `inbox` type, adds the keys of
+    /// [`IdentityKeyRequirementTargets`] to the writer, then creates a
+    /// `message` document mutated by the test and returns the execution
+    /// result.
+    async fn run_owner_key_requirement_creation<F>(mutator: F) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, &IdentityKeyRequirementTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(436);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 960, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_OWNER_KEY_REQUIREMENTS_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let targets = add_identity_key_requirement_targets(
+            &mut platform,
+            &identity,
+            key.id(),
+            contract.id(),
+            platform_version,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+
+        mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected a serialized create transition")],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    /// `keyRequirements` apply to the key id form exactly as to the
+    /// identifier form, through the shared key check.
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_owner_key_meets_its_requirements() {
+        let result = run_owner_key_requirement_creation(|document, targets| {
+            document.set(
+                "senderKeyId",
+                (targets.decryption_key_bound_to_inbox_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_owner_key_does_not_meet_its_requirements() {
+        let result = run_owner_key_requirement_creation(|document, targets| {
+            document.set("senderKeyId", (targets.authentication_key_id as i64).into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                ),
+                ..
+            } if e.path() == "senderKeyId" && e.field() == "purpose"
+        );
+    }
+
     const REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key.json";
     const REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH: &str =

@@ -12,7 +12,8 @@ use dpp::data_contract::document_type::accessors::{
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentTypeRef, KeyReferenceIdentityProperty, ReferringWrite,
+    DocumentPropertyType, DocumentTypeRef, IdentityKeyReferenceRequirements,
+    KeyReferenceIdentityProperty, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -25,6 +26,7 @@ use dpp::errors::consensus::state::document::referenced_contract_requirement_not
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use dpp::errors::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use dpp::errors::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -220,7 +222,8 @@ fn validate_document_type_references_v0(
             // itself is not checked, so the reference governs writing, not
             // holding; which replaces re-validate it depends on where the
             // identity comes from.
-            DocumentPropertyType::KeyIdWithReference(identity_property) => {
+            DocumentPropertyType::KeyIdWithReference(reference) => {
+                let identity_property = &reference.identity_property;
                 if let Some(changed) = changed_fields {
                     let must_revalidate = match identity_property {
                         // The owner is transition metadata, never among the
@@ -244,6 +247,9 @@ fn validate_document_type_references_v0(
                 let result = validate_key_id_reference_v0(
                     path,
                     identity_property,
+                    &reference.key_requirements,
+                    document_type.name(),
+                    contract.id(),
                     document_data,
                     owner_id,
                     creator_id,
@@ -291,9 +297,9 @@ fn validate_document_type_references_v0(
                 // it is checked against the new target, or not at all once
                 // the reference is cleared.
                 DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
-                DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
-                    is_changed_field(changed, key_id_property)
-                }
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property, ..
+                } => is_changed_field(changed, key_id_property),
                 DocumentPropertyReferenceTarget::Identity
                 | DocumentPropertyReferenceTarget::Contract { .. }
                 | DocumentPropertyReferenceTarget::Token => false,
@@ -613,7 +619,10 @@ fn validate_document_type_references_v0(
 
                 referenced_document.is_some()
             }
-            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property,
+                key_requirements,
+            } => {
                 // The referenced key id is carried by the named sibling property
                 let key_id: KeyID =
                     match document_data.get_optional_integer_at_path(key_id_property) {
@@ -644,6 +653,9 @@ fn validate_document_type_references_v0(
                     Identifier::from(referenced_id),
                     key_id,
                     path,
+                    key_requirements,
+                    document_type.name(),
+                    contract.id(),
                     platform,
                     transaction,
                     execution_context,
@@ -689,6 +701,9 @@ fn validate_document_type_references_v0(
 fn validate_key_id_reference_v0(
     path: &str,
     identity_property: &KeyReferenceIdentityProperty,
+    key_requirements: &IdentityKeyReferenceRequirements,
+    document_type_name: &str,
+    declaring_contract_id: Identifier,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
     creator_id: Option<Identifier>,
@@ -748,6 +763,9 @@ fn validate_key_id_reference_v0(
         identity_id,
         key_id,
         path,
+        key_requirements,
+        document_type_name,
+        declaring_contract_id,
         platform,
         transaction,
         execution_context,
@@ -756,15 +774,24 @@ fn validate_key_id_reference_v0(
 }
 
 /// The state check both `identityPublicKey` forms share: key `key_id` of
-/// `identity_id`, referenced from `path`, must exist and not be disabled. A
-/// missing identity and a missing key resolve to the same failure, the
-/// referenced key could not be found. Keys can never be removed, so an
-/// existing reference can not dangle; a disabled key is still rejected for
-/// fresh writes.
+/// `identity_id`, referenced from `path`, must exist, not be disabled and
+/// meet the declaration's `key_requirements`. A missing identity and a
+/// missing key resolve to the same failure, the referenced key could not be
+/// found. Keys can never be removed, so an existing reference can not
+/// dangle; a disabled key is still rejected for fresh writes. The
+/// requirements are checked against the key just fetched, so they cost no
+/// further read, and the first unmet one refuses the write; a bound names
+/// the declaring contract and one of its own document types (checked when
+/// the contract was registered), so the check needs nothing beyond the key
+/// and the contract in hand.
+#[allow(clippy::too_many_arguments)]
 fn validate_referenced_identity_key_v0(
     identity_id: Identifier,
     key_id: KeyID,
     path: &str,
+    key_requirements: &IdentityKeyReferenceRequirements,
+    document_type_name: &str,
+    declaring_contract_id: Identifier,
     platform: &PlatformStateRef,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
@@ -790,6 +817,21 @@ fn validate_referenced_identity_key_v0(
     if key.is_disabled() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             ReferencedIdentityKeyDisabledError::new(identity_id, key_id, path.to_string()).into(),
+        ));
+    }
+
+    if let Some(requirement) = key_requirements.first_unmet_by(&key, declaring_contract_id) {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedIdentityKeyRequirementNotMetError::new(
+                document_type_name.to_string(),
+                path.to_string(),
+                identity_id,
+                key_id,
+                requirement.field().to_string(),
+                requirement.required(),
+                requirement.actual_of(&key),
+            )
+            .into(),
         ));
     }
 

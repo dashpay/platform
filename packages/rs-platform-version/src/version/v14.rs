@@ -634,7 +634,27 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     and testnet (2026-09-23) found no name carrying one, so nothing stored
 ///     is affected. Stored contracts are read as they are.
 ///
-/// 29. **Key references on the key id property**: an `identityPublicKey`
+/// 29. **Identity key references may require a purpose and a document type
+///     bound**: an `identityPublicKey` `refersTo` declaration may carry
+///     `keyRequirements`, what the referenced key must be beyond existing and
+///     not being disabled, with `purpose` (the key's purpose, by its wire name,
+///     any but `system`) and `boundTo` (the key's contract bounds must be
+///     exactly the declaring contract and the named document type of it) as
+///     the requirements (meta-schema v3, `apply_property_reference` 0,
+///     `IdentityKeyReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::IdentityPublicKey`).
+///     `create_document_types_from_document_schemas` 1, edited in place (the
+///     check is inert before this version, where no parsed reference carries
+///     requirements), refuses a contract whose `boundTo` names a document type
+///     it does not have or one no key of the required purpose can be bound
+///     to, so the check never needs a second contract fetch and a declared
+///     requirement can be met. The document reference validation
+///     checks the requirements against the key it fetched for the existence
+///     check, so they cost no further read, and refuses the first unmet one
+///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed
+///     `keyRequirements` is an incompatible schema change on update.
+///
+/// 30. **Key references on the key id property**: an `identityPublicKey`
 ///     `refersTo` declaration may sit on the key id property itself, an
 ///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
 ///     `u32`), naming through `identityProperty` whose key the value is:
@@ -660,8 +680,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     path when the key id or that property changed (a transfer itself is
 ///     never checked: the reference governs writing, not holding). A
 ///     `keyIdProperty` may not name a property carrying this form (40125 at
-///     registration). Adding, removing or changing it is an incompatible
-///     schema change on update, like the rest of a `refersTo`.
+///     registration). `keyRequirements` (item 29) sit on this form exactly
+///     as on the identifier form, checked by the same key check and by the
+///     same `boundTo` registration rule. Adding, removing or changing it is
+///     an incompatible schema change on update, like the rest of a
+///     `refersTo`.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

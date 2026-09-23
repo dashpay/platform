@@ -20,6 +20,9 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, OWNER_ID};
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+use crate::identity::{IdentityPublicKey, Purpose};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::{ArrayItemType, TypedArrayProperty};
@@ -537,6 +540,166 @@ impl ContractReferenceRequirements {
     }
 }
 
+/// What an `identityPublicKey` reference requires of the key it points at, beyond its existence
+/// and its not being disabled.
+///
+/// Declared as `refersTo: { "type": "identityPublicKey", "keyIdProperty": ..., "keyRequirements":
+/// { ... } }`: each key names an aspect of the referenced key and its value the requirement on it.
+/// Consensus checks the requirements when the referring document is written, against the key it
+/// has already fetched for the existence check, so a requirement costs no further read. An unmet
+/// one refuses the write with `ReferencedIdentityKeyRequirementNotMetError` (40136). Keys are
+/// added to this object as new requirements arrive (a security level, say); a requirement is
+/// never a new reference type.
+#[derive(
+    Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentityKeyReferenceRequirements {
+    /// The purpose the referenced key must have, spelled by its wire name (`"decryption"`).
+    /// Any purpose but `SYSTEM`, which no identity key of a user carries.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "purpose_wire_name"
+    )]
+    pub purpose: Option<Purpose>,
+    /// The document type of the declaring contract the referenced key must be bound to: its
+    /// contract bounds must be `SingleContractDocumentType` naming the declaring contract and
+    /// exactly this type. A whole-contract bound or a contract group bound never meets it, even
+    /// where the group holds the type: the check reads nothing beyond the key. Validated when
+    /// the contract is registered to name a document type of the declaring contract that a key
+    /// of the required purpose can be bound to, so the check never needs a second contract
+    /// fetch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound_to: Option<String>,
+}
+
+/// Serde for [`IdentityKeyReferenceRequirements::purpose`]: the purpose's wire name, not the
+/// number `Purpose` serializes to on an identity key, so the value matches the schema keyword.
+mod purpose_wire_name {
+    use crate::identity::Purpose;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        purpose: &Option<Purpose>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        purpose
+            .as_ref()
+            .map(Purpose::wire_name)
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Purpose>, D::Error> {
+        let name: Option<String> = Option::deserialize(deserializer)?;
+        name.map(|name| {
+            // The purposes a user's key can carry, every one but SYSTEM, as the schema
+            // parser admits them
+            Purpose::from_wire_name(&name)
+                .filter(|purpose| Purpose::full_range().contains(purpose))
+                .ok_or_else(|| D::Error::custom(format!("unknown key purpose {name:?}")))
+        })
+        .transpose()
+    }
+}
+
+/// One requirement of an [`IdentityKeyReferenceRequirements`] declaration, named the way the
+/// declaration spells it, for the error that reports it unmet.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum IdentityKeyReferenceRequirement<'a> {
+    Purpose(Purpose),
+    BoundTo(&'a str),
+}
+
+impl IdentityKeyReferenceRequirement<'_> {
+    /// The `keyRequirements` key the requirement was declared under.
+    pub fn field(&self) -> &'static str {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(_) => property_names::PURPOSE,
+            IdentityKeyReferenceRequirement::BoundTo(_) => property_names::BOUND_TO,
+        }
+    }
+
+    /// The value the declaration requires, as spelled in the schema.
+    pub fn required(&self) -> String {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(purpose) => purpose.wire_name().to_string(),
+            IdentityKeyReferenceRequirement::BoundTo(document_type_name) => {
+                document_type_name.to_string()
+            }
+        }
+    }
+
+    /// Whether `key`, a key of an identity, meets this requirement for a reference declared by
+    /// the contract `declaring_contract_id`.
+    pub fn is_met_by(&self, key: &IdentityPublicKey, declaring_contract_id: Identifier) -> bool {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(purpose) => key.purpose() == *purpose,
+            IdentityKeyReferenceRequirement::BoundTo(document_type_name) => matches!(
+                key.contract_bounds(),
+                Some(ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: bound_document_type_name,
+                }) if *id == declaring_contract_id && bound_document_type_name == document_type_name
+            ),
+        }
+    }
+
+    /// What `key` has where the declaration requires [`Self::required`], for the error that
+    /// reports the requirement unmet.
+    pub fn actual_of(&self, key: &IdentityPublicKey) -> String {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(_) => key.purpose().wire_name().to_string(),
+            IdentityKeyReferenceRequirement::BoundTo(_) => match key.contract_bounds() {
+                None => "no contract bounds".to_string(),
+                Some(ContractBounds::SingleContract { id }) => {
+                    format!("whole contract {id}, not a document type")
+                }
+                Some(ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name,
+                }) => format!("contract {id} document type {document_type_name}"),
+                Some(ContractBounds::ContractGroup { id }) => {
+                    format!("contract group {id}, which never meets a document type bound")
+                }
+            },
+        }
+    }
+}
+
+impl IdentityKeyReferenceRequirements {
+    /// Whether the declaration requires nothing beyond the key's existence.
+    pub fn is_empty(&self) -> bool {
+        self.purpose.is_none() && self.bound_to.is_none()
+    }
+
+    /// The requirements, in declaration order.
+    pub fn requirements(&self) -> impl Iterator<Item = IdentityKeyReferenceRequirement<'_>> + '_ {
+        self.purpose
+            .into_iter()
+            .map(IdentityKeyReferenceRequirement::Purpose)
+            .chain(
+                self.bound_to
+                    .as_deref()
+                    .map(IdentityKeyReferenceRequirement::BoundTo),
+            )
+    }
+
+    /// The first requirement `key` does not meet for a reference declared by the contract
+    /// `declaring_contract_id`, `None` when it meets them all.
+    pub fn first_unmet_by(
+        &self,
+        key: &IdentityPublicKey,
+        declaring_contract_id: Identifier,
+    ) -> Option<IdentityKeyReferenceRequirement<'_>> {
+        self.requirements()
+            .find(|requirement| !requirement.is_met_by(key, declaring_contract_id))
+    }
+}
+
 // This enum is embedded in consensus errors, so it is consensus-serialized.
 // @append_only
 #[derive(
@@ -600,14 +763,22 @@ pub enum DocumentPropertyReferenceTarget {
     /// identity id and the named sibling property of the same document type
     /// holds the key id. Identity keys can be disabled but never removed, so
     /// an existing reference can never dangle; at write time the key must
-    /// exist and must not be disabled. The referenced key is the (identity
-    /// id, key id) pair, so a replace that changes either property
-    /// re-validates the reference.
+    /// exist, must not be disabled and must meet the declared
+    /// [`IdentityKeyReferenceRequirements`], if any. The referenced key is
+    /// the (identity id, key id) pair, so a replace that changes either
+    /// property re-validates the reference.
     #[serde(rename = "identityPublicKey")]
     IdentityPublicKey {
         /// The property of the same document type whose value carries the
         /// referenced key id
         key_id_property: String,
+        /// What the referenced key must be beyond existing: a purpose, a
+        /// binding to a document type of the declaring contract
+        #[serde(
+            default,
+            skip_serializing_if = "IdentityKeyReferenceRequirements::is_empty"
+        )]
+        key_requirements: IdentityKeyReferenceRequirements,
     },
     /// A document of a document type whose documents CAN be deleted: the
     /// counterpart of [`Self::PermanentDocument`], disjoint from it, so a
@@ -776,8 +947,18 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 f,
                 "permanent document (own contract, document type {document_type_name})"
             ),
-            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
-                write!(f, "identity public key (key id property {key_id_property})")
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property,
+                key_requirements,
+            } => {
+                write!(f, "identity public key (key id property {key_id_property})")?;
+                if let Some(purpose) = key_requirements.purpose {
+                    write!(f, " with purpose {}", purpose.wire_name())?;
+                }
+                if let Some(document_type_name) = &key_requirements.bound_to {
+                    write!(f, " bound to document type {document_type_name}")?;
+                }
+                Ok(())
             }
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: Some(contract_id),
@@ -867,6 +1048,30 @@ impl std::fmt::Display for KeyReferenceIdentityProperty {
     }
 }
 
+/// A `refersTo: identityPublicKey` declaration on a KEY ID property: whose
+/// key the value is, and what that key must be beyond existing and not
+/// being disabled, the same [`IdentityKeyReferenceRequirements`] the
+/// identifier form takes, checked the same way.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+pub struct KeyIdReference {
+    pub identity_property: KeyReferenceIdentityProperty,
+    #[serde(
+        default,
+        skip_serializing_if = "IdentityKeyReferenceRequirements::is_empty"
+    )]
+    pub key_requirements: IdentityKeyReferenceRequirements,
+}
+
+impl KeyIdReference {
+    /// A declaration requiring nothing of the key beyond existing.
+    pub fn new(identity_property: KeyReferenceIdentityProperty) -> Self {
+        KeyIdReference {
+            identity_property,
+            key_requirements: IdentityKeyReferenceRequirements::default(),
+        }
+    }
+}
+
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
@@ -901,9 +1106,10 @@ pub enum DocumentPropertyType {
     TypedArray(TypedArrayProperty),
     /// A `u32` key id carrying a `refersTo: identityPublicKey` declaration
     /// with `identityProperty`: the value is the id of a key of the named
-    /// identity, which must exist and not be disabled when the document is
-    /// written. Sized, encoded and queried exactly as [`Self::U32`].
-    KeyIdWithReference(KeyReferenceIdentityProperty),
+    /// identity, which must exist, not be disabled and meet the declared
+    /// requirements when the document is written. Sized, encoded and queried
+    /// exactly as [`Self::U32`].
+    KeyIdWithReference(KeyIdReference),
 }
 
 impl DocumentPropertyType {
@@ -3521,6 +3727,9 @@ fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPrope
 #[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{KeyType, SecurityLevel};
+    use platform_value::BinaryData;
     use platform_version::version::PlatformVersion;
 
     // -----------------------------------------------------------------------
@@ -8565,9 +8774,9 @@ mod tests {
     #[test]
     fn should_serialize_key_id_reference_metadata() {
         let property = DocumentProperty {
-            property_type: DocumentPropertyType::KeyIdWithReference(
+            property_type: DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(
                 KeyReferenceIdentityProperty::OwnerId,
-            ),
+            )),
             required: false,
             transient: false,
             required_since: None,
@@ -8580,7 +8789,7 @@ mod tests {
         assert_eq!(
             value.get("property_type"),
             Some(&serde_json::json!({
-                "KeyIdWithReference": "$ownerId"
+                "KeyIdWithReference": { "identity_property": "$ownerId" }
             }))
         );
     }
@@ -8591,8 +8800,9 @@ mod tests {
     #[test]
     fn should_treat_a_key_id_with_reference_exactly_as_a_u32() {
         let platform_version = PlatformVersion::latest();
-        let key_id =
-            DocumentPropertyType::KeyIdWithReference(KeyReferenceIdentityProperty::OwnerId);
+        let key_id = DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(
+            KeyReferenceIdentityProperty::OwnerId,
+        ));
         let u32_type = DocumentPropertyType::U32;
 
         assert_eq!(key_id.name(), u32_type.name());
@@ -9239,6 +9449,151 @@ mod tests {
             .is_none());
     }
 
+    fn key_with(purpose: Purpose, contract_bounds: Option<ContractBounds>) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds,
+            key_type: KeyType::ECDSA_HASH160,
+            data: BinaryData::new(vec![0x74; 20]),
+            read_only: false,
+            disabled_at: None,
+        })
+    }
+
+    #[test]
+    fn should_report_the_first_unmet_key_requirement_and_what_the_key_has() {
+        let contract_id = Identifier::new([3; 32]);
+        let other_contract_id = Identifier::new([4; 32]);
+        let requirements = IdentityKeyReferenceRequirements {
+            purpose: Some(Purpose::DECRYPTION),
+            bound_to: Some("submittedCharter".to_string()),
+        };
+        let bound_to_charter = |id: Identifier| ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name: "submittedCharter".to_string(),
+        };
+
+        assert!(requirements
+            .first_unmet_by(
+                &key_with(Purpose::DECRYPTION, Some(bound_to_charter(contract_id))),
+                contract_id,
+            )
+            .is_none());
+
+        // The purpose is checked first, whatever the bound
+        let key = key_with(Purpose::ENCRYPTION, None);
+        let unmet = requirements
+            .first_unmet_by(&key, contract_id)
+            .expect("the purpose is unmet");
+        assert_eq!(
+            unmet,
+            IdentityKeyReferenceRequirement::Purpose(Purpose::DECRYPTION)
+        );
+        assert_eq!(unmet.field(), "purpose");
+        assert_eq!(unmet.required(), "decryption");
+        assert_eq!(unmet.actual_of(&key), "encryption");
+
+        for (key, actual) in [
+            (key_with(Purpose::DECRYPTION, None), "no contract bounds"),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(ContractBounds::SingleContract { id: contract_id }),
+                ),
+                &format!("whole contract {contract_id}, not a document type"),
+            ),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: contract_id,
+                        document_type_name: "joinRequest".to_string(),
+                    }),
+                ),
+                &format!("contract {contract_id} document type joinRequest"),
+            ),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(bound_to_charter(other_contract_id)),
+                ),
+                &format!("contract {other_contract_id} document type submittedCharter"),
+            ),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(ContractBounds::ContractGroup { id: contract_id }),
+                ),
+                &format!("contract group {contract_id}, which never meets a document type bound"),
+            ),
+        ] {
+            let unmet = requirements
+                .first_unmet_by(&key, contract_id)
+                .expect("the bound is unmet");
+            assert_eq!(
+                unmet,
+                IdentityKeyReferenceRequirement::BoundTo("submittedCharter")
+            );
+            assert_eq!(unmet.field(), "boundTo");
+            assert_eq!(unmet.required(), "submittedCharter");
+            assert_eq!(unmet.actual_of(&key), actual);
+        }
+
+        assert!(IdentityKeyReferenceRequirements::default().is_empty());
+        assert!(IdentityKeyReferenceRequirements::default()
+            .first_unmet_by(&key_with(Purpose::ENCRYPTION, None), contract_id)
+            .is_none());
+    }
+
+    #[test]
+    fn should_serialize_key_requirements_by_their_wire_names() {
+        let requirements = IdentityKeyReferenceRequirements {
+            purpose: Some(Purpose::DECRYPTION),
+            bound_to: Some("submittedCharter".to_string()),
+        };
+        let json = serde_json::to_value(&requirements).expect("serializes");
+        assert_eq!(
+            json,
+            serde_json::json!({ "purpose": "decryption", "boundTo": "submittedCharter" })
+        );
+        assert_eq!(
+            serde_json::from_value::<IdentityKeyReferenceRequirements>(json).expect("parses"),
+            requirements
+        );
+        assert_eq!(
+            serde_json::to_value(IdentityKeyReferenceRequirements::default()).expect("serializes"),
+            serde_json::json!({})
+        );
+        for name in ["signing", "system", "DECRYPTION"] {
+            assert!(
+                serde_json::from_value::<IdentityKeyReferenceRequirements>(
+                    serde_json::json!({ "purpose": name })
+                )
+                .is_err(),
+                "{name} should not deserialize as a key purpose requirement"
+            );
+        }
+        assert_eq!(
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: "recipientKeyId".to_string(),
+                key_requirements: requirements,
+            }
+            .to_string(),
+            "identity public key (key id property recipientKeyId) with purpose decryption bound \
+             to document type submittedCharter"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: "recipientKeyId".to_string(),
+                key_requirements: Default::default(),
+            }
+            .to_string(),
+            "identity public key (key id property recipientKeyId)"
+        );
+    }
+
     /// A compile-time guard, not a behavioural test.
     ///
     /// `DocumentPropertyReferenceTarget` is mirrored outside this crate —
@@ -9263,6 +9618,7 @@ mod tests {
             },
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: "signerKeyId".to_string(),
+                key_requirements: Default::default(),
             },
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,

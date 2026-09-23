@@ -90,7 +90,7 @@ pub(super) fn validate_data_contract_references_v0(
                 // A key reference on the key id property: what `identityProperty`
                 // names must fit the document type; nothing else about the
                 // declaration is state-dependent
-                DocumentPropertyType::KeyIdWithReference(identity_property) => {
+                DocumentPropertyType::KeyIdWithReference(reference) => {
                     let invalid = |message: &str| {
                         SimpleConsensusValidationResult::new_with_error(
                             ReferencedKeyIdPropertyInvalidError::new(
@@ -101,7 +101,7 @@ pub(super) fn validate_data_contract_references_v0(
                             .into(),
                         )
                     };
-                    match identity_property {
+                    match &reference.identity_property {
                         KeyReferenceIdentityProperty::OwnerId => {}
                         KeyReferenceIdentityProperty::CreatorId => {
                             if !document_type
@@ -170,8 +170,9 @@ pub(super) fn validate_data_contract_references_v0(
 
             // The key id property must exist in the same document type and be
             // an integer; nothing else about the declaration is state-dependent
-            if let DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } =
-                reference_target
+            if let DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property, ..
+            } = reference_target
             {
                 match document_type
                     .as_ref()
