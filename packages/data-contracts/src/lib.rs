@@ -54,8 +54,8 @@ pub enum SystemDataContract {
     DocumentHistory = 8,
     AppConnect = 9,
     /// The charters of elected moderation teams (protocol version 14). Registered from
-    /// protocol version 14 on, but not yet written to state: the election a charter create
-    /// opens does not exist yet, and the PR that adds it writes the contract to state.
+    /// protocol version 14 on: registered at genesis by chains born at 14 and inserted by the
+    /// upgrade to 14.
     ModerationCharters = 10,
 }
 

@@ -23,7 +23,10 @@ use dpp::data_contract::TokenConfiguration;
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
+use dpp::version::feature_initial_protocol_versions::{
+    APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION,
+    MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION,
+};
 use dpp::version::PlatformVersion;
 
 use lru::LruCache;
@@ -907,6 +910,28 @@ impl ContextProvider for TrustedHttpContextProvider {
                         ))
                     });
             }
+
+            #[cfg(any(
+                feature = "moderation-charters-contract",
+                feature = "all-system-contracts"
+            ))]
+            // Below protocol version 14 the moderation charters contract is absent too.
+            if *id == SystemDataContract::ModerationCharters.id()
+                && platform_version.protocol_version
+                    >= MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
+            {
+                return load_system_data_contract(
+                    SystemDataContract::ModerationCharters,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load ModerationCharters contract: {}",
+                        e
+                    ))
+                });
+            }
         }
 
         // If not found in known contracts or system contracts, delegate to fallback provider if available
@@ -1600,6 +1625,38 @@ mod tests {
             .get_data_contract(&id, PlatformVersion::latest())
             .expect("the lookup must succeed at protocol version 14")
             .expect("the app-connect contract must be served at protocol version 14");
+        assert_eq!(contract.id(), id);
+    }
+
+    /// The moderation charters system contract is served only from its activation version
+    /// on, like the app-connect contract.
+    #[cfg(any(
+        feature = "moderation-charters-contract",
+        feature = "all-system-contracts"
+    ))]
+    #[test]
+    fn should_serve_moderation_charters_only_from_protocol_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::ModerationCharters.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(13).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::latest())
+            .expect("the lookup must succeed at protocol version 14")
+            .expect("the moderation charters contract must be served at protocol version 14");
         assert_eq!(contract.id(), id);
     }
 

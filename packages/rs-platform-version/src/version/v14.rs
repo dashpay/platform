@@ -792,8 +792,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     indexes), removals and resignations final, so the team that acts is the
 ///     leader plus the elected members and the additions less the removals and
 ///     the resignations (`ElectedCharter::active_members`). The cap on
-///     additions, the target's `maxAddedModerators`, is checked by the seating
-///     pull request, which first lets these documents be written.
+///     additions, the target's `maxAddedModerators`, is a consensus rule of the
+///     seating pull request.
 ///     Its `byTargetContract` index is a contested unique index
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
@@ -803,10 +803,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     on the pure-data rules the seating path will run on a proposal: its
 ///     reward split sums to 100 and its description fits
 ///     `SystemLimits::max_moderation_charter_description_length` bytes (basic
-///     errors 11000 to 11002). Nothing writes the contract to state yet, at
-///     genesis or on upgrade, and the Drive cache does not serve it: the
-///     seating of an elected team comes in a later pull request, which writes
-///     the contract to state.
+///     errors 11000 to 11002). Genesis registers it on chains born at this
+///     version (`create_genesis_state` v1, behind the app-connect branch),
+///     `transition_to_version_14` inserts it on upgrade, and the Drive system
+///     contract cache serves it from this version
+///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Seating a
+///     winning team comes in a later pull request.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

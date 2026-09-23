@@ -2,7 +2,8 @@
 
 The moderation charters system contract holds the charters of the moderation
 teams that masternodes elect for data contracts that declare an elected
-moderation team. It activates at protocol version 14 and has the same ID on
+moderation team. It activates at protocol version 14, registered at genesis by
+chains born at 14 and inserted by the upgrade to 14, and has the same ID on
 every network: `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
 
 It has seven document types. All are immutable and undeletable, so
@@ -86,7 +87,7 @@ Once an elected charter is seated, its team can change without a new vote:
 
 | Type | Written by | Properties | Rules |
 | --- | --- | --- | --- |
-| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter, checked when a team is seated |
+| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter, a consensus rule that comes with seating |
 | `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is not the leader |
 | `resignationRequest` | the member leaving | `electedCharterId` | Takes effect when filed; a leader's resignation changes nothing |
 

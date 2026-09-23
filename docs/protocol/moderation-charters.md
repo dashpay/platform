@@ -3,10 +3,15 @@
 The moderation charters system contract holds how the moderation team of a
 contract that declares elected moderation comes to be: the reasons a team may
 act on, a leader's proposal, the identities that offer to join it, and the
-proposal put to the vote with its team. It activates at protocol version 14.
-Chains do not write it to state yet: the seating of an elected team does not
-exist, and the pull request that adds it writes the contract to state at
-genesis and on the upgrade to protocol version 14.
+proposal put to the vote with its team. It activates at protocol version 14:
+a chain born at 14 registers it at genesis (`create_genesis_state` v1, behind
+the same version branch as the app-connect contract), an older chain inserts it
+on the upgrade to 14 (`transition_to_version_14`), and the Drive system contract
+cache and the trusted context provider serve it from 14 on.
+
+Seating does not exist yet. Until it does, an awarded elected charter is stored
+but seats no team, and nothing counts additions against `maxAddedModerators`;
+both come with the seating pull request.
 
 - Contract ID: `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`
 - Owner: the all-zero system identity
@@ -141,9 +146,8 @@ and a removal or a resignation is final.
 `maxAddedModerators`: how many members a seated team's leader may add, 0 when
 left out and at most `SystemLimits::max_contract_moderation_added_moderators`
 (15). It counts additions ever filed against a charter, so a removal or a
-resignation frees no slot. The schema cannot count documents, so the seating
-pull request, which first lets this contract's documents be written, refuses an
-addition over the cap.
+resignation frees no slot. The schema cannot count documents, so a consensus
+rule refuses an addition over the cap; it comes with the seating pull request.
 
 ## The contest
 
