@@ -89,10 +89,17 @@ pub struct DashPayState {
     ///
     /// In-memory only (never persisted), like [`Self::high_water_sent_ms`]:
     /// that cursor resets on cold start, so each process's first successful
-    /// sent fetch returns every sent doc and refills this map before
-    /// `reconcile_dashpay_rescan` runs. Only sweeps fill it, because replayed
-    /// or live-sent state knows only the newest request.
+    /// sent fetch returns every sent doc and refills this map. Only sweeps fill
+    /// it, because replayed or live-sent state knows only the newest request.
+    /// Until [`Self::sent_sweep_completed`] is set the map is not
+    /// authoritative, and `reconcile_dashpay_rescan` defers contacts missing
+    /// from it.
     pub(super) earliest_sent_core_heights: BTreeMap<Identifier, u32>,
+
+    /// Whether a sync sweep fetched and ingested this identity's sent requests
+    /// this process, filling [`Self::earliest_sent_core_heights`].
+    /// In-memory only: a cold start clears it along with the map.
+    pub(super) sent_sweep_completed: bool,
 
     /// DashPay profile (display name, bio, avatar, public message)
     /// published via the DashPay data contract. `None` until the
@@ -224,6 +231,11 @@ impl DashPayState {
             .get(contact)
             .map(|established| &established.outgoing_request)
             .or_else(|| self.sent_contact_requests.get(contact))
+    }
+
+    /// Whether a sent-request sweep completed this process; see the field doc.
+    pub fn sent_sweep_completed(&self) -> bool {
+        self.sent_sweep_completed
     }
 
     /// Earliest `$createdAtCoreBlockHeight` a sweep saw this process among our

@@ -798,6 +798,13 @@ impl ManagedIdentity {
             advance_if_unchanged(self.dashpay.high_water_sent_ms, snapshot, max_fetched);
     }
 
+    /// Record that a sync sweep fetched and ingested all of this identity's
+    /// sent requests, making the earliest-height map authoritative. Call only
+    /// when the sent fetch succeeded and every ingest reached disk.
+    pub(crate) fn mark_sent_sweep_completed(&mut self) {
+        self.dashpay.sent_sweep_completed = true;
+    }
+
     /// Record the Platform-assigned `$createdAtCoreBlockHeight` of one of our
     /// sent requests to `recipient`, as fetched by a sync sweep. Keeps the
     /// minimum; see `DashPayState::earliest_sent_core_heights`.

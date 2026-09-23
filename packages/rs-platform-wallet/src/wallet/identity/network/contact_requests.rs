@@ -889,7 +889,7 @@ fn newest_sent_per_recipient(
 /// checkpoint needs the OLDEST publication of our receiving xpub (see
 /// `receiving_scan_checkpoint`), so it must be read before the older docs are
 /// dropped.
-fn record_and_collapse_sent_requests(
+pub(super) fn record_and_collapse_sent_requests(
     managed: &mut crate::wallet::identity::ManagedIdentity,
     requests: impl IntoIterator<Item = ContactRequest>,
 ) -> std::collections::BTreeMap<Identifier, ContactRequest> {
@@ -999,7 +999,7 @@ fn ingest_received_requests(
 ///
 /// `add_sent_contact_request` carries its own duplicate / metadata-loss guard,
 /// so re-ingesting the same range on the next sweep is safe.
-fn ingest_sent_requests(
+pub(super) fn ingest_sent_requests(
     managed: &mut crate::wallet::identity::ManagedIdentity,
     persister: &crate::wallet::persister::WalletPersister,
     identity_id: Identifier,
@@ -1639,6 +1639,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
                 if sent_ok && sent_persist_ok {
                     managed.advance_high_water_sent(hw_sent, max_sent);
+                    managed.mark_sent_sweep_completed();
                 }
 
                 // A held-back cursor and a report that says "complete" cannot

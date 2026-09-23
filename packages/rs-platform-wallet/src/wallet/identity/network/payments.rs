@@ -93,7 +93,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// set, and re-requests the matching blocks. Each contact is recorded in
     /// [`DashPayState::rescan_triggered`](crate::wallet::identity::DashPayState) so the recurring sweep does
     /// not re-lower the height every pass (which would reset the in-flight
-    /// backfill and keep it from ever completing). Registration sets the same
+    /// backfill and keep it from ever completing). Contacts are deferred
+    /// (neither rewound nor marked) until this process has completed a
+    /// sent-request sweep, unless that sweep already recorded their earliest
+    /// sent-request height. Before that, the checkpoint could come from a newer
+    /// request than the one that first published our receiving xpub.
+    /// Registration sets the same
     /// mark, since it applies the checkpoint itself. The guard is in-memory,
     /// so a relaunch — where `synced_height` is restored at its high-water —
     /// safely re-triggers an interrupted backfill.
@@ -141,6 +146,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 continue;
             };
             if managed.dashpay().rescan_triggered.contains(&contact) {
+                continue;
+            }
+            // Until a sent sweep completes this process, a contact missing from
+            // the earliest-height map may have an older publication of our
+            // receiving xpub than the tracked (newest) request. Defer it: no
+            // rewind and no mark, so the next successful sweep reconciles it
+            // with the real earliest height.
+            if !managed.dashpay().sent_sweep_completed()
+                && managed
+                    .dashpay()
+                    .earliest_sent_core_height(&contact)
+                    .is_none()
+            {
                 continue;
             }
             let checkpoint = receiving_scan_checkpoint(info, &owner, &contact);
@@ -2842,6 +2860,11 @@ mod tests {
                 .managed_identity_mut(&owner)
                 .expect("managed")
                 .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+            // The DashPay sync's sent sweep has run this process.
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .mark_sent_sweep_completed();
             // Simulate a forward sync to height 1000.
             info.core_wallet.update_synced_height(1000);
         }
@@ -2952,15 +2975,17 @@ mod tests {
             .await
             .expect("register sent-only receival account");
 
-        // Model the relaunch: guard gone, scan restored at its high-water.
+        // Model the relaunch: guard gone, scan restored at its high-water, and
+        // the first DashPay sync's sent sweep completed.
         {
             let mut wm = iw.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.identity_manager
+            let managed = info
+                .identity_manager
                 .managed_identity_mut(&owner)
-                .expect("managed")
-                .dashpay_rescan_triggered_mut()
-                .clear();
+                .expect("managed");
+            managed.dashpay_rescan_triggered_mut().clear();
+            managed.mark_sent_sweep_completed();
             info.core_wallet.update_synced_height(1_000);
         }
         assert_eq!(
@@ -3053,6 +3078,79 @@ mod tests {
             "registration already covered the sent-only account"
         );
         assert_eq!(synced_height(&manager, wallet_id).await, 500);
+    }
+
+    /// Before this process has completed a sent-request sweep, the earliest
+    /// publication of our receiving xpub is unknown: the tracked request is
+    /// only the newest one. Reconcile must defer such a contact (no rewind, no
+    /// guard mark) and pick it up after the sweep, rewinding to the earliest
+    /// sent doc's height.
+    #[tokio::test]
+    async fn should_defer_rescan_until_sent_sweep_completes_then_rewind_to_earliest_height() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let older = ContactRequest::new(owner, contact, 0, 0, 100, vec![0; 96], 100, 1);
+        let newer = ContactRequest::new(owner, contact, 0, 0, 101, vec![0; 96], 500, 2);
+        establish_receival_contact_unswept(
+            &manager, &persister, wallet_id, owner, contact, 500, 500,
+        )
+        .await;
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let guarded = || async {
+            let wm = iw.wallet_manager.read().await;
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .rescan_triggered
+                .contains(&contact)
+        };
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile before sweep"),
+            None,
+            "no completed sent sweep yet -> defer"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 1_000);
+        assert!(!guarded().await, "a deferred contact must not be marked");
+
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            let newest = super::super::contact_requests::record_and_collapse_sent_requests(
+                managed,
+                vec![older, newer],
+            );
+            assert!(super::super::contact_requests::ingest_sent_requests(
+                managed, &p, owner, newest
+            ));
+            managed.mark_sent_sweep_completed();
+        }
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile after sweep"),
+            Some(100),
+            "after the sweep the rescan starts at the earliest sent doc"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 100);
+        assert!(guarded().await);
     }
 
     /// Replaying persisted state (`PlatformWallet::apply`, idempotent by
@@ -3198,6 +3296,40 @@ mod tests {
     /// an account restored after a relaunch (the guard is in-memory only), so
     /// the reconcile under test decides the rewind.
     async fn establish_receival_contact(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        persister: &Arc<RecordingPersister>,
+        wallet_id: WalletId,
+        owner: Identifier,
+        contact: Identifier,
+        out_height: u32,
+        in_height: u32,
+    ) {
+        establish_receival_contact_unswept(
+            manager, persister, wallet_id, owner, contact, out_height, in_height,
+        )
+        .await;
+        mark_sent_sweep_completed(manager, wallet_id, owner).await;
+    }
+
+    /// Mark `owner`'s sent-request sweep as completed this process, as a
+    /// successful DashPay sync would, so reconcile stops deferring its contacts.
+    async fn mark_sent_sweep_completed(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        owner: Identifier,
+    ) {
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut wm = wallet.identity().wallet_manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed")
+            .mark_sent_sweep_completed();
+    }
+
+    /// [`establish_receival_contact`] without a completed sent sweep.
+    async fn establish_receival_contact_unswept(
         manager: &Arc<PlatformWalletManager<RecordingPersister>>,
         persister: &Arc<RecordingPersister>,
         wallet_id: WalletId,
