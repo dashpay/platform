@@ -151,6 +151,112 @@ describe('DataContract: typed arrays (v14)', () => {
     });
   });
 
+  /**
+   * An identifier element may carry `refersTo`, which every element then
+   * declares and consensus checks element by element.
+   */
+  describe('element references', () => {
+    const referencingSchemas = {
+      reason: {
+        type: 'object',
+        canBeDeleted: false,
+        properties: {
+          topic: { type: 'string', position: 0, maxLength: 63 },
+        },
+        additionalProperties: false,
+      },
+      submittedCharter: {
+        type: 'object',
+        properties: {
+          reasons: {
+            type: 'array',
+            minItems: 0,
+            maxItems: 64,
+            uniqueItems: true,
+            items: {
+              type: 'array',
+              byteArray: true,
+              minItems: 32,
+              maxItems: 32,
+              contentMediaType: 'application/x.dash.dpp.identifier',
+              refersTo: {
+                type: 'permanentDocument',
+                documentType: 'reason',
+                propertyAgreement: { topic: 'topic' },
+              },
+            },
+            position: 0,
+          },
+          topic: { type: 'string', position: 1, maxLength: 63 },
+        },
+        additionalProperties: false,
+      },
+    };
+
+    type ElementReference = {
+      type: string;
+      contractId: { toBase58(): string };
+      documentType: string;
+      propertyAgreement?: Record<string, string>;
+    };
+
+    it('should report the element reference on the typed array items', () => {
+      const contract = buildContract(referencingSchemas);
+      const [reasons] = contract.documentTypeTypedArrays('submittedCharter') as {
+        path: string;
+        items: { type: string; refersTo: ElementReference };
+      }[];
+
+      expect(reasons.path).to.equal('reasons');
+      expect(reasons.items.type).to.equal('identifier');
+      expect(reasons.items.refersTo.type).to.equal('permanentDocument');
+      expect(reasons.items.refersTo.contractId.toBase58()).to.equal(contract.id.toBase58());
+      expect(reasons.items.refersTo.documentType).to.equal('reason');
+      expect(reasons.items.refersTo.propertyAgreement).to.deep.equal({ topic: 'topic' });
+    });
+
+    it('should list the element reference among the references at its list path', () => {
+      const contract = buildContract(referencingSchemas);
+      const references = contract.documentTypeReferences('submittedCharter') as {
+        path: string;
+        type: string;
+      }[];
+
+      expect(references.map((reference) => [reference.path, reference.type])).to.deep.equal([
+        ['reasons[]', 'permanentDocument'],
+      ]);
+    });
+
+    it('should refuse an identityPublicKey reference on the elements', () => {
+      const schemasWithKeyReference = {
+        submittedCharter: {
+          type: 'object',
+          properties: {
+            reasons: {
+              type: 'array',
+              maxItems: 4,
+              items: {
+                type: 'array',
+                byteArray: true,
+                minItems: 32,
+                maxItems: 32,
+                contentMediaType: 'application/x.dash.dpp.identifier',
+                refersTo: { type: 'identityPublicKey', keyIdProperty: 'keyId' },
+              },
+              position: 0,
+            },
+            keyId: {
+              type: 'integer', minimum: 0, maximum: 4294967295, position: 1,
+            },
+          },
+          additionalProperties: false,
+        },
+      };
+
+      expect(() => buildContract(schemasWithKeyReference)).to.throw();
+    });
+  });
+
   describe('documentTypedArrays', () => {
     it('should key typed arrays by document type and omit types declaring none', () => {
       const contract = buildContract(schemas);

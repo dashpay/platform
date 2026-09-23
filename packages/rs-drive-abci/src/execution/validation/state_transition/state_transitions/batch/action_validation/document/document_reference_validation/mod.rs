@@ -37,7 +37,10 @@ pub(crate) trait DocumentReferenceValidation {
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error>;
 
-    /// Validates the document's `refersTo` references against platform state.
+    /// Validates the document's `refersTo` references against platform state:
+    /// an identifier property's value, and each element of a typed array whose
+    /// `items` declare one, which is refused with the error a single reference
+    /// would give and named by its list path (`reasons[2]`).
     ///
     /// When `changed_fields` is provided (replace transitions), only references on
     /// those fields are validated. A reference also counts as changed when a

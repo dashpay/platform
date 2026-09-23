@@ -5818,6 +5818,67 @@ mod tests {
             );
         }
 
+        /// `refersTo` on the items of a typed array registers with every target
+        /// the fixture uses: permanent and deletable document elements, an
+        /// agreement keyed by the writer and one on a schema property.
+        #[tokio::test]
+        async fn should_register_contract_with_typed_array_element_references() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-typed-array-elements.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// An element declaration is checked at registration as a single
+        /// reference is: the referring side of an agreement is a property of
+        /// the declaring document type, and the error names the declaration
+        /// by its list path.
+        #[tokio::test]
+        async fn should_reject_an_element_agreement_on_a_missing_referring_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-typed-array-elements-agreement-missing-referring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.path() == "topicCharter.reasons[]"
+                    && error.referring_property() == "subject"
+                    && error.reason().contains("does not define the referring property")
+            );
+        }
+
+        /// The referenced side is a property of the referenced document type.
+        #[tokio::test]
+        async fn should_reject_an_element_agreement_on_a_missing_referenced_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-typed-array-elements-agreement-missing-referenced.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.path() == "topicCharter.reasons[]"
+                    && error.referenced_property() == "subject"
+                    && error.reason().contains("does not define the referenced property")
+            );
+        }
+
         /// `$ownerId` and `$creatorId` may sit on the referenced side of an
         /// agreement when the referring side is an identifier and, for
         /// `$creatorId`, the referenced type records creator ids

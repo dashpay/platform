@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 
 use crate::data_contract::document_type::array::{ArrayItemConstraints, TypedArrayProperty};
+use crate::data_contract::document_type::class_methods::try_from_schema::apply_property_reference;
 use crate::data_contract::document_type::{
     property_names, DocumentPropertyType, DocumentPropertyTypeParsingOptions,
 };
@@ -20,6 +22,7 @@ use crate::data_contract::errors::DataContractError;
 pub(super) fn parse_typed_array_v0(
     inner_properties: &BTreeMap<String, &Value>,
     options: &DocumentPropertyTypeParsingOptions,
+    platform_version: &PlatformVersion,
 ) -> Result<Option<DocumentPropertyType>, DataContractError> {
     let is_array = inner_properties
         .get(property_names::TYPE)
@@ -46,7 +49,7 @@ pub(super) fn parse_typed_array_v0(
         ));
     }
 
-    let item_type = parse_element_type(items, options)?;
+    let item_type = parse_element_type(items, options, platform_version)?;
     let item_constraints = parse_item_constraints(items, &item_type)?;
 
     // Fee estimation sizes the inline list by its bound
@@ -80,12 +83,21 @@ pub(super) fn parse_typed_array_v0(
 /// bounds give it and a byte array element with the identifier media type is
 /// an identifier. Objects and arrays of arrays are refused.
 ///
-/// `refersTo` is refused for now. A reference on identifier elements would be
-/// read from this same map and folded into the element type, as
-/// `apply_property_reference` folds one into a scalar identifier.
+/// A `refersTo` on identifier elements is folded into the element type by
+/// `apply_property_reference`, the function (and the version of it) that
+/// folds one into a scalar identifier, so an element reference has the
+/// scalar's target types, keys and checks: the element becomes
+/// `IdentifierWithReference(target)`. The one target refused is
+/// `identityPublicKey`, in either form: its `keyIdProperty` names a single
+/// sibling key id, and an `identityProperty` declaration sits on the key id
+/// itself, neither of which can pair with many elements. The contract-level checks of the
+/// declaration (the referenced document type, the `propertyAgreement` sides
+/// and value kinds) need other contracts and run at registration in
+/// drive-abci, which visits element references too.
 fn parse_element_type(
     items: &Value,
     options: &DocumentPropertyTypeParsingOptions,
+    platform_version: &PlatformVersion,
 ) -> Result<DocumentPropertyType, DataContractError> {
     // The tuple form (`items: [..]`) and boolean schemas are not one element
     // schema
@@ -97,11 +109,6 @@ fn parse_element_type(
     if items_map.contains_key(property_names::REF) {
         return Err(DataContractError::InvalidContractStructure(
             "the items of a typed array must be an inline element schema, not a $ref".to_string(),
-        ));
-    }
-    if items_map.contains_key(property_names::REFERS_TO) {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo is not supported on the elements of a typed array".to_string(),
         ));
     }
     match items_map
@@ -126,6 +133,32 @@ fn parse_element_type(
     }
 
     let element_type = DocumentPropertyType::try_from_value_map(&items_map, options)?;
+    let element_type = match items_map.get(property_names::REFERS_TO) {
+        None => element_type,
+        Some(refers_to) => {
+            if !matches!(element_type, DocumentPropertyType::Identifier) {
+                return Err(DataContractError::InvalidContractStructure(
+                    "refersTo is only allowed on identifier elements of a typed array".to_string(),
+                ));
+            }
+            // Either identityPublicKey form pairs one key id with the
+            // reference, a sibling property (keyIdProperty) or the property
+            // itself (identityProperty), which cannot pair with many elements
+            let reference_type = refers_to
+                .to_btree_ref_string_map()?
+                .get(property_names::TYPE)
+                .and_then(|reference_type| reference_type.as_text());
+            if reference_type == Some("identityPublicKey") {
+                return Err(DataContractError::InvalidContractStructure(
+                    "identityPublicKey refersTo is not allowed on the elements of a typed array: \
+                     it pairs one key id with the reference, which cannot pair with many \
+                     elements"
+                        .to_string(),
+                ));
+            }
+            apply_property_reference(&items_map, element_type, platform_version)?
+        }
+    };
     match element_type {
         DocumentPropertyType::U128
         | DocumentPropertyType::I128
@@ -141,6 +174,7 @@ fn parse_element_type(
         | DocumentPropertyType::String(_)
         | DocumentPropertyType::ByteArray(_)
         | DocumentPropertyType::Identifier
+        | DocumentPropertyType::IdentifierWithReference(_)
         | DocumentPropertyType::Boolean => Ok(element_type),
         other => Err(DataContractError::InvalidContractStructure(format!(
             "unsupported typed array element type: {}",
@@ -263,7 +297,11 @@ mod tests {
         let map = schema
             .to_btree_ref_string_map()
             .expect("the schema is a map");
-        parse_typed_array_v0(&map, &DocumentPropertyTypeParsingOptions::default())
+        parse_typed_array_v0(
+            &map,
+            &DocumentPropertyTypeParsingOptions::default(),
+            PlatformVersion::latest(),
+        )
     }
 
     #[test]
@@ -418,6 +456,7 @@ mod tests {
                 &DocumentPropertyTypeParsingOptions {
                     sized_integer_types,
                 },
+                PlatformVersion::latest(),
             )
             .expect("parses");
             let Some(DocumentPropertyType::TypedArray(typed_array)) = parsed else {

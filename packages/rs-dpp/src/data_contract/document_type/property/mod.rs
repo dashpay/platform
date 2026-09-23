@@ -860,6 +860,33 @@ impl DocumentPropertyReferenceTarget {
     }
 }
 
+/// A property's `refersTo` declaration and what holds the reference: the
+/// property's own value, or every element of a typed array of identifiers.
+/// Returned by [`DocumentPropertyType::reference`], which is how the
+/// registration and write-time validators enumerate a document type's
+/// references, so neither kind can be skipped by a caller matching only
+/// [`DocumentPropertyType::IdentifierWithReference`].
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PropertyReference<'a> {
+    /// An identifier property: its value is the referenced id.
+    Value(&'a DocumentPropertyReferenceTarget),
+    /// A typed array whose elements are identifiers carrying `refersTo`
+    /// (declared on its `items`): each element is a referenced id, all of
+    /// them to this one target. Never an
+    /// [`DocumentPropertyReferenceTarget::IdentityPublicKey`], which the
+    /// parser refuses on an element.
+    Elements(&'a DocumentPropertyReferenceTarget),
+}
+
+impl<'a> PropertyReference<'a> {
+    /// The declaration, whatever holds the reference.
+    pub fn target(&self) -> &'a DocumentPropertyReferenceTarget {
+        match self {
+            PropertyReference::Value(target) | PropertyReference::Elements(target) => target,
+        }
+    }
+}
+
 /// The system properties of a referenced document that the referenced side
 /// of a `propertyAgreement` pair may name, next to the referenced document
 /// type's schema properties: `$ownerId`, the current owner (which follows
@@ -1177,6 +1204,24 @@ impl DocumentPropertyType {
                 "array".to_string()
             }
             DocumentPropertyType::VariableTypeArray(_) => "variableTypeArray".to_string(),
+        }
+    }
+
+    /// The `refersTo` declaration this property carries, on its own value
+    /// (an identifier property) or on every element (a typed array whose
+    /// `items` declare it); `None` for a property without one.
+    pub fn reference(&self) -> Option<PropertyReference<'_>> {
+        match self {
+            DocumentPropertyType::IdentifierWithReference(target) => {
+                Some(PropertyReference::Value(target))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => match typed_array.item_type.as_ref() {
+                DocumentPropertyType::IdentifierWithReference(target) => {
+                    Some(PropertyReference::Elements(target))
+                }
+                _ => None,
+            },
+            _ => None,
         }
     }
 

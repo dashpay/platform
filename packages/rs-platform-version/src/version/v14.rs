@@ -603,6 +603,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     passes. The parser checks the target at contract
 ///     registration and update (it must exist, be an identifier and not be
 ///     the declaring property), and a changed `distinctFrom` is an
+///     incompatible schema change on update.
 ///
 /// 27. **`encryptedFor` on byte array properties**: a byte array property may
 ///     declare how its ciphertext was produced, so wallets read the recipe
@@ -685,6 +686,36 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     same `boundTo` registration rule. Adding, removing or changing it is
 ///     an incompatible schema change on update, like the rest of a
 ///     `refersTo`.
+///
+/// 31. **`refersTo` on the elements of a typed array**: an identifier element
+///     of a typed array may carry a `refersTo` declaration on its `items`,
+///     which every element then declares (meta-schema v3 `documentArrayItem`
+///     reuses the property `refersTo` definition by `$ref` and refuses
+///     `identityPublicKey` in both forms, which pair one key id with the
+///     reference).
+///     `parse_typed_array` 0 folds it into the element through the same
+///     `apply_property_reference` 0 a scalar identifier goes through, so the
+///     element is `IdentifierWithReference(target)` inside `item_type`, and
+///     `DocumentPropertyType::reference` reports either kind. Contract
+///     registration (`data_contract_reference_validation` 0) checks the
+///     declaration as a single one, and document create state validation 2
+///     and replace state validation 1 (`document_reference_validation` 0,
+///     extended in place: both are only reached from protocol version 14,
+///     where the element arm is the only new path) check every element as a
+///     single reference, refusing the first that fails with that
+///     reference's error (40120, 40127, 40135 and the rest), its path the
+///     element's list path (`reasons[2]`). A replace re-validates the list
+///     when it changed, when a property bound by a `propertyAgreement`
+///     changed, and always for a `$ownerId` agreement or `deletableDocument`
+///     elements. A foreign contract holding the referenced document type is
+///     fetched once per list. Registration caps the references one document
+///     can carry at `SYSTEM_LIMITS_V4.max_references_per_document` (256; one
+///     per property declaring a reference, key id references of item 30
+///     included, `maxItems` per typed array of referencing elements;
+///     backfilled into the earlier tables), and
+///     refuses an `immutable` typed array of `deletableDocument` references,
+///     which could never be replaced once one target is deleted. A changed
+///     element `refersTo` is an incompatible schema change on update.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

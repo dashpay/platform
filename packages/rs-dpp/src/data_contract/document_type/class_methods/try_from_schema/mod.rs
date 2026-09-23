@@ -531,12 +531,15 @@ fn validate_distinct_from_targets_v0(
 /// property with an `identityPublicKey` declaration naming `identityProperty`
 /// becomes `KeyIdWithReference(identity property)`. No other property can carry
 /// `refersTo`.
+/// The typed array parser calls it on an identifier element's `items`
+/// schema, so an element reference is read by exactly this code; on the
+/// array itself the declaration is refused, it belongs on the items.
 ///
 /// Versioned on `apply_property_reference` in the platform version's document
 /// type schema versions. `None` selects the behavior of the versions that
 /// predate the keyword: it is ignored entirely, so their parses stay
 /// byte-for-byte identical to what they always produced.
-fn apply_property_reference(
+pub(in crate::data_contract::document_type::class_methods) fn apply_property_reference(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: DocumentPropertyType,
     platform_version: &PlatformVersion,
@@ -563,6 +566,15 @@ fn apply_property_reference_v0(
     let Some(refers_to_value) = inner_properties.get(property_names::REFERS_TO) else {
         return Ok(property_type);
     };
+
+    // A typed array only exists from protocol version 14, where its element
+    // reference is read off the items by the typed array parser
+    if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo on a typed array belongs on its items, where it applies to every element"
+                .to_string(),
+        ));
+    }
 
     let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
 

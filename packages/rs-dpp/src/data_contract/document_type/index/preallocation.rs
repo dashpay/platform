@@ -106,6 +106,8 @@ impl Index {
             let Some(property) = flattened_properties.get(&candidate.name) else {
                 continue;
             };
+            // Only a scalar reference can bind: an index property is never a
+            // typed array, so element references never reach an index
             let DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,

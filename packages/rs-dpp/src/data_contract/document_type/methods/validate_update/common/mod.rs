@@ -2112,6 +2112,129 @@ mod tests {
             }
         }
 
+        /// `reasons`, a typed array of identifiers, with `refersTo` on its items as given,
+        /// next to a `topic` an agreement can name.
+        fn element_reference_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut items = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            });
+            if let Some(refers_to) = refers_to {
+                items
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "reasons": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": items,
+                        "position": 0
+                    },
+                    "topic": { "type": "string", "maxLength": 32, "position": 1 }
+                },
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "submittedCharter",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// An element reference is frozen like a scalar one: stored documents were
+        /// checked against the declaration they were written under, so adding,
+        /// removing or changing it is an incompatible schema change.
+        #[test]
+        fn should_refuse_a_contract_update_that_changes_an_element_refers_to() {
+            let platform_version = PlatformVersion::latest();
+            let permanent =
+                platform_value!({ "type": "permanentDocument", "documentType": "reason" });
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (
+                    None,
+                    Some(permanent.clone()),
+                    "/properties/reasons/items/refersTo",
+                ),
+                (
+                    Some(permanent.clone()),
+                    None,
+                    "/properties/reasons/items/refersTo",
+                ),
+                (
+                    Some(permanent.clone()),
+                    Some(
+                        platform_value!({ "type": "deletableDocument", "documentType": "reason" }),
+                    ),
+                    "/properties/reasons/items/refersTo/type",
+                ),
+                (
+                    Some(permanent.clone()),
+                    Some(platform_value!({ "type": "permanentDocument", "documentType": "rule" })),
+                    "/properties/reasons/items/refersTo/documentType",
+                ),
+                (
+                    Some(permanent.clone()),
+                    Some(platform_value!({
+                        "type": "permanentDocument",
+                        "documentType": "reason",
+                        "propertyAgreement": { "topic": "topic" }
+                    })),
+                    "/properties/reasons/items/refersTo/propertyAgreement",
+                ),
+            ] {
+                let old_document_type =
+                    element_reference_document_type(old_refers_to.clone(), platform_version);
+                let new_document_type =
+                    element_reference_document_type(new_refers_to.clone(), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_update(new_document_type.as_ref(), 2, platform_version)
+                    .expect("validate_update should not error");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path,
+                    "{old_refers_to:?} -> {new_refers_to:?}: {:?}",
+                    result.errors
+                );
+            }
+
+            // An unchanged declaration is no change
+            let document_type = element_reference_document_type(Some(permanent), platform_version);
+            let result = document_type
+                .as_ref()
+                .validate_update(document_type.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
         /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
         /// `delegateId` as given.
         fn distinct_from_document_type(

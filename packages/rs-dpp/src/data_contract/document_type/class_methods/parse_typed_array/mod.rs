@@ -16,7 +16,9 @@ mod v0;
 /// Returns `None` for every other property, a byte array included, which the
 /// caller leaves to `DocumentPropertyType::try_from_value_map`. The element
 /// schema is parsed by that same scalar parser with the property's `options`,
-/// so an element has the type a scalar property of its schema would have.
+/// so an element has the type a scalar property of its schema would have,
+/// and a `refersTo` on identifier elements is folded in by the same
+/// `apply_property_reference` a scalar identifier goes through.
 ///
 /// Versioned on `parse_typed_array` in the platform version's document type
 /// schema versions. `None` selects the behavior of the versions that predate
@@ -35,7 +37,7 @@ pub(crate) fn parse_typed_array(
         .parse_typed_array
     {
         None => Ok(None),
-        Some(0) => v0::parse_typed_array_v0(inner_properties, options),
+        Some(0) => v0::parse_typed_array_v0(inner_properties, options, platform_version),
         Some(version) => Err(DataContractError::Unsupported(format!(
             "parse_typed_array version {version} is not supported"
         ))),

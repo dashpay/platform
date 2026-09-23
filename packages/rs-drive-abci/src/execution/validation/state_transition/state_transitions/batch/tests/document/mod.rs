@@ -17,6 +17,7 @@ mod replacement;
 mod required_since;
 mod system_agreement;
 mod transfer;
+mod typed_array_references;
 
 use super::*;
 

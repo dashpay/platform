@@ -4,7 +4,7 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentReferenceDeclaration, KeyReferenceIdentityProperty,
+    DocumentReferenceDeclaration, KeyReferenceIdentityProperty, PropertyReference,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
@@ -62,8 +62,16 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// `identityPublicKey`: the declared key id property must exist in the same
 /// document type and be an integer.
 ///
+/// A declaration on the `items` of a typed array of identifiers holds for
+/// every element and is checked once, exactly as a single reference's: the
+/// referring side of an agreement is still a property of the declaring
+/// document type (or the writer), the referenced side a property of the
+/// referenced document type. `identityPublicKey` never reaches here on
+/// elements: the parser refuses it there.
+///
 /// The error paths name the failing declaration as
-/// `documentTypeName.propertyPath`. Validation stops at the first invalid
+/// `documentTypeName.propertyPath`, and an element declaration by its list
+/// path, `documentTypeName.propertyPath[]`. Validation stops at the first invalid
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -85,8 +93,7 @@ pub(super) fn validate_data_contract_references_v0(
         for (path, property) in document_type.as_ref().flattened_properties() {
             let declaration_path = format!("{declaring_type_name}.{path}");
 
-            let reference_target = match &property.property_type {
-                DocumentPropertyType::IdentifierWithReference(reference_target) => reference_target,
+            let (reference_target, declaration_path) = match &property.property_type {
                 // A key reference on the key id property: what `identityProperty`
                 // names must fit the document type; nothing else about the
                 // declaration is state-dependent
@@ -165,7 +172,16 @@ pub(super) fn validate_data_contract_references_v0(
                     }
                     continue;
                 }
-                _ => continue,
+                property_type => match property_type.reference() {
+                    Some(PropertyReference::Value(target)) => (target, declaration_path),
+                    // A typed array only parses from protocol version 14,
+                    // whose contract create and update state validation are
+                    // the only callers, so this arm is never reached before it
+                    Some(PropertyReference::Elements(target)) => {
+                        (target, format!("{declaring_type_name}.{path}[]"))
+                    }
+                    None => continue,
+                },
             };
 
             // The key id property must exist in the same document type and be

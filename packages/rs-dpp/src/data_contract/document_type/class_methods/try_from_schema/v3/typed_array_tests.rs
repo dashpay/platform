@@ -536,33 +536,6 @@ fn should_refuse_items_on_a_byte_array_and_unique_items_on_an_identifier() {
         .expect("uniqueItems on a plain byte array parses");
 }
 
-#[test]
-fn should_refuse_refers_to_on_the_elements_of_a_typed_array() {
-    let list = platform_value!({
-        "type": "array",
-        "maxItems": 4,
-        "items": {
-            "type": "array",
-            "byteArray": true,
-            "minItems": 32,
-            "maxItems": 32,
-            "contentMediaType": "application/x.dash.dpp.identifier",
-            "refersTo": { "type": "identity" }
-        },
-        "position": 0
-    });
-
-    expect_json_schema_error(parse_dispatched(
-        schema_with_list(list.clone()),
-        PlatformVersion::latest(),
-        true,
-    ));
-    expect_structure_error(
-        parse_dispatched(schema_with_list(list), PlatformVersion::latest(), false),
-        "refersTo is not supported on the elements of a typed array",
-    );
-}
-
 /// An element may be limited to allowed values with `enum`, but takes no
 /// `const` (a list of one repeated value carries only its length, and a
 /// one-value `enum` does the same while an update can still widen it) and no

@@ -16,7 +16,7 @@ use crate::identifier::IdentifierWasm;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
-    IdentityKeyReferenceRequirements, KeyIdReference,
+    IdentityKeyReferenceRequirements, KeyIdReference, PropertyReference,
 };
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
@@ -193,13 +193,19 @@ export type DocumentPropertyReferenceTarget =
 export type DocumentPropertyReference = {
   /**
    * Dotted path of the declaring property within the document type — for
-   * example `"author"`, or `"meta.parentId"` for a nested one.
+   * example `"author"`, or `"meta.parentId"` for a nested one. A
+   * declaration on the `items` of a typed array of identifiers, which every
+   * element carries, is listed with the list path of its elements, for
+   * example `"reasons[]"`; its `type` is never `identityPublicKey`, which
+   * an element cannot declare.
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135 and
-   * 40136). Note that contract
-   * *registration* errors prefix it with the document type name
-   * (`"<documentType>.<path>"`) while document *write* errors do not.
+   * 40136), except that a write error names the failing element by its
+   * index (`"reasons[2]"` for
+   * the third). Note that contract *registration* errors prefix it with the
+   * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
+   * while document *write* errors do not.
    */
   path: string;
 } & DocumentPropertyReferenceTarget;
@@ -279,11 +285,6 @@ fn set_key_requirements_field(
 }
 
 /// Build the flat, internally-tagged JS object for one declaration.
-///
-/// `declaring_contract_id` resolves the document variants'
-/// absent `contract_id`, which consensus reads as "the declaring contract"
-/// — it computes `contract_id.unwrap_or(contract.id())` and treats an
-/// explicit self-id identically, so collapsing the two here loses nothing.
 fn reference_to_js(
     path: &str,
     target: &DocumentPropertyReferenceTarget,
@@ -291,7 +292,35 @@ fn reference_to_js(
 ) -> WasmDppResult<JsValue> {
     let object = Object::new();
     set_field(&object, "path", &JsValue::from_str(path), path)?;
+    set_reference_target_fields(&object, target, declaring_contract_id, path)?;
+    Ok(object.into())
+}
 
+/// The `DocumentPropertyReferenceTarget` of a declaration as its own JS
+/// object, as a typed array element's `refersTo` reports it. `path` only
+/// names the declaration in an error.
+pub(crate) fn reference_target_to_js(
+    target: &DocumentPropertyReferenceTarget,
+    declaring_contract_id: Identifier,
+    path: &str,
+) -> WasmDppResult<JsValue> {
+    let object = Object::new();
+    set_reference_target_fields(&object, target, declaring_contract_id, path)?;
+    Ok(object.into())
+}
+
+/// Set the fields of one `DocumentPropertyReferenceTarget` on `object`.
+///
+/// `declaring_contract_id` resolves the document variants'
+/// absent `contract_id`, which consensus reads as "the declaring contract"
+/// — it computes `contract_id.unwrap_or(contract.id())` and treats an
+/// explicit self-id identically, so collapsing the two here loses nothing.
+fn set_reference_target_fields(
+    object: &Object,
+    target: &DocumentPropertyReferenceTarget,
+    declaring_contract_id: Identifier,
+    path: &str,
+) -> WasmDppResult<()> {
     let kind = match target {
         DocumentPropertyReferenceTarget::Identity => "identity",
         DocumentPropertyReferenceTarget::Contract { .. } => "contract",
@@ -300,7 +329,7 @@ fn reference_to_js(
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
         DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
     };
-    set_field(&object, "type", &JsValue::from_str(kind), path)?;
+    set_field(object, "type", &JsValue::from_str(kind), path)?;
 
     match target {
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
@@ -347,7 +376,7 @@ fn reference_to_js(
                         set_field(&fields, name, &JsValue::from_bool(flag), path)?;
                     }
                 }
-                set_field(&object, "contractRequirements", &fields, path)?;
+                set_field(object, "contractRequirements", &fields, path)?;
             }
         }
         DocumentPropertyReferenceTarget::PermanentDocument {
@@ -362,13 +391,13 @@ fn reference_to_js(
         } => {
             let effective = contract_id.unwrap_or(declaring_contract_id);
             set_field(
-                &object,
+                object,
                 "contractId",
                 &JsValue::from(IdentifierWasm::from(effective)),
                 path,
             )?;
             set_field(
-                &object,
+                object,
                 "documentType",
                 &JsValue::from_str(document_type_name),
                 path,
@@ -383,7 +412,7 @@ fn reference_to_js(
                 for (referring, referenced) in property_agreement {
                     set_field(&agreement, referring, &JsValue::from_str(referenced), path)?;
                 }
-                set_field(&object, "propertyAgreement", &agreement, path)?;
+                set_field(object, "propertyAgreement", &agreement, path)?;
             }
         }
         DocumentPropertyReferenceTarget::IdentityPublicKey {
@@ -391,20 +420,21 @@ fn reference_to_js(
             key_requirements,
         } => {
             set_field(
-                &object,
+                object,
                 "keyIdProperty",
                 &JsValue::from_str(key_id_property),
                 path,
             )?;
-            set_key_requirements_field(&object, key_requirements, path)?;
+            set_key_requirements_field(object, key_requirements, path)?;
         }
     }
 
-    Ok(object.into())
+    Ok(())
 }
 
 /// Collect every reference declaration of one document type, in schema
-/// property order.
+/// property order: an identifier property's own, and the one the elements
+/// of a typed array of identifiers carry, listed at `path[]`.
 ///
 /// Walks `flattened_properties` rather than `properties` because that is
 /// what both consensus validators walk, and because their error `path` is
@@ -418,13 +448,23 @@ pub(crate) fn references_for_document_type(
 
     for (path, property) in document_type.flattened_properties() {
         match &property.property_type {
-            DocumentPropertyType::IdentifierWithReference(target) => {
-                references.push(&reference_to_js(path, target, declaring_contract_id)?);
-            }
             DocumentPropertyType::KeyIdWithReference(reference) => {
                 references.push(&key_id_reference_to_js(path, reference)?);
             }
-            _ => {}
+            property_type => match property_type.reference() {
+                Some(PropertyReference::Value(target)) => {
+                    references.push(&reference_to_js(path, target, declaring_contract_id)?);
+                }
+                Some(PropertyReference::Elements(target)) => {
+                    let element_path = format!("{path}[]");
+                    references.push(&reference_to_js(
+                        &element_path,
+                        target,
+                        declaring_contract_id,
+                    )?);
+                }
+                None => {}
+            },
         }
     }
 
