@@ -424,6 +424,14 @@ struct PropertyRowView: View {
             // Property attributes
             propertyAttributesView
 
+            // A typed array (protocol version 14): what its elements are
+            if let dict = propertyDict,
+               let typedArray = DocumentTypedArray(path: propertyName, propertySchema: dict) {
+                Label(typedArray.summary, systemImage: "list.bullet")
+                    .font(.caption2)
+                    .foregroundColor(.purple)
+            }
+
             // Sub-properties for objects
             if propertyType == "object", let dict = propertyDict {
                 subPropertiesView(dict: dict)

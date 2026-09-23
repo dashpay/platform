@@ -18,14 +18,42 @@ struct DocumentFieldsView: View {
     /// caption says so.
     var storedPropertyNames: Set<String> = []
 
+    /// Top-level typed array properties (protocol version 14) by name, read
+    /// off the persisted schema once per view value. A typed array gets the
+    /// list editor; any other `"array"` row keeps its old editor.
+    private let typedArrays: [String: DocumentTypedArray]
+
     @State private var textFields: [String: String] = [:]
     @State private var numberFields: [String: String] = [:]
     @State private var boolFields: [String: Bool] = [:]
     @State private var arrayFields: [String: String] = [:]
+    /// One entry per element of each typed array, in list order, holding the
+    /// text entered for it (`"true"` / `"false"` for a boolean toggle, the
+    /// chosen member's input text for an `enum` picker).
+    @State private var typedArrayRows: [String: [TypedArrayRow]] = [:]
     /// Boolean fields the user has actually toggled. Untouched optional
     /// booleans are omitted from the payload (absence ≠ `false` for some
     /// schemas) rather than broadcast as the seeded `false` default.
     @State private var touchedBoolFields: Set<String> = []
+
+    init(
+        documentType: PersistentDocumentType,
+        fieldValues: Binding<[String: Any]>,
+        immutability: DocumentTypeImmutability = .none,
+        storedPropertyNames: Set<String> = []
+    ) {
+        self.documentType = documentType
+        self._fieldValues = fieldValues
+        self.immutability = immutability
+        self.storedPropertyNames = storedPropertyNames
+
+        var typedArrays: [String: DocumentTypedArray] = [:]
+        for property in documentType.propertiesList ?? []
+        where property.type == "array" && !property.byteArray {
+            typedArrays[property.name] = documentType.typedArray(named: property.name)
+        }
+        self.typedArrays = typedArrays
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -121,6 +149,9 @@ struct DocumentFieldsView: View {
                 if property.byteArray {
                     // Byte arrays should be entered as hex strings
                     byteArrayField(for: property)
+                } else if let typedArray = typedArrays[property.name] {
+                    // Typed arrays: one typed input per element
+                    typedArrayField(for: property, typedArray: typedArray)
                 } else {
                     // Regular arrays with comma-separated values
                     VStack(alignment: .leading, spacing: 4) {
@@ -229,6 +260,8 @@ struct DocumentFieldsView: View {
                 case "array":
                     if property.byteArray {
                         textFields[property.name] = ""  // Use text field for hex input
+                    } else if typedArrays[property.name] != nil {
+                        typedArrayRows[property.name] = []  // One row per element
                     } else {
                         arrayFields[property.name] = ""  // Use array field for comma-separated
                     }
@@ -314,7 +347,31 @@ struct DocumentFieldsView: View {
             }
         }
 
+        // Add typed arrays: one JSON value per row, in row order. An empty
+        // optional list is left out; every other list goes through the
+        // whole-list check, `minItems` included. A list that fails it is
+        // represented by the `DocumentTypedArray.InputError` itself, which
+        // `CreateDocumentView.propertiesJSON` throws: a refused document
+        // transition is still paid for, so an invalid list must never be
+        // broadcast.
+        for (key, rows) in typedArrayRows {
+            guard let typedArray = typedArrays[key] else { continue }
+            if rows.isEmpty && !isRequired(key) {
+                continue
+            }
+            switch typedArray.jsonArray(fromInputs: rows.map(\.text)) {
+            case .success(let array):
+                values[key] = array
+            case .failure(let error):
+                values[key] = error
+            }
+        }
+
         fieldValues = values
+    }
+
+    private func isRequired(_ propertyName: String) -> Bool {
+        documentType.propertiesList?.first(where: { $0.name == propertyName })?.isRequired ?? false
     }
 }
 
@@ -395,5 +452,316 @@ extension DocumentFieldsView {
         let stringCharacterSet = CharacterSet(charactersIn: string)
 
         return stringCharacterSet.isSubset(of: hexCharacterSet) && string.count == expectedLength
+    }
+}
+
+// MARK: - Typed Array Field Helper
+
+/// One element row of a typed array editor. Rows are identified by `id`, not
+/// by position, so a binding captured before a removal cannot write into the
+/// wrong row.
+struct TypedArrayRow: Identifiable, Equatable {
+    let id = UUID()
+    var text: String
+}
+
+extension DocumentFieldsView {
+    /// The list editor for a typed array (protocol version 14): one row per
+    /// element with an input suited to the element, an add button that stops
+    /// at `maxItems`, a remove button per row, and a caption stating what an
+    /// element is and how many the list takes. Each row is marked with the
+    /// verdict of `DocumentTypedArray.Element.value(fromInput:)`, and a list
+    /// failing `DocumentTypedArray.values(fromInputs:)` is never sent: the
+    /// submit refuses it (see `updateFieldValues`).
+    @ViewBuilder
+    private func typedArrayField(for property: PersistentProperty, typedArray: DocumentTypedArray) -> some View {
+        let name = property.name
+        let element = typedArray.element
+        let rows = typedArrayRows[name] ?? []
+        let results = rows.map { element.value(fromInput: $0.text) }
+        // The whole-list refusal that `updateFieldValues` sends in place of
+        // the list. A bad row is already marked on its row, so only the count
+        // and repeat refusals are shown here. An empty optional list is left
+        // out of the document and is never checked.
+        let listError: DocumentTypedArray.InputError? = {
+            guard !rows.isEmpty || property.isRequired,
+                  case let .failure(error) = typedArray.values(fromInputs: rows.map(\.text))
+            else {
+                return nil
+            }
+            if case .invalidElement = error { return nil }
+            return error
+        }()
+
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        // The index a refusal names (`tags[1]`)
+                        Text("[\(index)]")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+
+                        typedArrayElementInput(name: name, index: index, rowId: row.id, element: element)
+
+                        if case .failure = results[index] {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundColor(.red)
+                                .accessibilityLabel("Invalid \(name)[\(index)]")
+                                .accessibilityIdentifier("createDocument.field.\(name).\(index).invalid")
+                        }
+
+                        Button {
+                            removeTypedArrayRow(name, id: row.id)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                        // Borderless: the whole editor sits in one Form row,
+                        // where a default button would claim every tap in it
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove \(name)[\(index)]")
+                        .accessibilityIdentifier("createDocument.field.\(name).\(index).remove")
+                    }
+
+                    if case let .failure(error) = results[index] {
+                        Text(error.localizedDescription)
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+
+            Button {
+                addTypedArrayRow(name, typedArray: typedArray)
+            } label: {
+                Label("Add element", systemImage: "plus.circle")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.borderless)
+            .disabled(rows.count >= typedArray.maxItems)
+            .accessibilityIdentifier("createDocument.field.\(name).add")
+
+            Text("Each element: \(element.summary)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            Text(typedArrayCountCaption(typedArray, count: rows.count))
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("createDocument.field.\(name).count")
+
+            if let listError {
+                Text(listError.localizedDescription)
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("createDocument.field.\(name).error")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("createDocument.field.\(name)")
+    }
+
+    /// The input for one element, chosen by the element kind: a picker when
+    /// an `enum` is declared, a toggle for a boolean, and otherwise a text
+    /// field with the keyboard the kind needs.
+    @ViewBuilder
+    private func typedArrayElementInput(
+        name: String,
+        index: Int,
+        rowId: UUID,
+        element: DocumentTypedArray.Element
+    ) -> some View {
+        let identifier = "createDocument.field.\(name).\(index)"
+        let text = typedArrayTextBinding(name: name, rowId: rowId)
+
+        if let options = element.allowedInputs {
+            Picker("\(name)[\(index)]", selection: text) {
+                ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                    Text(option).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .accessibilityIdentifier(identifier)
+            Spacer()
+        } else {
+            switch element {
+            case .boolean:
+                Toggle(isOn: Binding(
+                    get: { text.wrappedValue == "true" },
+                    set: { text.wrappedValue = $0 ? "true" : "false" }
+                )) {
+                    Text(text.wrappedValue)
+                        .font(.subheadline)
+                }
+                .accessibilityLabel("\(name)[\(index)]")
+                .accessibilityIdentifier(identifier)
+
+            case let .integer(minimum, _, _):
+                TextField("Whole number", text: text)
+                    // The number pad has no minus key: offer it only when
+                    // the element cannot be negative
+                    .keyboardType((minimum ?? -1) >= 0 ? .numberPad : .numbersAndPunctuation)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .accessibilityIdentifier(identifier)
+
+            case let .number(minimum, _, _):
+                TextField("Number", text: text)
+                    .keyboardType((minimum ?? -1) >= 0 ? .decimalPad : .numbersAndPunctuation)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .accessibilityIdentifier(identifier)
+
+            case .string:
+                TextField("Text", text: text)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .accessibilityIdentifier(identifier)
+
+            case .byteArray:
+                TextField("Hex bytes", text: text)
+                    .font(.system(.body, design: .monospaced))
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.asciiCapable)
+                    .accessibilityIdentifier(identifier)
+
+            case .identifier:
+                TextField("Base58 identifier", text: text)
+                    .font(.system(.body, design: .monospaced))
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.asciiCapable)
+                    .accessibilityIdentifier(identifier)
+            }
+        }
+    }
+
+    /// "2 of 1 to 5 elements", plus the uniqueness rule when declared.
+    private func typedArrayCountCaption(_ typedArray: DocumentTypedArray, count: Int) -> String {
+        var caption: String
+        if let minItems = typedArray.minItems, minItems > 0 {
+            caption = minItems == typedArray.maxItems
+                ? "\(count) of exactly \(minItems) elements"
+                : "\(count) of \(minItems) to \(typedArray.maxItems) elements"
+        } else {
+            caption = "\(count) of at most \(typedArray.maxItems) elements"
+        }
+        if typedArray.uniqueItems {
+            caption += " · elements must be unique"
+        }
+        return caption
+    }
+
+    /// Binds one row's text by row id, so a stale binding after a removal
+    /// writes nothing rather than into another row.
+    private func typedArrayTextBinding(name: String, rowId: UUID) -> Binding<String> {
+        Binding(
+            get: { typedArrayRows[name]?.first(where: { $0.id == rowId })?.text ?? "" },
+            set: { newValue in
+                guard let index = typedArrayRows[name]?.firstIndex(where: { $0.id == rowId }) else {
+                    return
+                }
+                typedArrayRows[name]?[index].text = newValue
+                updateFieldValues()
+            }
+        )
+    }
+
+    /// A new row starts on the first allowed value when an `enum` is declared
+    /// (a picker must select one of its tags), `false` for a boolean, and
+    /// empty otherwise.
+    private func addTypedArrayRow(_ name: String, typedArray: DocumentTypedArray) {
+        var rows = typedArrayRows[name] ?? []
+        guard rows.count < typedArray.maxItems else { return }
+        let initialText: String
+        if let first = typedArray.element.allowedInputs?.first {
+            initialText = first
+        } else if case .boolean = typedArray.element {
+            initialText = "false"
+        } else {
+            initialText = ""
+        }
+        rows.append(TypedArrayRow(text: initialText))
+        typedArrayRows[name] = rows
+        updateFieldValues()
+    }
+
+    private func removeTypedArrayRow(_ name: String, id: UUID) {
+        typedArrayRows[name]?.removeAll { $0.id == id }
+        updateFieldValues()
+    }
+}
+
+// MARK: - Typed Array Descriptions
+
+extension DocumentTypedArray.Element {
+    /// The element kind with its declared bounds and allowed values, for
+    /// captions and schema detail rows: "integer (1 to 10), one of 1, 5, 10".
+    var summary: String {
+        typealias Value = DocumentTypedArray.ElementValue
+        var text: String
+        switch self {
+        case let .integer(minimum, maximum, _):
+            text = "integer" + Self.bounds(
+                minimum.map { Value.integer($0).inputText },
+                maximum.map { Value.integer($0).inputText },
+                unit: nil)
+        case let .number(minimum, maximum, _):
+            text = "number" + Self.bounds(
+                minimum.map { Value.number($0).inputText },
+                maximum.map { Value.number($0).inputText },
+                unit: nil)
+        case .boolean:
+            text = "boolean"
+        case let .string(minLength, maxLength, _):
+            text = "string" + Self.bounds(
+                minLength.map(String.init), maxLength.map(String.init), unit: "characters")
+        case let .byteArray(minSize, maxSize):
+            text = "byte array, hex" + Self.bounds(
+                minSize.map(String.init), maxSize.map(String.init), unit: "bytes")
+        case .identifier:
+            text = "identifier, base58"
+        }
+        if let allowed = allowedInputs {
+            text += ", one of " + allowed.map { $0.isEmpty ? "\"\"" : $0 }.joined(separator: ", ")
+        }
+        return text
+    }
+
+    private static func bounds(_ minimum: String?, _ maximum: String?, unit: String?) -> String {
+        let suffix = unit.map { " \($0)" } ?? ""
+        switch (minimum, maximum) {
+        case let (minimum?, maximum?) where minimum == maximum:
+            return " (exactly \(minimum)\(suffix))"
+        case let (minimum?, maximum?):
+            return " (\(minimum) to \(maximum)\(suffix))"
+        case let (minimum?, nil):
+            return " (at least \(minimum)\(suffix))"
+        case let (nil, maximum?):
+            return " (at most \(maximum)\(suffix))"
+        case (nil, nil):
+            return ""
+        }
+    }
+}
+
+extension DocumentTypedArray {
+    /// "list of integer (1 to 10), 1 to 5 elements, unique": the whole
+    /// declaration in one line, for schema detail views.
+    var summary: String {
+        var text = "list of \(element.summary)"
+        if let minItems, minItems > 0 {
+            text += minItems == maxItems
+                ? "; exactly \(maxItems) elements"
+                : "; \(minItems) to \(maxItems) elements"
+        } else {
+            text += "; at most \(maxItems) elements"
+        }
+        if uniqueItems {
+            text += ", unique"
+        }
+        return text
     }
 }
