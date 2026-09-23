@@ -113,7 +113,8 @@ impl EncryptedPropertyEnvelopeWasm {
     }
 
     /// The identity whose key `senderKeyId` names: the document owner, the writer that
-    /// encrypted the bytes.
+    /// encrypted the bytes. A document whose owner may have changed since (transferred or
+    /// sold) is refused rather than given a sender that did not encrypt it.
     #[wasm_bindgen(getter = senderId)]
     pub fn sender_id(&self) -> IdentifierWasm {
         self.0.sender_id.into()
@@ -272,7 +273,9 @@ impl WasmSdk {
     }
 
     /// Reads whose keys an encrypted property of a document is under: the recipient and the
-    /// sender identities and the ids of their keys, which a reader fetches to decrypt it.
+    /// sender identities and the ids of their keys, which a reader fetches to decrypt it. A
+    /// document whose owner may have changed since it was written is refused: its sender key
+    /// id may name a previous owner's key.
     #[wasm_bindgen(js_name = "encryptedPropertyEnvelope")]
     pub fn encrypted_property_envelope(
         options: EncryptedPropertyEnvelopeOptionsJs,

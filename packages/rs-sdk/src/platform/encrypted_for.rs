@@ -34,7 +34,7 @@ use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef, EncryptedFor,
     EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements,
 };
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{property_names, Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -122,6 +122,17 @@ pub enum EncryptedForError {
         recipient_key_id: KeyID,
         /// The sender key id given.
         sender_key_id: KeyID,
+    },
+    /// The document's owner may have changed since the bytes were written, so the owner is not
+    /// known to be the sender whose key the sender key id names.
+    #[error(
+        "the sender of property {path} is not known: the document was transferred or sold, or \
+         its type lets it be and records no transfer, so its sender key id may name a previous \
+         owner's key"
+    )]
+    SenderUnknownAfterTransfer {
+        /// The property path.
+        path: String,
     },
     /// The declaration's recipient is the document owner, the writer, but another identity was
     /// named as the recipient.
@@ -328,10 +339,9 @@ pub struct EncryptedPropertyEnvelope {
     /// The id of the recipient's key, from the declaration's `recipientKey` property.
     pub recipient_key_id: KeyID,
     /// The identity whose key the `senderKey` property names: the document owner, the writer
-    /// that encrypted the bytes ([`encrypt_property_for`] encrypts with the writer's key). A
-    /// document transferred since keeps its previous owner's key id, so its sender is that
-    /// previous owner. Another `identityPublicKey` reference on the same key id only makes
-    /// consensus check that key exists; it does not change whose key encrypted the bytes.
+    /// that encrypted the bytes ([`encrypt_property_for`] encrypts with the writer's key).
+    /// Another `identityPublicKey` reference on the same key id only makes consensus check that
+    /// key exists; it does not change whose key encrypted the bytes.
     pub sender_id: Identifier,
     /// The id of the sender's key, from the declaration's `senderKey` property.
     pub sender_key_id: KeyID,
@@ -340,6 +350,12 @@ pub struct EncryptedPropertyEnvelope {
 impl EncryptedPropertyEnvelope {
     /// Reads the envelope of the `property_path` property of `document`, a document of
     /// `document_type`.
+    ///
+    /// A document whose owner may have changed since it was written is refused
+    /// ([`EncryptedForError::SenderUnknownAfterTransfer`]): one that carries a transfer time,
+    /// and one of a transferable or purchasable type that records none, where a transfer
+    /// cannot be ruled out. Its sender key id may name a previous owner's key, and the document
+    /// does not say who that owner was.
     pub fn read(
         document_type: DocumentTypeRef<'_>,
         property_path: &str,
@@ -351,6 +367,11 @@ impl EncryptedPropertyEnvelope {
             EncryptedForRecipient::Owner => document.owner_id(),
             EncryptedForRecipient::Property(path) => identifier_at_path(properties, path)?,
         };
+        if owner_may_have_changed(document_type, document) {
+            return Err(EncryptedForError::SenderUnknownAfterTransfer {
+                path: property_path.to_string(),
+            });
+        }
         Ok(Self {
             recipient_id,
             recipient_key_id: key_id_at_path(properties, &declaration.recipient_key)?,
@@ -537,6 +558,28 @@ pub fn encrypt_property_for<'a>(
         properties,
     )?;
     Ok(keys)
+}
+
+/// Whether `document` may have changed owner since it was written: it carries a transfer
+/// time, or its type allows a transfer or a purchase and records no transfer time, so one
+/// cannot be ruled out.
+fn owner_may_have_changed(document_type: DocumentTypeRef<'_>, document: &Document) -> bool {
+    if document.transferred_at().is_some()
+        || document.transferred_at_block_height().is_some()
+        || document.transferred_at_core_block_height().is_some()
+    {
+        return true;
+    }
+    let owner_can_change = document_type.documents_transferable().is_transferable()
+        || document_type.trade_mode().seller_sets_price();
+    let records_transfers = [
+        property_names::TRANSFERRED_AT,
+        property_names::TRANSFERRED_AT_BLOCK_HEIGHT,
+        property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT,
+    ]
+    .iter()
+    .any(|field| document_type.required_fields().contains(*field));
+    owner_can_change && !records_transfers
 }
 
 /// Every `keyRequirements` the schema declares on a reference to the key `key_path` names: on

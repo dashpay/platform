@@ -123,6 +123,11 @@ const AUDITED_CONTRACT_ID: [u8; 32] = [4; 32];
 /// second, independent `identityPublicKey` reference on the sender key id: `auditIdentityId`
 /// makes consensus check that the auditor has a key of that id, nothing more.
 fn audited_message() -> DocumentType {
+    audited_message_with(&[])
+}
+
+/// [`audited_message`] with the extra document type keywords `keywords`.
+fn audited_message_with(keywords: &[(&str, Value)]) -> DocumentType {
     let platform_version = PlatformVersion::latest();
     let config = DataContractConfig::default_for_version(platform_version).expect("config");
     let identifier = |position: u32, refers_to: Value| {
@@ -136,7 +141,7 @@ fn audited_message() -> DocumentType {
             "refersTo": refers_to
         })
     };
-    let schema = platform_value!({
+    let mut schema = platform_value!({
         "type": "object",
         "properties": {
             "recipientId": identifier(0, platform_value!({
@@ -166,6 +171,11 @@ fn audited_message() -> DocumentType {
         },
         "additionalProperties": false
     });
+    for (keyword, value) in keywords {
+        schema
+            .set_value_at_full_path(keyword, value.clone())
+            .expect("sets the keyword");
+    }
     DocumentType::try_from_schema(
         Identifier::from(AUDITED_CONTRACT_ID),
         1,
@@ -939,7 +949,7 @@ fn should_name_the_owner_as_the_sender_whatever_else_refers_to_the_sender_key() 
         &mut properties,
     )
     .expect("encrypts");
-    // Recorded with a creator other than its owner, as a transferred document would be
+    // A creator other than the owner does not make the creator the sender either
     let document: Document = DocumentV0 {
         id: Identifier::from([5; 32]),
         owner_id: writer.id(),
@@ -963,5 +973,85 @@ fn should_name_the_owner_as_the_sender_whatever_else_refers_to_the_sender_key() 
         )
         .expect("the owner's key is the sender key"),
         b"for the leader"
+    );
+}
+
+#[test]
+fn should_refuse_to_name_a_sender_once_the_owner_may_have_changed() {
+    let (writer_private_key, writer_public_key) = key_pair(0x21);
+    let writer = identity(
+        1,
+        vec![key(4, Purpose::ENCRYPTION, None, &writer_public_key)],
+    );
+    let (_, leader_public_key) = key_pair(0x42);
+    let leader = identity(
+        2,
+        vec![key(2, Purpose::DECRYPTION, None, &leader_public_key)],
+    );
+    let written = |document_type: &DocumentType| -> BTreeMap<String, Value> {
+        let mut properties =
+            BTreeMap::from([("auditIdentityId".to_string(), Value::Identifier([0xAD; 32]))]);
+        encrypt_property_for(
+            document_type.as_ref(),
+            "body",
+            b"x",
+            &writer,
+            &writer_private_key,
+            &leader,
+            &mut properties,
+        )
+        .expect("encrypts");
+        properties
+    };
+    let refused = |document_type: &DocumentType, document: &Document| {
+        matches!(
+            EncryptedPropertyEnvelope::read(document_type.as_ref(), "body", document),
+            Err(EncryptedForError::SenderUnknownAfterTransfer { .. })
+        )
+    };
+
+    // A transfer time on the document: its owner changed after the bytes were written
+    let message = audited_message();
+    let transferred: Document = DocumentV0 {
+        id: Identifier::from([5; 32]),
+        owner_id: Identifier::from([0x0E; 32]),
+        properties: written(&message),
+        transferred_at: Some(1),
+        ..Default::default()
+    }
+    .into();
+    assert!(refused(&message, &transferred));
+
+    // A transferable type that records no transfer time: a transfer cannot be ruled out
+    let transferable = audited_message_with(&[("transferable", Value::U8(1))]);
+    let document: Document = DocumentV0 {
+        id: Identifier::from([6; 32]),
+        owner_id: writer.id(),
+        properties: written(&transferable),
+        ..Default::default()
+    }
+    .into();
+    assert!(refused(&transferable, &document));
+
+    // One that records transfer times and carries none still has its writer as its owner
+    let recorded = audited_message_with(&[
+        ("transferable", Value::U8(1)),
+        (
+            "required",
+            Value::Array(vec![Value::Text("$transferredAt".to_string())]),
+        ),
+    ]);
+    let untransferred: Document = DocumentV0 {
+        id: Identifier::from([7; 32]),
+        owner_id: writer.id(),
+        properties: written(&recorded),
+        ..Default::default()
+    }
+    .into();
+    assert_eq!(
+        EncryptedPropertyEnvelope::read(recorded.as_ref(), "body", &untransferred)
+            .expect("reads")
+            .sender_id,
+        writer.id()
     );
 }
