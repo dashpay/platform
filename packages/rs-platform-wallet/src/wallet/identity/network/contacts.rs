@@ -8,6 +8,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Wallet;
+use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -16,11 +17,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
-
-/// Bit position of the rotation `version` in a DIP-15 `accountReference`
-/// (`version << 28 | masked_index`); layout owned by
-/// `rs-platform-encryption/src/account_reference.rs`.
-pub(super) const ACCOUNT_REFERENCE_VERSION_SHIFT: u32 = 28;
 
 /// Which side of a DashPay relationship a contact account serves.
 ///

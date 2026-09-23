@@ -10,6 +10,10 @@
 /// the original sender un-masks it on re-send), every convention round-trips for
 /// its own sender; we match iOS so our sent requests are bit-identical to the
 /// incumbent wallet's.
+/// Bit position of the rotation `version` in a masked `accountReference`:
+/// the top 4 bits carry the version, the low 28 bits the masked account index.
+pub const ACCOUNT_REFERENCE_VERSION_SHIFT: u32 = 28;
+
 fn account_secret_key_28(sender_secret_key: &[u8; 32], compact_xpub: &[u8]) -> u32 {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
@@ -46,7 +50,7 @@ pub fn calculate_account_reference(
 ) -> u32 {
     let ask28 = account_secret_key_28(sender_secret_key, compact_xpub);
     let shortened_account_bits = account_index & 0x0FFF_FFFF;
-    let version_bits = version << 28;
+    let version_bits = version << ACCOUNT_REFERENCE_VERSION_SHIFT;
     version_bits | (ask28 ^ shortened_account_bits)
 }
 
@@ -60,7 +64,7 @@ pub fn unmask_account_reference(
     compact_xpub: &[u8],
 ) -> (u32, u32) {
     let ask28 = account_secret_key_28(sender_secret_key, compact_xpub);
-    let version = account_reference >> 28;
+    let version = account_reference >> ACCOUNT_REFERENCE_VERSION_SHIFT;
     let account_index = (account_reference & 0x0FFF_FFFF) ^ ask28;
     (version, account_index)
 }
@@ -81,15 +85,18 @@ mod tests {
         let secret_key = [1u8; 32];
         let compact = test_compact_xpub();
         assert_eq!(
-            calculate_account_reference(&secret_key, &compact, 0, 0) >> 28,
+            calculate_account_reference(&secret_key, &compact, 0, 0)
+                >> ACCOUNT_REFERENCE_VERSION_SHIFT,
             0
         );
         assert_eq!(
-            calculate_account_reference(&secret_key, &compact, 0, 1) >> 28,
+            calculate_account_reference(&secret_key, &compact, 0, 1)
+                >> ACCOUNT_REFERENCE_VERSION_SHIFT,
             1
         );
         assert_eq!(
-            calculate_account_reference(&secret_key, &compact, 0, 15) >> 28,
+            calculate_account_reference(&secret_key, &compact, 0, 15)
+                >> ACCOUNT_REFERENCE_VERSION_SHIFT,
             15
         );
     }
