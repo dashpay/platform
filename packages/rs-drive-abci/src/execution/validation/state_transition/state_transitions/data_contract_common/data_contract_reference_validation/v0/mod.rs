@@ -89,8 +89,9 @@ pub(super) fn validate_data_contract_references_v0(
 
             // The key id property must exist in the same document type and be
             // an integer; nothing else about the declaration is state-dependent
-            if let DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } =
-                reference_target
+            if let DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property, ..
+            } = reference_target
             {
                 match document_type
                     .as_ref()

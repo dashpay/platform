@@ -215,6 +215,30 @@
               "maxLength": 256,
               "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
             },
+            "keyRequirements": {
+              "description": "identityPublicKey references only: what the referenced key must be beyond existing and not being disabled, checked when the referring document is written against the key already fetched for the existence check, so a requirement costs no further read. Each key names an aspect of the referenced key and its value the requirement: purpose requires the key's purpose to be the named one (any but system); boundTo names a document type of the declaring contract and requires the key's contract bounds to be exactly the declaring contract and that document type (a whole-contract or contract group bound never meets it). At registration boundTo must name a document type the contract has, and one a key of the required purpose can be bound to: only authentication, encryption and decryption keys carry a document type bound, and an encryption or decryption key only where the type declares requiresIdentityEncryptionBoundedKey or requiresIdentityDecryptionBoundedKey. An unmet requirement refuses the write (ReferencedIdentityKeyRequirementNotMetError, 40136)",
+              "type": "object",
+              "properties": {
+                "purpose": {
+                  "enum": [
+                    "authentication",
+                    "encryption",
+                    "decryption",
+                    "transfer",
+                    "voting",
+                    "owner"
+                  ]
+                },
+                "boundTo": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-zA-Z0-9_]{1,64}$"
+                }
+              },
+              "minProperties": 1,
+              "additionalProperties": false
+            },
             "propertyAgreement": {
               "description": "permanentDocument and deletableDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
               "type": "object",
@@ -280,7 +304,8 @@
               },
               "else": {
                 "properties": {
-                  "keyIdProperty": false
+                  "keyIdProperty": false,
+                  "keyRequirements": false
                 }
               }
             },

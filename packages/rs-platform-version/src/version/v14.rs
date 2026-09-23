@@ -624,7 +624,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the ciphertext is verifiable on chain. A changed `encryptedFor` is an
 ///     incompatible schema change on update.
 ///
-/// 27. **Property and document type names are word characters only**:
+/// 28. **Property and document type names are word characters only**:
 ///     meta-schema v3 refuses `-` in a property name (top-level or nested,
 ///     and in the property paths of `refersTo` declarations) and generation
 ///     3 of the document type parser refuses it in a document type name,
@@ -633,6 +633,26 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     written for; a census of every contract create and update on mainnet
 ///     and testnet (2026-09-23) found no name carrying one, so nothing stored
 ///     is affected. Stored contracts are read as they are.
+///
+/// 29. **Identity key references may require a purpose and a document type
+///     bound**: an `identityPublicKey` `refersTo` declaration may carry
+///     `keyRequirements`, what the referenced key must be beyond existing and
+///     not being disabled, with `purpose` (the key's purpose, by its wire name,
+///     any but `system`) and `boundTo` (the key's contract bounds must be
+///     exactly the declaring contract and the named document type of it) as
+///     the requirements (meta-schema v3, `apply_property_reference` 0,
+///     `IdentityKeyReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::IdentityPublicKey`).
+///     `create_document_types_from_document_schemas` 1, edited in place (the
+///     check is inert before this version, where no parsed reference carries
+///     requirements), refuses a contract whose `boundTo` names a document type
+///     it does not have or one no key of the required purpose can be bound
+///     to, so the check never needs a second contract fetch and a declared
+///     requirement can be met. The document reference validation
+///     checks the requirements against the key it fetched for the existence
+///     check, so they cost no further read, and refuses the first unmet one
+///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed
+///     `keyRequirements` is an incompatible schema change on update.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

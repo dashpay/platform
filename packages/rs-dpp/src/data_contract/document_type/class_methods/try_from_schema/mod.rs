@@ -9,10 +9,11 @@ use crate::data_contract::document_type::{
     property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentType, EncryptedFor,
-    EncryptedForRecipient, EncryptionScheme,
+    EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::identity::Purpose;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
@@ -585,6 +586,16 @@ fn apply_property_reference_v0(
         )));
     }
 
+    // Requirements on the referenced key belong to identity key references alone
+    if reference_type != "identityPublicKey"
+        && refers_to_map.contains_key(property_names::KEY_REQUIREMENTS)
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{} refersTo does not take keyRequirements",
+            reference_type
+        )));
+    }
+
     let target = match reference_type {
         "identity" => DocumentPropertyReferenceTarget::Identity,
         "contract" => DocumentPropertyReferenceTarget::Contract {
@@ -706,6 +717,7 @@ fn apply_property_reference_v0(
 
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: key_id_property.to_string(),
+                key_requirements: parse_identity_key_reference_requirements(&refers_to_map)?,
             }
         }
         other => {
@@ -1069,6 +1081,71 @@ fn parse_contract_reference_requirements(
             other => {
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "contract refersTo contractRequirements {other:?} is unknown"
+                )));
+            }
+        }
+    }
+    Ok(fields)
+}
+
+/// The `keyRequirements` of an `identityPublicKey` reference: each key an aspect of the
+/// referenced key with a closed set of values (`purpose`) or a document type name of the
+/// declaring contract (`boundTo`), at least one when the object is given at all. That `boundTo`
+/// names a document type the contract has is checked once every document type is parsed, in
+/// `create_document_types_from_document_schemas`.
+fn parse_identity_key_reference_requirements(
+    refers_to_map: &BTreeMap<String, &Value>,
+) -> Result<IdentityKeyReferenceRequirements, DataContractError> {
+    let Some(fields_value) = refers_to_map.get(property_names::KEY_REQUIREMENTS) else {
+        return Ok(IdentityKeyReferenceRequirements::default());
+    };
+    let fields_map = fields_value.to_btree_ref_string_map()?;
+    if fields_map.is_empty() {
+        return Err(DataContractError::InvalidContractStructure(
+            "identityPublicKey refersTo keyRequirements must declare at least one requirement"
+                .to_string(),
+        ));
+    }
+    let mut fields = IdentityKeyReferenceRequirements::default();
+    for (field, value) in fields_map {
+        match field.as_str() {
+            property_names::PURPOSE => {
+                let name = value.as_text().ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(
+                        "identityPublicKey refersTo keyRequirements purpose must be a string"
+                            .to_string(),
+                    )
+                })?;
+                // The purposes a user's key can carry: every one but SYSTEM
+                let purpose = Purpose::from_wire_name(name)
+                    .filter(|purpose| Purpose::full_range().contains(purpose))
+                    .ok_or_else(|| {
+                        DataContractError::InvalidContractStructure(format!(
+                            "identityPublicKey refersTo keyRequirements purpose {name:?} is unknown, expected one of {:?}",
+                            Purpose::full_range().map(|purpose| purpose.wire_name())
+                        ))
+                    })?;
+                fields.purpose = Some(purpose);
+            }
+            property_names::BOUND_TO => {
+                let document_type_name = value.as_text().ok_or_else(|| {
+                    DataContractError::InvalidContractStructure(
+                        "identityPublicKey refersTo keyRequirements boundTo must be a string"
+                            .to_string(),
+                    )
+                })?;
+                if document_type_name.is_empty() || document_type_name.len() > 64 {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "identityPublicKey refersTo keyRequirements boundTo must be between 1 \
+                         and 64 characters"
+                            .to_string(),
+                    ));
+                }
+                fields.bound_to = Some(document_type_name.to_string());
+            }
+            other => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "identityPublicKey refersTo keyRequirements {other:?} is unknown"
                 )));
             }
         }
@@ -2204,9 +2281,158 @@ mod tests {
             DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::IdentityPublicKey {
                     key_id_property: "toKeyIndex".to_string(),
+                    key_requirements: IdentityKeyReferenceRequirements::default(),
                 }
             )
         );
+    }
+
+    fn identity_key_reference_schema(refers_to: serde_json::Value) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "recipientId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": refers_to
+                },
+                "recipientKeyId": {
+                    "type": "integer",
+                    "position": 1
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    fn identity_key_reference_target(refers_to: serde_json::Value) -> DocumentPropertyType {
+        try_document_type_from_schema(identity_key_reference_schema(refers_to))
+            .expect("should parse")
+            .as_ref()
+            .flattened_properties()
+            .get("recipientId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present")
+    }
+
+    #[test]
+    fn should_parse_identity_public_key_refers_to_with_key_requirements() {
+        assert_eq!(
+            identity_key_reference_target(json!({
+                "type": "identityPublicKey",
+                "keyIdProperty": "recipientKeyId",
+                "keyRequirements": { "purpose": "decryption", "boundTo": "submittedCharter" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property: "recipientKeyId".to_string(),
+                    key_requirements: IdentityKeyReferenceRequirements {
+                        purpose: Some(Purpose::DECRYPTION),
+                        bound_to: Some("submittedCharter".to_string()),
+                    },
+                }
+            )
+        );
+        for (name, purpose) in [
+            ("authentication", Purpose::AUTHENTICATION),
+            ("encryption", Purpose::ENCRYPTION),
+            ("decryption", Purpose::DECRYPTION),
+            ("transfer", Purpose::TRANSFER),
+            ("voting", Purpose::VOTING),
+            ("owner", Purpose::OWNER),
+        ] {
+            assert_eq!(
+                identity_key_reference_target(json!({
+                    "type": "identityPublicKey",
+                    "keyIdProperty": "recipientKeyId",
+                    "keyRequirements": { "purpose": name }
+                })),
+                DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::IdentityPublicKey {
+                        key_id_property: "recipientKeyId".to_string(),
+                        key_requirements: IdentityKeyReferenceRequirements {
+                            purpose: Some(purpose),
+                            bound_to: None,
+                        },
+                    }
+                )
+            );
+        }
+        assert_eq!(
+            identity_key_reference_target(json!({
+                "type": "identityPublicKey",
+                "keyIdProperty": "recipientKeyId",
+                "keyRequirements": { "boundTo": "joinRequest" }
+            })),
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property: "recipientKeyId".to_string(),
+                    key_requirements: IdentityKeyReferenceRequirements {
+                        purpose: None,
+                        bound_to: Some("joinRequest".to_string()),
+                    },
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_key_requirements_that_are_empty_unknown_or_on_another_type() {
+        for (refers_to, fragment) in [
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": {} }),
+                "at least one requirement",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": "signing" } }),
+                "is unknown",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": "system" } }),
+                "is unknown",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": "DECRYPTION" } }),
+                "is unknown",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": 2 } }),
+                "must be a string",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": "" } }),
+                "between 1 and 64 characters",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "boundTo": 1 } }),
+                "must be a string",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "securityLevel": "high" } }),
+                "is unknown",
+            ),
+            (
+                json!({ "type": "identity", "keyRequirements": { "purpose": "decryption" } }),
+                "does not take keyRequirements",
+            ),
+            (
+                json!({ "type": "contract", "keyRequirements": { "purpose": "decryption" } }),
+                "does not take keyRequirements",
+            ),
+        ] {
+            let err =
+                try_document_type_from_schema(identity_key_reference_schema(refers_to.clone()))
+                    .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(fragment),
+                "{refers_to}: expected {fragment:?}, got {err}"
+            );
+        }
     }
 
     #[test]

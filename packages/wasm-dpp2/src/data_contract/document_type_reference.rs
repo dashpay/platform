@@ -106,6 +106,27 @@ export type DocumentPropertyReferenceTarget =
        * identity id. A dotted path when the property is nested.
        */
       keyIdProperty: string;
+      /**
+       * What the referenced key must be beyond existing and not being
+       * disabled, checked by consensus when the referring document is
+       * written against the key fetched for the existence check:
+       * `purpose` requires the key's purpose to be the named one, and
+       * `boundTo` requires the key's contract bounds to be exactly the
+       * declaring contract and the named document type of it; a
+       * whole-contract or contract group bound never meets it (code 40136
+       * when either is unmet). Absent when the declaration carries no
+       * requirement.
+       */
+      keyRequirements?: {
+        purpose?:
+          | 'authentication'
+          | 'encryption'
+          | 'decryption'
+          | 'transfer'
+          | 'voting'
+          | 'owner';
+        boundTo?: string;
+      };
     }
   | {
       /**
@@ -142,7 +163,8 @@ export type DocumentPropertyReference = {
    * example `"author"`, or `"meta.parentId"` for a nested one.
    *
    * This is the same string consensus reports in the `path` field of the
-   * document-write reference errors (codes 40120-40125). Note that contract
+   * document-write reference errors (codes 40120-40125, 40131, 40135 and
+   * 40136). Note that contract
    * *registration* errors prefix it with the document type name
    * (`"<documentType>.<path>"`) while document *write* errors do not.
    */
@@ -278,13 +300,38 @@ fn reference_to_js(
                 set_field(&object, "propertyAgreement", &agreement, path)?;
             }
         }
-        DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+        DocumentPropertyReferenceTarget::IdentityPublicKey {
+            key_id_property,
+            key_requirements,
+        } => {
             set_field(
                 &object,
                 "keyIdProperty",
                 &JsValue::from_str(key_id_property),
                 path,
             )?;
+            // Absent, not `{}`-valued, when the declaration requires nothing,
+            // matching the schema's own omission.
+            if !key_requirements.is_empty() {
+                let fields = Object::new();
+                if let Some(purpose) = key_requirements.purpose {
+                    set_field(
+                        &fields,
+                        "purpose",
+                        &JsValue::from_str(purpose.wire_name()),
+                        path,
+                    )?;
+                }
+                if let Some(document_type_name) = &key_requirements.bound_to {
+                    set_field(
+                        &fields,
+                        "boundTo",
+                        &JsValue::from_str(document_type_name),
+                        path,
+                    )?;
+                }
+                set_field(&object, "keyRequirements", &fields, path)?;
+            }
         }
     }
 

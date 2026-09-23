@@ -361,6 +361,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentActionFeeAgreementMismatchError(_) => 40133,
             Self::DocumentActionFeeMultiplierNotToleratedError(_) => 40134,
             Self::ReferencedContractRequirementNotMetError(_) => 40135,
+            Self::ReferencedIdentityKeyRequirementNotMetError(_) => 40136,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
