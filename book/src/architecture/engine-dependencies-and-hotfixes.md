@@ -128,6 +128,12 @@ What is automated is the workflow `Security: DashVM Engine`
   temporary patch names the crate, the upstream fix and its expiry. Neither
   may run more than 90 days from the day the audit runs (a provisional bound
   recorded in the checker; the issue register has no value for it).
+- It does not trust an incomplete audit. `cargo-audit` in JSON mode skips
+  its yanked-crate check silently when it cannot update or open its copy of
+  the crates.io index, so the checker reads the yank status of every resolved
+  engine crate from the sparse index itself and treats a failed read as an
+  error, not a pass. A `[patch]` entry that renames the crate it patches is
+  resolved to the crate name before the declaration check.
 - It proves its own failure path first: the workflow runs the checker's
   `--self-test` before the real audit, so a green run means the set was
   audited, not that nothing was compared.
@@ -138,7 +144,7 @@ Reproducing a red run locally:
 cargo install cargo-audit --version 0.22.2 --locked
 python3 .github/scripts/check-engine-advisories.py --self-test
 python3 .github/scripts/check-engine-advisories.py
-# or, against a saved report:
+# or, against a saved report (the crates.io index is not consulted in this mode):
 cargo audit --json --file Cargo.lock > /tmp/audit.json   # from a directory without .cargo/audit.toml
 python3 .github/scripts/check-engine-advisories.py --report /tmp/audit.json
 ```
@@ -209,11 +215,16 @@ in the 36.0.7 patch release on the long-term-support line:
   compiled in.
 
 The point of the exercise is the last column: a maintainer must be able to
-say, before touching the pin, whether the fix can change a result, a trap, a
-cost or a resource outcome for any admitted module. If the answer is "no" by
-construction (not compiled in, or not guest-reachable), the change is a
-routine patch bump. If the answer is "possibly", the rule in the next section
-applies.
+say, before touching the pin, whether the vulnerability itself can change a
+result, a trap, a cost or a resource outcome for any admitted module. That
+answer decides how the vulnerability is handled: whether an acknowledgement is
+acceptable while no release exists, how urgent the bump is, and whether a
+committed execution could already have depended on the bug. It does not
+decide whether the replacement release is equivalent. A patch release fixes
+more than the advisory that prompted it, and an unreachable advisory says
+nothing about the other changes in the same release. Every engine change,
+routine or urgent, is judged by the rule in the next section; "routine" only
+means that nothing in the advisory suggests the evidence will fail.
 
 ## The execution/fee-equivalence hotfix rule
 
@@ -269,10 +280,10 @@ engine change.
 
 **Before activation the rule is vacuous over history.** Until a network
 activates contract execution, the set of accepted modules and recorded
-executions is empty and the rule reduces to the corpus comparison. Patch
-bumps on the long-term-support line are routine in that period and should
-be taken promptly, so the line the first profile pins is as fresh as the
-evidence allows.
+executions is empty and the rule reduces to the corpus comparison on both
+architectures. Patch bumps on the long-term-support line still take that
+comparison, and should be taken promptly in that period, so the line the
+first profile pins is as fresh as the evidence allows.
 
 **Until the evidence exists, there is no hotfix.** The rule needs tooling:
 the deterministic corpus, cross-architecture replay, and a differential
@@ -295,10 +306,13 @@ plainly rather than assuming the evidence.
    fix and an expiry, and add the matching `[patch]` entry. If the advisory
    is unreachable under the profile and no release is available, add a scoped
    acknowledgement with the reason and an expiry.
-4. **Produce the evidence.** Not compiled in or not guest-reachable: the
-   ordinary test suite plus the corpus run. Guest-reachable: the full
-   equivalence run of the rule above, on both architectures, over the corpus
-   and (after activation) the recorded executions.
+4. **Produce the evidence.** The full equivalence run of the rule above for
+   the replacement release as a whole, on both architectures, over the
+   accepted modules, the corpus and (after activation) the recorded
+   executions. The advisory's reachability does not shorten this step: it
+   only tells the maintainer what to look at first when the run reports a
+   difference, and whether a committed execution could have depended on the
+   bug.
 5. **Decide.** Equivalent: node release, with the advisory named in the
    release notes and the classification recorded. Not equivalent, or no
    evidence possible: new engine profile and protocol upgrade. Committed wrong

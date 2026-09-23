@@ -76,10 +76,12 @@ jobs:
 
       - name: Audit the engine dependency set
         run: |
+          # The default shell has errexit on; guard the checker so its report is
+          # shown and summarised on failure, then exit with its status.
           set -uo pipefail
           report="${RUNNER_TEMP}/engine-audit.txt"
-          python3 .github/scripts/check-engine-advisories.py > "${report}"
-          status=$?
+          status=0
+          python3 .github/scripts/check-engine-advisories.py > "${report}" || status=$?
           cat "${report}"
           {
             echo "## DashVM engine dependency audit"
