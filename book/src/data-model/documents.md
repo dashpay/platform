@@ -287,6 +287,54 @@ An `identityPublicKey` reference names one key of one identity, and comes in two
 
 Both forms share the state check (`validate_referenced_identity_key_v0` in the document reference validation): the key must exist and not be disabled, else the write is refused, paid, with `ReferencedIdentityKeyNotFoundError` (40123) or `ReferencedIdentityKeyDisabledError` (40124). Identity keys can be disabled but never removed, so a validated reference never dangles. The owner form's identity is the transition's signer, which the transition already proved exists, so the key fetch is its only read; a key id of some other identity's key is meaningless by construction, there is no property to name another identity. On replace the identity form is re-validated when either the identity property or its key id property changed. For the key id form it depends on where the identity comes from. `$ownerId` is the writer, transition metadata that never appears among the changed fields, and the document may have changed hands since the key id was written, so the reference is re-validated on every replace, touched or not, as the `$ownerId` writer gate is: after a transfer the new owner has to repoint the key id at one of its own keys. `$creatorId` never changes, so it is re-validated when the key id changed. A property path is re-validated when the key id or that property changed, and a key id set while the property is not is refused (`ReferencedKeyIdPropertyInvalidError`, 40125). A transfer itself is not checked in any form, so the reference governs writing, not holding. The declaring property must carry exactly the key id range in its schema, whatever the contract's integer sizing setting, and a `keyIdProperty` of the identity form may not name a property that carries this form, nor may a path name an identifier carrying an `identityPublicKey` reference: one pair is declared once (40125 at registration). The charter contract's `joinRequest.senderKeyId`, the owner's encryption key a shared secret is derived from, is the first user.
 
+### Resolved through a unique index (`lookup`)
+
+A `permanentDocument` reference normally holds the referenced document's id. It may instead carry a `lookup`: the property's value, or on the elements of a typed array each element (see [References on the Elements](#references-on-the-elements)), is then one part of a key, and the referenced document is the one a unique index of the referenced document type finds for that key. The reference holds if that document exists. The moderation charter's `members` is the first user:
+
+```json
+"members": {
+  "type": "array", "minItems": 0, "maxItems": 15, "uniqueItems": true,
+  "items": {
+    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+    "contentMediaType": "application/x.dash.dpp.identifier",
+    "distinctFrom": "$ownerId",
+    "refersTo": {
+      "type": "permanentDocument",
+      "documentType": "joinRequest",
+      "lookup": {
+        "index": "bySubmittedCharter",
+        "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." }
+      }
+    }
+  },
+  "position": 2
+}
+```
+
+reads: every member must be the owner of a `joinRequest` whose `submittedCharterId` equals this document's `submittedCharterId`. Without `lookup` the list would have to hold the join requests' ids, which the writer would have to find first, and which say nothing about who asked to join. The same form works on a scalar identifier property, where `"."` is the property's own value.
+
+A `deletableDocument` reference takes no `lookup`. Once the document a key found is deleted, a new document with the same key would make the reference resolve again, to different content, where an id is produced at most once and a dead id reference stays dead.
+
+`index` names an index of the referenced document type. `keys` maps every property of that index, by its name on the referenced side (system ones such as `$ownerId` included), in any order, to where its value comes from on the referring side:
+
+- a property path of the referring document type (`"submittedCharterId"`, `"meta.charterId"`);
+- `"$ownerId"`, the referring document's owner, the writer;
+- `"."`, the value of the property that carries the reference, or the element. It appears exactly once: without it every value would resolve to the same document.
+
+What is checked when the contract enters the chain, on registration and on update:
+
+- `lookup` is only allowed on `permanentDocument` references (meta-schema v3 and the parser, `apply_property_reference` 0), on the property or on the `items` of a typed array.
+- Each property a key reads must exist on the referring type, be required (and so must every object around it), not be transient, and hold a single value, so a lookup never runs with a missing key part and a reader can assemble the same key from the stored document. A key that reads `"$ownerId"` needs a referring type whose documents can be neither transferred nor traded: the reference is judged when the document is written, and a transfer or purchase would move the writer part of its key without a write. These are properties of the referring type alone and are checked on every parse (generation 3).
+- The index must exist and be unique, so the key finds at most one document; it may not bucket a timestamp with `timeRange`, and the referenced type may not be `indexOnly`. `keys` must cover each property of the index exactly once and nothing else, and each source must hold the same kind of value as the index property it fills (the rule of `propertyAgreement`, `DocumentPropertyType::value_kind`).
+- The key must stay with the document it found, or the reference could dangle without the document being deleted: every schema property of the index must be fixed once written (the referenced type is immutable, or the property, or the top-level object holding it, is listed under `immutable`), `$ownerId` is only a key part on a type whose documents can be neither transferred nor traded, and the update and transfer times are refused where a replace, transfer or purchase moves them. `$id`, `$creatorId` and the creation times are always fixed.
+- A changed, added or removed `lookup` is an incompatible schema change on update, like the rest of a `refersTo`.
+
+The checks on the referenced type run where that type is in hand. For a document type of the same contract the contract parse runs them under full validation (`create_document_types_from_document_schemas` 1, next to the `keyRequirements.boundTo` check), once every document type is parsed; a deletable target is left to registration, which refuses it for the `permanentDocument` reference (40122). For a type of another contract (`contractId`) the registration state validation runs them against that contract, where the other `refersTo` checks into another contract run, and refuses a declaration that cannot resolve with `ReferencedDocumentLookupInvalidError` (state code 40137). Index definitions cannot change on a contract update from protocol version 14 (`validate_update` 1 compares them by name), and neither can the flags the permanence rule reads, so the answer holds.
+
+When the referring document is created or replaced, the document reference validation assembles the key for each value and queries the index for at most one document, billed as a document fetch of the same kind as the id lookup (`fetch_document_through_lookup`). No document, or a key it cannot assemble, refuses the write, paid, with `ReferencedEntityNotFoundError` (40120) naming the property, or the element by its list path (`members[1]`); its target reads "found through unique index `<index>`". A `propertyAgreement` beside the `lookup` is checked against the document the index found, exactly as for an id reference. A replace re-validates the reference when the property itself changed (for a list, the elements the stored list did not hold), and every value, every element included, when a property a key reads changed. Nothing else can move a key part: the writer is fixed on a type allowed to read it, and the referenced side's key is fixed by the rule above, so a validated lookup reference never dangles.
+
+Joins cannot go through a lookup reference: a chained query or a composite by-id join needs the join property's values to be the outer documents' ids, so both refuse such a property, and a `preallocated` index cannot be bound through one. In Rust the declaration is its own variant, `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, appended to the enum rather than a field of `PermanentDocument`: the enum is embedded in the reference errors, so an id reference keeps its encoding, and code matching `PermanentDocument` as "the value is a document id" cannot mistake a lookup for one. The rules are on `DocumentReferenceLookup`. `as_document_reference` returns only references whose value is a document id, the accessor for joins; the validators use `as_any_document_reference`, whose declaration carries the lookup.
+
 ## Immutable Properties on Mutable Document Types
 
 A document type either allows replaces (`documentsMutable: true`, the default) or freezes its documents entirely. Protocol version 14 adds a middle ground: the doctype-level `immutable` keyword lists top-level properties that are frozen at creation while the rest of the document stays replaceable.

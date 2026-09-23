@@ -8,6 +8,7 @@ use dpp::data_contract::document_type::{
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
+use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
@@ -31,19 +32,10 @@ use crate::execution::types::state_transition_execution_context::{
 
 /// Whether two property types hold the same KIND of value for agreement
 /// purposes: sizes and other constraints may differ (both sides validated
-/// their own documents already), and an identifier, or a `u32` key id, is one
-/// kind whether or not it carries its own reference annotation.
+/// their own documents already). The rule is `DocumentPropertyType::value_kind`,
+/// shared with the key parts of a `refersTo` lookup.
 fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
-    let normalized_kind = |property_type: &DocumentPropertyType| match property_type {
-        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
-            std::mem::discriminant(&DocumentPropertyType::Identifier)
-        }
-        DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
-            std::mem::discriminant(&DocumentPropertyType::U32)
-        }
-        other => std::mem::discriminant(other),
-    };
-    normalized_kind(a) == normalized_kind(b)
+    a.value_kind() == b.value_kind()
 }
 
 /// Checks every reference declaration of the given contract that carries
@@ -54,10 +46,12 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// including when it names its own id) and the referenced document type must
 /// exist in it; for `permanentDocument` that type must forbid deletion, for
 /// `deletableDocument` it must allow it.
-/// Every `propertyAgreement` pair is checked for both. Self references are
-/// checked against the in-flight
-/// contract, so a contract may reference its own document types on creation;
-/// foreign contract fetches are billed.
+/// Every `propertyAgreement` pair is checked for both, and a `lookup` into
+/// another contract's document type is checked against that type's indexes
+/// (one into the declaring contract was checked by the contract parse). Self
+/// references are checked against the in-flight contract, so a contract may
+/// reference its own document types on creation; foreign contract fetches are
+/// billed.
 ///
 /// `identityPublicKey`: the declared key id property must exist in the same
 /// document type and be an integer.
@@ -238,7 +232,8 @@ pub(super) fn validate_data_contract_references_v0(
                 document_type_name,
                 property_agreement,
                 permanent,
-            }) = reference_target.as_document_reference()
+                lookup,
+            }) = reference_target.as_any_document_reference()
             else {
                 continue;
             };
@@ -336,6 +331,30 @@ pub(super) fn validate_data_contract_references_v0(
                     )
                     .into(),
                 ));
+            }
+
+            // A lookup, only ever on a permanentDocument reference, must
+            // resolve in the referenced document type: a unique index its keys
+            // cover exactly, filled from sources of the right kinds, with a key
+            // that stays with the document it found. The contract parse checks
+            // a lookup into the declaring contract under full validation, where
+            // it sees every document type; only here is another contract's
+            // document type in hand.
+            if let Some(lookup) = lookup {
+                if effective_contract_id != contract.id() {
+                    if let Some(reason) = lookup
+                        .referenced_side_error(document_type.as_ref(), referenced_document_type)
+                    {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedDocumentLookupInvalidError::new(
+                                declaration_path,
+                                lookup.index.clone(),
+                                reason,
+                            )
+                            .into(),
+                        ));
+                    }
+                }
             }
 
             // propertyAgreement declarations: both sides must exist, be

@@ -114,6 +114,14 @@ pub(crate) mod property_names {
     /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.
     pub const IDENTITY_PROPERTY: &str = "identityProperty";
     pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
+    /// `refersTo` on a document reference: the unique index of the referenced
+    /// document type the referenced document is found through, and the key.
+    /// Meta-schema v3+ (protocol version 14).
+    pub const LOOKUP: &str = "lookup";
+    /// `lookup`: the name of the referenced document type's unique index.
+    pub const LOOKUP_INDEX: &str = "index";
+    /// `lookup`: every index property mapped to its referring-side source.
+    pub const LOOKUP_KEYS: &str = "keys";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";

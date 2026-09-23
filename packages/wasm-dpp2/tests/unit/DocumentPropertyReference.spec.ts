@@ -147,6 +147,58 @@ type Reference = {
   keyRequirements?: { purpose?: string; boundTo?: string };
   identityProperty?: string;
   propertyAgreement?: Record<string, string>;
+  lookup?: { index: string; keys: Record<string, string> };
+};
+
+/**
+ * A `joinRequest` type unique on (`submittedCharterId`, `$ownerId`), and a
+ * `charter` whose `memberId` names the owner of a join request for the
+ * charter's own `submittedCharterId` rather than holding a request's id.
+ */
+const plainIdentifier = {
+  type: 'array',
+  byteArray: true,
+  minItems: 32,
+  maxItems: 32,
+  contentMediaType: 'application/x.dash.dpp.identifier',
+  position: 0,
+};
+
+const lookupSchemas = {
+  joinRequest: {
+    type: 'object',
+    canBeDeleted: false,
+    // A permanentDocument lookup needs a key the join request keeps for good
+    documentsMutable: false,
+    properties: {
+      submittedCharterId: plainIdentifier,
+    },
+    indices: [
+      {
+        name: 'bySubmittedCharter',
+        properties: [{ submittedCharterId: 'asc' }, { $ownerId: 'asc' }],
+        unique: true,
+      },
+    ],
+    required: ['submittedCharterId'],
+    additionalProperties: false,
+  },
+  charter: {
+    type: 'object',
+    properties: {
+      submittedCharterId: plainIdentifier,
+      memberId: identifierProperty(1, {
+        type: 'permanentDocument',
+        documentType: 'joinRequest',
+        lookup: {
+          index: 'bySubmittedCharter',
+          keys: { submittedCharterId: 'submittedCharterId', $ownerId: '.' },
+        },
+      }),
+    },
+    required: ['submittedCharterId'],
+    additionalProperties: false,
+  },
 };
 
 describe('DataContract — refersTo declarations (v14)', () => {
@@ -317,6 +369,89 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
+  describe('lookup', () => {
+    it('should carry the lookup of a reference resolved through a unique index', () => {
+      const contract = new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: lookupSchemas,
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+      const [member] = contract.documentTypeReferences('charter') as Reference[];
+
+      expect(member.path).to.equal('memberId');
+      expect(member.type).to.equal('permanentDocument');
+      expect(member.documentType).to.equal('joinRequest');
+      expect(member.lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+    });
+
+    it('should carry the lookup the elements of a typed array declare', () => {
+      const withMembers = structuredClone(lookupSchemas);
+      (withMembers.charter.properties as Record<string, object>).members = {
+        type: 'array',
+        minItems: 0,
+        maxItems: 15,
+        uniqueItems: true,
+        items: {
+          type: 'array',
+          byteArray: true,
+          minItems: 32,
+          maxItems: 32,
+          contentMediaType: 'application/x.dash.dpp.identifier',
+          distinctFrom: '$ownerId',
+          refersTo: (withMembers.charter.properties.memberId as { refersTo: object }).refersTo,
+        },
+        position: 2,
+      };
+      const contract = new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: withMembers,
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+      const members = (contract.documentTypeReferences('charter') as Reference[]).find(
+        (reference) => reference.path === 'members[]',
+      )!;
+
+      expect(members.type).to.equal('permanentDocument');
+      expect(members.lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+    });
+
+    it('should omit lookup for a reference holding the referenced document id', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const other = references.find((reference) => reference.path === 'otherDoc')!;
+
+      expect(other).to.not.have.property('lookup');
+    });
+
+    it('should refuse a lookup into an index that is not unique', () => {
+      const notUnique = structuredClone(lookupSchemas);
+      delete (notUnique.joinRequest.indices[0] as { unique?: boolean }).unique;
+
+      const build = () => new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: notUnique,
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+
+      expect(build).to.throw(/is not unique/);
+    });
+  });
+
   describe('documentReferences', () => {
     it('should key declarations by document type and omit types with none', () => {
       const contract = buildContract(14);
@@ -358,6 +493,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotDeletable).to.equal(40131);
       expect(wasm.DocumentReferenceErrorCode.ReferencedContractRequirementNotMet).to.equal(40135);
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
     });
 
     it('should resolve a code back to its name', () => {

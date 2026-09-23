@@ -20,6 +20,7 @@ pub mod document_timestamps_mismatch_error;
 pub mod duplicate_unique_index_error;
 pub mod invalid_document_revision_error;
 pub mod referenced_contract_requirement_not_met_error;
+pub mod referenced_document_lookup_invalid_error;
 pub mod referenced_document_property_agreement_invalid_error;
 pub mod referenced_document_property_mismatch_error;
 pub mod referenced_document_type_deletable_error;

@@ -31,7 +31,7 @@ use crate::data_contract::document_type::property::{
 };
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
@@ -48,7 +48,7 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 use crate::consensus::ConsensusError;
 
 use super::common;
-use super::validate_encrypted_for_declarations;
+use super::{validate_encrypted_for_declarations, validate_reference_lookup_sources};
 
 mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
@@ -417,6 +417,9 @@ fn try_from_schema_generation_3(
     // properties it names. Generation 3 is the only one admitting the keyword.
     validate_encrypted_for_declarations(&v2, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the properties a `refersTo` lookup reads to assemble its key.
+    validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
 
     // After `apply_index_only`: the flag is refused on an indexOnly type, so it
     // has to see that one already applied.
@@ -622,6 +625,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderators_delete_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]

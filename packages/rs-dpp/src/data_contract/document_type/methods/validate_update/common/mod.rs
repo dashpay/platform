@@ -2235,6 +2235,53 @@ mod tests {
             assert!(result.is_valid(), "{:?}", result.errors);
         }
 
+        #[test]
+        fn should_return_invalid_result_when_a_document_reference_lookup_changes() {
+            let platform_version = PlatformVersion::latest();
+            let owner_lookup = |index: &str| {
+                platform_value!({
+                    "type": "permanentDocument",
+                    "documentType": "note",
+                    "lookup": { "index": index, "keys": { "$ownerId": "." } }
+                })
+            };
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (
+                    platform_value!({ "type": "permanentDocument", "documentType": "note" }),
+                    owner_lookup("byOwner"),
+                    "/properties/toUserId/refersTo/lookup",
+                ),
+                (
+                    owner_lookup("byOwner"),
+                    platform_value!({ "type": "permanentDocument", "documentType": "note" }),
+                    "/properties/toUserId/refersTo/lookup",
+                ),
+                (
+                    owner_lookup("byOwner"),
+                    owner_lookup("byAuthor"),
+                    "/properties/toUserId/refersTo/lookup/index",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_refers_to), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_refers_to), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
         /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
         /// `delegateId` as given.
         fn distinct_from_document_type(
