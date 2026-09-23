@@ -3,22 +3,6 @@ import SwiftData
 
 public struct DataContractParser {
 
-    // MARK: - Errors
-    public enum ParseError: LocalizedError, Equatable {
-        /// A protocol-version-14 typed array: a `type: "array"` property
-        /// declared by an `items` schema instead of `byteArray: true`.
-        /// `PersistentProperty` has no element type, so the parser refuses the
-        /// contract rather than persist the property as a bare array.
-        case unsupportedTypedArray(documentType: String, property: String)
-
-        public var errorDescription: String? {
-            switch self {
-            case let .unsupportedTypedArray(documentType, property):
-                return "typed arrays (an array property declared by an items schema) are not supported by the Swift SDK yet: document type \(documentType), property \(property)"
-            }
-        }
-    }
-
     // MARK: - Parse Data Contract
     public static func parseDataContract(contractData: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         print("🔵 Parsing data contract with ID: \(contractId.toBase58String())")
@@ -387,12 +371,13 @@ public struct DataContractParser {
             // Extract type
             let type = propertyDict["type"] as? String ?? "unknown"
 
-            // An array that declares `items` instead of `byteArray` is a
-            // protocol-version-14 typed array. Refuse it until the Swift SDK
-            // supports typed arrays, rather than persist it as a bare array.
-            if type == "array", propertyDict["byteArray"] == nil, propertyDict["items"] != nil {
-                throw ParseError.unsupportedTypedArray(documentType: documentTypeName, property: propertyName)
-            }
+            // A protocol-version-14 typed array (an array declaring `items`
+            // instead of `byteArray`) is persisted like any array: `type`
+            // "array", `byteArray` false, `minItems` / `maxItems` counting
+            // elements. Its element schema needs no column of its own:
+            // `schemaJSON` is the whole type dictionary, and
+            // `PersistentDocumentType.typedArrays` reads it back. Keep that
+            // true when touching the schema stored there.
 
             // Create persistent property
             let property = PersistentProperty(
