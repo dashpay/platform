@@ -18,27 +18,19 @@ use crate::wallet::identity::types::dashpay::established_contact::EstablishedCon
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-/// Which side of a DashPay relationship a contact account serves.
-///
-/// Each side exposes a different xpub in a different request, so each has its
-/// own scan checkpoint: see [`contact_scan_checkpoint`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ContactAccountSide {
-    /// `DashpayReceivingFunds`: our receiving xpub, published only in OUR
-    /// outgoing request.
-    Receiving,
-    /// `DashpayExternalAccount`: the contact's xpub, published only in THEIR
-    /// incoming request.
-    External,
-}
-
-/// Return the last Core height already covered for a new contact account's side.
+/// Return the last Core height already covered for our new receiving account.
 ///
 /// Scanning resumes at `H + 1`, where `H` is the Platform-assigned
-/// `$createdAtCoreBlockHeight` of the request that published this side's xpub:
-/// no payment to (or from) that xpub can predate the document exposing it.
-/// Only that one request counts, so the other party's request (which they
-/// control) can never lower this side's checkpoint.
+/// `$createdAtCoreBlockHeight` of the earliest request that published our
+/// receiving xpub to `contact`: no payment to it can predate that document.
+/// Only OUR outgoing requests count, so the contact (who controls their own
+/// requests) can never lower this checkpoint.
+///
+/// Every request we send to one contact carries the same receiving xpub, so
+/// the earliest sent doc a sweep saw this process is used when known, whatever
+/// its version bits. Otherwise the tracked (newest) outgoing request is used,
+/// unless it is a rotation (non-zero `accountReference` version): the
+/// original request's height is then unknown.
 ///
 /// `H` must come from Platform, never from a client-written field: the caller
 /// raises `synced_height` to it, and `update_synced_height` prunes spend state
@@ -46,37 +38,29 @@ pub(super) enum ContactAccountSide {
 /// [`add_managed_contact_account`]), so it never exceeds a range already
 /// scanned.
 ///
-/// Falls back to the wallet birth floor when the owner is unknown, the side's
-/// request is not tracked or has no height, or the request is a rotation
-/// (non-zero `accountReference` version): a re-key may reuse the xpub, and the
-/// original request's height is gone.
-pub(super) fn contact_scan_checkpoint(
+/// Falls back to the wallet birth floor when the owner is unknown, or no
+/// earliest height is known and the tracked request is missing or rotated.
+pub(super) fn receiving_scan_checkpoint(
     info: &PlatformWalletInfo,
     owner: &Identifier,
     contact: &Identifier,
-    side: ContactAccountSide,
 ) -> u32 {
     let birth_checkpoint = info.core_wallet.birth_height().saturating_sub(1);
     let Some(managed) = info.identity_manager.managed_identity(owner) else {
         return birth_checkpoint;
     };
     let dashpay = managed.dashpay();
-    let established = dashpay.established_contacts().get(contact);
-    let request = match side {
-        ContactAccountSide::Receiving => established
-            .map(|contact| &contact.outgoing_request)
-            .or_else(|| dashpay.sent_contact_requests().get(contact)),
-        ContactAccountSide::External => established
-            .map(|contact| &contact.incoming_request)
-            .or_else(|| dashpay.incoming_contact_requests().get(contact)),
+    let tracked = dashpay.outgoing_request(contact);
+    let checkpoint = match (dashpay.earliest_sent_core_height(contact), tracked) {
+        (Some(earliest), tracked) => tracked.map_or(earliest, |request| {
+            earliest.min(request.core_height_created_at)
+        }),
+        (None, Some(request)) if account_reference_version(request.account_reference) == 0 => {
+            request.core_height_created_at
+        }
+        (None, _) => return birth_checkpoint,
     };
-    let Some(request) = request else {
-        return birth_checkpoint;
-    };
-    if account_reference_version(request.account_reference) != 0 {
-        return birth_checkpoint;
-    }
-    request.core_height_created_at.max(birth_checkpoint)
+    checkpoint.max(birth_checkpoint)
 }
 
 fn add_managed_contact_account(
@@ -233,7 +217,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// before reciprocating.
     ///
     /// Rewinds the filter scan to the account's contact scan checkpoint
-    /// (`contact_scan_checkpoint`; never above the current checkpoint) and
+    /// (`receiving_scan_checkpoint`; never above the current checkpoint) and
     /// marks the contact in
     /// [`DashPayState::rescan_triggered`](crate::wallet::identity::DashPayState)
     /// so [`Self::reconcile_dashpay_rescan`] does not rewind a second time.
@@ -316,12 +300,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let scan_checkpoint = contact_scan_checkpoint(
-            info,
-            our_identity_id,
-            contact_identity_id,
-            ContactAccountSide::Receiving,
-        );
+        let scan_checkpoint = receiving_scan_checkpoint(info, our_identity_id, contact_identity_id);
 
         // Mirror the restored shape: the immutable `wallet.accounts`
         // collection holds the Account (like `build_wallet_start_state`
@@ -635,9 +614,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             is_watch_only: true,
         };
 
-        // Build the initial funds-bearing state for persistence. The live
-        // insertion below goes through `ManagedAccountOperations` so upstream
-        // also invalidates the wallet's prior filter-scan generation.
+        // DashpayExternalAccount is funds-bearing; insert via the typed
+        // `insert_funds_bearing_account` API after the upstream split.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         // Persist the registration BEFORE the in-memory inserts (same
@@ -664,12 +642,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     self.wallet_id,
                 )))
             })?;
-        let scan_checkpoint = contact_scan_checkpoint(
-            info,
-            our_identity_id,
-            &contact_identity_id,
-            ContactAccountSide::External,
-        );
 
         // (a) Insert Account into the immutable wallet account collection so the
         //     xpub is accessible by `send_payment`.
@@ -682,13 +654,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
-        // (b) Insert the managed account and invalidate prior filter coverage.
-        add_managed_contact_account(info, wallet, account_type, scan_checkpoint).map_err(|e| {
-            Transient(PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register external contact account: {}",
-                e
-            )))
-        })?;
+        // (b) Insert ManagedCoreFundsAccount for address-pool tracking. Unlike
+        //     the receiving account, this neither rewinds the filter scan nor
+        //     bumps the account generation: the contact controls when this
+        //     account is rebuilt (by rotating their request), so doing either
+        //     would let them force rescans of our wallet. Nothing is lost by
+        //     skipping it. External accounts are watch-only and excluded from
+        //     balance and coin selection, so the #649 spend pruning cannot
+        //     touch our funds through them. Our payments to the contact spend
+        //     our own inputs, so they are matched anyway.
+        info.core_wallet
+            .accounts
+            .insert_funds_bearing_account(managed)
+            .map_err(|e| {
+                Transient(PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register external contact account: {}",
+                    e
+                )))
+            })?;
 
         tracing::info!(
             our_identity = %our_identity_id,

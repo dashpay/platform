@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 
 use key_wallet_manager::WalletManager;
 
-use super::contacts::{contact_scan_checkpoint, ContactAccountSide};
+use super::contacts::receiving_scan_checkpoint;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -86,7 +86,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// is known, whether or not the contact has reciprocated.
     ///
     /// This lowers the wallet's SPV `synced_height` to the minimum
-    /// contact scan checkpoint (`contact_scan_checkpoint`) across registered
+    /// receiving scan checkpoint (`receiving_scan_checkpoint`) across registered
     /// receival accounts that
     /// haven't been rescanned yet — the filter manager (`dash-spv`) then
     /// re-downloads nothing it already has, re-matches the now-larger script
@@ -143,8 +143,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             if managed.dashpay().rescan_triggered.contains(&contact) {
                 continue;
             }
-            let checkpoint =
-                contact_scan_checkpoint(info, &owner, &contact, ContactAccountSide::Receiving);
+            let checkpoint = receiving_scan_checkpoint(info, &owner, &contact);
             // Contacts whose checkpoint is below the tip need a backfill —
             // their addresses weren't watched when those blocks were first
             // scanned. Contacts at or after the tip are already covered by the
@@ -1092,7 +1091,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         use key_wallet::account::account_collection::DashpayAccountKey;
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
         let account_index: u32 = 0;
 
@@ -2413,7 +2411,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn contact_registration_preserves_deeper_scan_and_falls_back_when_unknown() {
+    async fn should_preserve_deeper_scan_and_fall_back_when_registration_checkpoint_unknown() {
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
         let pending = Identifier::from([0xB1; 32]);
@@ -2818,9 +2816,6 @@ mod tests {
     /// from ever completing).
     #[tokio::test]
     async fn rescan_lowers_synced_height_to_outgoing_request_height_then_is_idempotent() {
-        use crate::wallet::identity::{ContactRequest, EstablishedContact};
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
@@ -2929,7 +2924,7 @@ mod tests {
     /// `synced_height` comes back at its high-water, so reconcile must rewind
     /// once — and only once.
     #[tokio::test]
-    async fn rescan_covers_restored_sent_only_account() {
+    async fn should_cover_restored_sent_only_account_in_rescan() {
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
@@ -3060,11 +3055,70 @@ mod tests {
         assert_eq!(synced_height(&manager, wallet_id).await, 500);
     }
 
+    /// Replaying persisted state (`PlatformWallet::apply`, idempotent by
+    /// contract) in the same process must reproduce the established contact
+    /// without clearing the rescan guard that registration set; otherwise the
+    /// next sync rewinds over a range the registration already scheduled.
+    #[tokio::test]
+    async fn should_not_rewind_again_when_established_contact_is_replayed_after_registration() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0; 96], 100, 0);
+        let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0; 96], 100, 0);
+        seed_owner_requests(
+            &manager,
+            &persister,
+            wallet_id,
+            owner,
+            vec![outgoing.clone(), incoming.clone()],
+        )
+        .await;
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .dashpay()
+            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            .await
+            .expect("bootstrap registration");
+        assert_eq!(synced_height(&manager, wallet_id).await, 100);
+
+        let mut contacts = crate::changeset::ContactChangeSet::default();
+        contacts.established.insert(
+            crate::changeset::SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: contact,
+            },
+            EstablishedContact::new(contact, outgoing, incoming),
+        );
+        wallet
+            .apply(PlatformWalletChangeSet {
+                contacts: Some(contacts),
+                ..Default::default()
+            })
+            .await
+            .expect("replay persisted established contact");
+
+        set_synced_height(&manager, wallet_id, 500).await;
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile after replay"),
+            None,
+            "replay must not re-arm the rescan registration already scheduled"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 500);
+    }
+
     /// The receiving account's checkpoint depends only on OUR outgoing request.
     /// A contact-controlled incoming request — rotated or older — must neither
     /// lower it at registration nor re-arm its rescan when it changes later.
     #[tokio::test]
-    async fn receiving_checkpoint_ignores_contact_request() {
+    async fn should_ignore_contact_request_in_receiving_checkpoint() {
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
@@ -3140,7 +3194,9 @@ mod tests {
 
     /// Register a receival account for `(owner, contact)` and insert an
     /// established contact whose requests sit at `out_height`/`in_height`. The owner managed
-    /// identity is added on first use.
+    /// identity is added on first use. The rescan guard is left clear, modelling
+    /// an account restored after a relaunch (the guard is in-memory only), so
+    /// the reconcile under test decides the rewind.
     async fn establish_receival_contact(
         manager: &Arc<PlatformWalletManager<RecordingPersister>>,
         persister: &Arc<RecordingPersister>,
@@ -3150,7 +3206,6 @@ mod tests {
         out_height: u32,
         in_height: u32,
     ) {
-        use crate::wallet::identity::{ContactRequest, EstablishedContact};
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet.identity();
         let p = WalletPersister::new(wallet_id, Arc::clone(persister) as _);
@@ -3171,6 +3226,11 @@ mod tests {
             .managed_identity_mut(&owner)
             .expect("managed")
             .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+        info.identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed")
+            .dashpay_rescan_triggered_mut()
+            .remove(&contact);
     }
 
     async fn set_synced_height(
@@ -3178,7 +3238,6 @@ mod tests {
         wallet_id: WalletId,
         height: u32,
     ) {
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let mut wm = wallet.identity().wallet_manager.write().await;
         wm.get_wallet_info_mut(&wallet_id)
@@ -3191,7 +3250,6 @@ mod tests {
         manager: &Arc<PlatformWalletManager<RecordingPersister>>,
         wallet_id: WalletId,
     ) -> u32 {
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let wm = wallet.identity().wallet_manager.read().await;
         wm.get_wallet_info(&wallet_id)
@@ -3203,8 +3261,8 @@ mod tests {
     /// A contact established while the wallet was still catching up (checkpoint at or
     /// after the current tip) is covered by the ongoing forward scan, so the
     /// rescan leaves `synced_height` alone — but it must MARK the contact so
-    /// that, once the forward pointer later climbs past the contact's funding
-    /// height, the recurring sweep does NOT redundantly rewind to an
+    /// that, once the forward pointer later climbs past the contact's request
+    /// checkpoint, the recurring sweep does NOT redundantly rewind to an
     /// already-scanned range.
     #[tokio::test]
     async fn rescan_does_not_redundantly_rewind_a_forward_covered_contact() {
@@ -3212,8 +3270,8 @@ mod tests {
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
 
-        // Funded at 500, but we have only synced to 450 — below the funding
-        // height, so a forward scan will cover it.
+        // Request checkpoint at 500, but we have only synced to 450 — below the
+        // checkpoint, so a forward scan will cover it.
         establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 500, 500).await;
         set_synced_height(&manager, wallet_id, 450).await;
 
@@ -3226,7 +3284,7 @@ mod tests {
                 .await
                 .expect("rescan"),
             None,
-            "funded above the tip -> no backfill"
+            "request checkpoint above the tip -> no backfill"
         );
         assert_eq!(
             synced_height(&manager, wallet_id).await,
@@ -3255,18 +3313,19 @@ mod tests {
     }
 
     /// Multiple contacts: the floor is the MINIMUM request checkpoint across all
-    /// not-yet-rescanned receival contacts (one rewind covers them all), and a
-    /// later-discovered, older-funded contact re-lowers exactly once before the
-    /// per-contact guard quiesces (drip-feed must not thrash).
+    /// not-yet-rescanned receival contacts (one rewind covers them all). A
+    /// later-discovered contact registered after the first rewind is covered by
+    /// the full-history scan that its registration triggered, so it is marked
+    /// without a second rewind and the drip-feed settles (no thrash).
     #[tokio::test]
-    async fn rescan_uses_min_funding_across_contacts_and_drip_feed_settles() {
+    async fn should_rewind_to_min_checkpoint_across_contacts_and_settle_drip_feed() {
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
         let c_a = Identifier::from([0xA1; 32]);
         let c_b = Identifier::from([0xB2; 32]);
         let c_c = Identifier::from([0xC3; 32]);
 
-        // Two contacts present at once (funded 300 and 100); tip at 1000.
+        // Two contacts present at once (request checkpoints 300 and 100); tip at 1000.
         establish_receival_contact(&manager, &persister, wallet_id, owner, c_a, 300, 300).await;
         establish_receival_contact(&manager, &persister, wallet_id, owner, c_b, 100, 100).await;
         set_synced_height(&manager, wallet_id, 1000).await;
@@ -5389,30 +5448,7 @@ mod tests {
         // A real 69-byte compact xpub encrypted under a known shared key — the
         // wire shape a contact would have sent us.
         let shared_key = [0x55u8; 32];
-        let iv = [0x11u8; 16];
-        let compact = {
-            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
-                .expect("mnemonic")
-                .to_seed("");
-            let w = key_wallet::wallet::Wallet::from_seed_bytes(
-                seed,
-                Network::Testnet,
-                WalletAccountCreationOptions::None,
-            )
-            .expect("seed wallet");
-            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
-                &w,
-                Network::Testnet,
-                0,
-                &owner_id,
-                &contact_id,
-            )
-            .expect("derive a valid compact xpub")
-            .compact
-            .to_bytes()
-        };
-        let encrypted =
-            platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
+        let encrypted = encrypted_contact_xpub(&owner_id, &contact_id, &shared_key);
 
         // Bare contact identity: the `Some` path must NOT touch the contact's
         // encryption key (the signer derives the secret out-of-crate).
@@ -5437,14 +5473,13 @@ mod tests {
         let info = wm.get_wallet_info(&wallet_id).expect("info");
         assert_eq!(
             info.account_generation(),
-            1,
-            "registering an external account must invalidate the prior filter-scan generation"
+            0,
+            "a watch-only external account must not invalidate in-flight filter scans"
         );
         assert_eq!(
             info.synced_height(),
-            300,
-            "external account scanning resumes after the incoming request's \
-             $createdAtCoreBlockHeight; our rotated, older outgoing request is irrelevant"
+            1_000,
+            "a watch-only external account must not rewind the filter scan"
         );
         use key_wallet::account::account_collection::DashpayAccountKey;
         let key = DashpayAccountKey {
@@ -5461,6 +5496,158 @@ mod tests {
         );
     }
 
+    /// Encrypt the DIP-15 compact contact xpub for `(owner, contact)` under
+    /// `shared_key` — the `encryptedPublicKey` wire shape of a contact request.
+    fn encrypted_contact_xpub(
+        owner: &Identifier,
+        contact: &Identifier,
+        shared_key: &[u8; 32],
+    ) -> Vec<u8> {
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("mnemonic")
+            .to_seed("");
+        let w = key_wallet::wallet::Wallet::from_seed_bytes(
+            seed,
+            Network::Testnet,
+            WalletAccountCreationOptions::None,
+        )
+        .expect("seed wallet");
+        let compact = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+            &w,
+            Network::Testnet,
+            0,
+            owner,
+            contact,
+        )
+        .expect("derive a valid compact xpub")
+        .compact
+        .to_bytes();
+        platform_encryption::encrypt_extended_public_key(shared_key, &[0x11u8; 16], &compact)
+    }
+
+    /// A contact controls when their incoming request rotates, which tears
+    /// down and rebuilds our watch-only `DashpayExternalAccount`. That rebuild
+    /// must neither rewind the filter scan nor invalidate an in-flight scan,
+    /// or every rotation (one document fee) would force a rescan of our
+    /// wallet. Our payments to the contact are still found through our own
+    /// spent inputs, and external accounts carry no balance of ours.
+    #[tokio::test]
+    async fn should_not_rewind_or_invalidate_scan_when_contact_rotation_rebuilds_external_account()
+    {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        let outgoing = ContactRequest::new(owner_id, contact_id, 0, 0, 0, vec![0; 96], 100, 0);
+        let incoming = ContactRequest::new(contact_id, owner_id, 0, 0, 0, vec![0; 96], 100, 0);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner_id)
+                .expect("managed owner")
+                .apply_established_contact(EstablishedContact::new(contact_id, outgoing, incoming));
+        }
+        let shared_key = [0x55u8; 32];
+        let contact = bare_identity([0x22; 32]);
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &contact,
+                &encrypted_contact_xpub(&owner_id, &contact_id, &shared_key),
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("initial external registration");
+
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        let generation_before = {
+            let wm = iw.wallet_manager.read().await;
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
+                .account_generation()
+        };
+
+        // The contact rotates (version bits set, like a DIP-15 re-key), and
+        // the sweep tears the stale external account down for a rebuild.
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            let (wallet, info) = wm
+                .get_wallet_mut_and_info_mut(&wallet_id)
+                .expect("wallet and info");
+            let rekeyed = info
+                .identity_manager
+                .managed_identity_mut(&owner_id)
+                .expect("managed owner")
+                .apply_rotated_incoming_request(
+                    ContactRequest::new(
+                        contact_id,
+                        owner_id,
+                        0,
+                        0,
+                        1 << ACCOUNT_REFERENCE_VERSION_SHIFT,
+                        vec![0; 96],
+                        900,
+                        0,
+                    ),
+                    &p,
+                )
+                .expect("apply contact rotation");
+            assert!(rekeyed, "established contact must be re-keyed");
+            let key = DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            };
+            wallet.accounts.dashpay_external_accounts.remove(&key);
+            info.core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .remove(&key);
+        }
+
+        let rebuild_key = [0x66u8; 32];
+        let registration = iw
+            .dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &contact,
+                &encrypted_contact_xpub(&owner_id, &contact_id, &rebuild_key),
+                zeroize::Zeroizing::new(rebuild_key),
+            )
+            .await
+            .expect("rebuild external account after rotation");
+        assert_eq!(
+            registration,
+            crate::wallet::identity::network::contacts::ExternalAccountRegistration::Built
+        );
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(
+            info.synced_height(),
+            1_000,
+            "a contact-driven external rebuild must not rewind the filter scan"
+        );
+        assert_eq!(
+            info.account_generation(),
+            generation_before,
+            "a contact-driven external rebuild must not invalidate an in-flight scan"
+        );
+    }
+
     /// Build a wallet with one owner identity (`[0x11;32]`) and one established
     /// contact (`[0x22;32]`) whose incoming / outgoing requests carry the given
     /// already-encrypted account-label ciphertexts. Returns the manager + the
@@ -5474,8 +5661,6 @@ mod tests {
         Identifier,
         Identifier,
     ) {
-        use crate::wallet::identity::{ContactRequest, EstablishedContact};
-
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0x11; 32]);
         let contact = Identifier::from([0x22; 32]);
@@ -5920,7 +6105,6 @@ mod tests {
     async fn unaccepted_recipient_purpose_never_fetches_and_stays_recoverable() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
-        use crate::wallet::identity::{ContactRequest, EstablishedContact};
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
 
@@ -6079,7 +6263,6 @@ mod tests {
     async fn drain_decides_our_own_key_fault_without_fetching_the_contact() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
-        use crate::wallet::identity::{ContactRequest, EstablishedContact};
         use dpp::identity::{KeyType, Purpose};
 
         let (manager, persister, wallet_id) = make_wallet().await;
@@ -6288,7 +6471,6 @@ mod tests {
     async fn sender_only_legacy_shape_is_not_charged_for_a_decrypt_failure() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
-        use crate::wallet::identity::{ContactRequest, EstablishedContact};
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
 

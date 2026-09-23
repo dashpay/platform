@@ -882,6 +882,24 @@ fn newest_sent_per_recipient(
     newest
 }
 
+/// Record the earliest `$createdAtCoreBlockHeight` per recipient over ALL of
+/// our fetched sent docs, then collapse them to the newest per recipient.
+///
+/// The collapse keeps only the newest request, but the receiving scan
+/// checkpoint needs the OLDEST publication of our receiving xpub (see
+/// `receiving_scan_checkpoint`), so it must be read before the older docs are
+/// dropped.
+fn record_and_collapse_sent_requests(
+    managed: &mut crate::wallet::identity::ManagedIdentity,
+    requests: impl IntoIterator<Item = ContactRequest>,
+) -> std::collections::BTreeMap<Identifier, ContactRequest> {
+    let requests: Vec<ContactRequest> = requests.into_iter().collect();
+    for request in &requests {
+        managed.note_sent_request_core_height(request.recipient_id, request.core_height_created_at);
+    }
+    newest_sent_per_recipient(requests)
+}
+
 /// Ingest one identity's collapsed **received** contact requests into local
 /// state, returning whether every write reached disk.
 ///
@@ -1523,7 +1541,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 //     leaves the old + bumped docs on-chain and the fetch is
                 //     `$createdAt`-ASC, so ingesting raw would establish
                 //     against the stale OLDEST reference on a restore-from-seed
-                //     and collide on the next rotation.
+                //     and collide on the next rotation. The oldest doc's core
+                //     height is recorded before the collapse: it bounds the
+                //     receiving account's rescan.
                 let parsed_sent = sent_docs.iter().filter_map(|(_doc_id, maybe_doc)| {
                     let doc = maybe_doc.as_ref()?;
                     // For a sent request the recipient is `toUserId`.
@@ -1533,7 +1553,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         .and_then(|v: &Value| v.to_identifier().ok())?;
                     Self::parse_sent_contact_request_doc(doc, identity_id, recipient_id)
                 });
-                let newest_by_recipient = newest_sent_per_recipient(parsed_sent);
+                let newest_by_recipient = record_and_collapse_sent_requests(managed, parsed_sent);
 
                 let sent_persist_ok = ingest_sent_requests(
                     managed,
@@ -4129,6 +4149,7 @@ mod sweep_tests {
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
+    use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -5013,6 +5034,158 @@ mod sweep_tests {
             100_000,
             created_at,
         )
+    }
+
+    /// One of our sent docs to `recipient` with an explicit Platform-assigned
+    /// `$createdAtCoreBlockHeight`.
+    fn sent_at_core_height(
+        our: u8,
+        recipient: u8,
+        account_reference: u32,
+        created_at: u64,
+        core_height: u32,
+    ) -> ContactRequest {
+        let mut request = test_request_at(our, recipient, account_reference, created_at);
+        request.core_height_created_at = core_height;
+        request
+    }
+
+    /// Run the sweep's sent-side pipeline (record earliest heights, collapse,
+    /// ingest) over `docs` for identity `our`.
+    fn sweep_ingest_sent(info: &mut PlatformWalletInfo, our: u8, docs: Vec<ContactRequest>) {
+        let our_id = Identifier::from([our; 32]);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+        let newest = record_and_collapse_sent_requests(managed, docs);
+        assert!(ingest_sent_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            newest
+        ));
+    }
+
+    /// Every request we send to a contact carries the same receiving xpub, so
+    /// the receiving checkpoint must come from the OLDEST sent doc. A later
+    /// version-0 re-send (another client's masking convention, or a device
+    /// that did not know the prior request) must not raise it.
+    #[test]
+    fn should_base_receiving_checkpoint_on_earliest_sent_doc_ingested_by_sweep() {
+        let mut info = info_with_bare_identity(1);
+        sweep_ingest_sent(
+            &mut info,
+            1,
+            vec![
+                sent_at_core_height(1, 2, 100, 100, 100),
+                sent_at_core_height(1, 2, 101, 200, 500),
+            ],
+        );
+        let our = Identifier::from([1u8; 32]);
+        let recipient = Identifier::from([2u8; 32]);
+        let tracked = info
+            .identity_manager
+            .managed_identity(&our)
+            .and_then(|m| m.dashpay().sent_contact_requests().get(&recipient).cloned())
+            .expect("newest sent doc tracked");
+        assert_eq!(tracked.core_height_created_at, 500, "collapse keeps newest");
+        assert_eq!(
+            super::super::contacts::receiving_scan_checkpoint(&info, &our, &recipient),
+            100,
+            "the oldest publication of our receiving xpub bounds the rescan"
+        );
+    }
+
+    /// A rotated relationship (version bits set on the newest request) with a
+    /// known earliest publication rescans from that height, not wallet birth.
+    #[test]
+    fn should_use_earliest_known_height_for_rotated_relationship() {
+        let mut info = info_with_bare_identity(1);
+        info.core_wallet = ManagedWalletInfo::from_wallet(&build_test_wallet(), 50);
+        sweep_ingest_sent(
+            &mut info,
+            1,
+            vec![
+                sent_at_core_height(1, 2, 100, 100, 300),
+                sent_at_core_height(1, 2, (1 << ACCOUNT_REFERENCE_VERSION_SHIFT) | 7, 200, 900),
+            ],
+        );
+        assert_eq!(
+            super::super::contacts::receiving_scan_checkpoint(
+                &info,
+                &Identifier::from([1u8; 32]),
+                &Identifier::from([2u8; 32])
+            ),
+            300
+        );
+    }
+
+    /// Without a known earliest publication (no sweep has seen the sent docs
+    /// this process), a rotated request falls back to the wallet birth floor.
+    #[test]
+    fn should_fall_back_to_birth_for_rotated_request_without_known_earliest_height() {
+        let mut info = info_with_bare_identity(1);
+        info.core_wallet = ManagedWalletInfo::from_wallet(&build_test_wallet(), 50);
+        let our = Identifier::from([1u8; 32]);
+        info.identity_manager
+            .managed_identity_mut(&our)
+            .expect("managed identity")
+            .apply_sent_contact_request(sent_at_core_height(
+                1,
+                2,
+                (1 << ACCOUNT_REFERENCE_VERSION_SHIFT) | 7,
+                200,
+                900,
+            ));
+        assert_eq!(
+            super::super::contacts::receiving_scan_checkpoint(
+                &info,
+                &our,
+                &Identifier::from([2u8; 32])
+            ),
+            49
+        );
+    }
+
+    /// A sweep that learns of an older publication than the one a registration
+    /// already used re-arms the rescan guard, so the next reconcile covers the
+    /// gap; a sweep that learns nothing older leaves the guard alone.
+    #[test]
+    fn should_rearm_rescan_only_when_sweep_learns_an_older_publication() {
+        let mut info = info_with_bare_identity(1);
+        let our = Identifier::from([1u8; 32]);
+        let recipient = Identifier::from([2u8; 32]);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our)
+            .expect("managed identity");
+        managed.apply_sent_contact_request(sent_at_core_height(1, 2, 101, 200, 500));
+        managed.dashpay_rescan_triggered_mut().insert(recipient);
+
+        sweep_ingest_sent(&mut info, 1, vec![sent_at_core_height(1, 2, 101, 200, 500)]);
+        let guarded = |info: &PlatformWalletInfo| {
+            info.identity_manager
+                .managed_identity(&our)
+                .expect("managed identity")
+                .dashpay()
+                .rescan_triggered
+                .contains(&recipient)
+        };
+        assert!(guarded(&info), "same publication must keep the guard");
+
+        sweep_ingest_sent(
+            &mut info,
+            1,
+            vec![
+                sent_at_core_height(1, 2, 100, 100, 100),
+                sent_at_core_height(1, 2, 101, 200, 500),
+            ],
+        );
+        assert!(
+            !guarded(&info),
+            "an older publication must re-arm the rescan"
+        );
     }
 
     /// **Sweep idempotency (the multi-doc thrash fix).**

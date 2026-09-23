@@ -13,6 +13,7 @@ use crate::wallet::identity::crypto::contact_info::ContactInfoPrivateData;
 use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
+use platform_encryption::account_reference_version;
 
 impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
@@ -796,6 +797,35 @@ impl ManagedIdentity {
         self.dashpay.high_water_sent_ms =
             advance_if_unchanged(self.dashpay.high_water_sent_ms, snapshot, max_fetched);
     }
+
+    /// Record the Platform-assigned `$createdAtCoreBlockHeight` of one of our
+    /// sent requests to `recipient`, as fetched by a sync sweep. Keeps the
+    /// minimum; see `DashPayState::earliest_sent_core_heights`.
+    ///
+    /// When the height predates the receiving checkpoint already applied (the
+    /// previously known earliest height, else a version-0 tracked request's
+    /// own height), the rescan guard is cleared so the next
+    /// `reconcile_dashpay_rescan` backfills the gap. A rotated tracked request
+    /// was checkpointed at wallet birth, which nothing predates.
+    pub fn note_sent_request_core_height(&mut self, recipient: Identifier, core_height: u32) {
+        let applied = self
+            .dashpay
+            .earliest_sent_core_height(&recipient)
+            .or_else(|| {
+                self.dashpay
+                    .outgoing_request(&recipient)
+                    .filter(|request| account_reference_version(request.account_reference) == 0)
+                    .map(|request| request.core_height_created_at)
+            });
+        if applied.is_some_and(|applied| core_height < applied) {
+            self.dashpay.rescan_triggered.remove(&recipient);
+        }
+        self.dashpay
+            .earliest_sent_core_heights
+            .entry(recipient)
+            .and_modify(|earliest| *earliest = (*earliest).min(core_height))
+            .or_insert(core_height);
+    }
 }
 
 // --- Apply (restore from changeset / cold load) ---
@@ -824,7 +854,6 @@ impl ManagedIdentity {
         self.dashpay
             .established_contacts
             .insert(contact_id, contact);
-        self.dashpay.rescan_triggered.remove(&contact_id);
     }
 
     /// Reproduce a persisted sent contact request, keyed by its

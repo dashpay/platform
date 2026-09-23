@@ -79,6 +79,21 @@ pub struct DashPayState {
     /// High-water mark for the sent direction (`$ownerId == me`).
     pub(super) high_water_sent_ms: Option<u64>,
 
+    /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
+    /// `contactRequest` docs to each recipient seen by a sweep this process.
+    ///
+    /// Every request to one recipient carries the same receiving xpub, so this
+    /// is the earliest height a payment to it can appear at — the receiving
+    /// account's scan checkpoint. The tracked outgoing request is only the
+    /// newest one, so its height can be too high.
+    ///
+    /// In-memory only (never persisted), like [`Self::high_water_sent_ms`]:
+    /// that cursor resets on cold start, so each process's first successful
+    /// sent fetch returns every sent doc and refills this map before
+    /// `reconcile_dashpay_rescan` runs. Only sweeps fill it, because replayed
+    /// or live-sent state knows only the newest request.
+    pub(super) earliest_sent_core_heights: BTreeMap<Identifier, u32>,
+
     /// DashPay profile (display name, bio, avatar, public message)
     /// published via the DashPay data contract. `None` until the
     /// profile has been fetched or set.
@@ -132,8 +147,10 @@ pub struct DashPayState {
     /// `synced_height` to the account's scan checkpoint, records the contact
     /// here so the recurring sweep does not re-lower the height every pass —
     /// which would reset the in-flight backfill and prevent it from ever
-    /// completing. Only a change to OUR outgoing request (the sole input of
-    /// that checkpoint) clears the mark; the contact's own requests never do.
+    /// completing. Only a change to OUR outgoing requests (the sole input of
+    /// that checkpoint) clears the mark: a new outgoing request, or a sweep
+    /// finding an older sent doc than the checkpoint already applied. The
+    /// contact's own requests never clear it.
     ///
     /// In-memory only (never persisted): a relaunch clears it, and because
     /// `synced_height` is restored at its monotonic high-water, an interrupted
@@ -198,5 +215,20 @@ impl DashPayState {
     /// session.
     pub fn high_water_sent_ms(&self) -> Option<u64> {
         self.high_water_sent_ms
+    }
+
+    /// Our tracked outgoing request to `contact`: the established contact's
+    /// outgoing side, else a pending sent request.
+    pub fn outgoing_request(&self, contact: &Identifier) -> Option<&ContactRequest> {
+        self.established_contacts
+            .get(contact)
+            .map(|established| &established.outgoing_request)
+            .or_else(|| self.sent_contact_requests.get(contact))
+    }
+
+    /// Earliest `$createdAtCoreBlockHeight` a sweep saw this process among our
+    /// sent requests to `recipient`; see the field doc.
+    pub fn earliest_sent_core_height(&self, recipient: &Identifier) -> Option<u32> {
+        self.earliest_sent_core_heights.get(recipient).copied()
     }
 }
