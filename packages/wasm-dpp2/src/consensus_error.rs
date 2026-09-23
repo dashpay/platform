@@ -28,7 +28,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentReferenceErrorCodeWasm {
     /// The referenced identity, contract, token or document (permanent or
-    /// deletable) does not exist.
+    /// deletable) does not exist, or a `listElement` value is not an element
+    /// of the list it must be in (or was set while the property finding the
+    /// list's document was not).
     ReferencedEntityNotFound = 40120,
     /// A `permanentDocument` or `deletableDocument` reference names a
     /// document type the referenced contract does not define, or the
@@ -68,11 +70,18 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// holds a different kind of value than its index property. (A lookup into
     /// the declaring contract is refused by the contract parse instead.)
     ReferencedDocumentLookupInvalid = 40137,
+    /// A `refersTo: listElement` whose list lives in a document type of
+    /// another contract cannot be served by it, reported at contract
+    /// registration: that type's documents can be deleted, the list is not a
+    /// stored typed array of identifiers of it, or a replace could change the
+    /// list. (A list in the declaring contract is refused by the contract parse
+    /// instead.)
+    ReferencedDocumentListInvalid = 40138,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131, 40135, 40136 or 40137.
+    /// is not in the 40120-40125 range, 40131 or 40135-40138.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -85,6 +94,7 @@ impl DocumentReferenceErrorCodeWasm {
             40135 => Some(Self::ReferencedContractRequirementNotMet),
             40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
             40137 => Some(Self::ReferencedDocumentLookupInvalid),
+            40138 => Some(Self::ReferencedDocumentListInvalid),
             _ => None,
         }
     }
@@ -252,6 +262,7 @@ impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 mod tests {
     use super::*;
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+    use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
     use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
@@ -422,6 +433,17 @@ mod tests {
                 DocumentReferenceErrorCodeWasm::ReferencedDocumentLookupInvalid,
             ),
             (
+                StateError::ReferencedDocumentListInvalidError(
+                    ReferencedDocumentListInvalidError::new(
+                        "resignation.memberId".to_string(),
+                        "members".to_string(),
+                        "is not a typed array of identifiers".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentListInvalid,
+            ),
+            (
                 StateError::ReferencedDocumentTypeNotFoundError(
                     ReferencedDocumentTypeNotFoundError::new(
                         id(),
@@ -518,7 +540,7 @@ mod tests {
 
     #[test]
     fn codes_outside_the_reference_range_are_not_claimed() {
-        for code in [40119, 40126, 40138, 0, 40200] {
+        for code in [40119, 40126, 40139, 0, 40200] {
             assert_eq!(DocumentReferenceErrorCodeWasm::from_code(code), None);
         }
     }

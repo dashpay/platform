@@ -2282,6 +2282,135 @@ mod tests {
             }
         }
 
+        /// `reasons`, a typed array of identifiers, with `refersTo` on its items as given,
+        /// parsed as a contract read back from state is, so a `listElement` declaration
+        /// needs no `documentProperty` to exist beside it.
+        fn element_list_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut items = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            });
+            if let Some(refers_to) = refers_to {
+                items
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "reasons": { "type": "array", "maxItems": 8, "items": items, "position": 0 }
+                },
+                "additionalProperties": false,
+            });
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "resignation",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// A list element reference is frozen like every other declaration: stored
+        /// documents were checked against the list it names, through the property it
+        /// names, so adding, removing or changing it (on an identifier property or on the
+        /// elements of a typed array) is an incompatible schema change.
+        #[test]
+        fn should_return_invalid_result_when_a_list_element_reference_changes() {
+            let platform_version = PlatformVersion::latest();
+            let list_element = |document_property: &str, list: &str| {
+                platform_value!({
+                    "type": "listElement",
+                    "documentType": "electedCharter",
+                    "documentProperty": document_property,
+                    "list": list
+                })
+            };
+            let members = list_element("electedCharterId", "members");
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (None, Some(members.clone()), "/refersTo"),
+                (Some(members.clone()), None, "/refersTo"),
+                (
+                    Some(platform_value!({
+                        "type": "permanentDocument",
+                        "documentType": "electedCharter"
+                    })),
+                    Some(members.clone()),
+                    "/refersTo/type",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("electedCharterId", "seats")),
+                    "/refersTo/list",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("lookedUpCharterId", "members")),
+                    "/refersTo/documentProperty",
+                ),
+            ] {
+                for (old_document_type, new_document_type, property_path) in [
+                    (
+                        identifier_document_type(old_refers_to.clone(), platform_version),
+                        identifier_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/toUserId",
+                    ),
+                    (
+                        element_list_document_type(old_refers_to.clone(), platform_version),
+                        element_list_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/reasons/items",
+                    ),
+                ] {
+                    let result = old_document_type
+                        .as_ref()
+                        .validate_update(new_document_type.as_ref(), 2, platform_version)
+                        .expect("validate_update should not error");
+
+                    // Swapping the target kind also adds the keywords only a
+                    // list element takes, each its own incompatible change
+                    let expected_path = format!("{property_path}{changed_path}");
+                    let changed_paths: Vec<&str> = result
+                        .errors
+                        .iter()
+                        .map(|error| match error {
+                            ConsensusError::BasicError(
+                                BasicError::IncompatibleDocumentTypeSchemaError(e),
+                            ) => e.property_path(),
+                            other => panic!("expected an incompatible schema change, got {other}"),
+                        })
+                        .collect();
+                    assert!(
+                        changed_paths.contains(&expected_path.as_str()),
+                        "{old_refers_to:?} -> {new_refers_to:?}: {changed_paths:?}"
+                    );
+                }
+            }
+
+            // An unchanged declaration is no change
+            let document_type = identifier_document_type(Some(members), platform_version);
+            let result = document_type
+                .as_ref()
+                .validate_update(document_type.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
         /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
         /// `delegateId` as given.
         fn distinct_from_document_type(

@@ -2,6 +2,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
+use crate::data_contract::document_type::list_element_reference::MAX_LIST_ELEMENT_PATH_LENGTH;
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
@@ -15,7 +16,7 @@ use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    LookupKeySource,
+    ListElementReference, LookupKeySource,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -635,6 +636,20 @@ fn apply_property_reference_v0(
         )));
     }
 
+    // `documentProperty` and `list` name the list a list element belongs to;
+    // no other target reads a list
+    if reference_type != "listElement" {
+        if let Some(keyword) = [property_names::DOCUMENT_PROPERTY, property_names::LIST]
+            .into_iter()
+            .find(|keyword| refers_to_map.contains_key(*keyword))
+        {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "{reference_type} refersTo does not take {keyword}: it is only allowed on \
+                 listElement references"
+            )));
+        }
+    }
+
     // A key reference declared on the key id property itself names whose key
     // it is through `identityProperty`; it is the one form that sits on a
     // non-identifier property
@@ -778,6 +793,9 @@ fn apply_property_reference_v0(
                 }
             }
         }
+        "listElement" => DocumentPropertyReferenceTarget::ListElement(
+            parse_list_element_reference(&refers_to_map)?,
+        ),
         "identityPublicKey" => {
             let key_id_property = refers_to_map
                 .get_str(property_names::KEY_ID_PROPERTY)
@@ -1009,6 +1027,91 @@ fn parse_document_reference_lookup(
         index: index.to_string(),
         keys,
     })
+}
+
+/// A `listElement` declaration: `documentType`, the document type holding the
+/// list, `documentProperty`, the property of the declaring type whose
+/// `permanentDocument` reference finds the document holding it, and `list`,
+/// the typed array of identifiers on it. It takes no `contractId`: the list's
+/// document type lives in whichever contract `documentProperty`'s reference
+/// names, so a second contract id could only disagree with it. What the names
+/// resolve to is checked under full validation, once the document types are
+/// parsed: `documentProperty` against the declaring type
+/// ([`validate_list_element_sources`]), `list` against the referenced one (at
+/// contract level for a type of the same contract, at registration for one of
+/// another contract).
+fn parse_list_element_reference(
+    refers_to_map: &BTreeMap<String, &Value>,
+) -> Result<ListElementReference, DataContractError> {
+    if refers_to_map.contains_key(property_names::CONTRACT_ID) {
+        return Err(DataContractError::InvalidContractStructure(
+            "listElement refersTo does not take contractId: the list's document type is in the \
+             contract documentProperty's reference names"
+                .to_string(),
+        ));
+    }
+
+    let document_type_name = refers_to_map
+        .get_str(property_names::DOCUMENT_TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+    if document_type_name.is_empty() || document_type_name.len() > 64 {
+        return Err(DataContractError::InvalidContractStructure(
+            "listElement refersTo documentType must be between 1 and 64 characters".to_string(),
+        ));
+    }
+
+    let path = |keyword: &str| -> Result<String, DataContractError> {
+        let path = refers_to_map
+            .get_str(keyword)
+            .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+        if path.is_empty() || path.len() > MAX_LIST_ELEMENT_PATH_LENGTH || path.starts_with('$') {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "listElement refersTo {keyword} must be a property path of 1 to \
+                 {MAX_LIST_ELEMENT_PATH_LENGTH} characters"
+            )));
+        }
+        Ok(path.to_string())
+    };
+
+    Ok(ListElementReference {
+        document_type_name: document_type_name.to_string(),
+        document_property: path(property_names::DOCUMENT_PROPERTY)?,
+        list: path(property_names::LIST)?,
+    })
+}
+
+/// Checks the referring side of every `refersTo: listElement` of a document
+/// type, once all its properties are parsed: `documentProperty` must be a
+/// stored identifier property carrying a `permanentDocument` reference to the
+/// declared document type. See [`ListElementReference::referring_side_error`].
+///
+/// Full validation only (registration), like the meta-schema: a contract read
+/// back from state passed it when it was written, and the write-time check
+/// refuses a value whose `documentProperty` finds no document rather than
+/// relying on it. Generation 3 is the only parser admitting `refersTo` at all.
+#[cfg(feature = "validation")]
+pub(super) fn validate_list_element_sources(
+    document_type: DocumentTypeRef,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    for (path, property) in document_type.flattened_properties() {
+        // On an identifier property or on the elements of a typed array
+        let Some(reference) = property
+            .property_type
+            .reference()
+            .and_then(|reference| reference.target())
+            .and_then(|target| target.as_list_element_reference())
+        else {
+            continue;
+        };
+        if let Some(reason) = reference.referring_side_error(document_type) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" refersTo listElement: \
+                 {reason}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Checks the referring side of every `refersTo` lookup of a document type,

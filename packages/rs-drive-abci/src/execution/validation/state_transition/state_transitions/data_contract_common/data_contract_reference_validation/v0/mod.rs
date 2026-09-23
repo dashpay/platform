@@ -8,6 +8,7 @@ use dpp::data_contract::document_type::{
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
+use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
@@ -38,6 +39,42 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
     a.value_kind() == b.value_kind()
 }
 
+/// The contract `contract_id` names, fetched once per validation: a repeat is
+/// served from `fetched_contracts`, which memoizes misses too, and only the
+/// first fetch is billed. The cost is added even if the contract does not exist
+/// or was served from Drive's own contract cache.
+#[allow(clippy::too_many_arguments)]
+fn fetch_referenced_contract(
+    fetched_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
+    contract_id: Identifier,
+    drive: &Drive,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
+    if let Some(cached) = fetched_contracts.get(&contract_id) {
+        return Ok(cached.clone());
+    }
+    let (fee, fetch_info) = drive.get_contract_with_fetch_info_and_fee(
+        contract_id.to_buffer(),
+        Some(&block_info.epoch),
+        false,
+        transaction,
+        platform_version,
+    )?;
+
+    let fee = fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+        "fee must exist when fetching a referenced contract with an epoch",
+    )))?;
+
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+    fetched_contracts.insert(contract_id, fetch_info.clone());
+
+    Ok(fetch_info)
+}
+
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
@@ -52,6 +89,12 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// references are checked against the in-flight contract, so a contract may
 /// reference its own document types on creation; foreign contract fetches are
 /// billed.
+///
+/// `listElement`: a list in a document type of another contract (the one
+/// `documentProperty`'s reference names) must be one the declaration can
+/// read: that type forbids deletion, and the list is a stored typed array of
+/// identifiers fixed once a document is written. One in the declaring
+/// contract was checked by the contract parse.
 ///
 /// `identityPublicKey`: the declared key id property must exist in the same
 /// document type and be an integer.
@@ -227,6 +270,60 @@ pub(super) fn validate_data_contract_references_v0(
                 }
             }
 
+            // A list element: the list lives on the document type that
+            // `documentProperty`'s `permanentDocument` reference names, in
+            // whichever contract it names. The contract parse checked the
+            // referring side, and a list in the declaring contract; only here
+            // is another contract's document type in hand. A missing contract
+            // or document type is left to `documentProperty`'s own reference,
+            // which reports it (the fetch is memoized, so it is billed once),
+            // and so is a deletable one (40122): the list is not judged
+            // against a type the reference could never name.
+            if let Some(reference) = reference_target.as_list_element_reference() {
+                let Some(list_contract_id) =
+                    reference.list_contract_id(document_type.as_ref(), contract.id())
+                else {
+                    continue;
+                };
+                if list_contract_id == contract.id() {
+                    continue;
+                }
+                let Some(fetch_info) = fetch_referenced_contract(
+                    &mut fetched_contracts,
+                    list_contract_id,
+                    drive,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?
+                else {
+                    continue;
+                };
+                let Some(list_document_type) = fetch_info
+                    .contract
+                    .document_type_optional_for_name(&reference.document_type_name)
+                else {
+                    continue;
+                };
+                if list_document_type.documents_can_be_deleted()
+                    || list_document_type.documents_can_be_deleted_by_moderators()
+                {
+                    continue;
+                }
+                if let Some(reason) = reference.referenced_side_error(list_document_type) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentListInvalidError::new(
+                            declaration_path,
+                            reference.list.clone(),
+                            reason,
+                        )
+                        .into(),
+                    ));
+                }
+                continue;
+            }
+
             let Some(DocumentReferenceDeclaration {
                 contract_id,
                 document_type_name,
@@ -244,33 +341,15 @@ pub(super) fn validate_data_contract_references_v0(
             let referenced_contract = if effective_contract_id == contract.id() {
                 contract
             } else {
-                let resolved = match fetched_contracts.get(&effective_contract_id) {
-                    Some(cached) => cached.clone(),
-                    None => {
-                        let (fee, fetch_info) = drive.get_contract_with_fetch_info_and_fee(
-                            effective_contract_id.to_buffer(),
-                            Some(&block_info.epoch),
-                            false,
-                            transaction,
-                            platform_version,
-                        )?;
-
-                        let fee =
-                            fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                                "fee must exist when fetching a referenced contract with an epoch",
-                            )))?;
-
-                        // The cost is added even if the referenced contract does not exist
-                        // or was served from Drive's own contract cache; only locally
-                        // memoized repeats above skip it
-                        execution_context
-                            .add_operation(ValidationOperation::PrecalculatedOperation(fee));
-
-                        fetched_contracts.insert(effective_contract_id, fetch_info.clone());
-
-                        fetch_info
-                    }
-                };
+                let resolved = fetch_referenced_contract(
+                    &mut fetched_contracts,
+                    effective_contract_id,
+                    drive,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 let Some(fetch_info) = resolved else {
                     // A missing contract and a missing document type resolve to the

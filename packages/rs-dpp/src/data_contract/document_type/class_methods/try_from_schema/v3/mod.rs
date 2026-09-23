@@ -48,6 +48,8 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 use crate::consensus::ConsensusError;
 
 use super::common;
+#[cfg(feature = "validation")]
+use super::validate_list_element_sources;
 use super::{validate_encrypted_for_declarations, validate_reference_lookup_sources};
 
 mod ranked_prefix_overlap;
@@ -455,6 +457,10 @@ fn try_from_schema_generation_3(
         validate_typed_array_max_items(&v2, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
+        // The property a `listElement` reads the list's document through; the
+        // list itself is checked where the referenced type is in hand
+        validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
     Ok(v2)
@@ -619,6 +625,8 @@ mod index_only_tests;
 
 #[cfg(test)]
 mod keep_history_tests;
+#[cfg(all(test, feature = "validation"))]
+mod list_element_reference_tests;
 #[cfg(test)]
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]

@@ -758,6 +758,41 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     incompatible schema change on update. Chained queries and composite
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
+/// 33. **References to an element of a list of a referenced document**: a
+///     new `refersTo` target, `listElement` (meta-schema v3,
+///     `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::ListElement`, so every earlier
+///     variant keeps its encoding), on an identifier property or on the
+///     elements of a typed array (item 31): the value must be an element of
+///     the typed array of identifiers `list` held by the `documentType`
+///     document that `documentProperty` refers to. `documentProperty` is an
+///     identifier property of the same referring type carrying a
+///     `permanentDocument` reference (by id or through a `lookup`, item 32)
+///     to that document type, stored (not transient), optional or not;
+///     generation 3 of the parser checks it under full validation. The list's
+///     document type is the one that reference names, in its contract (a
+///     list element takes no `contractId`): it must forbid deletion, and the
+///     list must be a stored typed array of identifiers fixed once a document
+///     is written (the type is immutable or lists the list's top-level
+///     property under `immutable`). `create_document_types_from_document_schemas`
+///     1, edited in place like for items 29 and 32 (inert before this
+///     version, where no parsed reference is a list element), checks a list
+///     in the same contract under full validation, and the contract reference
+///     validation checks one in another contract, refusing it with
+///     `ReferencedDocumentListInvalidError` (40138). The document reference
+///     validation (generation 0, reached only from this version) checks every
+///     list element once the other references are validated, against the
+///     document `documentProperty`'s own reference fetched, so it adds no
+///     read (a scan of at most the list's `maxItems` identifiers); a value
+///     the list does not hold, or one set while `documentProperty` is not,
+///     refuses the write with `ReferencedEntityNotFoundError` (40120, the
+///     list element declaration as its entity type, an element named by its
+///     list path). A replace re-validates a list element when its value or
+///     `documentProperty` changed, and validates `documentProperty`'s
+///     reference with it. Each value counts against
+///     `SystemLimits::max_references_per_document` like every other
+///     reference. A changed `listElement` is an incompatible schema change on
+///     update.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

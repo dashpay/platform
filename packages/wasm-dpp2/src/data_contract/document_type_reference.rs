@@ -191,6 +191,35 @@ export type DocumentPropertyReferenceTarget =
        * Absent — not `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;
+    }
+  | {
+      /**
+       * An element of a list: the value (on a typed array, every element)
+       * must be one of the identifiers the typed array `list` holds on the
+       * `documentType` document that `documentProperty` refers to. Consensus
+       * validates `documentProperty`'s own `permanentDocument` reference,
+       * which fetches that document, and checks the value against its list
+       * with no further read; a value the list does not hold, or one set
+       * while `documentProperty` is not, refuses the write (code 40120). The
+       * list's document can never be deleted and the list never changes, so
+       * a value accepted once stays an element. To resolve it yourself, read
+       * the document `documentProperty` refers to and look in its `list`.
+       */
+      type: 'listElement';
+      /**
+       * Name of the document type holding the list: the one
+       * `documentProperty`'s reference names, in whichever contract that
+       * reference names (a list element declares no contract of its own).
+       */
+      documentType: string;
+      /**
+       * Dotted path of the identifier property of the same document type
+       * whose `permanentDocument` reference finds the document holding the
+       * list.
+       */
+      documentProperty: string;
+      /** Dotted path of the typed array of identifiers on `documentType`. */
+      list: string;
     };
 
 /**
@@ -355,6 +384,7 @@ fn set_reference_target_fields(
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
         DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
+        DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
     };
     set_field(object, "type", &JsValue::from_str(kind), path)?;
 
@@ -483,6 +513,24 @@ fn set_reference_target_fields(
                 path,
             )?;
             set_key_requirements_field(object, key_requirements, path)?;
+        }
+        // The declaration's own keywords only: the list's contract is the one
+        // `documentProperty`'s reference names, which the caller finds under
+        // that property's own entry
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            set_field(
+                object,
+                "documentType",
+                &JsValue::from_str(&reference.document_type_name),
+                path,
+            )?;
+            set_field(
+                object,
+                "documentProperty",
+                &JsValue::from_str(&reference.document_property),
+                path,
+            )?;
+            set_field(object, "list", &JsValue::from_str(&reference.list), path)?;
         }
     }
 

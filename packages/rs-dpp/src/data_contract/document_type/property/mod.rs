@@ -40,9 +40,11 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod list_element_reference;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use list_element_reference::ListElementReference;
 pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
 
 #[cfg(test)]
@@ -845,6 +847,19 @@ pub enum DocumentPropertyReferenceTarget {
         /// How the referenced document is found.
         lookup: DocumentReferenceLookup,
     },
+    /// An element of a list: the value must be one of the identifiers the
+    /// typed array [`ListElementReference::list`] holds on the document that
+    /// [`ListElementReference::document_property`], a `permanentDocument`
+    /// reference of the same referring document, refers to. Consensus
+    /// fetches that document to validate `document_property`'s own
+    /// reference, and the list check reads the document in hand, so it adds
+    /// no read. The referenced type forbids deletion and its list is fixed
+    /// once a document is written (checked at registration), so an accepted
+    /// value stays an element for good; a replace re-validates it when the
+    /// value or `document_property` changed. Appended, so every earlier
+    /// variant keeps its consensus encoding.
+    #[serde(rename = "listElement")]
+    ListElement(ListElementReference),
 }
 
 /// The declaration content the two document reference targets,
@@ -921,10 +936,23 @@ impl DocumentPropertyReferenceTarget {
                 permanent: false,
                 lookup: None,
             }),
+            // A list element's value is an element of a referenced
+            // document's list, not a document id: the document is the one
+            // another property refers to
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
-            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => None,
+            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
+            | DocumentPropertyReferenceTarget::ListElement(_) => None,
+        }
+    }
+
+    /// The declaration of a `listElement` reference; `None` for every other
+    /// target.
+    pub fn as_list_element_reference(&self) -> Option<&ListElementReference> {
+        match self {
+            DocumentPropertyReferenceTarget::ListElement(reference) => Some(reference),
+            _ => None,
         }
     }
 }
@@ -1082,6 +1110,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 document_type_name,
                 ..
             } => write_document_reference(f, "deletable", *contract_id, document_type_name, None),
+            DocumentPropertyReferenceTarget::ListElement(reference) => reference.fmt(f),
         }
     }
 }
@@ -9864,6 +9893,11 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                 },
             },
+            DocumentPropertyReferenceTarget::ListElement(ListElementReference {
+                document_type_name: "electedCharter".to_string(),
+                document_property: "electedCharterId".to_string(),
+                list: "members".to_string(),
+            }),
         ];
 
         for target in &targets {
@@ -9878,6 +9912,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => {
                     "permanentDocument"
                 }
+                DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
             };
 
             // The tag is the `refersTo` schema keyword's own `type` value,

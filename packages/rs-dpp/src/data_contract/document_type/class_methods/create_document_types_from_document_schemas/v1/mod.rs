@@ -208,6 +208,52 @@ impl DocumentType {
             }
         }
 
+        // Protocol version 14 and later: a `refersTo: listElement` whose list lives in a
+        // document type of this contract must find a list there that holds identifiers and
+        // never changes: its documents cannot be deleted, `list` is a stored typed array of
+        // identifiers of it, and the list is fixed once a document is written (see
+        // `ListElementReference::referenced_side_error`). The list's document type is the one
+        // `documentProperty`'s `permanentDocument` reference names, which the document type
+        // parse checked under full validation; one in another contract is checked against
+        // that contract's state at registration, and one this contract does not have is left
+        // to the reference validation of `documentProperty`, which reports it.
+        //
+        // Inert for every protocol version before 14 for the same reason as the checks above:
+        // a parsed reference is a `listElement` only where the tables carry
+        // `apply_property_reference: Some(_)`, so the loop below finds none there.
+        for (name, document_type) in &contract_document_types {
+            for (path, property) in document_type.as_ref().flattened_properties() {
+                // On an identifier property or on the elements of a typed array
+                let Some(reference) = property
+                    .property_type
+                    .reference()
+                    .and_then(|reference| reference.target())
+                    .and_then(|target| target.as_list_element_reference())
+                else {
+                    continue;
+                };
+                if reference.list_contract_id(document_type.as_ref(), data_contract_id)
+                    != Some(data_contract_id)
+                {
+                    continue;
+                }
+                let Some(referenced_document_type) =
+                    contract_document_types.get(&reference.document_type_name)
+                else {
+                    continue;
+                };
+                if let Some(reason) =
+                    reference.referenced_side_error(referenced_document_type.as_ref())
+                {
+                    return Err(consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "document type \"{name}\" property \"{path}\" refersTo listElement: {reason}"
+                        )),
+                    ));
+                }
+            }
+        }
+
         Ok(contract_document_types)
     }
 }

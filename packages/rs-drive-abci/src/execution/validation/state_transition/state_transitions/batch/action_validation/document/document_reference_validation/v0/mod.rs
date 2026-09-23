@@ -13,12 +13,12 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef,
-    IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, PropertyReference,
-    ReferringWrite,
+    IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
+    PropertyReference, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
-use dpp::document::DocumentV0Getters;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
@@ -226,6 +226,19 @@ fn validate_document_type_references_v0(
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
+    // The `listElement` references this write checks, and the documents their
+    // lists are read from: a list element is checked once every other
+    // reference is, against the document its `documentProperty`'s own
+    // reference fetched, so the check reads nothing. That property's reference
+    // is validated whenever one of its list elements is, even on a replace
+    // leaving it untouched, which is how the list's document is in hand.
+    let list_element_checks = list_element_checks_v0(&document_type, document_data, changed_fields);
+    let list_sources: BTreeSet<&str> = list_element_checks
+        .iter()
+        .map(|check| check.reference.document_property.as_str())
+        .collect();
+    let mut list_documents: BTreeMap<&str, Document> = BTreeMap::new();
+
     for (path, property) in document_type.flattened_properties() {
         // A reference is an identifier property's value, or each element of
         // a typed array of identifiers whose `items` declare it (protocol
@@ -285,6 +298,15 @@ fn validate_document_type_references_v0(
             PropertyReference::Value(target) => (target, false),
             PropertyReference::Elements { target, .. } => (target, true),
         };
+        // Checked below, once the document its list is read from is in hand
+        if reference_target.as_list_element_reference().is_some() {
+            continue;
+        }
+        // Whether the document this reference finds holds a list a list
+        // element of this write is checked against; only a scalar
+        // `permanentDocument` reference can (registration refuses any other
+        // `documentProperty`)
+        let is_list_source = !holds_elements && list_sources.contains(path.as_str());
 
         let bound_property_changed = if let Some(changed) = changed_fields {
             // Some targets bind a sibling property of the same document to
@@ -342,9 +364,10 @@ fn validate_document_type_references_v0(
                 } => is_changed_field(changed, key_id_property),
                 DocumentPropertyReferenceTarget::Identity
                 | DocumentPropertyReferenceTarget::Contract { .. }
-                | DocumentPropertyReferenceTarget::Token => false,
+                | DocumentPropertyReferenceTarget::Token
+                | DocumentPropertyReferenceTarget::ListElement(_) => false,
             };
-            if !is_changed_field(changed, path) && !bound_property_changed {
+            if !is_changed_field(changed, path) && !bound_property_changed && !is_list_source {
                 continue;
             }
             bound_property_changed
@@ -368,6 +391,7 @@ fn validate_document_type_references_v0(
                     ))
                 }
             };
+            let mut referenced_document = None;
             let result = validate_reference_v0(
                 contract,
                 document_type,
@@ -377,6 +401,7 @@ fn validate_document_type_references_v0(
                 referenced_id,
                 path,
                 &mut referenced_contracts,
+                is_list_source.then_some(&mut referenced_document),
                 platform,
                 block_info,
                 transaction,
@@ -385,6 +410,9 @@ fn validate_document_type_references_v0(
             )?;
             if !result.is_valid() {
                 return Ok(result);
+            }
+            if let Some(referenced_document) = referenced_document {
+                list_documents.insert(path.as_str(), referenced_document);
             }
         } else {
             let elements = match document_data.get_optional_at_path(path) {
@@ -455,6 +483,7 @@ fn validate_document_type_references_v0(
                     referenced_id,
                     &element_path,
                     &mut referenced_contracts,
+                    None,
                     platform,
                     block_info,
                     transaction,
@@ -468,7 +497,167 @@ fn validate_document_type_references_v0(
         }
     }
 
+    for check in &list_element_checks {
+        let list_document = list_documents.get(check.reference.document_property.as_str());
+        let result = validate_list_element_v0(check, list_document, document_data, stored_values);
+        if !result.is_valid() {
+            return Ok(result);
+        }
+    }
+
     Ok(SimpleConsensusValidationResult::new())
+}
+
+/// A `listElement` reference a write checks: the declaring property's `path`,
+/// its declaration, and how the values are held.
+struct ListElementCheck<'a> {
+    path: &'a str,
+    target: &'a DocumentPropertyReferenceTarget,
+    reference: &'a ListElementReference,
+    /// A typed array whose elements each must be listed, rather than an
+    /// identifier property
+    holds_elements: bool,
+    /// Whether every element is checked, rather than only those the stored
+    /// list did not hold: on a create, and on a replace that changed
+    /// `documentProperty`, since the list is then another document's
+    recheck_all: bool,
+}
+
+/// The `listElement` references of `document_type` a write of `document_data`
+/// checks: every one holding a value on a create, and on a replace
+/// (`changed_fields` set) those whose value or `documentProperty` changed. A
+/// list is fixed once its document is written and that document can never be
+/// deleted (registration refuses anything else), so an unchanged value read
+/// through an unchanged `documentProperty` is listed still.
+fn list_element_checks_v0<'a>(
+    document_type: &'a DocumentTypeRef<'_>,
+    document_data: &BTreeMap<String, Value>,
+    changed_fields: Option<&BTreeSet<String>>,
+) -> Vec<ListElementCheck<'a>> {
+    document_type
+        .flattened_properties()
+        .iter()
+        .filter_map(|(path, property)| {
+            let (target, holds_elements) = match property.property_type.reference()? {
+                PropertyReference::Value(target) => (target, false),
+                PropertyReference::Elements { target, .. } => (target, true),
+                PropertyReference::KeyId(_) => return None,
+            };
+            let reference = target.as_list_element_reference()?;
+            // Nothing to check without a value; a malformed one is still
+            // checked, to be refused
+            if matches!(document_data.get_optional_at_path(path), Ok(None)) {
+                return None;
+            }
+            let recheck_all = match changed_fields {
+                None => true,
+                Some(changed) => {
+                    let document_property_changed =
+                        is_changed_field(changed, &reference.document_property);
+                    if !document_property_changed && !is_changed_field(changed, path) {
+                        return None;
+                    }
+                    document_property_changed
+                }
+            };
+            Some(ListElementCheck {
+                path: path.as_str(),
+                target,
+                reference,
+                holds_elements,
+                recheck_all,
+            })
+        })
+        .collect()
+}
+
+/// Checks one `listElement` reference of a write: its value, or each element
+/// of its typed array, must be an element of the list `list_document` holds,
+/// the document `documentProperty`'s reference fetched during this
+/// validation (`None` when that property is not set, so no list holds the
+/// value). A value that is not refuses the write with
+/// `ReferencedEntityNotFoundError` naming it, an element by its list path. No
+/// read: the document is already in hand, and the scan covers at most the
+/// list's `maxItems` identifiers. On a replace an element the stored list
+/// already held is skipped unless `documentProperty` changed, as an unchanged
+/// single reference is left alone.
+fn validate_list_element_v0(
+    check: &ListElementCheck,
+    list_document: Option<&Document>,
+    document_data: &BTreeMap<String, Value>,
+    stored_values: Option<&BTreeMap<String, Value>>,
+) -> SimpleConsensusValidationResult {
+    let path = check.path;
+    let not_listed = |value: [u8; 32], value_path: String| {
+        SimpleConsensusValidationResult::new_with_error(
+            ReferencedEntityNotFoundError::new(
+                Identifier::from(value),
+                check.target.clone(),
+                value_path,
+            )
+            .into(),
+        )
+    };
+    let is_listed = |value: &[u8; 32]| {
+        list_document
+            .is_some_and(|document| check.reference.is_listed_in(document.properties(), value))
+    };
+
+    if !check.holds_elements {
+        return match document_data.get_optional_identifier_at_path(path) {
+            Ok(Some(value)) if !is_listed(&value) => not_listed(value, path.to_string()),
+            Ok(_) => SimpleConsensusValidationResult::new(),
+            Err(err) => SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
+            ),
+        };
+    }
+
+    let elements = match document_data.get_optional_at_path(path) {
+        Ok(Some(Value::Array(elements))) => elements,
+        Ok(None) => return SimpleConsensusValidationResult::new(),
+        Ok(Some(_)) => {
+            return SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentifierError::new(
+                    path.to_string(),
+                    "a typed array of identifiers must be a list".to_string(),
+                )
+                .into(),
+            )
+        }
+        Err(err) => {
+            return SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
+            )
+        }
+    };
+    let mut checked: BTreeSet<[u8; 32]> = BTreeSet::new();
+    if !check.recheck_all {
+        if let Some(Ok(Some(Value::Array(stored_elements)))) =
+            stored_values.map(|stored| stored.get_optional_at_path(path))
+        {
+            checked.extend(
+                stored_elements
+                    .iter()
+                    .filter_map(|element| element.to_hash256().ok()),
+            );
+        }
+    }
+    for (index, element) in elements.iter().enumerate() {
+        let element_path = format!("{path}[{index}]");
+        let value = match element.to_hash256() {
+            Ok(value) => value,
+            Err(err) => {
+                return SimpleConsensusValidationResult::new_with_error(
+                    InvalidIdentifierError::new(element_path, err.to_string()).into(),
+                )
+            }
+        };
+        if checked.insert(value) && !is_listed(&value) {
+            return not_listed(value, element_path);
+        }
+    }
+    SimpleConsensusValidationResult::new()
 }
 
 /// Checks one reference against platform state: the referenced id
@@ -481,7 +670,9 @@ fn validate_document_type_references_v0(
 /// writer `owner_id`) and the referenced document. Every read is billed to
 /// `execution_context`; a foreign contract holding a referenced document
 /// type is resolved through `referenced_contracts`, which the caller shares
-/// among the elements of one array.
+/// among the elements of one array. A document reference found valid hands
+/// the document it fetched to `referenced_document` when the caller passes
+/// one, for the list elements read through it.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_v0(
     contract: &DataContract,
@@ -492,6 +683,7 @@ fn validate_reference_v0(
     referenced_id: [u8; 32],
     path: &str,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
+    referenced_document: Option<&mut Option<Document>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     transaction: TransactionArg,
@@ -703,7 +895,7 @@ fn validate_reference_v0(
                 }
                 _ => None,
             };
-            let referenced_document = match lookup {
+            let fetched_document = match lookup {
                 None => fetch_document_with_id(
                     platform.drive,
                     referenced_contract,
@@ -746,7 +938,7 @@ fn validate_reference_v0(
             // side's absence is what lets a referring doctype whose
             // agreement key triggers a skipIfAbsent index stay
             // consistently absent for untagged targets.
-            if let Some(referenced_document) = &referenced_document {
+            if let Some(referenced_document) = &fetched_document {
                 for (referring_property, referenced_property) in property_agreement {
                     let mismatch = || {
                         SimpleConsensusValidationResult::new_with_error(
@@ -834,7 +1026,18 @@ fn validate_reference_v0(
                 }
             }
 
-            referenced_document.is_some()
+            let exists = fetched_document.is_some();
+            if let Some(referenced_document) = referenced_document {
+                *referenced_document = fetched_document;
+            }
+            exists
+        }
+        // Checked by `validate_list_element_v0` against the document its
+        // `documentProperty` finds, never through here
+        DocumentPropertyReferenceTarget::ListElement(_) => {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a listElement reference is checked against the document its documentProperty finds",
+            )))
         }
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property,

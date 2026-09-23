@@ -138,7 +138,8 @@
                 "token",
                 "permanentDocument",
                 "identityPublicKey",
-                "deletableDocument"
+                "deletableDocument",
+                "listElement"
               ]
             },
             "contractId": {
@@ -163,7 +164,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared",
+              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. For listElement, the document type holding the list: the one documentProperty refers to",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -288,6 +289,20 @@
                 ]
               }
             },
+            "documentProperty": {
+              "description": "listElement references only: the property of the same referring document type (a dotted path when nested) whose permanentDocument reference, by id or through a lookup, finds the document holding the list; it must be a stored (not transient) identifier property whose refersTo names documentType, checked at contract registration, and it may be optional. When the referring document is created or replaced, consensus validates documentProperty's own reference, which fetches that document, and requires the value (on a typed array, every element) to be an element of its list, reading the document already in hand, so the check adds no read; a value that is not, or one set while documentProperty is not, refuses the write with ReferencedEntityNotFoundError (40120). A replace re-validates it when the value or documentProperty changed",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+            },
+            "list": {
+              "description": "listElement references only: the typed array of identifiers of documentType (a dotted path when nested) the value must be an element of. At contract registration documentType must forbid deletion, and the list must be stored (not transient) and fixed once a document is written: documentType is immutable (documentsMutable: false) or lists the list's top-level property under immutable, so a value accepted as an element stays one",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+            },
             "lookup": {
               "description": "permanentDocument references only (a key into a deletable type could find a new document once the one it found is deleted, where an id is produced at most once): the property's value is not the referenced document's id. The referenced document is the one the named unique index of the referenced document type finds for a key assembled from the referring document, and the reference holds if that document exists. index names an index of the referenced document type that is unique, carries no timeRange and does not belong to an indexOnly type; its key must stay with the document it found (every schema property of the index fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles; keys maps every property of that index (by its name on the referenced side, system ones such as $ownerId included), in any order, to where its value comes from: a property path of the referring document type, \"$ownerId\" for the referring document's owner, or \".\" for the value of the property carrying the reference (on an array element, the element), which must appear exactly once. A property a key reads must be required (and so must every object around it), not transient, and hold the same kind of value as its index property, so a lookup never runs with a missing key part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries the index for the assembled key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; propertyAgreement pairs are checked against the document found. A replace re-validates the reference when a property a key reads changed, and on every replace when a key reads $ownerId",
               "type": "object",
@@ -338,7 +353,7 @@
             {
               "if": {
                 "properties": {
-                  "type": { "enum": ["permanentDocument", "deletableDocument"] }
+                  "type": { "enum": ["permanentDocument", "deletableDocument", "listElement"] }
                 },
                 "required": ["type"]
               },
@@ -349,6 +364,25 @@
                 "properties": {
                   "contractId": false,
                   "documentType": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "type": { "const": "listElement" } },
+                "required": ["type"]
+              },
+              "then": {
+                "required": ["type", "documentType", "documentProperty", "list"],
+                "properties": {
+                  "contractId": false,
+                  "propertyAgreement": false
+                }
+              },
+              "else": {
+                "properties": {
+                  "documentProperty": false,
+                  "list": false
                 }
               }
             },

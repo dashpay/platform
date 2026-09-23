@@ -500,6 +500,54 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_a_list_element_refers_to_in_v3_document_schema() {
+        for (document_property, list) in [
+            ("electedCharterId", "members"),
+            ("meta.charterId", "seats.members"),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "listElement",
+                "documentType": "electedCharter",
+                "documentProperty": document_property,
+                "list": list
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected a listElement through {document_property} into {list} to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_or_misplaced_list_element_keywords_in_v3_document_schema() {
+        for refers_to in [
+            // Every listElement keyword is required
+            json!({ "type": "listElement", "documentProperty": "electedCharterId", "list": "members" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "list": "members" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "documentProperty": "electedCharterId" }),
+            // The list's contract is the one documentProperty's reference names
+            json!({ "type": "listElement", "contractId": "4uAB6wAdt6FJ7djwjYrLnooVhYeQpzgkssBmgmvZ9WnM", "documentType": "electedCharter", "documentProperty": "electedCharterId", "list": "members" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "documentProperty": "electedCharterId", "list": "members", "propertyAgreement": { "a": "b" } }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "documentProperty": "electedCharterId", "list": "members", "lookup": { "index": "byOwner", "keys": { "$ownerId": "." } } }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "documentProperty": "$ownerId", "list": "members" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "documentProperty": "electedCharterId", "list": "bad-name" }),
+            json!({ "type": "listElement", "documentType": "electedCharter", "documentProperty": "", "list": "members" }),
+            // documentProperty and list belong to listElement alone
+            json!({ "type": "identity", "list": "members" }),
+            json!({ "type": "permanentDocument", "documentType": "electedCharter", "documentProperty": "electedCharterId" }),
+            json!({ "type": "deletableDocument", "documentType": "electedCharter", "list": "members" }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected refersTo {refers_to} to be invalid"
+            );
+        }
+    }
+
+    #[test]
     fn should_accept_permanent_document_refers_to_in_v3_document_schema() {
         let schema = document_schema_with_refers_to(json!({
             "type": "permanentDocument",

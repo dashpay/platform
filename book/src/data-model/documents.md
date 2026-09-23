@@ -270,7 +270,7 @@ Revision 0 is never used for active documents. This allows `0` to serve as a sen
 
 ## Document References (`refersTo`)
 
-From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument` and `identityPublicKey`. Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
+From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument`, `identityPublicKey` and `listElement` (see [An element of a list](#an-element-of-a-list-listelement)). Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
 
 An `identityPublicKey` reference names one key of one identity, and comes in two forms that differ in which property carries what:
 
@@ -334,6 +334,60 @@ The checks on the referenced type run where that type is in hand. For a document
 When the referring document is created or replaced, the document reference validation assembles the key for each value and queries the index for at most one document, billed as a document fetch of the same kind as the id lookup (`fetch_document_through_lookup`). No document, or a key it cannot assemble, refuses the write, paid, with `ReferencedEntityNotFoundError` (40120) naming the property, or the element by its list path (`members[1]`); its target reads "found through unique index `<index>`". A `propertyAgreement` beside the `lookup` is checked against the document the index found, exactly as for an id reference. A replace re-validates the reference when the property itself changed (for a list, the elements the stored list did not hold), and every value, every element included, when a property a key reads changed. Nothing else can move a key part: the writer is fixed on a type allowed to read it, and the referenced side's key is fixed by the rule above, so a validated lookup reference never dangles.
 
 Joins cannot go through a lookup reference: a chained query or a composite by-id join needs the join property's values to be the outer documents' ids, so both refuse such a property, and a `preallocated` index cannot be bound through one. In Rust the declaration is its own variant, `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, appended to the enum rather than a field of `PermanentDocument`: the enum is embedded in the reference errors, so an id reference keeps its encoding, and code matching `PermanentDocument` as "the value is a document id" cannot mistake a lookup for one. The rules are on `DocumentReferenceLookup`. `as_document_reference` returns only references whose value is a document id, the accessor for joins; the validators use `as_any_document_reference`, whose declaration carries the lookup.
+
+### An element of a list (`listElement`)
+
+A `listElement` reference says the value must be one of the identifiers a list of another document holds, the document another property of the same document refers to:
+
+```json
+"resignation": {
+  "type": "object",
+  "properties": {
+    "electedCharterId": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "refersTo": { "type": "permanentDocument", "documentType": "electedCharter" },
+      "position": 0
+    },
+    "memberId": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "refersTo": {
+        "type": "listElement",
+        "documentType": "electedCharter",
+        "documentProperty": "electedCharterId",
+        "list": "members"
+      },
+      "position": 1
+    }
+  },
+  "required": ["electedCharterId", "memberId"],
+  "additionalProperties": false
+}
+```
+
+reads: `memberId` must be one of the `members` of the `electedCharter` document `electedCharterId` refers to. The moderation charters, whose elected charter holds its `members`, are the first users. The declaration sits on an identifier property or on the `items` of a typed array of identifiers, where every element must be listed (see [References on the Elements](#references-on-the-elements)).
+
+`documentProperty` names an identifier property of the same referring type that carries a `permanentDocument` reference to `documentType`, by id or through a `lookup`; the list's document is the one that reference finds, in whichever contract it names, so a `listElement` takes no `contractId` of its own. `list` names a typed array of identifiers of `documentType`. What is checked when the contract enters the chain:
+
+- `documentProperty` exists, is a stored (not transient) identifier property, not a typed array, and carries a `permanentDocument` reference naming `documentType`: a reader can then tell from the stored document which list the value was checked against. It may be optional. Checked by the parse under full validation (generation 3).
+- The list's document type forbids deletion, and `list` is a stored typed array of identifiers on it that never changes once a document is written: the type is immutable (`documentsMutable: false`), or the list's top-level property is listed under `immutable`. An `immutableAllowSetting` entry can only be set on a document that has no value for it, against which no value was ever accepted, so it does not weaken the rule. For a type of the same contract the contract parse checks this (`create_document_types_from_document_schemas` 1); for a type of another contract, registration checks it against that contract in state and refuses a list that does not qualify with `ReferencedDocumentListInvalidError` (state code 40138). A missing or deletable document type is refused by `documentProperty`'s own reference (40121, 40122).
+- Each value counts against `SystemLimits::max_references_per_document`, one for a property, `maxItems` for a typed array, like every other reference.
+- A changed, added or removed `listElement` is an incompatible schema change on update.
+
+When the referring document is created or replaced, the document reference validation checks the list elements after every other reference. `documentProperty`'s reference fetches the list's document for its own existence check, and the list check reads that document, so it adds no read: it scans at most the list's `maxItems` identifiers. A value the list does not hold, or one set while `documentProperty` is not, refuses the write, paid, with `ReferencedEntityNotFoundError` (40120) naming the property, or the element by its list path (`witnesses[1]`); its target reads "list element (`<list>` of the `<documentType>` document `<documentProperty>` refers to)". A replace re-validates a list element when its value or `documentProperty` changed (a typed array: every element when `documentProperty` changed, otherwise the elements the stored list did not hold), and then validates `documentProperty`'s reference with it, even if that property is unchanged, which is how the document is in hand. Nothing else can make a validated value unlisted: the list's document can never be deleted and its list never changes.
+
+For example:
+
+```text
+charter 7kX...: members [Alice, Bob]
+resignation { electedCharterId: 7kX..., memberId: Alice }  -> accepted
+resignation { electedCharterId: 7kX..., memberId: Carol }  -> refused, 40120:
+  referenced list element (members of the electedCharter document electedCharterId refers to)
+  <Carol> not found for path memberId
+```
+
+In Rust the declaration is the appended variant `DocumentPropertyReferenceTarget::ListElement(ListElementReference)`, so every earlier variant keeps its encoding in the reference errors; the rules are on `ListElementReference` (`referring_side_error`, `referenced_side_error`, `is_listed_in`). It is not a document reference: `as_document_reference` and `as_any_document_reference` return `None` for it, so joins and `preallocated` indexes never go through it.
 
 ## Immutable Properties on Mutable Document Types
 
