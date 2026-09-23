@@ -35,7 +35,7 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// `H` must come from Platform, never from a client-written field: the caller
 /// raises `synced_height` to it, and `update_synced_height` prunes spend state
 /// up to that height. It is also bounded by the previous checkpoint (see
-/// [`add_managed_contact_account`]), so it never exceeds a range already
+/// [`add_managed_receiving_account`]), so it never exceeds a range already
 /// scanned.
 ///
 /// Falls back to the wallet birth floor when the owner is unknown, or no
@@ -63,16 +63,26 @@ pub(super) fn receiving_scan_checkpoint(
     checkpoint.max(birth_checkpoint)
 }
 
-fn add_managed_contact_account(
+/// Add a `DashpayReceivingFunds` managed account and apply its scan checkpoint.
+///
+/// Upstream `add_managed_account` inserts the account, bumps the wallet's
+/// filter-scan generation (so no in-flight batch scanned without the new
+/// scripts can certify coverage) and rewinds `synced_height` to wallet birth.
+/// This then restores `min(previous, scan_checkpoint)`: only the range already
+/// certified for the new account, preserving any deeper pending scan. The
+/// caller must hold the manager write lock across the whole call so no scan
+/// commit interleaves.
+///
+/// Receiving accounts only. A `DashpayExternalAccount` is outbound and never
+/// receives, so it must not rewind the wallet or invalidate in-flight scans;
+/// it is inserted with `insert_funds_bearing_account` instead.
+fn add_managed_receiving_account(
     info: &mut PlatformWalletInfo,
     wallet: &Wallet,
     account_type: AccountType,
     scan_checkpoint: u32,
 ) -> key_wallet::Result<()> {
     let previous_checkpoint = info.core_wallet.synced_height();
-    // Upstream adds the account, bumps the scanner generation, and rewinds to
-    // wallet birth. Under this same manager write lock, restore only the range
-    // certified for the new account while preserving any deeper pending scan.
     info.add_managed_account(wallet, account_type)?;
     info.core_wallet
         .update_synced_height(previous_checkpoint.min(scan_checkpoint));
@@ -313,11 +323,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Failed to add contact account to wallet: {e}"
                 ))
             })?;
-        add_managed_contact_account(info, wallet, account_type, scan_checkpoint).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register contact account: {e}"
-            ))
-        })?;
+        add_managed_receiving_account(info, wallet, account_type, scan_checkpoint).map_err(
+            |e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register contact account: {e}"
+                ))
+            },
+        )?;
         // The checkpoint just applied already schedules this account's
         // backfill, pending or established alike. Mark it so the next
         // `reconcile_dashpay_rescan` does not rewind over the same range again;

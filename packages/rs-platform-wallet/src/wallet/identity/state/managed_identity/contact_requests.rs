@@ -814,7 +814,11 @@ impl ManagedIdentity {
     /// own height), the rescan guard is cleared so the next
     /// `reconcile_dashpay_rescan` backfills the gap. A rotated tracked request
     /// was checkpointed at wallet birth, which nothing predates.
-    pub fn note_sent_request_core_height(&mut self, recipient: Identifier, core_height: u32) {
+    pub(crate) fn note_sent_request_core_height(
+        &mut self,
+        recipient: Identifier,
+        core_height: u32,
+    ) {
         let applied = self
             .dashpay
             .earliest_sent_core_height(&recipient)

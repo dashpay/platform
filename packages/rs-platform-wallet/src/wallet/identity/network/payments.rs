@@ -3520,6 +3520,87 @@ mod tests {
         );
     }
 
+    /// Several Platform identities can share one HD wallet, and so its single
+    /// `synced_height`. One reconcile pass must take the floor across every
+    /// owner's candidates and mark each contact under its own owner: one
+    /// owner's contact needs a backfill while the other's is forward-covered.
+    #[tokio::test]
+    async fn should_rewind_to_min_checkpoint_across_owner_identities_sharing_a_wallet() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner_a = Identifier::from([0xAA; 32]);
+        let owner_b = Identifier::from([0xAB; 32]);
+        let contact_a = Identifier::from([0xA1; 32]);
+        let contact_b = Identifier::from([0xB1; 32]);
+
+        // Distinct registration slots: the fixture adds a missing owner at
+        // index 0, which would replace owner A in the wallet's bucket.
+        {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            for (index, owner) in [(0, owner_a), (1, owner_b)] {
+                info.identity_manager
+                    .add_identity(bare_identity(owner.to_buffer()), index, wallet_id, &p)
+                    .expect("add owner");
+            }
+        }
+        establish_receival_contact(
+            &manager, &persister, wallet_id, owner_a, contact_a, 300, 300,
+        )
+        .await;
+        establish_receival_contact(
+            &manager, &persister, wallet_id, owner_b, contact_b, 2_000, 2_000,
+        )
+        .await;
+        set_synced_height(&manager, wallet_id, 1_000).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan"),
+            Some(300),
+            "owner A's contact below the tip sets the wallet-wide floor"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 300);
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let guarded = |owner: &Identifier, contact: &Identifier| {
+                info.identity_manager
+                    .managed_identity(owner)
+                    .expect("managed")
+                    .dashpay()
+                    .rescan_triggered
+                    .contains(contact)
+            };
+            assert!(guarded(&owner_a, &contact_a), "backfilled contact marked");
+            assert!(
+                guarded(&owner_b, &contact_b),
+                "forward-covered contact marked under its own owner"
+            );
+            assert!(
+                !guarded(&owner_a, &contact_b) && !guarded(&owner_b, &contact_a),
+                "marks never leak across owners"
+            );
+        }
+
+        // The forward scan climbs past owner B's checkpoint; neither owner's
+        // contact may pull the wallet back again.
+        set_synced_height(&manager, wallet_id, 2_500).await;
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan 2"),
+            None
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 2_500);
+    }
+
     /// `synced_height == 0` means "scan from genesis / not started" — already a
     /// full historical scan. Reconcile leaves the height alone but marks the
     /// contact so advancing that scan does not cause a redundant rewind.

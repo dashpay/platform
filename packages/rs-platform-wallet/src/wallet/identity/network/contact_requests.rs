@@ -20,6 +20,8 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
+use crate::wallet::identity::ManagedIdentity;
+use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
 // Deferred-crypto drain provider
@@ -890,9 +892,9 @@ fn newest_sent_per_recipient(
 /// `receiving_scan_checkpoint`), so it must be read before the older docs are
 /// dropped.
 pub(super) fn record_and_collapse_sent_requests(
-    managed: &mut crate::wallet::identity::ManagedIdentity,
+    managed: &mut ManagedIdentity,
     requests: impl IntoIterator<Item = ContactRequest>,
-) -> std::collections::BTreeMap<Identifier, ContactRequest> {
+) -> BTreeMap<Identifier, ContactRequest> {
     let requests: Vec<ContactRequest> = requests.into_iter().collect();
     for request in &requests {
         managed.note_sent_request_core_height(request.recipient_id, request.core_height_created_at);
@@ -4138,6 +4140,7 @@ mod contact_sync_report_tests {
 
 #[cfg(test)]
 mod sweep_tests {
+    use super::super::contacts::receiving_scan_checkpoint;
     use super::*;
     use crate::broadcaster::SpvBroadcaster;
     use crate::changeset::{ContactChangeSet, PlatformWalletChangeSet, SentContactRequestKey};
@@ -5092,7 +5095,7 @@ mod sweep_tests {
             .expect("newest sent doc tracked");
         assert_eq!(tracked.core_height_created_at, 500, "collapse keeps newest");
         assert_eq!(
-            super::super::contacts::receiving_scan_checkpoint(&info, &our, &recipient),
+            receiving_scan_checkpoint(&info, &our, &recipient),
             100,
             "the oldest publication of our receiving xpub bounds the rescan"
         );
@@ -5113,7 +5116,7 @@ mod sweep_tests {
             ],
         );
         assert_eq!(
-            super::super::contacts::receiving_scan_checkpoint(
+            receiving_scan_checkpoint(
                 &info,
                 &Identifier::from([1u8; 32]),
                 &Identifier::from([2u8; 32])
@@ -5140,11 +5143,7 @@ mod sweep_tests {
                 900,
             ));
         assert_eq!(
-            super::super::contacts::receiving_scan_checkpoint(
-                &info,
-                &our,
-                &Identifier::from([2u8; 32])
-            ),
+            receiving_scan_checkpoint(&info, &our, &Identifier::from([2u8; 32])),
             49
         );
     }
