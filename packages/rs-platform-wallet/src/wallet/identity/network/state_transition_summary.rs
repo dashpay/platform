@@ -129,9 +129,10 @@ pub struct DataContractSummary {
     pub owner_id: Identifier,
     /// Document type names, in the contract's order.
     pub document_type_names: Vec<String>,
-    /// The whole contract (schemas, tokens and their distribution rules,
-    /// groups, keywords): everything the names above do not show, and what
-    /// the registration fee is charged on.
+    /// The whole transition: the contract (schemas, tokens and their
+    /// distribution rules, groups, keywords), and for a create the contract
+    /// group it registers and the memberships it declares. Everything the
+    /// names above do not show.
     pub details: String,
 }
 
@@ -260,11 +261,13 @@ fn summarize(transition: &StateTransition, serialized: Vec<u8>) -> StateTransiti
         StateTransition::DataContractCreate(create) => {
             StateTransitionSummaryKind::DataContractCreate(summarize_contract(
                 create.data_contract(),
+                format!("{create:#?}"),
             ))
         }
         StateTransition::DataContractUpdate(update) => {
             StateTransitionSummaryKind::DataContractUpdate(summarize_contract(
                 update.data_contract(),
+                format!("{update:#?}"),
             ))
         }
         other => StateTransitionSummaryKind::Other {
@@ -282,12 +285,17 @@ fn summarize(transition: &StateTransition, serialized: Vec<u8>) -> StateTransiti
     }
 }
 
-fn summarize_contract(contract: &DataContractInSerializationFormat) -> DataContractSummary {
+/// `details` is the whole transition, not only its contract: a create transition also carries
+/// the contract group it registers and the memberships it declares.
+fn summarize_contract(
+    contract: &DataContractInSerializationFormat,
+    details: String,
+) -> DataContractSummary {
     DataContractSummary {
         contract_id: contract.id(),
         owner_id: contract.owner_id(),
         document_type_names: contract.document_schemas().keys().cloned().collect(),
-        details: format!("{contract:#?}"),
+        details,
     }
 }
 
@@ -485,6 +493,9 @@ mod tests {
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::contract_group::{ContractGroupMember, ContractGroupMembership, ContractGroupRegistration};
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV1;
+    use std::collections::BTreeSet;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV1Getters;
     use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
     use dpp::tokens::emergency_action::TokenEmergencyAction;
@@ -985,6 +996,55 @@ mod tests {
             "{}",
             contract.details
         );
+    }
+
+    /// A V1 create also registers a contract group and declares memberships
+    /// outside its contract; two creations that differ only there must not
+    /// summarize the same.
+    #[test]
+    fn a_data_contract_create_details_show_its_group_declarations() {
+        let created = get_data_contract_fixture(
+            Some(Identifier::from(OWNER)),
+            1,
+            PlatformVersion::latest().protocol_version,
+        );
+        let contract = DataContractInSerializationFormat::try_from_platform_versioned(
+            created.data_contract(),
+            PlatformVersion::latest(),
+        )
+        .expect("serialization format");
+        let create = |admin: [u8; 32], group: [u8; 32]| -> StateTransition {
+            DataContractCreateTransitionV1 {
+                data_contract: contract.clone(),
+                identity_nonce: 1,
+                contract_group: Some(ContractGroupRegistration {
+                    admins: BTreeSet::from([Identifier::from(admin)]),
+                    name: None,
+                    description: None,
+                }),
+                contract_group_memberships: vec![ContractGroupMembership {
+                    contract_group_id: Identifier::from(group),
+                    member: ContractGroupMember::Contract,
+                }],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::new(vec![]),
+            }
+            .into()
+        };
+        let details = |transition: &StateTransition| {
+            let StateTransitionSummaryKind::DataContractCreate(contract) =
+                summarize_bytes(transition).kind
+            else {
+                panic!("expected a contract create");
+            };
+            contract.details
+        };
+
+        let base = details(&create([0xA1; 32], [0xB1; 32]));
+        assert_ne!(base, details(&create([0xA2; 32], [0xB1; 32])), "admins");
+        assert_ne!(base, details(&create([0xA1; 32], [0xB2; 32])), "membership");
+        assert!(base.contains("contract_group_memberships"), "{base}");
     }
 
     /// A public note is quoted, so a newline cannot forge another line and a
