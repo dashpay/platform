@@ -31,8 +31,11 @@ These audits run nightly (11:30 PM UTC) and can also be triggered manually.
 | Audit | Status |
 |-------|--------|
 | Rust Crates Security | [![Security: Rust Crates](https://github.com/dashpay/platform/actions/workflows/security-audit-rust.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audit-rust.yml) |
+| DashVM Engine Dependencies | [![Security: DashVM Engine](https://github.com/dashpay/platform/actions/workflows/security-audit-engine.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audit-engine.yml) |
 | JS NPM Security | [![Security: JS NPM](https://github.com/dashpay/platform/actions/workflows/security-audit-js-npm.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audit-js-npm.yml) |
 | JS CodeQL Analysis | [![Security: JS CodeQL](https://github.com/dashpay/platform/actions/workflows/security-audit-js-codeql.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audit-js-codeql.yml) |
+
+The DashVM engine dependency set (Wasmtime, Cranelift and the wasm-tools crates named in the root `Cargo.toml` under `workspace.metadata.dashvm.engine`) is audited separately, outside the workspace ignore list, and also on pull requests that change the lockfile or a manifest. An engine advisory is classified by the [engine dependencies and hotfixes](book/src/architecture/engine-dependencies-and-hotfixes.md) chapter.
 
 ## How to investigate failures
 
