@@ -23,7 +23,18 @@ cd "$SCRIPT_DIR" || exit 1
 # touches a developer's keychain configuration; the previous default and
 # search list are restored on exit.
 if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  # Only a missing default is recoverable; other failures leave its value unknown.
+  if PREV_DEFAULT_KEYCHAIN_OUTPUT="$(LC_ALL=C security default-keychain -d user 2>&1)"; then
+    PREV_DEFAULT_KEYCHAIN="$(printf '%s\n' "$PREV_DEFAULT_KEYCHAIN_OUTPUT" | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  else
+    lookup_status=$?
+    if [ "$lookup_status" -eq 1 ] && [ "$PREV_DEFAULT_KEYCHAIN_OUTPUT" = "security: SecKeychainCopyDomainDefault user: A default keychain could not be found." ]; then
+      PREV_DEFAULT_KEYCHAIN=""
+    else
+      printf '%s\n' "$PREV_DEFAULT_KEYCHAIN_OUTPUT" >&2
+      exit "$lookup_status"
+    fi
+  fi
   PREV_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
   PREV_USER_KEYCHAINS=()
   while IFS= read -r keychain_path; do
@@ -48,7 +59,10 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
     cleanup_status=0
     trap - EXIT
 
-    if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
+    # An empty PREV_DEFAULT_KEYCHAIN means the runner had no user default to
+    # begin with, so there is nothing to restore and `security -s ""` would
+    # only fail the cleanup.
+    if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ] && [ -n "${PREV_DEFAULT_KEYCHAIN:-}" ]; then
       if ! security default-keychain -d user -s "$PREV_DEFAULT_KEYCHAIN"; then
         cleanup_status=1
       fi

@@ -265,26 +265,8 @@ struct SendTransactionView: View {
                             // be the one that was last created.
                             let managed = walletManager.wallet(for: wallet.walletId)
                             let platformAddressWallet = try? managed?.platformAddressWallet()
-                            // Pick the account that will FUND a platform →
-                            // platform transfer. The Rust Auto selector
-                            // resolves the source via
-                            // `platform_payment_managed_account_at_index`
-                            // (key class 0) and selects its inputs WITHIN
-                            // that single account — it does not span
-                            // accounts. `canSend` only gates on the
-                            // aggregate platform balance, so with multiple
-                            // key-class-0 Platform Payment accounts we must
-                            // choose an account whose OWN balance covers the
-                            // requested amount + fee; otherwise we'd enable a
-                            // send Rust rejects. The selection is factored
-                            // into the pure, unit-tested
-                            // `PlatformPaymentAccountSelection` helper.
-                            //
-                            // Only the platform → platform path needs this
-                            // coverage-aware pick; every other flow ignores
-                            // `senderAccountIndex`, so the prior
-                            // "first key-class-0 positive balance, else 0"
-                            // behaviour is preserved for them.
+                            // Platform payments select one account with sufficient funds.
+                            // Core sends use the view model's BIP44 funding account.
                             let senderAccountIndex: UInt32
                             if viewModel.detectedFlow == .platformToPlatform {
                                 guard let resolved = resolvePlatformSenderAccountIndex() else {
@@ -293,10 +275,7 @@ struct SendTransactionView: View {
                                 }
                                 senderAccountIndex = resolved
                             } else {
-                                senderAccountIndex = addressBalances
-                                    .filter { $0.account?.keyClass == 0 }
-                                    .first(where: { $0.balance > 0 })?
-                                    .accountIndex ?? 0
+                                senderAccountIndex = 0
                             }
                             // Input selection and surplus handling are owned
                             // by the Rust Auto path (surplus stays on the
@@ -319,7 +298,7 @@ struct SendTransactionView: View {
                             )
                         }
                     }
-                    .disabled(!viewModel.canSend)
+                    .disabled(!viewModel.canSend(coreBalance: coreBalance))
                 }
             }
             .disabled(viewModel.isSending)
@@ -475,15 +454,13 @@ struct SendTransactionView: View {
 
     // MARK: - Computed
 
-    /// Spendable Core balance, summed from Rust's in-memory per-account
-    /// totals. The persisted `PersistentWallet.balanceConfirmed` field
-    /// was removed; `accountBalances(for:)` is now the canonical
-    /// source (same path `BalanceCardView` uses). Exposed as a
-    /// function rather than a computed property so callers can
-    /// snapshot once per render and thread the value through.
+    /// Core sends display only the BIP44 account used by their builder.
     private func coreBalanceSnapshot() -> UInt64 {
-        walletManager.accountBalances(for: wallet.walletId)
-            .reduce(0) { $0 + $1.confirmed }
+        let balances = walletManager.accountBalances(for: wallet.walletId)
+        if viewModel.detectedFlow == .coreToCore {
+            return SendViewModel.coreFundingBalance(balances)
+        }
+        return balances.reduce(0) { $0 + $1.confirmed }
     }
 
     /// Per-wallet shielded balance: sum of THIS wallet's unspent

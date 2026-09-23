@@ -83,7 +83,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// block is silently missed.
     ///
     /// This lowers the wallet's SPV `synced_height` to the minimum
-    /// `$coreHeightCreatedAt` across established receival contacts that haven't
+    /// `$coreHeightCreatedAt` across registered receival contacts that haven't
     /// been rescanned yet — the filter manager (`dash-spv`) then re-downloads
     /// nothing it already has, re-matches the now-larger script set, and
     /// re-requests the matching blocks. Each contact is recorded in
@@ -108,12 +108,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(None);
         };
 
+        // A zero checkpoint already requests a scan from genesis; candidates are
+        // still processed so they are marked as covered and do not trigger a
+        // redundant funding-height rewind once that scan advances.
         let synced_height = info.core_wallet.synced_height();
-        // 0 means "scan from genesis / not yet started" — already a full
-        // historical scan, nothing to backfill toward.
-        if synced_height == 0 {
-            return Ok(None);
-        }
 
         // (owner, contact) pairs that have a receival account — we can only
         // watch a contact's incoming addresses once its receival account exists.
@@ -130,13 +128,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })
             .collect();
 
-        // Candidates: established receival contacts not yet rescanned this
-        // lifetime whose funding height is below our scan tip. The floor is the
-        // minimum funding height — one rewind covers them all (deeper-funded
-        // contacts are in the watch set, so the backfill matches them too). The
-        // funding height is `min(outgoing, incoming)` of the pair: the channel
-        // is payable only once both requests exist, so the earlier of the two is
-        // the conservative-correct lower bound.
+        // Candidates: receival contacts not yet rescanned this
+        // lifetime whose required checkpoint is below our scan tip. One rewind
+        // to the minimum checkpoint covers them all. Fresh relationships use
+        // the earliest request's DIP-15 Core height; rotations whose original
+        // request height is no longer present fall back to wallet birth.
         let mut floor: Option<u32> = None;
         let mut to_mark: Vec<(Identifier, Identifier)> = Vec::new();
         for (owner, contact) in receival_pairs {
@@ -146,13 +142,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             if managed.dashpay().rescan_triggered.contains(&contact) {
                 continue;
             }
-            let Some(established) = managed.dashpay().established_contacts().get(&contact) else {
-                continue;
-            };
-            let funding = established
-                .outgoing_request
-                .core_height_created_at
-                .min(established.incoming_request.core_height_created_at);
+            let checkpoint = super::contacts::contact_scan_checkpoint(info, &owner, &contact);
             // Contacts funded below the tip need a backfill — their addresses
             // weren't watched when those blocks were first scanned. Contacts
             // funded at or after the tip are already covered by the ongoing
@@ -161,8 +151,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // forward pointer later climbs past a still-forward-covered
             // contact's funding height, the recurring sweep must NOT then
             // rewind to it and redundantly re-scan an already-scanned range.
-            if funding < synced_height {
-                floor = Some(floor.map_or(funding, |cur| cur.min(funding)));
+            if checkpoint < synced_height {
+                floor = Some(floor.map_or(checkpoint, |cur| cur.min(checkpoint)));
             }
             to_mark.push((owner, contact));
         }
@@ -1651,6 +1641,7 @@ mod tests {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::Network;
 
     use crate::changeset::{
@@ -2284,9 +2275,40 @@ mod tests {
     /// (`load: ... dropped_no_account`).
     #[tokio::test]
     async fn register_contact_account_persists_account_registration() {
+        use crate::wallet::identity::ContactRequest;
+
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
+
+        {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity(owner.to_buffer()),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed owner")
+                .apply_sent_contact_request(ContactRequest::new(
+                    owner,
+                    contact,
+                    0,
+                    0,
+                    0,
+                    vec![0u8; 96],
+                    100,
+                    0,
+                ));
+            info.core_wallet.update_synced_height(1_000);
+        }
 
         persister.stores.lock().unwrap().clear();
 
@@ -2303,6 +2325,25 @@ mod tests {
                 )
                 .await
                 .expect("register_contact_account");
+        }
+
+        {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let wm = wallet.identity().wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .account_generation(),
+                1,
+                "registering a contact account must invalidate the prior filter-scan generation"
+            );
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .synced_height(),
+                100,
+                "DIP-15 coreHeight is the certified checkpoint; scanning resumes at H + 1"
+            );
         }
 
         {
@@ -2329,6 +2370,7 @@ mod tests {
 
         // Re-registering must be a no-op (no duplicate persistence round).
         persister.stores.lock().unwrap().clear();
+        set_synced_height(&manager, wallet_id, 800).await;
         {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
@@ -2343,13 +2385,104 @@ mod tests {
                 .await
                 .expect("re-register is a no-op");
         }
-        let stores = persister.stores.lock().unwrap();
-        assert!(
-            stores
-                .iter()
-                .all(|(_, cs)| cs.account_registrations.is_empty()),
-            "re-registering an existing contact account must not re-persist"
+        {
+            let stores = persister.stores.lock().unwrap();
+            assert!(
+                stores
+                    .iter()
+                    .all(|(_, cs)| cs.account_registrations.is_empty()),
+                "re-registering an existing contact account must not re-persist"
+            );
+        }
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let wm = wallet.identity().wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(
+            info.account_generation(),
+            1,
+            "a duplicate must not bump generation"
         );
+        assert_eq!(
+            info.synced_height(),
+            800,
+            "a duplicate must not rewind scanning"
+        );
+    }
+
+    #[tokio::test]
+    async fn contact_registration_preserves_deeper_scan_and_falls_back_when_unknown() {
+        use crate::wallet::identity::ContactRequest;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let pending = Identifier::from([0xB1; 32]);
+        let unknown = Identifier::from([0xB2; 32]);
+        let rotated = Identifier::from([0xB3; 32]);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity(owner.to_buffer()),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed owner")
+                .apply_sent_contact_request(ContactRequest::new(
+                    owner,
+                    pending,
+                    0,
+                    0,
+                    0,
+                    vec![0; 96],
+                    200,
+                    0,
+                ));
+            info.core_wallet.update_synced_height(50);
+        }
+
+        iw.dashpay()
+            .register_contact_account(&owner, &pending, 0, test_receiving_xpub(&owner, &pending))
+            .await
+            .expect("register during deeper rescan");
+        assert_eq!(synced_height(&manager, wallet_id).await, 50);
+
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        iw.dashpay()
+            .register_contact_account(&owner, &unknown, 0, test_receiving_xpub(&owner, &unknown))
+            .await
+            .expect("register without request height");
+        assert_eq!(synced_height(&manager, wallet_id).await, 0);
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed owner")
+                .apply_sent_contact_request(ContactRequest::new(
+                    owner,
+                    rotated,
+                    0,
+                    0,
+                    1 << 28,
+                    vec![0; 96],
+                    900,
+                    0,
+                ));
+            info.core_wallet.update_synced_height(1_000);
+        }
+        iw.dashpay()
+            .register_contact_account(&owner, &rotated, 0, test_receiving_xpub(&owner, &rotated))
+            .await
+            .expect("register rotated relationship");
+        assert_eq!(synced_height(&manager, wallet_id).await, 0);
     }
 
     /// 2. Reconcile derives `Received` entries from receival-account
@@ -2756,6 +2889,94 @@ mod tests {
         }
     }
 
+    /// A one-way outgoing request already publishes our receiving xpub. After
+    /// restore, its account therefore needs the same historical coverage even
+    /// before the contact reciprocates. Establishment must invalidate the
+    /// one-way guard so an older newly-known request height can deepen the
+    /// pending scan.
+    #[tokio::test]
+    async fn rescan_covers_restored_sent_only_account_and_reestablishment() {
+        use crate::wallet::identity::ContactRequest;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_sent_contact_request(ContactRequest::new(
+                    owner,
+                    contact,
+                    0,
+                    0,
+                    0,
+                    vec![0; 96],
+                    100,
+                    0,
+                ));
+        }
+        iw.dashpay()
+            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            .await
+            .expect("register sent-only receival account");
+
+        // A restored high-water checkpoint must be lowered even though the
+        // reciprocal request has not arrived yet.
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("sent-only rescan"),
+            Some(100)
+        );
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("sent-only retry"),
+            None,
+            "the same pending relationship must not restart its backfill"
+        );
+
+        // Learning the reciprocal request changes the safe lower bound. The
+        // state transition clears the guard, allowing one deeper reconciliation.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .add_incoming_contact_request(
+                    ContactRequest::new(contact, owner, 0, 0, 0, vec![0; 96], 50, 0),
+                    &p,
+                )
+                .expect("establish contact");
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .core_wallet
+                .update_synced_height(1_000);
+        }
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("established rescan"),
+            Some(50)
+        );
+    }
+
     /// Register a receival account for `(owner, contact)` and insert an
     /// established contact funded at `out_height`/`in_height`. The owner managed
     /// identity is added on first use.
@@ -2914,8 +3135,16 @@ mod tests {
             "all candidates marked -> no re-trigger"
         );
 
-        // A newly discovered, older-funded contact re-lowers exactly once...
+        // Adding another account now invalidates upstream filter coverage and
+        // rewinds directly to the wallet birth floor. Reconcile recognizes that
+        // this full-history scan already covers the contact and marks it without
+        // a second, shallower rewind.
         establish_receival_contact(&manager, &persister, wallet_id, owner, c_c, 50, 50).await;
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            0,
+            "new account insertion rewinds filter coverage to the wallet birth floor"
+        );
         assert_eq!(
             iw_wallet
                 .identity()
@@ -2923,10 +3152,10 @@ mod tests {
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan 3"),
-            Some(50),
-            "a new older contact re-lowers to its funding height"
+            None,
+            "the already-scheduled full-history scan needs no second rewind"
         );
-        // ...then settles.
+        // The contact was marked while the checkpoint was zero, so it settles.
         assert_eq!(
             iw_wallet
                 .identity()
@@ -2940,8 +3169,8 @@ mod tests {
     }
 
     /// `synced_height == 0` means "scan from genesis / not started" — already a
-    /// full historical scan, so the rescan is a no-op (the masking path the spec
-    /// warns about).
+    /// full historical scan. Reconcile leaves the height alone but marks the
+    /// contact so advancing that scan does not cause a redundant rewind.
     #[tokio::test]
     async fn rescan_is_a_noop_when_synced_height_is_zero() {
         let (manager, persister, wallet_id) = make_wallet().await;
@@ -2963,6 +3192,19 @@ mod tests {
             "synced_height 0 -> no rescan"
         );
         assert_eq!(synced_height(&manager, wallet_id).await, 0);
+
+        set_synced_height(&manager, wallet_id, 200).await;
+        assert_eq!(
+            iw_wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan after forward progress"),
+            None,
+            "genesis-covered contact must stay settled after the scan advances"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 200);
     }
 
     /// A `Sent` payment must advance `Pending → Confirmed` once its
@@ -4934,6 +5176,8 @@ mod tests {
     /// proving the `Some` path skips the peer-key derivation entirely.
     #[tokio::test]
     async fn register_external_with_precomputed_shared_key_builds_account() {
+        use crate::wallet::identity::ContactRequest;
+
         let (manager, persister, wallet_id) = make_wallet().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
@@ -4951,6 +5195,20 @@ mod tests {
                     &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
                 )
                 .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner_id)
+                .expect("managed owner")
+                .apply_incoming_contact_request(ContactRequest::new(
+                    contact_id,
+                    owner_id,
+                    0,
+                    0,
+                    0,
+                    vec![0; 96],
+                    300,
+                    0,
+                ));
+            info.core_wallet.update_synced_height(1_000);
         }
 
         // A real 69-byte compact xpub encrypted under a known shared key — the
@@ -5002,6 +5260,16 @@ mod tests {
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(
+            info.account_generation(),
+            1,
+            "registering an external account must invalidate the prior filter-scan generation"
+        );
+        assert_eq!(
+            info.synced_height(),
+            300,
+            "external account scanning resumes after the incoming request's DIP-15 height"
+        );
         use key_wallet::account::account_collection::DashpayAccountKey;
         let key = DashpayAccountKey {
             index: 0,

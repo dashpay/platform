@@ -109,6 +109,7 @@ impl ManagedIdentity {
             self.dashpay
                 .established_contacts
                 .insert(recipient_id, updated);
+            self.dashpay.rescan_triggered.remove(&recipient_id);
             return Ok(());
         }
         // Already tracked as a pending sent request. Same outgoing
@@ -141,6 +142,7 @@ impl ManagedIdentity {
             self.dashpay
                 .sent_contact_requests
                 .insert(recipient_id, request);
+            self.dashpay.rescan_triggered.remove(&recipient_id);
             return Ok(());
         }
 
@@ -189,6 +191,7 @@ impl ManagedIdentity {
             self.dashpay
                 .established_contacts
                 .insert(recipient_id, contact);
+            self.dashpay.rescan_triggered.remove(&recipient_id);
         } else {
             // No matching incoming request, just add as sent
             cs.sent_requests.insert(
@@ -452,6 +455,7 @@ impl ManagedIdentity {
             persister.store(cs.into())?;
             self.dashpay.sent_contact_requests.remove(&sender_id);
             self.dashpay.established_contacts.insert(sender_id, contact);
+            self.dashpay.rescan_triggered.remove(&sender_id);
         } else {
             // No matching sent request, just add as incoming
             cs.incoming_requests.insert(
@@ -633,6 +637,7 @@ impl ManagedIdentity {
                 );
                 persister.store(cs.into())?;
                 self.dashpay.established_contacts.insert(sender_id, updated);
+                self.dashpay.rescan_triggered.remove(&sender_id);
                 true
             } else if tracked_pending {
                 // Pending (not-yet-accepted) incoming request — replace it so
@@ -650,6 +655,7 @@ impl ManagedIdentity {
                 self.dashpay
                     .incoming_contact_requests
                     .insert(sender_id, request);
+                self.dashpay.rescan_triggered.remove(&sender_id);
                 false
             } else {
                 return Ok(false);
@@ -714,6 +720,7 @@ impl ManagedIdentity {
         self.dashpay
             .established_contacts
             .insert(*sender_id, contact.clone());
+        self.dashpay.rescan_triggered.remove(sender_id);
 
         // Per the ContactChangeSet auto-establishment contract, `established`
         // implies the matching pending requests are dropped — no separate
@@ -817,6 +824,7 @@ impl ManagedIdentity {
         self.dashpay
             .established_contacts
             .insert(contact_id, contact);
+        self.dashpay.rescan_triggered.remove(&contact_id);
     }
 
     /// Reproduce a persisted sent contact request, keyed by its
@@ -1583,6 +1591,7 @@ mod tests {
             .unwrap();
         est.set_alias("Carol".to_string());
         assert_eq!(est.outgoing_request.account_reference, 100);
+        managed.dashpay.rescan_triggered.insert(contact_id);
 
         // Rotation #1: re-send with a bumped reference R1.
         let mut rotation1 = create_contact_request(our_id, contact_id, 3);
@@ -1600,6 +1609,10 @@ mod tests {
                 .account_reference,
             101,
             "rotation #1 must advance the tracked outgoing reference (not freeze at R0)"
+        );
+        assert!(
+            !managed.dashpay.rescan_triggered.contains(&contact_id),
+            "a changed request height must become eligible for rescan"
         );
 
         // Rotation #2: re-send with another bumped reference R2.
@@ -1621,6 +1634,7 @@ mod tests {
         assert_eq!(est.alias, Some("Carol".to_string()));
         // Re-ingesting the SAME (newest) reference is a metadata-preserving
         // no-op (the same-reference guard).
+        managed.dashpay.rescan_triggered.insert(contact_id);
         let mut resend_same = create_contact_request(our_id, contact_id, 5);
         resend_same.account_reference = 102;
         managed
@@ -1633,6 +1647,10 @@ mod tests {
             .unwrap();
         assert_eq!(est.outgoing_request.account_reference, 102);
         assert_eq!(est.alias, Some("Carol".to_string()));
+        assert!(
+            managed.dashpay.rescan_triggered.contains(&contact_id),
+            "duplicate ingestion must preserve the completed-rescan guard"
+        );
     }
 
     /// Pending-branch rotation supersede: re-sending to a recipient who
