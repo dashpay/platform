@@ -356,7 +356,7 @@ impl DetailsBudget {
                 self.limit
             ))
         })?;
-        let out = base58_identifiers(&sink.out);
+        let out = sink.out;
         self.used = self.limit - remaining;
         Ok(out)
     }
@@ -365,41 +365,6 @@ impl DetailsBudget {
     fn line(&mut self, label: &str, value: &dyn fmt::Debug) -> Result<String, PlatformWalletError> {
         Ok(format!("{label}: {}", self.render(value)?))
     }
-}
-
-/// Rewrites every `Identifier(IdentifierBytes32([b0, .., b31]))` that `Debug` produces as
-/// `Identifier(<base58>)`, the form a user can compare with other tools. Only exact 32-byte runs
-/// are rewritten, and the output is never longer than the input.
-fn base58_identifiers(rendered: &str) -> String {
-    const PREFIX: &str = "Identifier(IdentifierBytes32([";
-    const SUFFIX: &str = "]))";
-    let mut out = String::with_capacity(rendered.len());
-    let mut rest = rendered;
-    while let Some(start) = rest.find(PREFIX) {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + PREFIX.len()..];
-        let parsed = after.find(SUFFIX).and_then(|end| {
-            let bytes: Vec<u8> = after[..end]
-                .split(", ")
-                .map(str::parse)
-                .collect::<Result<_, _>>()
-                .ok()?;
-            let bytes: [u8; 32] = bytes.try_into().ok()?;
-            Some((Identifier::from(bytes), end))
-        });
-        match parsed {
-            Some((id, end)) => {
-                out.push_str(&format!("Identifier({id})"));
-                rest = &after[end + SUFFIX.len()..];
-            }
-            None => {
-                out.push_str(PREFIX);
-                rest = after;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// `details` is the whole transition, not only its contract: a create transition also carries
@@ -940,7 +905,7 @@ mod tests {
             details[0]
         );
         assert!(
-            details[1].contains(&format!("Identifier({})", Identifier::from(RECIPIENT))),
+            details[1].contains(&format!("{:?}", Identifier::from(RECIPIENT))),
             "{}",
             details[1]
         );
@@ -1283,16 +1248,36 @@ mod tests {
         assert_eq!(budget.used, rendered.len());
     }
 
-    /// Identifiers inside details read as base58, as everywhere else a user
-    /// compares them.
+    /// Details are the escaped `Debug` output untouched: a document string
+    /// spelled like an identifier stays distinct from the identifier itself.
     #[test]
-    fn identifiers_in_details_render_as_base58() {
-        let id = Identifier::from(core::array::from_fn::<u8, 32, _>(|i| i as u8));
-        let mut budget = DetailsBudget::default();
-        let rendered = budget
-            .render(&AuthorizedActionTakers::Identity(id))
-            .expect("renders");
-        assert_eq!(rendered, format!("Identity(Identifier({id}))"));
+    fn identifier_shaped_strings_stay_distinct_from_identifiers() {
+        let create = |message: Value| {
+            BatchedTransition::Document(DocumentTransition::Create(DocumentCreateTransition::V0(
+                DocumentCreateTransitionV0 {
+                    base: document_base("post"),
+                    entropy: [0xEE; 32],
+                    data: BTreeMap::from([("message".to_string(), message)]),
+                    prefunded_voting_balance: None,
+                },
+            )))
+        };
+        let details = |transition: BatchedTransition| {
+            let StateTransitionSummaryKind::Batch { transitions, .. } =
+                summarize_bytes(&batch(vec![transition])).kind
+            else {
+                panic!("expected a batch");
+            };
+            transitions[0].details.clone().expect("details rendered")
+        };
+        let id = Identifier::from([0; 32]);
+
+        let as_identifier = details(create(Value::Identifier(id.to_buffer())));
+        let as_debug_text = details(create(Value::Text(format!("{id:?}"))));
+        let as_base58_text = details(create(Value::Text(format!("Identifier({id})"))));
+        assert_ne!(as_identifier, as_debug_text);
+        assert_ne!(as_identifier, as_base58_text);
+        assert_ne!(as_debug_text, as_base58_text);
     }
 
     /// A document type name outside the consensus pattern is refused rather
