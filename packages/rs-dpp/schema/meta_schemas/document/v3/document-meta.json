@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -209,11 +209,28 @@
               "additionalProperties": false
             },
             "keyIdProperty": {
-              "description": "The property of the same document type whose value carries the referenced key id; the reference property's value carries the identity id",
+              "description": "identityPublicKey references on an identifier property: the property of the same document type whose value carries the referenced key id; the reference property's value carries the identity id. Takes the place of identityProperty",
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
               "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+            },
+            "identityProperty": {
+              "description": "identityPublicKey references on the key id property itself, the inverse form: the declaring property is an integer from 0 to 4294967295 (a key id) whose value must be the id of a key of the named identity that exists and is not disabled when the document is written (ReferencedIdentityKeyNotFoundError, 40123; ReferencedIdentityKeyDisabledError, 40124). \"$ownerId\" names the writer, the document's owner, and \"$creatorId\" its creator (only on a document type that records creator ids, checked at contract registration), whose existence is already proven, so only the key is fetched; any other value is the path of an identifier property of the same document type (it must exist, be an identifier and not carry an identityPublicKey reference of its own, checked at registration), whose value is the identity, and a key id set while it is not is refused (ReferencedKeyIdPropertyInvalidError, 40125). Takes the place of keyIdProperty",
+              "anyOf": [
+                {
+                  "enum": [
+                    "$ownerId",
+                    "$creatorId"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+                }
+              ]
             },
             "keyRequirements": {
               "description": "identityPublicKey references only: what the referenced key must be beyond existing and not being disabled, checked when the referring document is written against the key already fetched for the existence check, so a requirement costs no further read. Each key names an aspect of the referenced key and its value the requirement: purpose requires the key's purpose to be the named one (any but system); boundTo names a document type of the declaring contract and requires the key's contract bounds to be exactly the declaring contract and that document type (a whole-contract or contract group bound never meets it). At registration boundTo must name a document type the contract has, and one a key of the required purpose can be bound to: only authentication, encryption and decryption keys carry a document type bound, and an encryption or decryption key only where the type declares requiresIdentityEncryptionBoundedKey or requiresIdentityDecryptionBoundedKey. An unmet requirement refuses the write (ReferencedIdentityKeyRequirementNotMetError, 40136)",
@@ -300,11 +317,26 @@
                 "required": ["type"]
               },
               "then": {
-                "required": ["type", "keyIdProperty"]
+                "oneOf": [
+                  {
+                    "required": ["type", "keyIdProperty"],
+                    "properties": {
+                      "identityProperty": false
+                    }
+                  },
+                  {
+                    "required": ["type", "identityProperty"],
+                    "properties": {
+                      "keyIdProperty": false,
+                      "propertyAgreement": false
+                    }
+                  }
+                ]
               },
               "else": {
                 "properties": {
                   "keyIdProperty": false,
+                  "identityProperty": false,
                   "keyRequirements": false
                 }
               }
@@ -477,31 +509,58 @@
           ]
         },
         "refersTo": {
-          "description": "refersTo is only allowed on identifier properties",
-          "properties": {
-            "type": {
-              "const": "array"
-            },
-            "byteArray": {
-              "const": true
-            },
-            "contentMediaType": {
-              "const": "application/x.dash.dpp.identifier"
-            },
-            "minItems": {
-              "const": 32
-            },
-            "maxItems": {
-              "const": 32
+          "description": "refersTo is only allowed on identifier properties, except an identityPublicKey reference with identityProperty, which sits on the key id property: an integer with minimum 0 and maximum 4294967295, the range of a key id",
+          "if": {
+            "properties": {
+              "refersTo": {
+                "required": ["identityProperty"]
+              }
             }
           },
-          "required": [
-            "type",
-            "byteArray",
-            "contentMediaType",
-            "minItems",
-            "maxItems"
-          ]
+          "then": {
+            "properties": {
+              "type": {
+                "const": "integer"
+              },
+              "minimum": {
+                "const": 0
+              },
+              "maximum": {
+                "const": 4294967295
+              }
+            },
+            "required": [
+              "type",
+              "minimum",
+              "maximum"
+            ]
+          },
+          "else": {
+            "properties": {
+              "type": {
+                "const": "array"
+              },
+              "byteArray": {
+                "const": true
+              },
+              "contentMediaType": {
+                "const": "application/x.dash.dpp.identifier"
+              },
+              "minItems": {
+                "const": 32
+              },
+              "maxItems": {
+                "const": 32
+              }
+            },
+            "required": [
+              "type",
+              "byteArray",
+              "contentMediaType",
+              "minItems",
+              "maxItems"
+            ]
+          }
         },
         "encryptedFor": {
           "description": "encryptedFor is only allowed on byte array properties that are not identifiers",

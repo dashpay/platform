@@ -654,6 +654,38 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed
 ///     `keyRequirements` is an incompatible schema change on update.
 ///
+/// 30. **Key references on the key id property**: an `identityPublicKey`
+///     `refersTo` declaration may sit on the key id property itself, an
+///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
+///     `u32`), naming through `identityProperty` whose key the value is:
+///     `"$ownerId"` (the writer), `"$creatorId"` (the document's creator,
+///     only on a document type that records creator ids) or the path of an
+///     identifier property of the same document type (which must exist, be
+///     an identifier and not carry an `identityPublicKey` reference of its
+///     own); the last two are checked at contract registration (40125). The
+///     declaration takes no `keyIdProperty`; the identifier form is unchanged
+///     and every other `refersTo` form stays identifier-only (meta-schema v3,
+///     `apply_property_reference` 0, `DocumentPropertyType::KeyIdWithReference`
+///     over `KeyReferenceIdentityProperty`). At document create and replace the
+///     reference validation reads the key id from the property, resolves the
+///     identity (the writer, the creator the action carries, or the named
+///     property's value, a key id set while it is unset being refused with
+///     40125) and fetches that key, so the key fetch is the only read; a key
+///     that does not exist refuses the write, paid, with
+///     `ReferencedIdentityKeyNotFoundError` (40123) and a disabled one with
+///     `ReferencedIdentityKeyDisabledError` (40124), as for the identifier
+///     form. A replace re-validates `$ownerId` touched or not, as the
+///     `$ownerId` writer gate is, since the writer may not be the one who
+///     wrote the key id; `$creatorId` when the key id changed; a property
+///     path when the key id or that property changed (a transfer itself is
+///     never checked: the reference governs writing, not holding). A
+///     `keyIdProperty` may not name a property carrying this form (40125 at
+///     registration). `keyRequirements` (item 29) sit on this form exactly
+///     as on the identifier form, checked by the same key check and by the
+///     same `boundTo` registration rule. Adding, removing or changing it is
+///     an incompatible schema change on update, like the rest of a
+///     `refersTo`.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

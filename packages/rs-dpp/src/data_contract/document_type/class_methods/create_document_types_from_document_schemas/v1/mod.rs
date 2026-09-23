@@ -90,13 +90,17 @@ impl DocumentType {
 
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
-                let DocumentPropertyType::IdentifierWithReference(
-                    DocumentPropertyReferenceTarget::IdentityPublicKey {
-                        key_requirements, ..
-                    },
-                ) = &property.property_type
-                else {
-                    continue;
+                // Both forms of the key reference carry the same requirements
+                let key_requirements = match &property.property_type {
+                    DocumentPropertyType::IdentifierWithReference(
+                        DocumentPropertyReferenceTarget::IdentityPublicKey {
+                            key_requirements, ..
+                        },
+                    ) => key_requirements,
+                    DocumentPropertyType::KeyIdWithReference(reference) => {
+                        &reference.key_requirements
+                    }
+                    _ => continue,
                 };
                 let Some(bound_to) = &key_requirements.bound_to else {
                     continue;
@@ -148,7 +152,9 @@ mod tests {
     use crate::consensus::ConsensusError;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-    use crate::data_contract::document_type::IdentityKeyReferenceRequirements;
+    use crate::data_contract::document_type::{
+        IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
+    };
     use crate::data_contract::DataContract;
     use crate::identity::Purpose;
     use crate::serialization::{
@@ -300,6 +306,69 @@ mod tests {
                 "keyRequirements": { "purpose": "decryption", "boundTo": "electedCharter" }
             }))),
             "joinRequest.recipientId refersTo keyRequirements boundTo \"electedCharter\" names no document type of this contract"
+        );
+    }
+
+    /// [`contract_value`] with the reference moved onto the key id property: `recipientKeyId`
+    /// carries `refers_to` (an `identityProperty` form) and `recipientId` is a plain identifier.
+    fn contract_value_with_key_id_reference(refers_to: Value) -> Value {
+        let mut value = contract_value(platform_value!({ "type": "identity" }));
+        let recipient_id = value
+            .get_mut_value_at_path("documentSchemas.joinRequest.properties.recipientId")
+            .expect("the recipientId schema");
+        recipient_id
+            .remove("refersTo")
+            .expect("the identity reference removes");
+        let recipient_key_id = value
+            .get_mut_value_at_path("documentSchemas.joinRequest.properties.recipientKeyId")
+            .expect("the recipientKeyId schema");
+        recipient_key_id
+            .insert("maximum".to_string(), Value::U64(u64::from(u32::MAX)))
+            .expect("the maximum inserts");
+        recipient_key_id
+            .insert("refersTo".to_string(), refers_to)
+            .expect("the reference inserts");
+        value
+    }
+
+    /// The bound check reads the key id form's requirements too.
+    #[test]
+    fn should_check_bound_to_on_the_key_id_form() {
+        let platform_version = PlatformVersion::latest();
+
+        let contract = DataContract::from_value(
+            contract_value_with_key_id_reference(platform_value!({
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId",
+                "keyRequirements": { "purpose": "decryption", "boundTo": "submittedCharter" }
+            })),
+            true,
+            platform_version,
+        )
+        .expect("the contract should parse");
+        assert_eq!(
+            contract
+                .document_type_for_name("joinRequest")
+                .expect("the joinRequest document type")
+                .flattened_properties()
+                .get("recipientKeyId")
+                .map(|p| p.property_type.clone()),
+            Some(DocumentPropertyType::KeyIdWithReference(KeyIdReference {
+                identity_property: KeyReferenceIdentityProperty::OwnerId,
+                key_requirements: IdentityKeyReferenceRequirements {
+                    purpose: Some(Purpose::DECRYPTION),
+                    bound_to: Some("submittedCharter".to_string()),
+                },
+            }))
+        );
+
+        assert_eq!(
+            refusal_message(contract_value_with_key_id_reference(platform_value!({
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId",
+                "keyRequirements": { "purpose": "decryption", "boundTo": "electedCharter" }
+            }))),
+            "joinRequest.recipientKeyId refersTo keyRequirements boundTo \"electedCharter\" names no document type of this contract"
         );
     }
 

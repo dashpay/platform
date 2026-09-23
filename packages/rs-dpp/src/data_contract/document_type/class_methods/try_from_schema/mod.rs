@@ -9,7 +9,8 @@ use crate::data_contract::document_type::{
     property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentType, EncryptedFor,
-    EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements,
+    EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements, KeyIdReference,
+    KeyReferenceIdentityProperty,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -526,8 +527,10 @@ fn validate_distinct_from_targets_v0(
 }
 
 /// Folds a `refersTo` declaration into the property type: an identifier property
-/// with `refersTo` becomes `IdentifierWithReference(target)`. Non-identifier
-/// properties cannot carry `refersTo`.
+/// with `refersTo` becomes `IdentifierWithReference(target)`, and a `u32` key id
+/// property with an `identityPublicKey` declaration naming `identityProperty`
+/// becomes `KeyIdWithReference(identity property)`. No other property can carry
+/// `refersTo`.
 ///
 /// Versioned on `apply_property_reference` in the platform version's document
 /// type schema versions. `None` selects the behavior of the versions that
@@ -561,15 +564,6 @@ fn apply_property_reference_v0(
         return Ok(property_type);
     };
 
-    if !matches!(
-        property_type,
-        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
-    ) {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo is only allowed on identifier properties".to_string(),
-        ));
-    }
-
     let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
 
     let reference_type = refers_to_map
@@ -594,6 +588,42 @@ fn apply_property_reference_v0(
             "{} refersTo does not take keyRequirements",
             reference_type
         )));
+    }
+
+    // `propertyAgreement` compares against a referenced DOCUMENT's values;
+    // no other target kind has a document body to agree with
+    if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
+        && !matches!(reference_type, "permanentDocument" | "deletableDocument")
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "propertyAgreement is only allowed on permanentDocument and deletableDocument \
+             references"
+                .to_string(),
+        ));
+    }
+
+    // A key reference declared on the key id property itself names whose key
+    // it is through `identityProperty`; it is the one form that sits on a
+    // non-identifier property
+    if let Some(identity_property_value) = refers_to_map.get(property_names::IDENTITY_PROPERTY) {
+        return apply_key_id_reference_v0(
+            inner_properties,
+            &refers_to_map,
+            reference_type,
+            identity_property_value,
+            property_type,
+        );
+    }
+
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is only allowed on identifier properties, except an identityPublicKey \
+             reference with identityProperty, which sits on the key id property"
+                .to_string(),
+        ));
     }
 
     let target = match reference_type {
@@ -727,19 +757,63 @@ fn apply_property_reference_v0(
         }
     };
 
-    // `propertyAgreement` compares against a referenced DOCUMENT's values —
-    // no other target kind has a document body to agree with.
-    if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
-        && target.as_document_reference().is_none()
-    {
+    Ok(DocumentPropertyType::IdentifierWithReference(target))
+}
+
+/// An `identityPublicKey` declaration on the KEY ID property: `identityProperty` names
+/// whose key the value is (`$ownerId`, `$creatorId` or an identifier property of the
+/// same document type), so the declaration takes no `keyIdProperty` and sits on an
+/// integer property declaring exactly the range of a key id (`minimum` 0, `maximum`
+/// 4294967295), the bounds the meta-schema pins, read from the schema rather than the
+/// inferred type so that the rule does not depend on the contract's sized integer
+/// types setting. Whether a named property or `$creatorId` fits the document type is
+/// checked at contract registration.
+fn apply_key_id_reference_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+    identity_property_value: &Value,
+    property_type: DocumentPropertyType,
+) -> Result<DocumentPropertyType, DataContractError> {
+    if reference_type != "identityPublicKey" {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo does not take identityProperty"
+        )));
+    }
+    if refers_to_map.contains_key(property_names::KEY_ID_PROPERTY) {
         return Err(DataContractError::InvalidContractStructure(
-            "propertyAgreement is only allowed on permanentDocument and deletableDocument \
-             references"
+            "identityPublicKey refersTo takes either keyIdProperty, on the identity \
+             property, or identityProperty, on the key id property, not both"
                 .to_string(),
         ));
     }
-
-    Ok(DocumentPropertyType::IdentifierWithReference(target))
+    let identity_property_name = identity_property_value.as_text().ok_or_else(|| {
+        DataContractError::InvalidContractStructure(
+            "identityPublicKey refersTo identityProperty must be a string".to_string(),
+        )
+    })?;
+    let identity_property = KeyReferenceIdentityProperty::from_wire_name(identity_property_name)
+        .ok_or_else(|| {
+            DataContractError::InvalidContractStructure(format!(
+                "identityPublicKey refersTo identityProperty {identity_property_name:?} is \
+                 invalid, expected one of {:?} or a property path of 1 to 256 characters",
+                KeyReferenceIdentityProperty::SYSTEM_WIRE_NAMES
+            ))
+        })?;
+    let minimum = inner_properties.get_optional_integer::<i64>(property_names::MINIMUM)?;
+    let maximum = inner_properties.get_optional_integer::<i64>(property_names::MAXIMUM)?;
+    let is_key_id_range = minimum == Some(0) && maximum == Some(i64::from(u32::MAX));
+    if !property_type.is_integer() || !is_key_id_range {
+        return Err(DataContractError::InvalidContractStructure(
+            "identityPublicKey refersTo with identityProperty is only allowed on a key id \
+             property: an integer with minimum 0 and maximum 4294967295"
+                .to_string(),
+        ));
+    }
+    Ok(DocumentPropertyType::KeyIdWithReference(KeyIdReference {
+        identity_property,
+        key_requirements: parse_identity_key_reference_requirements(refers_to_map)?,
+    }))
 }
 
 /// Reads a property's `encryptedFor` declaration: how the bytes of a byte
@@ -2456,6 +2530,346 @@ mod tests {
             "additionalProperties": false
         }))
         .expect_err("should fail");
+    }
+
+    // ================================================================
+    //  identityPublicKey on the key id property (identityProperty)
+    // ================================================================
+
+    /// A `message` document type whose `senderKeyId` carries `refers_to`, with
+    /// the property's own keywords under `key_id_schema` (the `u32` key id
+    /// range by default).
+    fn key_id_reference_schema(
+        key_id_schema: serde_json::Value,
+        refers_to: serde_json::Value,
+    ) -> serde_json::Value {
+        let mut sender_key_id = key_id_schema;
+        sender_key_id["position"] = json!(0);
+        sender_key_id["refersTo"] = refers_to;
+        json!({
+            "type": "object",
+            "properties": {
+                "senderKeyId": sender_key_id,
+                "note": { "type": "string", "maxLength": 64, "position": 1 }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    fn u32_key_id_schema() -> serde_json::Value {
+        json!({ "type": "integer", "minimum": 0, "maximum": 4294967295u64 })
+    }
+
+    fn owner_key_refers_to() -> serde_json::Value {
+        json!({ "type": "identityPublicKey", "identityProperty": "$ownerId" })
+    }
+
+    fn sender_key_id_type(document_type: &DocumentType) -> DocumentPropertyType {
+        document_type
+            .as_ref()
+            .flattened_properties()
+            .get("senderKeyId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present")
+    }
+
+    #[test]
+    fn should_parse_identity_public_key_refers_to_on_the_key_id_property() {
+        // With and without the meta-schema: the v3 meta-schema admits the form
+        for document_type in [
+            try_document_type_from_schema(key_id_reference_schema(
+                u32_key_id_schema(),
+                owner_key_refers_to(),
+            ))
+            .expect("should parse"),
+            try_document_type_from_schema_full_validation(key_id_reference_schema(
+                u32_key_id_schema(),
+                owner_key_refers_to(),
+            ))
+            .expect("should parse under the meta-schema"),
+        ] {
+            assert_eq!(
+                sender_key_id_type(&document_type),
+                DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(
+                    KeyReferenceIdentityProperty::OwnerId
+                ))
+            );
+            // A key id property is still an integer to everything that asks
+            assert!(sender_key_id_type(&document_type).is_integer());
+        }
+    }
+
+    /// The form sits on a nested property too, under the meta-schema and in
+    /// the flattened properties consensus walks, at its dotted path.
+    #[test]
+    fn should_parse_identity_public_key_refers_to_on_a_nested_key_id_property() {
+        let mut sender_key_id = u32_key_id_schema();
+        sender_key_id["position"] = json!(0);
+        sender_key_id["refersTo"] = owner_key_refers_to();
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "position": 0,
+                    "properties": { "senderKeyId": sender_key_id },
+                    "additionalProperties": false
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        });
+
+        let document_type = try_document_type_from_schema_full_validation(schema)
+            .expect("should parse under the meta-schema");
+
+        assert_eq!(
+            document_type
+                .as_ref()
+                .flattened_properties()
+                .get("meta.senderKeyId")
+                .map(|p| p.property_type.clone()),
+            Some(DocumentPropertyType::KeyIdWithReference(
+                KeyIdReference::new(KeyReferenceIdentityProperty::OwnerId)
+            ))
+        );
+    }
+
+    /// `keyRequirements` sit on the key id form exactly as on the identifier
+    /// form.
+    #[test]
+    fn should_parse_key_requirements_on_the_key_id_form() {
+        let schema = key_id_reference_schema(
+            u32_key_id_schema(),
+            json!({
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId",
+                "keyRequirements": { "purpose": "encryption" }
+            }),
+        );
+        for document_type in [
+            try_document_type_from_schema(schema.clone()).expect("should parse"),
+            try_document_type_from_schema_full_validation(schema)
+                .expect("should parse under the meta-schema"),
+        ] {
+            assert_eq!(
+                sender_key_id_type(&document_type),
+                DocumentPropertyType::KeyIdWithReference(KeyIdReference {
+                    identity_property: KeyReferenceIdentityProperty::OwnerId,
+                    key_requirements: IdentityKeyReferenceRequirements {
+                        purpose: Some(Purpose::ENCRYPTION),
+                        bound_to: None,
+                    },
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_identity_property_on_an_identifier_property() {
+        let schema = key_id_reference_schema(
+            json!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            }),
+            owner_key_refers_to(),
+        );
+        let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
+        assert!(
+            err.to_string()
+                .contains("only allowed on a key id property"),
+            "unexpected error: {err}"
+        );
+        try_document_type_from_schema_full_validation(schema)
+            .expect_err("the meta-schema should refuse the form on an identifier");
+    }
+
+    #[test]
+    fn should_reject_identity_property_on_an_integer_without_the_u32_range() {
+        for key_id_schema in [
+            // Narrower than a key id
+            json!({ "type": "integer", "minimum": 0, "maximum": 255 }),
+            // Wider than a key id
+            json!({ "type": "integer", "minimum": 0 }),
+            json!({ "type": "integer", "minimum": -1, "maximum": 4294967295u64 }),
+            // Narrower at the bottom: the rule is the exact range, as the
+            // meta-schema pins it, not the inferred u32
+            json!({ "type": "integer", "minimum": 1, "maximum": 4294967295u64 }),
+            // Not an integer at all
+            json!({ "type": "string", "maxLength": 10 }),
+        ] {
+            let schema = key_id_reference_schema(key_id_schema.clone(), owner_key_refers_to());
+            let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
+            assert!(
+                err.to_string()
+                    .contains("only allowed on a key id property"),
+                "{key_id_schema}: unexpected error: {err}"
+            );
+            try_document_type_from_schema_full_validation(schema)
+                .expect_err("the meta-schema should refuse a property outside the u32 range");
+        }
+    }
+
+    #[test]
+    fn should_reject_identity_property_together_with_key_id_property() {
+        let schema = key_id_reference_schema(
+            u32_key_id_schema(),
+            json!({
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId",
+                "keyIdProperty": "senderKeyId"
+            }),
+        );
+        let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
+        assert!(
+            err.to_string().contains("not both"),
+            "unexpected error: {err}"
+        );
+        try_document_type_from_schema_full_validation(schema)
+            .expect_err("the meta-schema should refuse both keys on one declaration");
+    }
+
+    /// `identityProperty` admits `$creatorId` and a property path beside
+    /// `$ownerId`; whether the path or the creator fits the document type is
+    /// a registration check, not a parse
+    #[test]
+    fn should_parse_identity_public_key_refers_to_naming_the_creator_or_a_property() {
+        for (identity_property, expected) in [
+            ("$creatorId", KeyReferenceIdentityProperty::CreatorId),
+            (
+                "note",
+                KeyReferenceIdentityProperty::Property("note".to_string()),
+            ),
+            (
+                "meta.toUserId",
+                KeyReferenceIdentityProperty::Property("meta.toUserId".to_string()),
+            ),
+        ] {
+            let schema = key_id_reference_schema(
+                u32_key_id_schema(),
+                json!({ "type": "identityPublicKey", "identityProperty": identity_property }),
+            );
+            for document_type in [
+                try_document_type_from_schema(schema.clone()).expect("should parse"),
+                try_document_type_from_schema_full_validation(schema)
+                    .expect("should parse under the meta-schema"),
+            ] {
+                assert_eq!(
+                    sender_key_id_type(&document_type),
+                    DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(expected.clone())),
+                    "{identity_property}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_identity_property_values_that_are_neither_a_system_name_nor_a_path() {
+        for identity_property in [
+            json!("$id"),
+            json!("$creatorId2"),
+            json!(""),
+            json!("a".repeat(257)),
+            json!("with-dash"),
+            json!(5),
+        ] {
+            let schema = key_id_reference_schema(
+                u32_key_id_schema(),
+                json!({ "type": "identityPublicKey", "identityProperty": identity_property }),
+            );
+            // A hyphenated path is the meta-schema's refusal alone: the parser
+            // reads stored contracts as they are
+            if identity_property != json!("with-dash") {
+                let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
+                assert!(
+                    err.to_string().contains("identityProperty"),
+                    "{identity_property}: unexpected error: {err}"
+                );
+            }
+            try_document_type_from_schema_full_validation(schema)
+                .expect_err("the meta-schema should refuse the value");
+        }
+    }
+
+    #[test]
+    fn should_reject_identity_property_on_other_reference_types() {
+        for reference_type in ["identity", "contract", "token", "deletableDocument"] {
+            let schema = key_id_reference_schema(
+                u32_key_id_schema(),
+                json!({
+                    "type": reference_type,
+                    "documentType": "note",
+                    "identityProperty": "$ownerId"
+                }),
+            );
+            let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
+            assert!(
+                err.to_string().contains(&format!(
+                    "{reference_type} refersTo does not take identityProperty"
+                )),
+                "{reference_type}: unexpected error: {err}"
+            );
+            try_document_type_from_schema_full_validation(schema)
+                .expect_err("the meta-schema should refuse identityProperty on other types");
+        }
+    }
+
+    #[test]
+    fn should_reject_property_agreement_on_the_key_id_form() {
+        let schema = key_id_reference_schema(
+            u32_key_id_schema(),
+            json!({
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId",
+                "propertyAgreement": { "note": "note" }
+            }),
+        );
+        let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
+        assert!(
+            err.to_string()
+                .contains("propertyAgreement is only allowed"),
+            "unexpected error: {err}"
+        );
+        try_document_type_from_schema_full_validation(schema)
+            .expect_err("the meta-schema should refuse propertyAgreement here");
+    }
+
+    #[test]
+    fn should_ignore_the_key_id_form_on_platform_versions_predating_it() {
+        // Protocol version 13 predates `refersTo` entirely: parsed without the
+        // meta-schema the keyword is ignored and the property stays the plain
+        // u32 it always was; its meta-schema (v2) refuses the keyword outright
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+        let schema = key_id_reference_schema(u32_key_id_schema(), owner_key_refers_to());
+
+        let document_type =
+            try_document_type_from_schema_on_version(schema.clone(), platform_version)
+                .expect("should parse");
+        assert_eq!(
+            sender_key_id_type(&document_type),
+            DocumentPropertyType::U32
+        );
+
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            platform_value::to_value(schema).expect("schema should convert"),
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect_err("the v2 meta-schema should refuse refersTo");
     }
 
     #[test]

@@ -268,6 +268,25 @@ pub const INITIAL_REVISION: u64 = 1;
 
 Revision 0 is never used for active documents. This allows `0` to serve as a sentinel value meaning "no revision" in some contexts.
 
+## Document References (`refersTo`)
+
+From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument` and `identityPublicKey`. Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
+
+An `identityPublicKey` reference names one key of one identity, and comes in two forms that differ in which property carries what:
+
+- **On the identity property.** The identifier property carries the identity id and `keyIdProperty` names the sibling integer property carrying the key id: `"refersTo": { "type": "identityPublicKey", "keyIdProperty": "toKeyIndex" }`. Consensus fetches the named key of that identity.
+- **On the key id property.** The integer property carries the key id and `identityProperty` names whose key it is: `"refersTo": { "type": "identityPublicKey", "identityProperty": "$ownerId" }`. The property must declare exactly the range of a `KeyID` (`"type": "integer", "minimum": 0, "maximum": 4294967295`) and the declaration takes no `keyIdProperty`. `identityProperty` is `$ownerId` (the writer), `$creatorId` (the document's creator, only on a document type that records creator ids: a transferable or tradeable type of a format-1 contract) or the path of an identifier property of the same document type (which must exist, be an identifier and not carry an `identityPublicKey` reference of its own); the last two are checked at contract registration. `keyRequirements` sit on this form exactly as on the identifier form. The parsed shape is `DocumentPropertyType::KeyIdWithReference(KeyIdReference)`, the identity source plus the requirements, sized, encoded and queried exactly as a plain `u32`.
+
+```json
+"senderKeyId": {
+  "type": "integer", "minimum": 0, "maximum": 4294967295,
+  "refersTo": { "type": "identityPublicKey", "identityProperty": "$ownerId" },
+  "position": 3
+}
+```
+
+Both forms share the state check (`validate_referenced_identity_key_v0` in the document reference validation): the key must exist and not be disabled, else the write is refused, paid, with `ReferencedIdentityKeyNotFoundError` (40123) or `ReferencedIdentityKeyDisabledError` (40124). Identity keys can be disabled but never removed, so a validated reference never dangles. The owner form's identity is the transition's signer, which the transition already proved exists, so the key fetch is its only read; a key id of some other identity's key is meaningless by construction, there is no property to name another identity. On replace the identity form is re-validated when either the identity property or its key id property changed. For the key id form it depends on where the identity comes from. `$ownerId` is the writer, transition metadata that never appears among the changed fields, and the document may have changed hands since the key id was written, so the reference is re-validated on every replace, touched or not, as the `$ownerId` writer gate is: after a transfer the new owner has to repoint the key id at one of its own keys. `$creatorId` never changes, so it is re-validated when the key id changed. A property path is re-validated when the key id or that property changed, and a key id set while the property is not is refused (`ReferencedKeyIdPropertyInvalidError`, 40125). A transfer itself is not checked in any form, so the reference governs writing, not holding. The declaring property must carry exactly the key id range in its schema, whatever the contract's integer sizing setting, and a `keyIdProperty` of the identity form may not name a property that carries this form, nor may a path name an identifier carrying an `identityPublicKey` reference: one pair is declared once (40125 at registration). The charter contract's `joinRequest.senderKeyId`, the owner's encryption key a shared secret is derived from, is the first user.
+
 ## Immutable Properties on Mutable Document Types
 
 A document type either allows replaces (`documentsMutable: true`, the default) or freezes its documents entirely. Protocol version 14 adds a middle ground: the doctype-level `immutable` keyword lists top-level properties that are frozen at creation while the rest of the document stays replaceable.

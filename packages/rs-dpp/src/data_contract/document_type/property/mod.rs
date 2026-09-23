@@ -980,6 +980,98 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
     }
 }
 
+/// Whose key a `refersTo: identityPublicKey` declaration on a KEY ID property
+/// names: its `identityProperty`. The declaring property carries the key id
+/// (a `u32`, so an integer property with `minimum` 0 and `maximum`
+/// 4294967295) and this names the identity the key belongs to: the document's
+/// owner, its creator, or an identifier property of the same document type.
+/// It is the inverse of [`DocumentPropertyReferenceTarget::IdentityPublicKey`],
+/// where the declaring property carries the identity id and `keyIdProperty`
+/// names the sibling carrying the key id; a declaration is one form or the
+/// other, never both.
+// @append_only
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+pub enum KeyReferenceIdentityProperty {
+    /// `"$ownerId"`: the writer's own identity. The document's owner signs
+    /// the transition, which already proved the identity exists, so the
+    /// reference costs the key fetch alone. The owner can change through a
+    /// transfer or a purchase, so every replace re-validates the reference.
+    #[serde(rename = "$ownerId")]
+    OwnerId,
+    /// `"$creatorId"`: the identity that created the document, the writer
+    /// of its create and the stored creator id after that. Only a document
+    /// type that records creator ids (a transferable or tradeable type of a
+    /// format-1 contract) may declare it, checked at contract registration.
+    /// The creator never changes, so a replace re-validates the reference
+    /// when the key id changed.
+    #[serde(rename = "$creatorId")]
+    CreatorId,
+    /// An identifier property of the same document type (a dotted path when
+    /// nested) whose value is the identity; it must exist, be an identifier
+    /// and not carry an `identityPublicKey` reference of its own, checked at
+    /// contract registration. The identity is read from the document, so a
+    /// replace re-validates the reference when the key id or that property
+    /// changed, and a key id set while the property is not is refused.
+    Property(String),
+}
+
+impl KeyReferenceIdentityProperty {
+    /// The system `identityProperty` values the schema admits, as spelled
+    /// there; every other admitted value is a property path.
+    pub const SYSTEM_WIRE_NAMES: [&'static str; 2] = [OWNER_ID, CREATOR_ID];
+
+    /// The value for its schema spelling: a system name, or a property path
+    /// of 1 to 256 characters that does not start with `$`. `None` for a
+    /// spelling the schema does not admit.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            OWNER_ID => Some(KeyReferenceIdentityProperty::OwnerId),
+            CREATOR_ID => Some(KeyReferenceIdentityProperty::CreatorId),
+            path if path.starts_with('$') || path.is_empty() || path.len() > 256 => None,
+            path => Some(KeyReferenceIdentityProperty::Property(path.to_string())),
+        }
+    }
+
+    /// The schema spelling.
+    pub fn as_str(&self) -> &str {
+        match self {
+            KeyReferenceIdentityProperty::OwnerId => OWNER_ID,
+            KeyReferenceIdentityProperty::CreatorId => CREATOR_ID,
+            KeyReferenceIdentityProperty::Property(path) => path,
+        }
+    }
+}
+
+impl std::fmt::Display for KeyReferenceIdentityProperty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A `refersTo: identityPublicKey` declaration on a KEY ID property: whose
+/// key the value is, and what that key must be beyond existing and not
+/// being disabled, the same [`IdentityKeyReferenceRequirements`] the
+/// identifier form takes, checked the same way.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+pub struct KeyIdReference {
+    pub identity_property: KeyReferenceIdentityProperty,
+    #[serde(
+        default,
+        skip_serializing_if = "IdentityKeyReferenceRequirements::is_empty"
+    )]
+    pub key_requirements: IdentityKeyReferenceRequirements,
+}
+
+impl KeyIdReference {
+    /// A declaration requiring nothing of the key beyond existing.
+    pub fn new(identity_property: KeyReferenceIdentityProperty) -> Self {
+        KeyIdReference {
+            identity_property,
+            key_requirements: IdentityKeyReferenceRequirements::default(),
+        }
+    }
+}
+
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
@@ -1012,6 +1104,12 @@ pub enum DocumentPropertyType {
     /// inline like [`DocumentPropertyType::Array`], a varint element count
     /// followed by the elements.
     TypedArray(TypedArrayProperty),
+    /// A `u32` key id carrying a `refersTo: identityPublicKey` declaration
+    /// with `identityProperty`: the value is the id of a key of the named
+    /// identity, which must exist, not be disabled and meet the declared
+    /// requirements when the document is written. Sized, encoded and queried
+    /// exactly as [`Self::U32`].
+    KeyIdWithReference(KeyIdReference),
 }
 
 impl DocumentPropertyType {
@@ -1058,7 +1156,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => "i128".to_string(),
             DocumentPropertyType::U64 => "u64".to_string(),
             DocumentPropertyType::I64 => "i64".to_string(),
-            DocumentPropertyType::U32 => "u32".to_string(),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                "u32".to_string()
+            }
             DocumentPropertyType::I32 => "i32".to_string(),
             DocumentPropertyType::U16 => "u16".to_string(),
             DocumentPropertyType::I16 => "i16".to_string(),
@@ -1104,7 +1204,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Some(16),
             DocumentPropertyType::U64 => Some(8),
             DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Some(4),
             DocumentPropertyType::I32 => Some(4),
             DocumentPropertyType::U16 => Some(2),
             DocumentPropertyType::I16 => Some(2),
@@ -1142,7 +1242,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Ok(Some(16)),
             DocumentPropertyType::U64 => Ok(Some(8)),
             DocumentPropertyType::I64 => Ok(Some(8)),
-            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Ok(Some(4)),
             DocumentPropertyType::I32 => Ok(Some(4)),
             DocumentPropertyType::U16 => Ok(Some(2)),
             DocumentPropertyType::I16 => Ok(Some(2)),
@@ -1192,7 +1292,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Ok(Some(16)),
             DocumentPropertyType::U64 => Ok(Some(8)),
             DocumentPropertyType::I64 => Ok(Some(8)),
-            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Ok(Some(4)),
             DocumentPropertyType::I32 => Ok(Some(4)),
             DocumentPropertyType::U16 => Ok(Some(2)),
             DocumentPropertyType::I16 => Ok(Some(2)),
@@ -1239,7 +1339,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Some(16),
             DocumentPropertyType::U64 => Some(8),
             DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Some(4),
             DocumentPropertyType::I32 => Some(4),
             DocumentPropertyType::U16 => Some(2),
             DocumentPropertyType::I16 => Some(2),
@@ -1282,7 +1382,9 @@ impl DocumentPropertyType {
             | DocumentPropertyType::I64
             | DocumentPropertyType::F64
             | DocumentPropertyType::Date => Some(8),
-            DocumentPropertyType::U32 | DocumentPropertyType::I32 => Some(4),
+            DocumentPropertyType::U32
+            | DocumentPropertyType::KeyIdWithReference(_)
+            | DocumentPropertyType::I32 => Some(4),
             DocumentPropertyType::U16 | DocumentPropertyType::I16 => Some(2),
             DocumentPropertyType::U8 | DocumentPropertyType::I8 | DocumentPropertyType::Boolean => {
                 Some(1)
@@ -1374,7 +1476,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Value::I128(rng.gen::<i128>()),
             DocumentPropertyType::U64 => Value::U64(rng.gen::<u64>()),
             DocumentPropertyType::I64 => Value::I64(rng.gen::<i64>()),
-            DocumentPropertyType::U32 => Value::U32(rng.gen::<u32>()),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                Value::U32(rng.gen::<u32>())
+            }
             DocumentPropertyType::I32 => Value::I32(rng.gen::<i32>()),
             DocumentPropertyType::U16 => Value::U16(rng.gen::<u16>()),
             DocumentPropertyType::I16 => Value::I16(rng.gen::<i16>()),
@@ -1445,7 +1549,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Value::I128(rng.gen::<i128>()),
             DocumentPropertyType::U64 => Value::U64(rng.gen::<u64>()),
             DocumentPropertyType::I64 => Value::I64(rng.gen::<i64>()),
-            DocumentPropertyType::U32 => Value::U32(rng.gen::<u32>()),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                Value::U32(rng.gen::<u32>())
+            }
             DocumentPropertyType::I32 => Value::I32(rng.gen::<i32>()),
             DocumentPropertyType::U16 => Value::U16(rng.gen::<u16>()),
             DocumentPropertyType::I16 => Value::I16(rng.gen::<i16>()),
@@ -1499,7 +1605,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Value::I128(rng.gen::<i128>()),
             DocumentPropertyType::U64 => Value::U64(rng.gen::<u64>()),
             DocumentPropertyType::I64 => Value::I64(rng.gen::<i64>()),
-            DocumentPropertyType::U32 => Value::U32(rng.gen::<u32>()),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                Value::U32(rng.gen::<u32>())
+            }
             DocumentPropertyType::I32 => Value::I32(rng.gen::<i32>()),
             DocumentPropertyType::U16 => Value::U16(rng.gen::<u16>()),
             DocumentPropertyType::I16 => Value::I16(rng.gen::<i16>()),
@@ -1630,7 +1738,7 @@ impl DocumentPropertyType {
                 })?;
                 Ok((Some(Value::I64(value)), false))
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value = buf.read_u32::<BigEndian>().map_err(|_| {
                     DataContractError::CorruptedSerialization(
                         "error reading u32 from serialized document".to_string(),
@@ -1897,7 +2005,7 @@ impl DocumentPropertyType {
                     Ok(r_vec)
                 }
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value_as_u32: u32 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_u32.to_be_bytes().to_vec();
                 if required {
@@ -2091,7 +2199,7 @@ impl DocumentPropertyType {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_i64.to_be_bytes().to_vec())
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value_as_u32: u32 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_u32.to_be_bytes().to_vec())
             }
@@ -2237,7 +2345,7 @@ impl DocumentPropertyType {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(DocumentPropertyType::encode_i64(value_as_i64))
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value_as_u32 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(DocumentPropertyType::encode_u32(value_as_u32))
             }
@@ -2348,7 +2456,7 @@ impl DocumentPropertyType {
                 )?;
                 Ok(Value::I64(integer))
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let integer = DocumentPropertyType::decode_u32(value).ok_or(
                     ProtocolError::DecodingError("could not decode u32".to_string()),
                 )?;
@@ -2461,11 +2569,13 @@ impl DocumentPropertyType {
                     "value is not an i64 integer from string".to_string(),
                 )
             }),
-            DocumentPropertyType::U32 => str.parse::<u32>().map(Value::U32).map_err(|_| {
-                DataContractError::ValueWrongType(
-                    "value is not a u32 integer from string".to_string(),
-                )
-            }),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                str.parse::<u32>().map(Value::U32).map_err(|_| {
+                    DataContractError::ValueWrongType(
+                        "value is not a u32 integer from string".to_string(),
+                    )
+                })
+            }
             DocumentPropertyType::I32 => str.parse::<i32>().map(Value::I32).map_err(|_| {
                 DataContractError::ValueWrongType(
                     "value is not an i32 integer from string".to_string(),
@@ -3096,6 +3206,7 @@ impl DocumentPropertyType {
                 | DocumentPropertyType::U8
                 | DocumentPropertyType::U16
                 | DocumentPropertyType::U32
+                | DocumentPropertyType::KeyIdWithReference(_)
                 | DocumentPropertyType::U64
         )
     }
@@ -3246,17 +3357,32 @@ impl DocumentPropertyType {
                 *value = Value::U16(n as u16);
             }
 
-            (DocumentPropertyType::U32, Value::U32(_)) => {} // Already correct
-            (DocumentPropertyType::U32, Value::U8(n)) => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U32(_),
+            ) => {} // Already correct
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U8(n),
+            ) => {
                 *value = Value::U32(n as u32);
             }
-            (DocumentPropertyType::U32, Value::U16(n)) => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U16(n),
+            ) => {
                 *value = Value::U32(n as u32);
             }
-            (DocumentPropertyType::U32, Value::U64(n)) if n <= u32::MAX as u64 => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U64(n),
+            ) if n <= u32::MAX as u64 => {
                 *value = Value::U32(n as u32);
             }
-            (DocumentPropertyType::U32, Value::U128(n)) if n <= u32::MAX as u128 => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U128(n),
+            ) if n <= u32::MAX as u128 => {
                 *value = Value::U32(n as u32);
             }
 
@@ -8643,6 +8769,131 @@ mod tests {
                 "IdentifierWithReference": "identity"
             }))
         );
+    }
+
+    #[test]
+    fn should_serialize_key_id_reference_metadata() {
+        let property = DocumentProperty {
+            property_type: DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(
+                KeyReferenceIdentityProperty::OwnerId,
+            )),
+            required: false,
+            transient: false,
+            required_since: None,
+            distinct_from: None,
+            encrypted_for: None,
+        };
+
+        let value = serde_json::to_value(&property).expect("serialization should succeed");
+
+        assert_eq!(
+            value.get("property_type"),
+            Some(&serde_json::json!({
+                "KeyIdWithReference": { "identity_property": "$ownerId" }
+            }))
+        );
+    }
+
+    /// A key id with a reference is a `u32` to everything that sizes, encodes,
+    /// decodes or names a property: the declaration changes what consensus
+    /// checks, not the bytes.
+    #[test]
+    fn should_treat_a_key_id_with_reference_exactly_as_a_u32() {
+        let platform_version = PlatformVersion::latest();
+        let key_id = DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(
+            KeyReferenceIdentityProperty::OwnerId,
+        ));
+        let u32_type = DocumentPropertyType::U32;
+
+        assert_eq!(key_id.name(), u32_type.name());
+        assert!(key_id.is_integer());
+        assert_eq!(key_id.min_size(), u32_type.min_size());
+        assert_eq!(key_id.max_size(), u32_type.max_size());
+        assert_eq!(
+            key_id.middle_size(platform_version),
+            u32_type.middle_size(platform_version)
+        );
+        assert_eq!(
+            key_id.min_byte_size(platform_version).unwrap(),
+            u32_type.min_byte_size(platform_version).unwrap()
+        );
+        assert_eq!(
+            key_id.max_byte_size(platform_version).unwrap(),
+            u32_type.max_byte_size(platform_version).unwrap()
+        );
+
+        let value = Value::U32(7);
+        assert_eq!(
+            key_id.encode_value_for_tree_keys(&value).unwrap(),
+            u32_type.encode_value_for_tree_keys(&value).unwrap()
+        );
+        assert_eq!(
+            key_id.encode_value_with_size(value.clone(), true).unwrap(),
+            u32_type
+                .encode_value_with_size(value.clone(), true)
+                .unwrap()
+        );
+        assert_eq!(
+            key_id.encode_value_ref_with_size(&value, false).unwrap(),
+            u32_type.encode_value_ref_with_size(&value, false).unwrap()
+        );
+        let encoded = key_id.encode_value_for_tree_keys(&value).unwrap();
+        assert_eq!(
+            key_id.decode_value_for_tree_keys(&encoded).unwrap(),
+            u32_type.decode_value_for_tree_keys(&encoded).unwrap()
+        );
+        assert_eq!(
+            key_id.value_from_string("7").unwrap(),
+            u32_type.value_from_string("7").unwrap()
+        );
+
+        let mut widened = Value::U64(7);
+        key_id.sanitize_value_mut(&mut widened);
+        assert_eq!(widened, Value::U32(7));
+    }
+
+    #[test]
+    fn should_spell_the_key_reference_identity_property_as_the_schema_does() {
+        assert_eq!(KeyReferenceIdentityProperty::OwnerId.as_str(), "$ownerId");
+        assert_eq!(
+            KeyReferenceIdentityProperty::OwnerId.to_string(),
+            "$ownerId"
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::CreatorId.as_str(),
+            "$creatorId"
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::Property("meta.toUserId".to_string()).as_str(),
+            "meta.toUserId"
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name("$ownerId"),
+            Some(KeyReferenceIdentityProperty::OwnerId)
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name("$creatorId"),
+            Some(KeyReferenceIdentityProperty::CreatorId)
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name("toUserId"),
+            Some(KeyReferenceIdentityProperty::Property(
+                "toUserId".to_string()
+            ))
+        );
+        // Other system names, the empty path and an overlong path are not admitted
+        assert_eq!(KeyReferenceIdentityProperty::from_wire_name("$id"), None);
+        assert_eq!(KeyReferenceIdentityProperty::from_wire_name(""), None);
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name(&"a".repeat(257)),
+            None
+        );
+        for name in KeyReferenceIdentityProperty::SYSTEM_WIRE_NAMES {
+            assert_eq!(
+                KeyReferenceIdentityProperty::from_wire_name(name).map(|p| p.as_str().to_string()),
+                Some(name.to_string())
+            );
+        }
     }
 
     #[test]
