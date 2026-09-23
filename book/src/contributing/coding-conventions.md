@@ -72,25 +72,38 @@ The mechanics of `PlatformVersion`, feature version tables, and the dispatcher
 shape are covered in the [Versioning](../versioning/platform-version.md)
 chapters. The rules here are about what to do with those mechanics.
 
-### Shipped generations are frozen
+### Shipped generations are frozen unless the change cannot modify consensus
 
 A behaviour change to a versioned method means a new `vN` module selected only
-by the tables of the unreleased protocol version. It never means editing a
-shipped `vN`, and that includes "harmless" edits: threading a new parameter
-through it, adding a version-table check inside it, or computing a gate that is
-always false for old versions. Inside the new generation the capability is a
-constant fact (`Index::try_from_value_map(map, true)`), not a runtime check.
+by the tables of the unreleased protocol version. A shipped `vN` may be edited
+in place only when we are sure the edit cannot modify consensus at any protocol
+version that selects it: the new code is unreachable there by construction
+(the data it acts on cannot exist under those versions, such as a keyword every
+one of their meta-schemas refuses and their parser ignores, judged through a
+dpp method whose own gate is `None` there), or the edit is a pure refactor with
+identical output. "Probably inert" is not enough. If the argument takes more
+than a sentence, or rests on a runtime check inside the shipped module, add a
+generation instead. Inside a new generation the capability is a constant fact
+(`Index::try_from_value_map(map, true)`), not a runtime check.
 
-Why: replay safety becomes structural instead of something a reviewer has to
-prove about a diff. A dead version check inside `v1` misleads the next reader
-into thinking `v1` can take that path. Shipped files should stay byte-identical
-to what shipped.
+Why: replay safety is structural when a shipped file stays byte-identical, and
+becomes a proof the reviewer has to check the moment it does not. An in-place
+edit is acceptable when that proof is short and written down; a dead version
+check inside `v1` that misleads the next reader into thinking `v1` can take
+that path is not.
 
-How: copy the previous generation into the new module, make the change there,
-move the tests that exercise the new behaviour into the new module, and bump
-the method's number in the new protocol version's tables only. Duplication
-between generations is the accepted cost; it is cheaper than a drift-prone
-flag.
+How, new generation: copy the previous generation into the new module, make
+the change there, move the tests that exercise the new behaviour into the new
+module, and bump the method's number in the new protocol version's tables
+only. Duplication between generations is the accepted cost; it is cheaper than
+a drift-prone flag.
+
+How, in place: make the edit, leave a comment at the edited lines naming why
+they are inert for every protocol version that selects the module, and give
+the pull request description an "In-place changes to shipped generations"
+section that lists each edited generation, the protocol versions that select
+it, and the reason consensus cannot change there. Reviewers read that section
+first.
 
 ### Table versions follow protocol-version boundaries, not PRs
 
@@ -471,6 +484,17 @@ now does.
 4. Move or write the behaviour tests in `v(N+1)/` against
    `PlatformVersion::latest()`; pin `vN/`'s tests to `PlatformVersion::get(n)`.
 5. Add a test that runs both versions through the dispatcher.
+
+**Editing a shipped generation in place**
+
+1. Only when the edit cannot modify consensus at any protocol version that
+   selects the module: unreachable by construction there, or output-identical.
+2. Comment the edited lines with why they are inert for those versions.
+3. Add a test that runs the module at the last shipped protocol version and
+   shows the outcome unchanged.
+4. Add an "In-place changes to shipped generations" section to the pull
+   request description: each edited generation, the versions that select it,
+   and the reason consensus cannot change there.
 
 **Changing a limit or a fee**
 

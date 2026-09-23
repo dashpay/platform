@@ -24,7 +24,9 @@ const foreignContractId = '4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6';
 
 /**
  * `refersTo` is only allowed on properties with exactly this shape — a
- * 32-byte identifier. The meta-schema rejects it anywhere else.
+ * 32-byte identifier. The one exception is the `identityPublicKey` form
+ * declared on the key id property itself (`senderKeyId` below). The
+ * meta-schema rejects it anywhere else.
  */
 function identifierProperty(position: number, refersTo: object): object {
   return {
@@ -48,6 +50,9 @@ const schemas = {
     // A `permanentDocument` target must not be deletable, and `note`
     // references itself below.
     canBeDeleted: false,
+    // `recipientKey` below requires a decryption key bound to `note`, which
+    // only a type taking bound decryption keys can be.
+    requiresIdentityDecryptionBoundedKey: 2,
     properties: {
       author: identifierProperty(0, { type: 'identity' }),
       sourceContract: identifierProperty(1, { type: 'contract' }),
@@ -78,6 +83,38 @@ const schemas = {
         },
         additionalProperties: false,
       },
+      // `keyRequirements`: the referenced key must have this purpose and be
+      // bound to this contract's `note` type (PV14 #4918).
+      recipientKey: identifierProperty(8, {
+        type: 'identityPublicKey',
+        keyIdProperty: 'recipientKeyId',
+        keyRequirements: { purpose: 'decryption', boundTo: 'note' },
+      }),
+      recipientKeyId: { type: 'integer', position: 9, minimum: 0 },
+      // The inverse key reference: the property carries the key id and the
+      // declaration names whose key it is (the writer's), so it sits on a
+      // u32 integer rather than an identifier; `keyRequirements` apply to it
+      // exactly as to the identifier form.
+      senderKeyId: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 4294967295,
+        position: 10,
+        refersTo: {
+          type: 'identityPublicKey',
+          identityProperty: '$ownerId',
+          keyRequirements: { purpose: 'encryption' },
+        },
+      },
+      // The same form naming an identifier property of this type: the key
+      // is one of `author`'s.
+      authorKeyId: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 4294967295,
+        position: 11,
+        refersTo: { type: 'identityPublicKey', identityProperty: 'author' },
+      },
     },
     additionalProperties: false,
   },
@@ -107,6 +144,8 @@ type Reference = {
   contractId?: { toBase58(): string };
   documentType?: string;
   keyIdProperty?: string;
+  keyRequirements?: { purpose?: string; boundTo?: string };
+  identityProperty?: string;
   propertyAgreement?: Record<string, string>;
 };
 
@@ -124,6 +163,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
         'otherDoc',
         'signerKey',
         'meta.ownerRef',
+        'recipientKey',
+        'senderKeyId',
+        'authorKeyId',
       ]);
     });
 
@@ -139,6 +181,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(byPath.get('otherDoc')!.type).to.equal('permanentDocument');
       expect(byPath.get('signerKey')!.type).to.equal('identityPublicKey');
       expect(byPath.get('meta.ownerRef')!.type).to.equal('identity');
+      expect(byPath.get('recipientKey')!.type).to.equal('identityPublicKey');
+      expect(byPath.get('senderKeyId')!.type).to.equal('identityPublicKey');
+      expect(byPath.get('authorKeyId')!.type).to.equal('identityPublicKey');
     });
 
     it('should carry no target fields for the bare kinds', () => {
@@ -200,6 +245,41 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const signerKey = references.find((reference) => reference.path === 'signerKey')!;
 
       expect(signerKey.keyIdProperty).to.equal('signerKeyId');
+      expect(signerKey.identityProperty).to.equal(undefined);
+    });
+
+    it('should carry identityProperty for an identityPublicKey reference on the key id property', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const senderKeyId = references.find((reference) => reference.path === 'senderKeyId')!;
+
+      expect(senderKeyId).to.deep.equal({
+        path: 'senderKeyId',
+        type: 'identityPublicKey',
+        identityProperty: '$ownerId',
+        keyRequirements: { purpose: 'encryption' },
+      });
+
+      const authorKeyId = references.find((reference) => reference.path === 'authorKeyId')!;
+      expect(authorKeyId.identityProperty).to.equal('author');
+      expect(authorKeyId.keyIdProperty).to.equal(undefined);
+      expect(authorKeyId).to.not.have.property('keyRequirements');
+    });
+
+    it('should carry keyRequirements when declared and omit them otherwise', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const recipientKey = references.find((reference) => reference.path === 'recipientKey')!;
+      const signerKey = references.find((reference) => reference.path === 'signerKey')!;
+
+      expect(recipientKey).to.deep.equal({
+        path: 'recipientKey',
+        type: 'identityPublicKey',
+        keyIdProperty: 'recipientKeyId',
+        keyRequirements: { purpose: 'decryption', boundTo: 'note' },
+      });
+      // Absent, not `{}`-valued, like the schema's own omission.
+      expect(signerKey).to.not.have.property('keyRequirements');
     });
 
     it('should return an empty array for a document type declaring none', () => {
@@ -275,6 +355,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyNotFound).to.equal(40123);
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyDisabled).to.equal(40124);
       expect(wasm.DocumentReferenceErrorCode.ReferencedKeyIdPropertyInvalid).to.equal(40125);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotDeletable).to.equal(40131);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedContractRequirementNotMet).to.equal(40135);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
     });
 
     it('should resolve a code back to its name', () => {
@@ -282,6 +365,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
 
       expect(codes[40123]).to.equal('ReferencedIdentityKeyNotFound');
       expect(codes[40125]).to.equal('ReferencedKeyIdPropertyInvalid');
+      expect(codes[40136]).to.equal('ReferencedIdentityKeyRequirementNotMet');
     });
   });
 });

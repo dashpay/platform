@@ -249,6 +249,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.immutable_fields
     }
 
+    fn distinct_from_fields(&self) -> &[String] {
+        &self.distinct_from_fields
+    }
+
     fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
         &self.immutable_fields_allow_setting
     }

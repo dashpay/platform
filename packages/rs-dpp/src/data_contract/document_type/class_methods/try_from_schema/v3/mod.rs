@@ -37,9 +37,14 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 #[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 
 use super::common;
+use super::validate_encrypted_for_declarations;
 
 mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
@@ -144,6 +149,13 @@ fn validate_ranked_index_property_key_length(
     let Some(limit) = ranked_index_key_length_limit(index) else {
         return Ok(());
     };
+
+    // A typed array is no index key at all, and its byte bound measures the
+    // whole list: the property-type check right after this one rejects it
+    // with the error that explains the problem.
+    if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
+        return Ok(());
+    }
 
     // `None` is only produced by the array and object types, which the
     // property-type check right after this one rejects outright with the
@@ -281,6 +293,18 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
+    // Generation 3 refuses `-` in a document type name, as meta-schema v3
+    // refuses it in a property name: the path syntax was written for word
+    // characters, and no contract on mainnet or testnet ever used one. A
+    // registration rule, checked under full validation like the shared
+    // name rule; earlier generations keep admitting it.
+    #[cfg(feature = "validation")]
+    if full_validation && name.contains('-') {
+        return Err(ProtocolError::ConsensusError(Box::new(
+            ConsensusError::from(InvalidDocumentTypeNameError::new(name.to_string())),
+        )));
+    }
+
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
@@ -384,6 +408,12 @@ fn try_from_schema_generation_3(
         full_validation,
     )?;
 
+    // After the core parse: every property, its transient flag and its schema
+    // are known, so each `encryptedFor` declaration can be checked against the
+    // properties it names. Generation 3 is the only one admitting the keyword.
+    validate_encrypted_for_declarations(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+
     // After `apply_index_only`: the flag is refused on an indexOnly type, so it
     // has to see that one already applied.
     common::apply_can_be_deleted_by_moderators(
@@ -413,7 +443,44 @@ fn try_from_schema_generation_3(
         ));
     }
 
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_typed_array_max_items(&v2, name, platform_version)?;
+    }
+
     Ok(v2)
+}
+
+/// Every typed array property's `maxItems` (which the parse requires) is at
+/// most `SystemLimits::max_typed_array_items`, so its worst-case encoded
+/// size stays small. Read off the flattened properties, which reach a typed
+/// array nested in an object too.
+///
+/// Full validation only, like the other registration limits: a stored
+/// contract was checked when it was registered, and a later protocol version
+/// lowering the cap must not make it unreadable.
+#[cfg(feature = "validation")]
+fn validate_typed_array_max_items(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_typed_array_items;
+    for (path, property) in document_type.flattened_properties() {
+        let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
+            continue;
+        };
+        if typed_array.max_items > limit {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "typed array property \"{}\" of document type \"{}\" declares maxItems \
+                     {}, above the maximum of {}",
+                    path, name, typed_array.max_items, limit,
+                )),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl DocumentType {
@@ -460,6 +527,10 @@ mod keep_history_tests;
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]
 mod moderators_delete_tests;
+#[cfg(all(test, feature = "validation"))]
+mod name_rules_tests;
+#[cfg(all(test, feature = "validation", feature = "random-documents"))]
+mod typed_array_tests;
 
 #[cfg(test)]
 mod tests {

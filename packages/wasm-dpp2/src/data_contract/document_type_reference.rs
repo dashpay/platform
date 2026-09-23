@@ -1,10 +1,12 @@
 //! `refersTo` declarations — the document-reference metadata a contract
 //! carries from protocol version 14 onward.
 //!
-//! `refersTo` annotates an identifier property with what it points at, and
-//! consensus enforces that the target exists whenever a document carrying
-//! it is written. It is a **write-time constraint only**: nothing anywhere
-//! in the stack resolves a reference for a reader. What this module adds is
+//! `refersTo` annotates an identifier property with what it points at (or,
+//! for an `identityPublicKey` reference with `identityProperty`, a key id
+//! property with whose key it names), and consensus enforces that the target
+//! exists whenever a document carrying it is written. It is a **write-time
+//! constraint only**: nothing anywhere in the stack resolves a reference for
+//! a reader. What this module adds is
 //! the ability to *discover* the declarations — "which properties of this
 //! document type are references, and to what?" — without hand-parsing the
 //! contract's raw JSON schema.
@@ -14,6 +16,7 @@ use crate::identifier::IdentifierWasm;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    IdentityKeyReferenceRequirements, KeyIdReference,
 };
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
@@ -30,6 +33,15 @@ const DOCUMENT_PROPERTY_REFERENCE_TS: &'static str = r#"
  * own, so what `contract.toJSON()` shows under `refersTo` and what these
  * accessors return line up key for key.
  */
+/**
+ * What an `identityPublicKey` reference requires of the key it points at,
+ * beyond its existence and its not being disabled.
+ */
+export type IdentityKeyReferenceRequirements = {
+  purpose?: 'authentication' | 'encryption' | 'decryption' | 'transfer' | 'voting' | 'owner';
+  boundTo?: string;
+};
+
 export type DocumentPropertyReferenceTarget =
   | { type: 'identity' }
   | {
@@ -37,11 +49,31 @@ export type DocumentPropertyReferenceTarget =
       /**
        * What the referenced contract must declare beyond existing, checked
        * by consensus when the referring document is written against the
-       * contract fetched for the existence check: `moderation: 'elected'`
-       * requires an elected moderation team (code 40135 when unmet).
-       * Absent when the declaration carries no requirement.
+       * contract fetched for the existence check and the block time:
+       * `moderation: 'elected'` requires an elected moderation team and
+       * `'electionOpen'` one whose own `electionDelay` has passed since the
+       * contract's creation (or which declares none),
+       * `minimumAgeSeconds` requires the contract's recorded creation time
+       * to be at least that many seconds before the block time of the write,
+       * and `minimumSecondsSinceUpdate` the same of the later of its creation
+       * and last update times, and `owner: 'self'` requires the contract to
+       * be owned by the writer of the referring document (its `$ownerId`),
+       * `'other'` by anyone else; `readonly: true` requires a read-only
+       * contract (one that can never be updated again), `keepsHistory: true`
+       * one keeping its history, and `ownerProtected` an elected moderation
+       * declaration whose owner protection flag has that value (code 40135
+       * when any is unmet). Absent when the declaration carries no
+       * requirement.
        */
-      contractRequirements?: { moderation?: 'elected' };
+      contractRequirements?: {
+        moderation?: 'elected' | 'electionOpen';
+        minimumAgeSeconds?: number;
+        minimumSecondsSinceUpdate?: number;
+        owner?: 'self' | 'other';
+        readonly?: true;
+        keepsHistory?: true;
+        ownerProtected?: boolean;
+      };
     }
   | { type: 'token' }
   | {
@@ -86,6 +118,48 @@ export type DocumentPropertyReferenceTarget =
        * identity id. A dotted path when the property is nested.
        */
       keyIdProperty: string;
+      identityProperty?: never;
+      /**
+       * What the referenced key must be beyond existing and not being
+       * disabled, checked by consensus when the referring document is
+       * written against the key fetched for the existence check:
+       * `purpose` requires the key's purpose to be the named one, and
+       * `boundTo` requires the key's contract bounds to be exactly the
+       * declaring contract and the named document type of it; a
+       * whole-contract or contract group bound never meets it (code 40136
+       * when either is unmet). Absent when the declaration carries no
+       * requirement.
+       */
+      keyRequirements?: IdentityKeyReferenceRequirements;
+    }
+  | {
+      /**
+       * The inverse form, declared on the key id property itself: the
+       * declaring property (an integer from 0 to 4294967295) carries the
+       * key id, and `identityProperty` names whose key it is: `'$ownerId'`,
+       * the document's owner, `'$creatorId'`, its creator (only on a
+       * document type that records creator ids), or the dotted path of an
+       * identifier property of the same document type. Consensus fetches
+       * only the key (codes 40123 when it does not exist, 40124 when it is
+       * disabled; 40125 when a key id is set while the named property is
+       * not), and checks `keyRequirements` against it exactly as for the
+       * identifier form.
+       */
+      type: 'identityPublicKey';
+      identityProperty: '$ownerId' | '$creatorId' | (string & {});
+      keyIdProperty?: never;
+      /**
+       * What the referenced key must be beyond existing and not being
+       * disabled, checked by consensus when the referring document is
+       * written against the key fetched for the existence check:
+       * `purpose` requires the key's purpose to be the named one, and
+       * `boundTo` requires the key's contract bounds to be exactly the
+       * declaring contract and the named document type of it; a
+       * whole-contract or contract group bound never meets it (code 40136
+       * when either is unmet). Absent when the declaration carries no
+       * requirement.
+       */
+      keyRequirements?: IdentityKeyReferenceRequirements;
     }
   | {
       /**
@@ -122,7 +196,8 @@ export type DocumentPropertyReference = {
    * example `"author"`, or `"meta.parentId"` for a nested one.
    *
    * This is the same string consensus reports in the `path` field of the
-   * document-write reference errors (codes 40120-40125). Note that contract
+   * document-write reference errors (codes 40120-40125, 40131, 40135 and
+   * 40136). Note that contract
    * *registration* errors prefix it with the document type name
    * (`"<documentType>.<path>"`) while document *write* errors do not.
    */
@@ -148,6 +223,59 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
         ))
     })?;
     Ok(())
+}
+
+/// The flat, internally-tagged JS object for an `identityPublicKey`
+/// declaration on the key id property: `identityProperty` names whose key
+/// the property's value is.
+fn key_id_reference_to_js(path: &str, reference: &KeyIdReference) -> WasmDppResult<JsValue> {
+    let object = Object::new();
+    set_field(&object, "path", &JsValue::from_str(path), path)?;
+    set_field(
+        &object,
+        "type",
+        &JsValue::from_str("identityPublicKey"),
+        path,
+    )?;
+    set_field(
+        &object,
+        "identityProperty",
+        &JsValue::from_str(reference.identity_property.as_str()),
+        path,
+    )?;
+    set_key_requirements_field(&object, &reference.key_requirements, path)?;
+    Ok(object.into())
+}
+
+/// The `keyRequirements` field of either `identityPublicKey` form. Absent,
+/// not `{}`-valued, when the declaration requires nothing, matching the
+/// schema's own omission.
+fn set_key_requirements_field(
+    object: &Object,
+    key_requirements: &IdentityKeyReferenceRequirements,
+    path: &str,
+) -> WasmDppResult<()> {
+    if key_requirements.is_empty() {
+        return Ok(());
+    }
+    let fields = Object::new();
+    if let Some(purpose) = key_requirements.purpose {
+        set_field(
+            &fields,
+            "purpose",
+            &JsValue::from_str(purpose.wire_name()),
+            path,
+        )?;
+    }
+    if let Some(document_type_name) = &key_requirements.bound_to {
+        set_field(
+            &fields,
+            "boundTo",
+            &JsValue::from_str(document_type_name),
+            path,
+        )?;
+    }
+    set_field(object, "keyRequirements", &fields, path)
 }
 
 /// Build the flat, internally-tagged JS object for one declaration.
@@ -181,14 +309,44 @@ fn reference_to_js(
         } => {
             // Absent, not `{}`-valued, when the declaration requires nothing,
             // matching the schema's own omission.
-            if let Some(moderation) = contract_requirements.moderation {
+            if !contract_requirements.is_empty() {
                 let fields = Object::new();
-                set_field(
-                    &fields,
-                    "moderation",
-                    &JsValue::from_str(moderation.as_str()),
-                    path,
-                )?;
+                if let Some(moderation) = contract_requirements.moderation {
+                    set_field(
+                        &fields,
+                        "moderation",
+                        &JsValue::from_str(moderation.as_str()),
+                        path,
+                    )?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_age_seconds {
+                    set_field(
+                        &fields,
+                        "minimumAgeSeconds",
+                        &JsValue::from_f64(f64::from(seconds)),
+                        path,
+                    )?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_seconds_since_update {
+                    set_field(
+                        &fields,
+                        "minimumSecondsSinceUpdate",
+                        &JsValue::from_f64(f64::from(seconds)),
+                        path,
+                    )?;
+                }
+                if let Some(owner) = contract_requirements.owner {
+                    set_field(&fields, "owner", &JsValue::from_str(owner.as_str()), path)?;
+                }
+                for (name, flag) in [
+                    ("readonly", contract_requirements.readonly),
+                    ("keepsHistory", contract_requirements.keeps_history),
+                    ("ownerProtected", contract_requirements.owner_protected),
+                ] {
+                    if let Some(flag) = flag {
+                        set_field(&fields, name, &JsValue::from_bool(flag), path)?;
+                    }
+                }
                 set_field(&object, "contractRequirements", &fields, path)?;
             }
         }
@@ -228,13 +386,17 @@ fn reference_to_js(
                 set_field(&object, "propertyAgreement", &agreement, path)?;
             }
         }
-        DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+        DocumentPropertyReferenceTarget::IdentityPublicKey {
+            key_id_property,
+            key_requirements,
+        } => {
             set_field(
                 &object,
                 "keyIdProperty",
                 &JsValue::from_str(key_id_property),
                 path,
             )?;
+            set_key_requirements_field(&object, key_requirements, path)?;
         }
     }
 
@@ -255,8 +417,14 @@ pub(crate) fn references_for_document_type(
     let references = Array::new();
 
     for (path, property) in document_type.flattened_properties() {
-        if let DocumentPropertyType::IdentifierWithReference(target) = &property.property_type {
-            references.push(&reference_to_js(path, target, declaring_contract_id)?);
+        match &property.property_type {
+            DocumentPropertyType::IdentifierWithReference(target) => {
+                references.push(&reference_to_js(path, target, declaring_contract_id)?);
+            }
+            DocumentPropertyType::KeyIdWithReference(reference) => {
+                references.push(&key_id_reference_to_js(path, reference)?);
+            }
+            _ => {}
         }
     }
 

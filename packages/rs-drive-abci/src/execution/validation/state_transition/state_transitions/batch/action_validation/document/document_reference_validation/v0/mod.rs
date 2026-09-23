@@ -12,7 +12,8 @@ use dpp::data_contract::document_type::accessors::{
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentTypeRef,
+    DocumentPropertyType, DocumentTypeRef, IdentityKeyReferenceRequirements,
+    KeyReferenceIdentityProperty, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -25,6 +26,7 @@ use dpp::errors::consensus::state::document::referenced_contract_requirement_not
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use dpp::errors::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use dpp::errors::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -74,6 +76,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
+        creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -162,6 +165,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
+        creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -185,6 +189,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             document_type,
             document_data,
             owner_id,
+            creator_id,
             changed_fields,
             platform,
             block_info,
@@ -201,6 +206,7 @@ fn validate_document_type_references_v0(
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    creator_id: Option<Identifier>,
     changed_fields: Option<&BTreeSet<String>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
@@ -209,10 +215,55 @@ fn validate_document_type_references_v0(
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     for (path, property) in document_type.flattened_properties() {
-        let DocumentPropertyType::IdentifierWithReference(reference_target) =
-            &property.property_type
-        else {
-            continue;
+        let reference_target = match &property.property_type {
+            DocumentPropertyType::IdentifierWithReference(reference_target) => reference_target,
+            // A key reference on the key id property itself: the value is the
+            // key id and the declaration names whose key it is. A transfer
+            // itself is not checked, so the reference governs writing, not
+            // holding; which replaces re-validate it depends on where the
+            // identity comes from.
+            DocumentPropertyType::KeyIdWithReference(reference) => {
+                let identity_property = &reference.identity_property;
+                if let Some(changed) = changed_fields {
+                    let must_revalidate = match identity_property {
+                        // The owner is transition metadata, never among the
+                        // changed fields, and may have changed since the key
+                        // id was written (a transfer or a purchase), so every
+                        // replace re-validates, as a writer gate is
+                        KeyReferenceIdentityProperty::OwnerId => true,
+                        // The creator never changes
+                        KeyReferenceIdentityProperty::CreatorId => is_changed_field(changed, path),
+                        // The identity is in the document: either side of the
+                        // (identity, key id) pair changing re-validates it
+                        KeyReferenceIdentityProperty::Property(identity_path) => {
+                            is_changed_field(changed, path)
+                                || is_changed_field(changed, identity_path)
+                        }
+                    };
+                    if !must_revalidate {
+                        continue;
+                    }
+                }
+                let result = validate_key_id_reference_v0(
+                    path,
+                    identity_property,
+                    &reference.key_requirements,
+                    document_type.name(),
+                    contract.id(),
+                    document_data,
+                    owner_id,
+                    creator_id,
+                    platform,
+                    transaction,
+                    execution_context,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+                continue;
+            }
+            _ => continue,
         };
 
         if let Some(changed) = changed_fields {
@@ -246,9 +297,9 @@ fn validate_document_type_references_v0(
                 // it is checked against the new target, or not at all once
                 // the reference is cleared.
                 DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
-                DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
-                    is_changed_field(changed, key_id_property)
-                }
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property, ..
+                } => is_changed_field(changed, key_id_property),
                 DocumentPropertyReferenceTarget::Identity
                 | DocumentPropertyReferenceTarget::Contract { .. }
                 | DocumentPropertyReferenceTarget::Token => false,
@@ -304,16 +355,20 @@ fn validate_document_type_references_v0(
                     None => false,
                     Some(fetch_info) => {
                         // The declaration's requirements are checked against the contract
-                        // just fetched, so they cost no further read; the first unmet one
-                        // refuses the write
+                        // just fetched and the write itself (its owner and block time), so
+                        // they cost no further read; the first unmet one refuses the write
+                        let write = ReferringWrite {
+                            owner_id,
+                            block_time_ms: block_info.time_ms,
+                        };
                         if let Some(requirement) =
-                            contract_requirements.first_unmet_by(&fetch_info.contract)
+                            contract_requirements.first_unmet_by(&fetch_info.contract, write)
                         {
                             return Ok(SimpleConsensusValidationResult::new_with_error(
                                 ReferencedContractRequirementNotMetError::new(
                                     Identifier::from(referenced_id),
                                     requirement.field().to_string(),
-                                    requirement.required().to_string(),
+                                    requirement.required(),
                                     path.to_string(),
                                 )
                                 .into(),
@@ -564,7 +619,10 @@ fn validate_document_type_references_v0(
 
                 referenced_document.is_some()
             }
-            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property,
+                key_requirements,
+            } => {
                 // The referenced key id is carried by the named sibling property
                 let key_id: KeyID =
                     match document_data.get_optional_integer_at_path(key_id_property) {
@@ -591,41 +649,20 @@ fn validate_document_type_references_v0(
                         }
                     };
 
-                execution_context.add_operation(ValidationOperation::RetrieveIdentity(
-                    RetrieveIdentityInfo::one_key(),
-                ));
-
-                // A missing identity and a missing key resolve to the same
-                // failure: the referenced key could not be found
-                let Some(key) = platform
-                    .drive
-                    .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
-                        IdentityKeysRequest::new_specific_key_query(&referenced_id, key_id),
-                        transaction,
-                        platform_version,
-                    )?
-                else {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ReferencedIdentityKeyNotFoundError::new(
-                            Identifier::from(referenced_id),
-                            key_id,
-                            path.to_string(),
-                        )
-                        .into(),
-                    ));
-                };
-
-                // Keys can never be removed, so an existing reference can not
-                // dangle; a disabled key is still rejected for fresh writes
-                if key.is_disabled() {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ReferencedIdentityKeyDisabledError::new(
-                            Identifier::from(referenced_id),
-                            key_id,
-                            path.to_string(),
-                        )
-                        .into(),
-                    ));
+                let result = validate_referenced_identity_key_v0(
+                    Identifier::from(referenced_id),
+                    key_id,
+                    path,
+                    key_requirements,
+                    document_type.name(),
+                    contract.id(),
+                    platform,
+                    transaction,
+                    execution_context,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    return Ok(result);
                 }
 
                 true
@@ -646,6 +683,156 @@ fn validate_document_type_references_v0(
                 )),
             ));
         }
+    }
+
+    Ok(SimpleConsensusValidationResult::new())
+}
+
+/// A key reference declared on the key id property at `path`
+/// (`DocumentPropertyType::KeyIdWithReference`): the value is the key id, and
+/// `identity_property` names whose key it is. For `$ownerId` that is the
+/// writer, `owner_id`, whose existence the transition already proved, and for
+/// `$creatorId` the document's creator, `creator_id` (the writer on a create,
+/// the stored creator on a replace), so the key fetch is the only read; for a
+/// property path the identity is read from the document, and a key id set
+/// while that property is not is refused. An unset key id is not validated;
+/// whether it may be absent is the document type's required list.
+#[allow(clippy::too_many_arguments)]
+fn validate_key_id_reference_v0(
+    path: &str,
+    identity_property: &KeyReferenceIdentityProperty,
+    key_requirements: &IdentityKeyReferenceRequirements,
+    document_type_name: &str,
+    declaring_contract_id: Identifier,
+    document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
+    creator_id: Option<Identifier>,
+    platform: &PlatformStateRef,
+    transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let key_id: KeyID = match document_data.get_optional_integer_at_path(path) {
+        Ok(Some(key_id)) => key_id,
+        Ok(None) => return Ok(SimpleConsensusValidationResult::new()),
+        // The declaring property is the key id property itself
+        Err(err) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ReferencedKeyIdPropertyInvalidError::new(
+                    path.to_string(),
+                    path.to_string(),
+                    err.to_string(),
+                )
+                .into(),
+            ))
+        }
+    };
+
+    let identity_id = match identity_property {
+        KeyReferenceIdentityProperty::OwnerId => owner_id,
+        // Contract registration admits `$creatorId` only on a document type
+        // that records creator ids, so a document of such a type has one
+        KeyReferenceIdentityProperty::CreatorId => {
+            creator_id.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a $creatorId key reference needs a document type that records creator ids",
+            )))?
+        }
+        KeyReferenceIdentityProperty::Property(identity_path) => {
+            match document_data.get_optional_identifier_at_path(identity_path) {
+                Ok(Some(identity_id)) => Identifier::from(identity_id),
+                Ok(None) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedKeyIdPropertyInvalidError::new(
+                            path.to_string(),
+                            path.to_string(),
+                            format!("the identity property {identity_path} is not set"),
+                        )
+                        .into(),
+                    ))
+                }
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidIdentifierError::new(identity_path.clone(), err.to_string()).into(),
+                    ))
+                }
+            }
+        }
+    };
+
+    validate_referenced_identity_key_v0(
+        identity_id,
+        key_id,
+        path,
+        key_requirements,
+        document_type_name,
+        declaring_contract_id,
+        platform,
+        transaction,
+        execution_context,
+        platform_version,
+    )
+}
+
+/// The state check both `identityPublicKey` forms share: key `key_id` of
+/// `identity_id`, referenced from `path`, must exist, not be disabled and
+/// meet the declaration's `key_requirements`. A missing identity and a
+/// missing key resolve to the same failure, the referenced key could not be
+/// found. Keys can never be removed, so an existing reference can not
+/// dangle; a disabled key is still rejected for fresh writes. The
+/// requirements are checked against the key just fetched, so they cost no
+/// further read, and the first unmet one refuses the write; a bound names
+/// the declaring contract and one of its own document types (checked when
+/// the contract was registered), so the check needs nothing beyond the key
+/// and the contract in hand.
+#[allow(clippy::too_many_arguments)]
+fn validate_referenced_identity_key_v0(
+    identity_id: Identifier,
+    key_id: KeyID,
+    path: &str,
+    key_requirements: &IdentityKeyReferenceRequirements,
+    document_type_name: &str,
+    declaring_contract_id: Identifier,
+    platform: &PlatformStateRef,
+    transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+        RetrieveIdentityInfo::one_key(),
+    ));
+
+    let Some(key) = platform
+        .drive
+        .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
+            IdentityKeysRequest::new_specific_key_query(&identity_id.to_buffer(), key_id),
+            transaction,
+            platform_version,
+        )?
+    else {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedIdentityKeyNotFoundError::new(identity_id, key_id, path.to_string()).into(),
+        ));
+    };
+
+    if key.is_disabled() {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedIdentityKeyDisabledError::new(identity_id, key_id, path.to_string()).into(),
+        ));
+    }
+
+    if let Some(requirement) = key_requirements.first_unmet_by(&key, declaring_contract_id) {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedIdentityKeyRequirementNotMetError::new(
+                document_type_name.to_string(),
+                path.to_string(),
+                identity_id,
+                key_id,
+                requirement.field().to_string(),
+                requirement.required(),
+                requirement.actual_of(&key),
+            )
+            .into(),
+        ));
     }
 
     Ok(SimpleConsensusValidationResult::new())

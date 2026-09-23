@@ -365,6 +365,7 @@ mod tests {
                 contract.id(),
                 identity_id,
                 &lists,
+                false,
                 version,
             )
             .expect("expected the proof to verify");
@@ -440,6 +441,7 @@ mod tests {
             contract.id(),
             warned,
             &lists,
+            false,
             version,
         )
         .expect("expected the proof to verify");

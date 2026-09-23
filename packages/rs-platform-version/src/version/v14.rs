@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts twenty-five consensus changes:
+/// v14 hosts thirty-one consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -199,6 +199,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   reference checks, re-validates a `refersTo: deletableDocument`
 ///   reference on every replace (a dead one must be repointed or cleared),
 ///   and lets an `immutable` one be cleared once its target is deleted.
+///   Document create structure validation 1 and replace structure
+///   validation 0 (extended in place) refuse a `distinctFrom` identifier
+///   property equal to the value it must differ from
+///   (`DocumentPropertyNotDistinctError`, 10419); transfer and purchase
+///   structure validation 0, extended in place, judge the stored document's
+///   `$ownerId` declarations against the new owner.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
@@ -496,7 +502,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     beside the owner and an appointed set, in the same config V2). The
 ///     declaration is frozen: the join and vote windows (one day to four weeks,
 ///     one week by default) and the challenge cool-down (two weeks to three
-///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; the document
+///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; an optional,
+///     unbounded election delay in seconds after the contract's creation
+///     before the first charter may be filed (`electionDelay`, read by the
+///     `moderation: "electionOpen"` reference requirement of item 24); the document
 ///     types the team moderates, each with the abilities a charter may claim on
 ///     it; who moderates until the first team is seated (the owner, an
 ///     appointed set, or nobody, with the moderated types not yet usable or
@@ -525,18 +534,159 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     **earliest** contender (creation time, block height, core height,
 ///     document id) for every resolution, where the shipped rule awarded the
 ///     latest; DPNS contests ending from this version on follow the new rule.
-/// 24. **Contract references may require elected moderation**: a `contract`
-///     `refersTo` declaration may carry `contractRequirements`, what the referenced
-///     contract must declare beyond existing, with `moderation: "elected"` as
-///     the first requirement (meta-schema v3, `apply_property_reference` 0,
-///     `ContractReferenceRequirements` on `DocumentPropertyReferenceTarget::Contract`).
-///     The document reference validation checks it against the contract it
-///     fetched for the existence check, so it costs no further read, and
-///     refuses an unmet requirement with
+///
+/// 24. **Contract references may require elected moderation, a minimum age, a
+///     minimum time since the last update, an owner relation to the writer or
+///     config flags of the referenced contract**: a `contract` `refersTo`
+///     declaration may carry `contractRequirements`, what the referenced
+///     contract must declare beyond existing, with `moderation: "elected"` or
+///     `"electionOpen"` (elected, and the contract's own `electionDelay` since
+///     its creation has passed, or it declares none),
+///     `minimumAgeSeconds` (the contract's recorded creation time must be at
+///     least that many seconds before the block time of the write),
+///     `minimumSecondsSinceUpdate` (the same of the later of its creation and
+///     last update times; a contract without a recorded creation time never
+///     meets either), `owner` (`"self"`: the contract is owned by the
+///     `$ownerId` of the referring document, `"other"`: by anyone else),
+///     `readonly: true` (its config is read-only, so it can never be updated
+///     again), `keepsHistory: true` (its config keeps history) and
+///     `ownerProtected` (its elected moderation declaration protects the owner
+///     from the team, or does not, as the value says; a contract without
+///     elected moderation meets neither value) as the requirements
+///     (meta-schema v3, `apply_property_reference` 0,
+///     `ContractReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::Contract`). The document reference
+///     validation checks them against the contract it fetched for the
+///     existence check and the write itself (its owner and block time), so
+///     they cost no further read, and refuses the first unmet requirement with
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
-/// 25. **Token shielded pools**: a token configuration in format version 1
+/// 25. **Typed arrays of scalars in document schemas**: a document property
+///     may be `type: "array"` with an `items` element schema instead of
+///     `byteArray` (meta-schema v3, `parse_typed_array` 0,
+///     `DocumentPropertyType::TypedArray`). An element is an integer, a
+///     number, a string, a boolean, a byte array or an identifier; objects
+///     and arrays of arrays are refused. On the array `minItems` and
+///     `maxItems` count elements, `maxItems` is required (with `minItems`
+///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
+///     (1024), and `uniqueItems` refuses a document repeating an element. An
+///     element's `enum` has members of the element type only (none on a byte
+///     array or identifier element), and an integer element's `minimum` and
+///     `maximum` are integers; the parser reads them so random documents stay
+///     inside them. The array is stored inline, a varint element count followed by the
+///     elements, each encoded exactly as a required scalar property of its
+///     type: an identifier element is 32 raw bytes, an integer element takes
+///     the width its bounds give it, a fixed-size byte array element is raw.
+///     A contract update may not change how an element encodes
+///     (`validate_update` 1). The array cannot be an index property or one
+///     side of a `propertyAgreement`. Its identifier and byte array elements
+///     are conversion paths (`find_identifier_and_binary_paths` 1). A byte array
+///     refuses `items`, and an identifier (a byte array with the identifier
+///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
+///     no byte repeat.
+///
+/// 26. **Distinct identifier properties**: the `distinctFrom` property
+///     keyword (meta-schema v3, `apply_distinct_from` 0, `DistinctFrom` on
+///     `DocumentProperty`) requires an identifier property's value to differ
+///     from the value of a named property of the same document, or from the
+///     document's `$ownerId`; on the `items` of a typed array of identifiers
+///     it binds every element. A pure structure rule: document create
+///     structure validation 1 and replace structure validation 0 call
+///     `validate_distinct_from_properties` (`validate_distinct_from` 0) on the
+///     transition's data and owner id after the schema validation, transfer
+///     and purchase structure validation 0 call it on the stored document and
+///     its new owner (the three generation-0 modules were extended in place:
+///     the call is inert before this version, where no property carries the
+///     keyword), and each refuses an equal pair with
+///     `DocumentPropertyNotDistinctError` (10419); an absent named property
+///     passes. The parser checks the target at contract
+///     registration and update (it must exist, be an identifier and not be
+///     the declaring property), and a changed `distinctFrom` is an
+///
+/// 27. **`encryptedFor` on byte array properties**: a byte array property may
+///     declare how its ciphertext was produced, so wallets read the recipe
+///     from the contract instead of a side channel: `recipient` (an identifier
+///     property of the same document type, or `$ownerId`), `recipientKey` and
+///     `senderKey` (integer properties of the same type bounded to u32,
+///     carrying key ids) and `scheme` (`ecdh-secp256k1-aes256-cbc`, the
+///     dashpay contact request scheme: a 16-byte IV followed by AES-256-CBC
+///     with PKCS7 padding under the ECDH shared key). Meta-schema v3 admits it
+///     on byte arrays that are not identifiers, `apply_encrypted_for` 0 parses
+///     it onto `DocumentProperty::encrypted_for` and checks the three named
+///     properties exist with the right types at registration. Document create
+///     structure validation 1 and replace structure validation 0 (extended in
+///     place, inert before this version) call
+///     `validate_encrypted_property_shapes` (`validate_encrypted_property_shapes`
+///     0, `None` before this version) to check the ciphertext shape of every declared property a transition supplies,
+///     at least the IV plus one block and a multiple of the block, and refuse
+///     it with `InvalidEncryptedPropertyShapeError` (10420). Nothing else about
+///     the ciphertext is verifiable on chain. A changed `encryptedFor` is an
+///     incompatible schema change on update.
+///
+/// 28. **Property and document type names are word characters only**:
+///     meta-schema v3 refuses `-` in a property name (top-level or nested,
+///     and in the property paths of `refersTo` declarations) and generation
+///     3 of the document type parser refuses it in a document type name,
+///     under full validation. Every earlier meta-schema and generation
+///     admitted `-`, which the dotted and `list[]` path syntax was never
+///     written for; a census of every contract create and update on mainnet
+///     and testnet (2026-09-23) found no name carrying one, so nothing stored
+///     is affected. Stored contracts are read as they are.
+///
+/// 29. **Identity key references may require a purpose and a document type
+///     bound**: an `identityPublicKey` `refersTo` declaration may carry
+///     `keyRequirements`, what the referenced key must be beyond existing and
+///     not being disabled, with `purpose` (the key's purpose, by its wire name,
+///     any but `system`) and `boundTo` (the key's contract bounds must be
+///     exactly the declaring contract and the named document type of it) as
+///     the requirements (meta-schema v3, `apply_property_reference` 0,
+///     `IdentityKeyReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::IdentityPublicKey`).
+///     `create_document_types_from_document_schemas` 1, edited in place (the
+///     check is inert before this version, where no parsed reference carries
+///     requirements), refuses a contract whose `boundTo` names a document type
+///     it does not have or one no key of the required purpose can be bound
+///     to, so the check never needs a second contract fetch and a declared
+///     requirement can be met. The document reference validation
+///     checks the requirements against the key it fetched for the existence
+///     check, so they cost no further read, and refuses the first unmet one
+///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed
+///     `keyRequirements` is an incompatible schema change on update.
+///
+/// 30. **Key references on the key id property**: an `identityPublicKey`
+///     `refersTo` declaration may sit on the key id property itself, an
+///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
+///     `u32`), naming through `identityProperty` whose key the value is:
+///     `"$ownerId"` (the writer), `"$creatorId"` (the document's creator,
+///     only on a document type that records creator ids) or the path of an
+///     identifier property of the same document type (which must exist, be
+///     an identifier and not carry an `identityPublicKey` reference of its
+///     own); the last two are checked at contract registration (40125). The
+///     declaration takes no `keyIdProperty`; the identifier form is unchanged
+///     and every other `refersTo` form stays identifier-only (meta-schema v3,
+///     `apply_property_reference` 0, `DocumentPropertyType::KeyIdWithReference`
+///     over `KeyReferenceIdentityProperty`). At document create and replace the
+///     reference validation reads the key id from the property, resolves the
+///     identity (the writer, the creator the action carries, or the named
+///     property's value, a key id set while it is unset being refused with
+///     40125) and fetches that key, so the key fetch is the only read; a key
+///     that does not exist refuses the write, paid, with
+///     `ReferencedIdentityKeyNotFoundError` (40123) and a disabled one with
+///     `ReferencedIdentityKeyDisabledError` (40124), as for the identifier
+///     form. A replace re-validates `$ownerId` touched or not, as the
+///     `$ownerId` writer gate is, since the writer may not be the one who
+///     wrote the key id; `$creatorId` when the key id changed; a property
+///     path when the key id or that property changed (a transfer itself is
+///     never checked: the reference governs writing, not holding). A
+///     `keyIdProperty` may not name a property carrying this form (40125 at
+///     registration). `keyRequirements` (item 29) sit on this form exactly
+///     as on the identifier form, checked by the same key check and by the
+///     same `boundTo` registration rule. Adding, removing or changing it is
+///     an incompatible schema change on update, like the rest of a
+///     `refersTo`.
+///
+/// 31. **Token shielded pools**: a token configuration in format version 1
 ///     (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
 ///     `token_configuration_format` bounds) can set `hasShieldedPool`, which
 ///     gives the token its own Orchard pool under

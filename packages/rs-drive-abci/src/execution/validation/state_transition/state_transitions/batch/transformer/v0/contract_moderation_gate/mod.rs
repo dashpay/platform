@@ -443,6 +443,7 @@ mod tests {
                         BTreeSet::from([ModerationAbility::Ban]),
                     )]),
                     interim: InterimModerators::NotYetUsable,
+                    election_delay: None,
                     owner_protected: false,
                 })),
             },

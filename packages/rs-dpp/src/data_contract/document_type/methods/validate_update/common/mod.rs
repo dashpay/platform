@@ -1723,6 +1723,7 @@ mod tests {
     mod validate_schema {
         use super::*;
         use crate::consensus::basic::BasicError;
+        use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
         use std::collections::BTreeMap;
 
         #[test]
@@ -2011,6 +2012,36 @@ mod tests {
                     platform_value!({ "type": "contract" }),
                     "/properties/toUserId/refersTo/contractRequirements",
                 ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 7200 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumAgeSeconds",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 60 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 61 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumSecondsSinceUpdate",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "other" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/owner",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": false } }),
+                    "/properties/toUserId/refersTo/contractRequirements/ownerProtected",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "readonly": true } }),
+                    "/properties/toUserId/refersTo/contractRequirements/readonly",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "keepsHistory": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/keepsHistory",
+                ),
             ] {
                 let old_document_type =
                     identifier_document_type(Some(old_fields), platform_version);
@@ -2029,6 +2060,415 @@ mod tests {
                     )] if e.property_path() == changed_path
                 );
             }
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_an_identity_key_reference_requirement_changes() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_fields, new_fields, changed_path) in [
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex" }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    "/properties/toUserId/refersTo/keyRequirements",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex" }),
+                    "/properties/toUserId/refersTo/keyRequirements",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "encryption" } }),
+                    "/properties/toUserId/refersTo/keyRequirements/purpose",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "boundTo": "test" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "boundTo": "other" } }),
+                    "/properties/toUserId/refersTo/keyRequirements/boundTo",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption", "boundTo": "test" } }),
+                    "/properties/toUserId/refersTo/keyRequirements/boundTo",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_fields), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_fields), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
+        /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
+        /// `delegateId` as given.
+        fn distinct_from_document_type(
+            distinct_from: Option<&str>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut delegate_id = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 1
+            });
+            if let Some(distinct_from) = distinct_from {
+                delegate_id
+                    .insert("distinctFrom".to_string(), distinct_from.into())
+                    .expect("should insert distinctFrom");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "delegateId": delegate_id
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_distinct_from_is_added_changed_or_removed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_distinct_from, new_distinct_from) in [
+                (None, Some("$ownerId")),
+                (Some("$ownerId"), Some("toUserId")),
+                (Some("toUserId"), None),
+            ] {
+                let old_document_type =
+                    distinct_from_document_type(old_distinct_from, platform_version);
+                let new_document_type =
+                    distinct_from_document_type(new_distinct_from, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == "/properties/delegateId/distinctFrom",
+                    "{old_distinct_from:?} -> {new_distinct_from:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_distinct_from_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
+            let new_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// A `message` type whose `senderKeyId` is a `u32` key id, carrying
+        /// `refers_to` when given.
+        fn key_id_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut sender_key_id = platform_value!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295u64,
+                "position": 0
+            });
+
+            if let Some(refers_to) = refers_to {
+                sender_key_id
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "senderKeyId": sender_key_id
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "message",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// The key id form of `identityPublicKey` is a `refersTo` like any
+        /// other: adding it, removing it or changing what it names is an
+        /// incompatible change, so a contract can neither start nor stop
+        /// checking a stored key id against the owner's keys.
+        #[test]
+        fn should_return_invalid_result_when_a_key_id_reference_is_added_removed_or_changed() {
+            let platform_version = PlatformVersion::latest();
+            let owner_key = platform_value!({
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId"
+            });
+
+            for (old_refers_to, new_refers_to, operation, changed_path) in [
+                (
+                    None,
+                    Some(owner_key.clone()),
+                    "add",
+                    "/properties/senderKeyId/refersTo",
+                ),
+                (
+                    Some(owner_key.clone()),
+                    None,
+                    "remove",
+                    "/properties/senderKeyId/refersTo",
+                ),
+                // `identityProperty` admits one value today; what a change
+                // would look like is the reference losing it for the other
+                // spelling of the same reference type, which is refused
+                // before the parser is even asked whether it can be parsed
+                (
+                    Some(owner_key.clone()),
+                    Some(platform_value!({
+                        "type": "identityPublicKey",
+                        "identityProperty": "$creatorId"
+                    })),
+                    "replace",
+                    "/properties/senderKeyId/refersTo/identityProperty",
+                ),
+            ] {
+                let old_document_type = key_id_document_type(old_refers_to, platform_version);
+                let new_document_type = if new_refers_to
+                    .as_ref()
+                    .is_some_and(|value| value.to_string().contains("creatorId"))
+                {
+                    // Not parseable at all: compare the schemas directly
+                    // through a type built without the reference, then swap
+                    // the schema in
+                    let mut document_type = key_id_document_type(None, platform_version);
+                    document_type
+                        .schema_mut()
+                        .get_mut("properties")
+                        .expect("the schema should be a map")
+                        .expect("properties should exist")
+                        .get_mut("senderKeyId")
+                        .expect("properties should be a map")
+                        .expect("senderKeyId should exist")
+                        .insert(
+                            "refersTo".to_string(),
+                            new_refers_to.clone().expect("a refersTo value"),
+                        )
+                        .expect("should insert refersTo");
+                    document_type
+                } else {
+                    key_id_document_type(new_refers_to, platform_version)
+                };
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.operation() == operation && e.property_path() == changed_path,
+                    "{operation} at {changed_path}: {:?}", result.errors
+                );
+            }
+        }
+    }
+
+    mod encrypted_for {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::data_contract::config::DataContractConfig;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        /// A document type with a recipient, two key ids and an
+        /// `encryptedMessage` carrying `encrypted_for` when given.
+        fn encrypted_document_type(
+            encrypted_for: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut encrypted_message = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 1040,
+                "position": 3
+            });
+            if let Some(encrypted_for) = encrypted_for {
+                encrypted_message
+                    .insert("encryptedFor".to_string(), encrypted_for)
+                    .expect("should insert encryptedFor");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "recipientId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "recipientKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 1 },
+                    "senderKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 2 },
+                    "encryptedMessage": encrypted_message
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn declaration(recipient: &str) -> platform_value::Value {
+            platform_value!({
+                "recipient": recipient,
+                "recipientKey": "recipientKeyId",
+                "senderKey": "senderKeyId",
+                "scheme": "ecdh-secp256k1-aes256-cbc"
+            })
+        }
+
+        /// Documents written under one recipe could not be read under another,
+        /// so adding, removing or changing the declaration is incompatible.
+        #[test]
+        fn should_return_invalid_result_when_encrypted_for_is_added_removed_or_changed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_declaration, new_declaration, changed_path) in [
+                (
+                    None,
+                    Some(declaration("recipientId")),
+                    "/properties/encryptedMessage/encryptedFor",
+                ),
+                (
+                    Some(declaration("recipientId")),
+                    None,
+                    "/properties/encryptedMessage/encryptedFor",
+                ),
+                (
+                    Some(declaration("recipientId")),
+                    Some(declaration("$ownerId")),
+                    "/properties/encryptedMessage/encryptedFor/recipient",
+                ),
+            ] {
+                let old_document_type = encrypted_document_type(old_declaration, platform_version);
+                let new_document_type = encrypted_document_type(new_declaration, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_encrypted_for_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type =
+                encrypted_document_type(Some(declaration("recipientId")), platform_version);
+            let new_document_type =
+                encrypted_document_type(Some(declaration("recipientId")), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
         }
     }
 

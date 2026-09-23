@@ -112,6 +112,8 @@ class Freeze:
     value_types: tuple = ()
 
 
+HISTORICAL_V2_SOURCE = "52e8d4ec68f0c772313fa1bbef223fb1eabbf1cc"
+
 FREEZES = [
     # The accepted V1 asset lock: the last commit before
     # `recipientIsExternal` was added to the live model.
@@ -123,6 +125,14 @@ FREEZES = [
         tuple(V1_GRAPH_MODELS),
         TOKEN_TYPES_FILE,
         tuple(TOKEN_VALUE_TYPES),
+    ),
+    # Reconstructed pre-August-28 V2: all 35 hashes and the model checksum
+    # match the observed App Store store. This is reconstruction provenance,
+    # not a claim that this exact commit built the released app binary.
+    Freeze(
+        "DashSchemaV2", HISTORICAL_V2_SOURCE,
+        tuple(V1_GRAPH_MODELS + ["PersistentAssetLock", "PersistentTrackedMasternode"]),
+        TOKEN_TYPES_FILE, tuple(TOKEN_VALUE_TYPES),
     ),
 ]
 
@@ -685,14 +695,60 @@ def render_snapshot(root, version, entry, *, inventory=None):
     return files
 
 
+APP_STORE_BASELINE_FIELDS = {
+    "bundle_id": r"[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+",
+    "app_id": r"[0-9]+",
+    "app_version": r"[0-9]+(\.[0-9]+){1,2}",
+    "release_id": r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+}
+
+
+def validate_app_store_baseline(binding):
+    """The published release a historical schema is bound to. The iOS release
+    gate reads exactly this object, so its shape is part of the contract."""
+    if not isinstance(binding, dict) or set(binding) != set(APP_STORE_BASELINE_FIELDS):
+        raise SystemExit("historical schema must bind exactly one App Store baseline")
+    for field, pattern in APP_STORE_BASELINE_FIELDS.items():
+        value = binding[field]
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
+            raise SystemExit(f"invalid App Store baseline {field}")
+
+
+def validate_historical_schemas(root, registry):
+    """Historical reconstruction is separate from archive-captured releases."""
+    entries = registry.get("historical_schemas", {})
+    if not isinstance(entries, dict):
+        raise SystemExit("invalid historical schema registry")
+    for version, entry in entries.items():
+        if version != "2.0.0" or not isinstance(entry, dict):
+            raise SystemExit("unsupported historical schema")
+        schema = entry["schema"]
+        validate_schema(schema)
+        if schema["schema_version"] != version or entry.get("source_sha") != HISTORICAL_V2_SOURCE:
+            raise SystemExit("historical schema reconstruction provenance differs")
+        if entry.get("provenance") != "reconstructed-model-match":
+            raise SystemExit("historical schema must identify reconstruction provenance")
+        validate_app_store_baseline(entry.get("app_store_baseline"))
+        digest = entry["fixture_sha256"]
+        path = entry["fixture_path"]
+        if path != "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/Fixtures/SchemaStores/historical-v2.store":
+            raise SystemExit("invalid historical fixture path")
+        fixture = pathlib.Path(root, path)
+        if not re.fullmatch(r"[0-9a-f]{64}", digest) or not fixture.is_file() or hashlib.sha256(fixture.read_bytes()).hexdigest() != digest:
+            raise SystemExit("missing or modified immutable historical fixture")
+        validate_fixture_description(fixture, schema)
+    return entries
+
+
 def render_all(root, registry=None):
     files = render_baseline(root)
     registry = read_registry(root) if registry is None else registry
+    historical = validate_historical_schemas(root, registry)
     fixtures = []
-    checksums = set()
+    checksums = {entry["schema"]["model_checksum"] for entry in historical.values()}
     for version, entry in sorted(registry["schemas"].items(), key=lambda item: tuple(map(int, item[0].split('.')))):
-        if version == "1.0.0":
-            raise SystemExit("V1 is the unchanged accepted baseline, not a new release snapshot")
+        if version == "1.0.0" or version in historical:
+            raise SystemExit("Historical schema versions are reserved, not new release snapshots")
         checksum = entry["schema"]["model_checksum"]
         if checksum in checksums:
             raise SystemExit("two registered schema versions have the same model checksum")
@@ -751,6 +807,12 @@ def add_release(root, manifest, fixture):
     version = schema["schema_version"]
     if version == "1.0.0":
         raise SystemExit("V1 must remain unchanged")
+    registry = read_registry(root)
+    historical = validate_historical_schemas(root, registry)
+    if version in historical:
+        raise SystemExit("Historical schema version is reserved; publish the current V3 or a later schema")
+    if any(entry["schema"]["model_checksum"] == schema["model_checksum"] for entry in historical.values()):
+        raise SystemExit("a new schema version cannot reuse a historical model checksum")
     commit = manifest["platform_sha"]
     if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise SystemExit("release source must be a full Git SHA")

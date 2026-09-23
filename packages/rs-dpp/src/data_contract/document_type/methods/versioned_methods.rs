@@ -1,4 +1,6 @@
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -17,6 +19,7 @@ use crate::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION}
 use crate::fee::Credits;
 use crate::identity::TimestampMillis;
 use crate::prelude::{BlockHeight, CoreBlockHeight};
+use crate::validation::SimpleConsensusValidationResult;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
@@ -773,6 +776,50 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 property.property_type.decode_value_for_tree_keys(value)
             }
         }
+    }
+
+    /// `validate_distinct_from_properties` version 0: every property of the document type
+    /// that declares `distinctFrom` and has a value in `data` is compared with what it
+    /// must differ from, the document's `owner_id` or the named property, and the first
+    /// equal pair is reported. The declaring properties are read from the list the parser
+    /// built, so a type without declarations costs nothing. Each value is judged by
+    /// `DistinctFrom::violation`, so an array item can be judged by the same rule with
+    /// the item's value.
+    fn validate_distinct_from_properties_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
+    ) -> SimpleConsensusValidationResult
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for path in self.distinct_from_fields() {
+            let Some(property) = self.flattened_properties().get(path) else {
+                continue;
+            };
+            let Some(distinct_from) = property.distinct_from.as_ref() else {
+                continue;
+            };
+            // A lookup error (an intermediate that is not an object) is refused by the
+            // schema validation that precedes this check, so it reads as absent here.
+            let Ok(Some(value)) = data.get_optional_at_path(path) else {
+                continue;
+            };
+            // A typed array declares on its items: every element is judged on its own
+            let values: &[Value] = match (&property.property_type, value) {
+                (DocumentPropertyType::TypedArray(_), Value::Array(elements)) => elements,
+                (DocumentPropertyType::TypedArray(_), _) => continue,
+                _ => std::slice::from_ref(value),
+            };
+            for value in values {
+                if let Some(error) =
+                    distinct_from.violation(self.name(), path, value, data, owner_id)
+                {
+                    return SimpleConsensusValidationResult::new_with_error(error.into());
+                }
+            }
+        }
+        SimpleConsensusValidationResult::default()
     }
 }
 

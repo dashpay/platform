@@ -72,6 +72,7 @@ use crate::consensus::state::document::referenced_contract_requirement_not_met_e
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use crate::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use crate::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use crate::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -587,6 +588,10 @@ pub enum StateError {
     // Requirements on a referenced contract (protocol version 14).
     #[error(transparent)]
     ReferencedContractRequirementNotMetError(ReferencedContractRequirementNotMetError),
+
+    // Requirements on a referenced identity key (protocol version 14).
+    #[error(transparent)]
+    ReferencedIdentityKeyRequirementNotMetError(ReferencedIdentityKeyRequirementNotMetError),
 
     // NOTE: `StateError` is bincode-encoded positionally, so a new variant MUST be appended at
     // the tail: inserting mid-enum shifts the wire discriminant of every variant after it and
@@ -1110,12 +1115,27 @@ mod tests {
             )),
             143
         );
+        // Requirements on a referenced identity key (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedIdentityKeyRequirementNotMetError(
+                ReferencedIdentityKeyRequirementNotMetError::new(
+                    "joinRequest".to_string(),
+                    "recipientId".to_string(),
+                    group_id,
+                    2,
+                    "purpose".to_string(),
+                    "decryption".to_string(),
+                    "encryption".to_string(),
+                )
+            )),
+            144
+        );
         // Token shielded pools (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
                 TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
             )),
-            144
+            145
         );
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPaymentAmountMismatchError(
@@ -1126,7 +1146,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            145
+            146
         );
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPaymentNotRequiredError(
@@ -1135,7 +1155,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            146
+            147
         );
     }
 }

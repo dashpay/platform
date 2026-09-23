@@ -1013,6 +1013,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentType::V0(_) => &[],
+            DocumentType::V1(_) => &[],
+            DocumentType::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
     fn immutable_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
@@ -1138,6 +1146,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentTypeRef::V0(_) => &[],
+            DocumentTypeRef::V1(_) => &[],
+            DocumentTypeRef::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
     fn immutable_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
@@ -1226,6 +1242,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentTypeMutRef::V0(_) => &[],
+            DocumentTypeMutRef::V1(_) => &[],
+            DocumentTypeMutRef::V2(v2) => v2.distinct_from_fields(),
         }
     }
 

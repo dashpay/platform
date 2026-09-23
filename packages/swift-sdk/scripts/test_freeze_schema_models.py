@@ -51,7 +51,7 @@ class CheckTests(unittest.TestCase):
         shutil.copyfile(os.path.join(ROOT, gen.TEST_REGISTRY_FILE), target)
 
     def test_should_find_the_committed_files_are_the_generators_output(self):
-        self.assertEqual(len(gen.render_baseline(ROOT)), 35)
+        self.assertEqual(len(gen.render_baseline(ROOT)), 71)
         self.assertIn(gen.TEST_REGISTRY_FILE, self.files)
         self.assertEqual(gen.check_problems(ROOT, self.files), [])
 
@@ -229,6 +229,65 @@ class ReleaseTests(unittest.TestCase):
 
         self.addCleanup(mock.patch.stopall)
         mock.patch.object(gen, "git", side_effect=git).start()
+
+    def historical_registry(self):
+        path = "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/Fixtures/SchemaStores/historical-v2.store"
+        target = Path(self.root, path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(self.fixture.read_bytes())
+        registry = gen.read_registry(self.root)
+        registry["historical_schemas"] = {"2.0.0": {
+            "schema": dict(self.schema), "fixture_path": path,
+            "fixture_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "source_sha": gen.HISTORICAL_V2_SOURCE, "provenance": "reconstructed-model-match",
+            "app_store_baseline": {
+                "bundle_id": "org.dashfoundation.dash", "app_id": "1206647026", "app_version": "9.0.2",
+                "release_id": "679060c3-2e64-49d6-b28e-baa307c817be"}}}
+        Path(self.root, gen.REGISTRY_FILE).write_text(json.dumps(registry))
+        return registry
+
+    def test_should_validate_the_historical_app_store_baseline_the_ios_gate_reads(self):
+        self.assertEqual(gen.validate_historical_schemas(self.root, self.historical_registry()).keys(), {"2.0.0"})
+        mutations = {
+            "missing": lambda entry: entry.pop("app_store_baseline"),
+            "not an object": lambda entry: entry.__setitem__("app_store_baseline", "9.0.2"),
+            "missing field": lambda entry: entry["app_store_baseline"].pop("release_id"),
+            "extra field": lambda entry: entry["app_store_baseline"].__setitem__("build_number", "30"),
+            "empty version": lambda entry: entry["app_store_baseline"].__setitem__("app_version", ""),
+            "non-string app id": lambda entry: entry["app_store_baseline"].__setitem__("app_id", 1206647026),
+            "malformed release id": lambda entry: entry["app_store_baseline"].__setitem__("release_id", "release-30"),
+            "malformed bundle id": lambda entry: entry["app_store_baseline"].__setitem__("bundle_id", "dash"),
+        }
+        for name, mutate in mutations.items():
+            registry = self.historical_registry()
+            mutate(registry["historical_schemas"]["2.0.0"])
+            with self.subTest(case=name), self.assertRaisesRegex(SystemExit, "App Store baseline"):
+                gen.validate_historical_schemas(self.root, registry)
+
+    def test_should_reserve_historical_v2_without_writing_snapshot(self):
+        self.historical_registry()
+        before = Path(self.root, gen.REGISTRY_FILE).read_bytes()
+        with self.assertRaisesRegex(SystemExit, "Historical schema version is reserved"):
+            gen.add_release(self.root, self.manifest, self.fixture)
+        self.assertEqual(Path(self.root, gen.REGISTRY_FILE).read_bytes(), before)
+        self.assertFalse(Path(self.root, gen.FIXTURE_DIR).exists())
+
+    def test_should_reject_modified_historical_fixture(self):
+        registry = self.historical_registry()
+        Path(self.root, registry["historical_schemas"]["2.0.0"]["fixture_path"]).write_bytes(b"changed")
+        with self.assertRaisesRegex(SystemExit, "immutable historical fixture"):
+            gen.validate_historical_schemas(self.root, registry)
+
+    def test_should_reject_changed_historical_schema_or_reconstruction_source(self):
+        for field in ("source_sha", "schema"):
+            registry = self.historical_registry()
+            entry = registry["historical_schemas"]["2.0.0"]
+            if field == "source_sha":
+                entry[field] = "f" * 40
+            else:
+                entry[field]["model_checksum"] = "changed"
+            with self.subTest(field=field), self.assertRaises(SystemExit):
+                gen.validate_historical_schemas(self.root, registry)
 
     def test_should_copy_exact_captured_commit_and_preserve_release_metadata(self):
         registry = gen.add_release(self.root, self.manifest, self.fixture)

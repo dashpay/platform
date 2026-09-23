@@ -371,6 +371,14 @@ public struct DataContractParser {
             // Extract type
             let type = propertyDict["type"] as? String ?? "unknown"
 
+            // A protocol-version-14 typed array (an array declaring `items`
+            // instead of `byteArray`) is persisted like any array: `type`
+            // "array", `byteArray` false, `minItems` / `maxItems` counting
+            // elements. Its element schema needs no column of its own:
+            // `schemaJSON` is the whole type dictionary, and
+            // `PersistentDocumentType.typedArrays` reads it back. Keep that
+            // true when touching the schema stored there.
+
             // Create persistent property
             let property = PersistentProperty(
                 contractId: contractId,

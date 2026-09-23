@@ -243,10 +243,17 @@ def git_environment(token):
 
 
 def source_commits(registry):
-    return {
+    """Every commit a later regeneration must be able to read, including the
+    reconstructed historical sources that never went through a release."""
+    commits = {
         require_string(entry.get("platform_sha"), SHA, "registered Platform commit")
         for group in ("schemas", "releases") for entry in registry.get(group, {}).values()
     }
+    commits.update(
+        require_string(entry.get("source_sha"), SHA, "historical schema source commit")
+        for entry in registry.get("historical_schemas", {}).values()
+    )
+    return commits
 
 
 def fetch_sources(clone, commits, env):
@@ -373,7 +380,7 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
             raise ReleaseError("Attempted to replace an existing snapshot or fixture")
         registry = json_object((clone / REGISTRY).read_bytes(), "snapshot registry")
         # The generator may append a schema, but existing snapshots are immutable.
-        for key in ("schemas", "releases"):
+        for key in ("schemas", "releases", "historical_schemas"):
             for identifier, value in before_registry.get(key, {}).items():
                 if registry.get(key, {}).get(identifier) != value:
                     raise ReleaseError(f"Attempted to rewrite existing {key} entry: {identifier}")

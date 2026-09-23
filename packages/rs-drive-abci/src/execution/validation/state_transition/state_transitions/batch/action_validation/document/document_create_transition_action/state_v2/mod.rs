@@ -57,9 +57,11 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             return Ok(validation_result);
         }
 
+        // The creator of a document being created is its writer
         let reference_result = self.base().validate_document_references(
             self.data(),
             owner_id,
+            Some(owner_id),
             None,
             platform,
             block_info,

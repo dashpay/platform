@@ -54,13 +54,13 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::IdentityKeyLimitsUpdateEmptyError;
@@ -805,6 +805,14 @@ pub enum BasicError {
     // Documents cited by a contract moderation reason (protocol version 14).
     #[error(transparent)]
     InvalidContractModerationReasonDocumentsError(InvalidContractModerationReasonDocumentsError),
+
+    #[error(transparent)]
+    DocumentPropertyNotDistinctError(DocumentPropertyNotDistinctError),
+
+    // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
+    #[error(transparent)]
+    InvalidEncryptedPropertyShapeError(InvalidEncryptedPropertyShapeError),
+
     #[error(transparent)]
     TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
 }
@@ -891,13 +899,38 @@ mod tests {
             )),
             193
         );
+        // A `distinctFrom` identifier property equal to what it must differ from (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyNotDistinctError(
+                DocumentPropertyNotDistinctError::new(
+                    "post".to_string(),
+                    "delegateId".to_string(),
+                    "$ownerId".to_string(),
+                )
+            )),
+            194
+        );
+        // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidEncryptedPropertyShapeError(
+                InvalidEncryptedPropertyShapeError::new(
+                    "encryptedMessage".to_string(),
+                    "ecdh-secp256k1-aes256-cbc".to_string(),
+                    47,
+                    32,
+                    16
+                )
+            )),
+            195
+        );
         // A token opting into a shielded pool keeps no freeze rules (protocol version 14): the
         // tail of the enum.
         assert_eq!(
             discriminant_of(BasicError::TokenShieldedPoolIncompatibleRulesError(
                 TokenShieldedPoolIncompatibleRulesError::new(0, "freezeRules".to_string())
             )),
-            194
+            196
         );
     }
 }

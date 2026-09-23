@@ -448,6 +448,35 @@ p.write_text(json.dumps(r))
         self.assertEqual(git(newest, "cat-file", "-t", source), "commit")
         self.assertEqual(git(newest, "cat-file", "-t", second_source), "commit")
 
+    def test_historical_schema_source_is_fetched_and_retained_like_release_sources(self):
+        registry = {"format_version": 1, "schemas": {"3.0.0": {"platform_sha": "3" * 40}},
+                    "releases": {"r": {"platform_sha": "4" * 40}},
+                    "historical_schemas": {"2.0.0": {"source_sha": "5" * 40, "provenance": "reconstructed-model-match"}}}
+        self.assertEqual(worker.source_commits(registry), {"3" * 40, "4" * 40, "5" * 40})
+        registry["historical_schemas"]["2.0.0"]["source_sha"] = "not-a-commit"
+        with self.assertRaisesRegex(worker.ReleaseError, "historical schema source commit"):
+            worker.source_commits(registry)
+        del registry["historical_schemas"]["2.0.0"]["source_sha"]
+        with self.assertRaisesRegex(worker.ReleaseError, "historical schema source commit"):
+            worker.source_commits(registry)
+
+        source = self.unreachable_source("historical-v2-reconstruction-source")
+        base_registry = json.loads((self.platform / worker.REGISTRY).read_text())
+        base_registry["historical_schemas"] = {"2.0.0": {
+            "source_sha": source, "provenance": "reconstructed-model-match"}}
+        write_json(self.platform / worker.REGISTRY, base_registry)
+        git(self.platform, "add", ".")
+        git(self.platform, "commit", "-m", "register historical source")
+        git(self.platform, "push", str(self.remote), f"{worker.BASE_BRANCH}:refs/heads/{worker.BASE_BRANCH}")
+        ref = worker.SOURCE_TAG_PREFIX + source
+        self.assertNotIn(ref, git(self.remote, "show-ref"))
+        self.prepare(dry_run=True)
+        self.assertNotIn(ref, git(self.remote, "show-ref"))
+        self.prepare()
+        self.assertEqual(git(self.remote, "rev-parse", ref), source)
+        self.assertEqual(git(self.remote, "rev-parse", worker.SOURCE_TAG_PREFIX + self.manifest["platform_sha"]),
+                         self.manifest["platform_sha"])
+
     def test_conflicting_source_tag_is_never_rewritten(self):
         source = self.unreachable_source("released-source")
         self.manifest["platform_sha"] = source

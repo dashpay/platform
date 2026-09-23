@@ -10,22 +10,27 @@ use platform_serialization_derive::{
 };
 
 use crate::consensus::basic::decode::DecodingError;
+use crate::consensus::basic::document::DocumentPropertyNotDistinctError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::config::moderation::ContractModerators;
+use crate::data_contract::accessors::v1::DataContractV1Getters;
+use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, OWNER_ID};
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+use crate::identity::{IdentityPublicKey, Purpose};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
-use array::ArrayItemType;
+use array::{ArrayItemType, TypedArrayProperty};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
 use itertools::Itertools;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
@@ -34,6 +39,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 pub mod array;
+pub mod encrypted_for;
+
+pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 
 #[cfg(test)]
 mod byte_array_encoding_flip_tests;
@@ -51,6 +59,119 @@ pub struct DocumentProperty {
     /// for optional properties. Only ever `Some` when `required` is true.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub required_since: Option<u32>,
+    /// What this identifier property's value must differ from (`distinctFrom`):
+    /// the document's `$ownerId` or another identifier property of the same
+    /// document type. `None` for every property that declares nothing, which
+    /// is every property parsed before protocol version 14.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distinct_from: Option<DistinctFrom>,
+    /// How the property's bytes were encrypted (`encryptedFor`): the recipient,
+    /// the key ids and the scheme. Only ever `Some` on a byte array property,
+    /// and only on contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted_for: Option<EncryptedFor>,
+}
+
+/// What a `distinctFrom` identifier property must differ from.
+///
+/// Declared as `"distinctFrom": "$ownerId"` or `"distinctFrom": "<dotted property path>"`
+/// on an identifier property, or on the `items` of a typed array of identifiers, where it
+/// binds every element (meta-schema v3, protocol version 14). A pure structure rule:
+/// consensus compares the property's value with the named one when the document is created
+/// or replaced, and refuses an equal pair with `DocumentPropertyNotDistinctError` (10419).
+/// When the named property is absent from the document there is nothing to differ from,
+/// so the rule passes. A transfer to, or a purchase by, the identity an `$ownerId`
+/// declaration names is refused the same way, judged against the stored document. The
+/// target is checked at contract registration and update: it must
+/// be `$ownerId` or an existing identifier property of the same document type other than
+/// the declaring one.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+#[serde(into = "String")]
+pub enum DistinctFrom {
+    /// The document's `$ownerId`, which the write transition carries.
+    OwnerId,
+    /// The dotted path of another identifier property of the same document type.
+    Property(String),
+}
+
+impl DistinctFrom {
+    /// The declaration a wire name spells: `$ownerId` or a property path. Any other
+    /// `$`-prefixed name is refused, since no other system property is an identifier the
+    /// rule could compare against.
+    pub fn from_wire_name(name: &str) -> Result<Self, DataContractError> {
+        if name == OWNER_ID {
+            return Ok(DistinctFrom::OwnerId);
+        }
+        if name.starts_with('$') {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "distinctFrom must name \"{OWNER_ID}\" or a property of the same document type, \
+                 not system property \"{name}\""
+            )));
+        }
+        if name.is_empty() || name.len() > 256 {
+            return Err(DataContractError::InvalidContractStructure(
+                "distinctFrom property paths must be between 1 and 256 characters".to_string(),
+            ));
+        }
+        Ok(DistinctFrom::Property(name.to_string()))
+    }
+
+    /// The wire name, as the schema spells it.
+    pub fn as_str(&self) -> &str {
+        match self {
+            DistinctFrom::OwnerId => OWNER_ID,
+            DistinctFrom::Property(path) => path.as_str(),
+        }
+    }
+
+    /// The collision this declaration finds for one value: the error to refuse the write
+    /// with when `value`, the declaring property's own value, equals what it must differ
+    /// from, and `None` when the two differ or when the named property is absent from
+    /// `data` (there is nothing to differ from). `value` is passed on its own rather than
+    /// read from `data` so that an array item can be judged by the same rule with the
+    /// item's value; `path` is the declaring property's dotted path, for the error.
+    ///
+    /// A value on either side that is not a 32-byte identifier cannot collide: the schema
+    /// validation that precedes this check refuses such a document on its own.
+    pub fn violation(
+        &self,
+        document_type_name: &str,
+        path: &str,
+        value: &Value,
+        data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
+    ) -> Option<DocumentPropertyNotDistinctError> {
+        let Ok(value) = value.to_identifier() else {
+            return None;
+        };
+        let other = match self {
+            DistinctFrom::OwnerId => owner_id,
+            DistinctFrom::Property(target) => {
+                // A lookup error (an intermediate that is not an object) is the same as
+                // absence here: the schema forbids the shape, so nothing to compare against.
+                let Ok(Some(other)) = data.get_optional_at_path(target) else {
+                    return None;
+                };
+                let Ok(other) = other.to_identifier() else {
+                    return None;
+                };
+                other
+            }
+        };
+        (value == other).then(|| {
+            DocumentPropertyNotDistinctError::new(
+                document_type_name.to_string(),
+                path.to_string(),
+                self.as_str().to_string(),
+            )
+        })
+    }
+}
+
+impl From<DistinctFrom> for String {
+    fn from(distinct_from: DistinctFrom) -> Self {
+        distinct_from.as_str().to_string()
+    }
 }
 
 impl DocumentProperty {
@@ -93,8 +214,9 @@ pub struct ByteArrayPropertySizes {
 /// Declared as `refersTo: { "type": "contract", "contractRequirements": { ... } }`: each key names an
 /// aspect of the referenced contract and its value the requirement on it. Consensus checks the
 /// requirements when the referring document is written, against the contract it has already
-/// fetched for the existence check, so a requirement costs no further read. An unmet one
-/// refuses the write with `ReferencedContractRequirementNotMetError` (40135).
+/// fetched for the existence check and the write itself (its owner and block time), so a
+/// requirement costs no further read. An unmet one refuses the write with
+/// `ReferencedContractRequirementNotMetError` (40135).
 #[derive(
     Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
 )]
@@ -103,6 +225,87 @@ pub struct ContractReferenceRequirements {
     /// The moderation the referenced contract must declare.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moderation: Option<ContractReferenceModeration>,
+    /// How long, in seconds, the referenced contract must have existed when the referring
+    /// document is written: its recorded creation time plus this many seconds must not be
+    /// after the block time. A contract that never recorded a creation time does not meet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_age_seconds: Option<u32>,
+    /// How long, in seconds, the referenced contract must have been unchanged when the
+    /// referring document is written: the later of its recorded creation and last update
+    /// times plus this many seconds must not be after the block time. A contract that never
+    /// recorded a creation time does not meet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_seconds_since_update: Option<u32>,
+    /// Who must own the referenced contract, relative to the writer of the referring document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<ContractReferenceOwner>,
+    /// Whether the referenced contract must be read-only (its config's `readonly`), a
+    /// contract that can never be updated again. Only `true` is declarable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readonly: Option<bool>,
+    /// Whether the referenced contract must keep its history (its config's `keepsHistory`).
+    /// Only `true` is declarable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keeps_history: Option<bool>,
+    /// Whether the elected moderation declaration of the referenced contract must protect
+    /// (`true`), or must not protect (`false`), the contract owner from the team, its
+    /// `ownerProtected`. Either value implies elected moderation: a contract with no
+    /// moderation, or with moderation of another kind, meets neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_protected: Option<bool>,
+}
+
+/// The write of a referring document, what a contract reference's requirements are checked
+/// against beside the referenced contract itself.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct ReferringWrite {
+    /// The `$ownerId` of the referring document: the owner of the transition writing it.
+    pub owner_id: Identifier,
+    /// The time of the block writing it.
+    pub block_time_ms: TimestampMillis,
+}
+
+/// Who a `contract` reference may require to own the referenced contract, relative to the
+/// writer of the referring document.
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+pub enum ContractReferenceOwner {
+    /// The writer itself: the contract's owner is the `$ownerId` of the referring document,
+    /// a write gate like the `$ownerId` property agreement of a document reference.
+    #[serde(rename = "self")]
+    Writer,
+    /// Anyone but the writer.
+    #[serde(rename = "other")]
+    Other,
+}
+
+impl ContractReferenceOwner {
+    /// The wire name, the value of `contractRequirements.owner`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ContractReferenceOwner::Writer => "self",
+            ContractReferenceOwner::Other => "other",
+        }
+    }
+
+    /// The owner relation a wire name names, `None` for any other name.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            "self" => Some(ContractReferenceOwner::Writer),
+            "other" => Some(ContractReferenceOwner::Other),
+            _ => None,
+        }
+    }
+
+    /// Whether `contract`, owned as it is, meets this for a referring document owned by
+    /// `writer_id`.
+    pub fn is_met_by(&self, contract: &DataContract, writer_id: &Identifier) -> bool {
+        match self {
+            ContractReferenceOwner::Writer => contract.owner_id() == *writer_id,
+            ContractReferenceOwner::Other => contract.owner_id() != *writer_id,
+        }
+    }
 }
 
 /// The moderation a `contract` reference may require of the referenced contract.
@@ -112,8 +315,15 @@ pub struct ContractReferenceRequirements {
 #[serde(rename_all = "camelCase")]
 pub enum ContractReferenceModeration {
     /// The contract declares an elected moderation team (`ContractModerators::Elected`),
-    /// whatever its interim and whether a team is seated yet.
+    /// whatever its interim, whether a team is seated yet and whether its election delay
+    /// has passed. A charter proposal declares this, so teams can form during the notice
+    /// the contract gives before its first election.
     Elected,
+    /// The contract declares an elected moderation team whose own `electionDelay`, counted
+    /// from the contract's creation, has passed at the block time of the write, or which
+    /// declares no delay. The delay is the contract's, not the reference's: the charter
+    /// that opens the contest declares this and carries no number.
+    ElectionOpen,
 }
 
 impl ContractReferenceModeration {
@@ -121,25 +331,42 @@ impl ContractReferenceModeration {
     pub fn as_str(&self) -> &'static str {
         match self {
             ContractReferenceModeration::Elected => "elected",
+            ContractReferenceModeration::ElectionOpen => "electionOpen",
         }
     }
+
+    /// The wire names, for the message that refuses another.
+    pub const WIRE_NAMES: &'static [&'static str] = &["elected", "electionOpen"];
 
     /// The moderation a wire name names, `None` for any other name.
     pub fn from_wire_name(name: &str) -> Option<Self> {
         match name {
             "elected" => Some(ContractReferenceModeration::Elected),
+            "electionOpen" => Some(ContractReferenceModeration::ElectionOpen),
             _ => None,
         }
     }
 
-    /// Whether `contract` declares what this requires.
-    pub fn is_met_by(&self, contract: &DataContract) -> bool {
+    /// How the requirement reads after "a contract with".
+    pub fn describe(&self) -> &'static str {
         match self {
-            ContractReferenceModeration::Elected => {
-                contract.config().moderation().is_some_and(|moderation| {
-                    matches!(moderation.moderators, ContractModerators::Elected(_))
-                })
-            }
+            ContractReferenceModeration::Elected => "elected moderation",
+            ContractReferenceModeration::ElectionOpen => "its moderation election open",
+        }
+    }
+
+    /// Whether `contract` declares what this requires at `block_time_ms`, the time of the
+    /// block writing the referring document.
+    pub fn is_met_by(&self, contract: &DataContract, block_time_ms: TimestampMillis) -> bool {
+        let elected = contract
+            .config()
+            .moderation()
+            .and_then(|moderation| moderation.moderators.elected());
+        match self {
+            ContractReferenceModeration::Elected => elected.is_some(),
+            ContractReferenceModeration::ElectionOpen => elected.is_some_and(|elected| {
+                elected.election_is_open(contract.created_at(), block_time_ms)
+            }),
         }
     }
 }
@@ -149,6 +376,12 @@ impl ContractReferenceModeration {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ContractReferenceRequirement {
     Moderation(ContractReferenceModeration),
+    MinimumAgeSeconds(u32),
+    MinimumSecondsSinceUpdate(u32),
+    Owner(ContractReferenceOwner),
+    Readonly(bool),
+    KeepsHistory(bool),
+    OwnerProtected(bool),
 }
 
 impl ContractReferenceRequirement {
@@ -156,13 +389,92 @@ impl ContractReferenceRequirement {
     pub fn field(&self) -> &'static str {
         match self {
             ContractReferenceRequirement::Moderation(_) => property_names::MODERATION,
+            ContractReferenceRequirement::MinimumAgeSeconds(_) => {
+                property_names::MINIMUM_AGE_SECONDS
+            }
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(_) => {
+                property_names::MINIMUM_SECONDS_SINCE_UPDATE
+            }
+            ContractReferenceRequirement::Owner(_) => property_names::OWNER,
+            ContractReferenceRequirement::Readonly(_) => property_names::READONLY,
+            ContractReferenceRequirement::KeepsHistory(_) => property_names::KEEPS_HISTORY,
+            ContractReferenceRequirement::OwnerProtected(_) => property_names::OWNER_PROTECTED,
         }
     }
 
     /// The value the declaration requires, as spelled in the schema.
-    pub fn required(&self) -> &'static str {
+    pub fn required(&self) -> String {
         match self {
-            ContractReferenceRequirement::Moderation(moderation) => moderation.as_str(),
+            ContractReferenceRequirement::Moderation(moderation) => moderation.as_str().to_string(),
+            ContractReferenceRequirement::MinimumAgeSeconds(seconds)
+            | ContractReferenceRequirement::MinimumSecondsSinceUpdate(seconds) => {
+                seconds.to_string()
+            }
+            ContractReferenceRequirement::Owner(owner) => owner.as_str().to_string(),
+            ContractReferenceRequirement::Readonly(flag)
+            | ContractReferenceRequirement::KeepsHistory(flag)
+            | ContractReferenceRequirement::OwnerProtected(flag) => flag.to_string(),
+        }
+    }
+
+    /// Whether `contract` meets this requirement for `write`, the write of the referring
+    /// document.
+    pub fn is_met_by(&self, contract: &DataContract, write: ReferringWrite) -> bool {
+        match self {
+            ContractReferenceRequirement::Moderation(moderation) => {
+                moderation.is_met_by(contract, write.block_time_ms)
+            }
+            ContractReferenceRequirement::MinimumAgeSeconds(seconds) => {
+                Self::minimum_age_is_met(contract.created_at(), *seconds, write.block_time_ms)
+            }
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(seconds) => {
+                Self::minimum_age_is_met(
+                    Self::last_change_time(contract),
+                    *seconds,
+                    write.block_time_ms,
+                )
+            }
+            ContractReferenceRequirement::Owner(owner) => {
+                owner.is_met_by(contract, &write.owner_id)
+            }
+            ContractReferenceRequirement::Readonly(required) => {
+                contract.config().readonly() == *required
+            }
+            ContractReferenceRequirement::KeepsHistory(required) => {
+                contract.config().keeps_history() == *required
+            }
+            // Either value needs an elected declaration to read the flag from: a contract
+            // without one meets neither
+            ContractReferenceRequirement::OwnerProtected(required) => contract
+                .config()
+                .moderation()
+                .and_then(|moderation| moderation.moderators.elected())
+                .is_some_and(|elected| elected.owner_protected == *required),
+        }
+    }
+
+    /// Whether something that happened at `since` is at least `minimum_seconds` in the past
+    /// at `block_time_ms`. A contract without the recorded time (one created before contracts
+    /// recorded it) is of unknown age and does not meet any minimum.
+    pub fn minimum_age_is_met(
+        since: Option<TimestampMillis>,
+        minimum_seconds: u32,
+        block_time_ms: TimestampMillis,
+    ) -> bool {
+        let Some(since) = since else {
+            return false;
+        };
+        let old_enough_at =
+            since.saturating_add(TimestampMillis::from(minimum_seconds).saturating_mul(1000));
+        block_time_ms >= old_enough_at
+    }
+
+    /// When `contract` last changed: its last update, or its creation for a contract never
+    /// updated. `None` when it recorded neither.
+    pub fn last_change_time(contract: &DataContract) -> Option<TimestampMillis> {
+        match (contract.created_at(), contract.updated_at()) {
+            (Some(created_at), Some(updated_at)) => Some(created_at.max(updated_at)),
+            (created_at, updated_at) => updated_at.or(created_at),
         }
     }
 }
@@ -171,6 +483,12 @@ impl ContractReferenceRequirements {
     /// Whether the declaration requires nothing beyond the contract's existence.
     pub fn is_empty(&self) -> bool {
         self.moderation.is_none()
+            && self.minimum_age_seconds.is_none()
+            && self.minimum_seconds_since_update.is_none()
+            && self.owner.is_none()
+            && self.readonly.is_none()
+            && self.keeps_history.is_none()
+            && self.owner_protected.is_none()
     }
 
     /// The requirements, in declaration order.
@@ -178,13 +496,207 @@ impl ContractReferenceRequirements {
         self.moderation
             .into_iter()
             .map(ContractReferenceRequirement::Moderation)
+            .chain(
+                self.minimum_age_seconds
+                    .into_iter()
+                    .map(ContractReferenceRequirement::MinimumAgeSeconds),
+            )
+            .chain(
+                self.minimum_seconds_since_update
+                    .into_iter()
+                    .map(ContractReferenceRequirement::MinimumSecondsSinceUpdate),
+            )
+            .chain(
+                self.owner
+                    .into_iter()
+                    .map(ContractReferenceRequirement::Owner),
+            )
+            .chain(
+                self.readonly
+                    .into_iter()
+                    .map(ContractReferenceRequirement::Readonly),
+            )
+            .chain(
+                self.keeps_history
+                    .into_iter()
+                    .map(ContractReferenceRequirement::KeepsHistory),
+            )
+            .chain(
+                self.owner_protected
+                    .into_iter()
+                    .map(ContractReferenceRequirement::OwnerProtected),
+            )
     }
 
-    /// The first requirement `contract` does not meet, `None` when it meets them all.
-    pub fn first_unmet_by(&self, contract: &DataContract) -> Option<ContractReferenceRequirement> {
-        self.requirements().find(|requirement| match requirement {
-            ContractReferenceRequirement::Moderation(moderation) => !moderation.is_met_by(contract),
+    /// The first requirement `contract` does not meet for `write`, the write of the referring
+    /// document, `None` when it meets them all.
+    pub fn first_unmet_by(
+        &self,
+        contract: &DataContract,
+        write: ReferringWrite,
+    ) -> Option<ContractReferenceRequirement> {
+        self.requirements()
+            .find(|requirement| !requirement.is_met_by(contract, write))
+    }
+}
+
+/// What an `identityPublicKey` reference requires of the key it points at, beyond its existence
+/// and its not being disabled.
+///
+/// Declared as `refersTo: { "type": "identityPublicKey", "keyIdProperty": ..., "keyRequirements":
+/// { ... } }`: each key names an aspect of the referenced key and its value the requirement on it.
+/// Consensus checks the requirements when the referring document is written, against the key it
+/// has already fetched for the existence check, so a requirement costs no further read. An unmet
+/// one refuses the write with `ReferencedIdentityKeyRequirementNotMetError` (40136). Keys are
+/// added to this object as new requirements arrive (a security level, say); a requirement is
+/// never a new reference type.
+#[derive(
+    Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentityKeyReferenceRequirements {
+    /// The purpose the referenced key must have, spelled by its wire name (`"decryption"`).
+    /// Any purpose but `SYSTEM`, which no identity key of a user carries.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "purpose_wire_name"
+    )]
+    pub purpose: Option<Purpose>,
+    /// The document type of the declaring contract the referenced key must be bound to: its
+    /// contract bounds must be `SingleContractDocumentType` naming the declaring contract and
+    /// exactly this type. A whole-contract bound or a contract group bound never meets it, even
+    /// where the group holds the type: the check reads nothing beyond the key. Validated when
+    /// the contract is registered to name a document type of the declaring contract that a key
+    /// of the required purpose can be bound to, so the check never needs a second contract
+    /// fetch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound_to: Option<String>,
+}
+
+/// Serde for [`IdentityKeyReferenceRequirements::purpose`]: the purpose's wire name, not the
+/// number `Purpose` serializes to on an identity key, so the value matches the schema keyword.
+mod purpose_wire_name {
+    use crate::identity::Purpose;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        purpose: &Option<Purpose>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        purpose
+            .as_ref()
+            .map(Purpose::wire_name)
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Purpose>, D::Error> {
+        let name: Option<String> = Option::deserialize(deserializer)?;
+        name.map(|name| {
+            // The purposes a user's key can carry, every one but SYSTEM, as the schema
+            // parser admits them
+            Purpose::from_wire_name(&name)
+                .filter(|purpose| Purpose::full_range().contains(purpose))
+                .ok_or_else(|| D::Error::custom(format!("unknown key purpose {name:?}")))
         })
+        .transpose()
+    }
+}
+
+/// One requirement of an [`IdentityKeyReferenceRequirements`] declaration, named the way the
+/// declaration spells it, for the error that reports it unmet.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum IdentityKeyReferenceRequirement<'a> {
+    Purpose(Purpose),
+    BoundTo(&'a str),
+}
+
+impl IdentityKeyReferenceRequirement<'_> {
+    /// The `keyRequirements` key the requirement was declared under.
+    pub fn field(&self) -> &'static str {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(_) => property_names::PURPOSE,
+            IdentityKeyReferenceRequirement::BoundTo(_) => property_names::BOUND_TO,
+        }
+    }
+
+    /// The value the declaration requires, as spelled in the schema.
+    pub fn required(&self) -> String {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(purpose) => purpose.wire_name().to_string(),
+            IdentityKeyReferenceRequirement::BoundTo(document_type_name) => {
+                document_type_name.to_string()
+            }
+        }
+    }
+
+    /// Whether `key`, a key of an identity, meets this requirement for a reference declared by
+    /// the contract `declaring_contract_id`.
+    pub fn is_met_by(&self, key: &IdentityPublicKey, declaring_contract_id: Identifier) -> bool {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(purpose) => key.purpose() == *purpose,
+            IdentityKeyReferenceRequirement::BoundTo(document_type_name) => matches!(
+                key.contract_bounds(),
+                Some(ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: bound_document_type_name,
+                }) if *id == declaring_contract_id && bound_document_type_name == document_type_name
+            ),
+        }
+    }
+
+    /// What `key` has where the declaration requires [`Self::required`], for the error that
+    /// reports the requirement unmet.
+    pub fn actual_of(&self, key: &IdentityPublicKey) -> String {
+        match self {
+            IdentityKeyReferenceRequirement::Purpose(_) => key.purpose().wire_name().to_string(),
+            IdentityKeyReferenceRequirement::BoundTo(_) => match key.contract_bounds() {
+                None => "no contract bounds".to_string(),
+                Some(ContractBounds::SingleContract { id }) => {
+                    format!("whole contract {id}, not a document type")
+                }
+                Some(ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name,
+                }) => format!("contract {id} document type {document_type_name}"),
+                Some(ContractBounds::ContractGroup { id }) => {
+                    format!("contract group {id}, which never meets a document type bound")
+                }
+            },
+        }
+    }
+}
+
+impl IdentityKeyReferenceRequirements {
+    /// Whether the declaration requires nothing beyond the key's existence.
+    pub fn is_empty(&self) -> bool {
+        self.purpose.is_none() && self.bound_to.is_none()
+    }
+
+    /// The requirements, in declaration order.
+    pub fn requirements(&self) -> impl Iterator<Item = IdentityKeyReferenceRequirement<'_>> + '_ {
+        self.purpose
+            .into_iter()
+            .map(IdentityKeyReferenceRequirement::Purpose)
+            .chain(
+                self.bound_to
+                    .as_deref()
+                    .map(IdentityKeyReferenceRequirement::BoundTo),
+            )
+    }
+
+    /// The first requirement `key` does not meet for a reference declared by the contract
+    /// `declaring_contract_id`, `None` when it meets them all.
+    pub fn first_unmet_by(
+        &self,
+        key: &IdentityPublicKey,
+        declaring_contract_id: Identifier,
+    ) -> Option<IdentityKeyReferenceRequirement<'_>> {
+        self.requirements()
+            .find(|requirement| !requirement.is_met_by(key, declaring_contract_id))
     }
 }
 
@@ -251,14 +763,22 @@ pub enum DocumentPropertyReferenceTarget {
     /// identity id and the named sibling property of the same document type
     /// holds the key id. Identity keys can be disabled but never removed, so
     /// an existing reference can never dangle; at write time the key must
-    /// exist and must not be disabled. The referenced key is the (identity
-    /// id, key id) pair, so a replace that changes either property
-    /// re-validates the reference.
+    /// exist, must not be disabled and must meet the declared
+    /// [`IdentityKeyReferenceRequirements`], if any. The referenced key is
+    /// the (identity id, key id) pair, so a replace that changes either
+    /// property re-validates the reference.
     #[serde(rename = "identityPublicKey")]
     IdentityPublicKey {
         /// The property of the same document type whose value carries the
         /// referenced key id
         key_id_property: String,
+        /// What the referenced key must be beyond existing: a purpose, a
+        /// binding to a document type of the declaring contract
+        #[serde(
+            default,
+            skip_serializing_if = "IdentityKeyReferenceRequirements::is_empty"
+        )]
+        key_requirements: IdentityKeyReferenceRequirements,
     },
     /// A document of a document type whose documents CAN be deleted: the
     /// counterpart of [`Self::PermanentDocument`], disjoint from it, so a
@@ -384,7 +904,29 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             } => {
                 write!(f, "contract")?;
                 if let Some(moderation) = contract_requirements.moderation {
-                    write!(f, " with {} moderation", moderation.as_str())?;
+                    write!(f, " with {}", moderation.describe())?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_age_seconds {
+                    write!(f, " at least {seconds} seconds old")?;
+                }
+                if let Some(seconds) = contract_requirements.minimum_seconds_since_update {
+                    write!(f, " unchanged for at least {seconds} seconds")?;
+                }
+                match contract_requirements.owner {
+                    Some(ContractReferenceOwner::Writer) => write!(f, " owned by the writer")?,
+                    Some(ContractReferenceOwner::Other) => write!(f, " not owned by the writer")?,
+                    None => {}
+                }
+                if contract_requirements.readonly == Some(true) {
+                    write!(f, " read-only")?;
+                }
+                if contract_requirements.keeps_history == Some(true) {
+                    write!(f, " keeping history")?;
+                }
+                match contract_requirements.owner_protected {
+                    Some(true) => write!(f, " with the owner protected")?,
+                    Some(false) => write!(f, " with the owner unprotected")?,
+                    None => {}
                 }
                 Ok(())
             }
@@ -405,8 +947,18 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 f,
                 "permanent document (own contract, document type {document_type_name})"
             ),
-            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
-                write!(f, "identity public key (key id property {key_id_property})")
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property,
+                key_requirements,
+            } => {
+                write!(f, "identity public key (key id property {key_id_property})")?;
+                if let Some(purpose) = key_requirements.purpose {
+                    write!(f, " with purpose {}", purpose.wire_name())?;
+                }
+                if let Some(document_type_name) = &key_requirements.bound_to {
+                    write!(f, " bound to document type {document_type_name}")?;
+                }
+                Ok(())
             }
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: Some(contract_id),
@@ -424,6 +976,98 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 f,
                 "deletable document (own contract, document type {document_type_name})"
             ),
+        }
+    }
+}
+
+/// Whose key a `refersTo: identityPublicKey` declaration on a KEY ID property
+/// names: its `identityProperty`. The declaring property carries the key id
+/// (a `u32`, so an integer property with `minimum` 0 and `maximum`
+/// 4294967295) and this names the identity the key belongs to: the document's
+/// owner, its creator, or an identifier property of the same document type.
+/// It is the inverse of [`DocumentPropertyReferenceTarget::IdentityPublicKey`],
+/// where the declaring property carries the identity id and `keyIdProperty`
+/// names the sibling carrying the key id; a declaration is one form or the
+/// other, never both.
+// @append_only
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+pub enum KeyReferenceIdentityProperty {
+    /// `"$ownerId"`: the writer's own identity. The document's owner signs
+    /// the transition, which already proved the identity exists, so the
+    /// reference costs the key fetch alone. The owner can change through a
+    /// transfer or a purchase, so every replace re-validates the reference.
+    #[serde(rename = "$ownerId")]
+    OwnerId,
+    /// `"$creatorId"`: the identity that created the document, the writer
+    /// of its create and the stored creator id after that. Only a document
+    /// type that records creator ids (a transferable or tradeable type of a
+    /// format-1 contract) may declare it, checked at contract registration.
+    /// The creator never changes, so a replace re-validates the reference
+    /// when the key id changed.
+    #[serde(rename = "$creatorId")]
+    CreatorId,
+    /// An identifier property of the same document type (a dotted path when
+    /// nested) whose value is the identity; it must exist, be an identifier
+    /// and not carry an `identityPublicKey` reference of its own, checked at
+    /// contract registration. The identity is read from the document, so a
+    /// replace re-validates the reference when the key id or that property
+    /// changed, and a key id set while the property is not is refused.
+    Property(String),
+}
+
+impl KeyReferenceIdentityProperty {
+    /// The system `identityProperty` values the schema admits, as spelled
+    /// there; every other admitted value is a property path.
+    pub const SYSTEM_WIRE_NAMES: [&'static str; 2] = [OWNER_ID, CREATOR_ID];
+
+    /// The value for its schema spelling: a system name, or a property path
+    /// of 1 to 256 characters that does not start with `$`. `None` for a
+    /// spelling the schema does not admit.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            OWNER_ID => Some(KeyReferenceIdentityProperty::OwnerId),
+            CREATOR_ID => Some(KeyReferenceIdentityProperty::CreatorId),
+            path if path.starts_with('$') || path.is_empty() || path.len() > 256 => None,
+            path => Some(KeyReferenceIdentityProperty::Property(path.to_string())),
+        }
+    }
+
+    /// The schema spelling.
+    pub fn as_str(&self) -> &str {
+        match self {
+            KeyReferenceIdentityProperty::OwnerId => OWNER_ID,
+            KeyReferenceIdentityProperty::CreatorId => CREATOR_ID,
+            KeyReferenceIdentityProperty::Property(path) => path,
+        }
+    }
+}
+
+impl std::fmt::Display for KeyReferenceIdentityProperty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A `refersTo: identityPublicKey` declaration on a KEY ID property: whose
+/// key the value is, and what that key must be beyond existing and not
+/// being disabled, the same [`IdentityKeyReferenceRequirements`] the
+/// identifier form takes, checked the same way.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+pub struct KeyIdReference {
+    pub identity_property: KeyReferenceIdentityProperty,
+    #[serde(
+        default,
+        skip_serializing_if = "IdentityKeyReferenceRequirements::is_empty"
+    )]
+    pub key_requirements: IdentityKeyReferenceRequirements,
+}
+
+impl KeyIdReference {
+    /// A declaration requiring nothing of the key beyond existing.
+    pub fn new(identity_property: KeyReferenceIdentityProperty) -> Self {
+        KeyIdReference {
+            identity_property,
+            key_requirements: IdentityKeyReferenceRequirements::default(),
         }
     }
 }
@@ -448,9 +1092,24 @@ pub enum DocumentPropertyType {
     Boolean,
     Date,
     Object(IndexMap<String, DocumentProperty>),
+    /// A list of elements of one type with no element count bounds. The
+    /// schema parser never produces it: a typed array property parses to
+    /// [`DocumentPropertyType::TypedArray`], which shares its encoding.
     Array(ArrayItemType),
     VariableTypeArray(Vec<ArrayItemType>),
     IdentifierWithReference(DocumentPropertyReferenceTarget),
+    /// A typed array property (`type: "array"` with an `items` element
+    /// schema), from protocol version 14: the element type with the
+    /// `minItems` / `maxItems` element count bounds and `uniqueItems`. Stored
+    /// inline like [`DocumentPropertyType::Array`], a varint element count
+    /// followed by the elements.
+    TypedArray(TypedArrayProperty),
+    /// A `u32` key id carrying a `refersTo: identityPublicKey` declaration
+    /// with `identityProperty`: the value is the id of a key of the named
+    /// identity, which must exist, not be disabled and meet the declared
+    /// requirements when the document is written. Sized, encoded and queried
+    /// exactly as [`Self::U32`].
+    KeyIdWithReference(KeyIdReference),
 }
 
 impl DocumentPropertyType {
@@ -497,7 +1156,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => "i128".to_string(),
             DocumentPropertyType::U64 => "u64".to_string(),
             DocumentPropertyType::I64 => "i64".to_string(),
-            DocumentPropertyType::U32 => "u32".to_string(),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                "u32".to_string()
+            }
             DocumentPropertyType::I32 => "i32".to_string(),
             DocumentPropertyType::U16 => "u16".to_string(),
             DocumentPropertyType::I16 => "i16".to_string(),
@@ -512,8 +1173,28 @@ impl DocumentPropertyType {
             DocumentPropertyType::Boolean => "boolean".to_string(),
             DocumentPropertyType::Date => "date".to_string(),
             DocumentPropertyType::Object(_) => "object".to_string(),
-            DocumentPropertyType::Array(_) => "array".to_string(),
+            DocumentPropertyType::Array(_) | DocumentPropertyType::TypedArray(_) => {
+                "array".to_string()
+            }
             DocumentPropertyType::VariableTypeArray(_) => "variableTypeArray".to_string(),
+        }
+    }
+
+    /// How a value of this scalar type is laid out in a stored document, in
+    /// the words a contract update error uses. The layout of two scalar types
+    /// is the same exactly when they give the same answer. The schema chooses
+    /// it in two places: an integer is stored at the width and signedness of
+    /// its type, which its `minimum`, `maximum` or `enum` pick, and a byte
+    /// array is stored raw when its `minItems` and `maxItems` pin one size and
+    /// length-prefixed otherwise. Every other scalar is laid out the same
+    /// whatever its schema says, so it answers with its name.
+    pub(crate) fn stored_encoding(&self) -> String {
+        match self {
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
+                (Some(min), Some(max)) if min == max => format!("a fixed {min}-byte array"),
+                _ => "a length-prefixed byte array".to_string(),
+            },
+            other => other.name(),
         }
     }
 
@@ -523,7 +1204,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Some(16),
             DocumentPropertyType::U64 => Some(8),
             DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Some(4),
             DocumentPropertyType::I32 => Some(4),
             DocumentPropertyType::U16 => Some(2),
             DocumentPropertyType::I16 => Some(2),
@@ -544,7 +1225,7 @@ impl DocumentPropertyType {
                 .iter()
                 .map(|(_, sub_field)| sub_field.property_type.min_size())
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::TypedArray(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Some(32)
@@ -561,7 +1242,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Ok(Some(16)),
             DocumentPropertyType::U64 => Ok(Some(8)),
             DocumentPropertyType::I64 => Ok(Some(8)),
-            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Ok(Some(4)),
             DocumentPropertyType::I32 => Ok(Some(4)),
             DocumentPropertyType::U16 => Ok(Some(2)),
             DocumentPropertyType::I16 => Ok(Some(2)),
@@ -593,6 +1274,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::TypedArray(typed_array) => {
+                typed_array.min_encoded_size(platform_version).map(Some)
+            }
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Ok(Some(32))
             }
@@ -608,7 +1292,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Ok(Some(16)),
             DocumentPropertyType::U64 => Ok(Some(8)),
             DocumentPropertyType::I64 => Ok(Some(8)),
-            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Ok(Some(4)),
             DocumentPropertyType::I32 => Ok(Some(4)),
             DocumentPropertyType::U16 => Ok(Some(2)),
             DocumentPropertyType::I16 => Ok(Some(2)),
@@ -640,6 +1324,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::TypedArray(typed_array) => {
+                typed_array.max_encoded_size(platform_version).map(Some)
+            }
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Ok(Some(32))
             }
@@ -652,7 +1339,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Some(16),
             DocumentPropertyType::U64 => Some(8),
             DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => Some(4),
             DocumentPropertyType::I32 => Some(4),
             DocumentPropertyType::U16 => Some(2),
             DocumentPropertyType::I16 => Some(2),
@@ -673,7 +1360,7 @@ impl DocumentPropertyType {
                 .iter()
                 .map(|(_, sub_field)| sub_field.property_type.max_size())
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::TypedArray(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Some(32)
@@ -695,7 +1382,9 @@ impl DocumentPropertyType {
             | DocumentPropertyType::I64
             | DocumentPropertyType::F64
             | DocumentPropertyType::Date => Some(8),
-            DocumentPropertyType::U32 | DocumentPropertyType::I32 => Some(4),
+            DocumentPropertyType::U32
+            | DocumentPropertyType::KeyIdWithReference(_)
+            | DocumentPropertyType::I32 => Some(4),
             DocumentPropertyType::U16 | DocumentPropertyType::I16 => Some(2),
             DocumentPropertyType::U8 | DocumentPropertyType::I8 | DocumentPropertyType::Boolean => {
                 Some(1)
@@ -710,7 +1399,8 @@ impl DocumentPropertyType {
             DocumentPropertyType::String(_)
             | DocumentPropertyType::Object(_)
             | DocumentPropertyType::Array(_)
-            | DocumentPropertyType::VariableTypeArray(_) => None,
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => None,
         }
     }
 
@@ -786,7 +1476,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Value::I128(rng.gen::<i128>()),
             DocumentPropertyType::U64 => Value::U64(rng.gen::<u64>()),
             DocumentPropertyType::I64 => Value::I64(rng.gen::<i64>()),
-            DocumentPropertyType::U32 => Value::U32(rng.gen::<u32>()),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                Value::U32(rng.gen::<u32>())
+            }
             DocumentPropertyType::I32 => Value::I32(rng.gen::<i32>()),
             DocumentPropertyType::U16 => Value::U16(rng.gen::<u16>()),
             DocumentPropertyType::I16 => Value::I16(rng.gen::<i16>()),
@@ -847,6 +1539,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Value::Identifier(rng.gen())
             }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.random_value(rng),
         }
     }
 
@@ -856,7 +1549,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Value::I128(rng.gen::<i128>()),
             DocumentPropertyType::U64 => Value::U64(rng.gen::<u64>()),
             DocumentPropertyType::I64 => Value::I64(rng.gen::<i64>()),
-            DocumentPropertyType::U32 => Value::U32(rng.gen::<u32>()),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                Value::U32(rng.gen::<u32>())
+            }
             DocumentPropertyType::I32 => Value::I32(rng.gen::<i32>()),
             DocumentPropertyType::U16 => Value::U16(rng.gen::<u16>()),
             DocumentPropertyType::I16 => Value::I16(rng.gen::<i16>()),
@@ -898,6 +1593,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Value::Identifier(rng.gen())
             }
+            DocumentPropertyType::TypedArray(typed_array) => {
+                typed_array.random_sub_filled_value(rng)
+            }
         }
     }
 
@@ -907,7 +1605,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::I128 => Value::I128(rng.gen::<i128>()),
             DocumentPropertyType::U64 => Value::U64(rng.gen::<u64>()),
             DocumentPropertyType::I64 => Value::I64(rng.gen::<i64>()),
-            DocumentPropertyType::U32 => Value::U32(rng.gen::<u32>()),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                Value::U32(rng.gen::<u32>())
+            }
             DocumentPropertyType::I32 => Value::I32(rng.gen::<i32>()),
             DocumentPropertyType::U16 => Value::U16(rng.gen::<u16>()),
             DocumentPropertyType::I16 => Value::I16(rng.gen::<i16>()),
@@ -949,6 +1649,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 Value::Identifier(rng.gen())
             }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.random_filled_value(rng),
         }
     }
 
@@ -1037,7 +1738,7 @@ impl DocumentPropertyType {
                 })?;
                 Ok((Some(Value::I64(value)), false))
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value = buf.read_u32::<BigEndian>().map_err(|_| {
                     DataContractError::CorruptedSerialization(
                         "error reading u32 from serialized document".to_string(),
@@ -1201,9 +1902,26 @@ impl DocumentPropertyType {
                     Ok((Some(Value::Map(values)), false))
                 }
             }
-            DocumentPropertyType::Array(_array_field_type) => Err(DataContractError::Unsupported(
-                "serialization of arrays not yet supported".to_string(),
-            )),
+            DocumentPropertyType::TypedArray(typed_array) => {
+                Ok((Some(typed_array.read_from(buf)?), false))
+            }
+            DocumentPropertyType::Array(item_type) => {
+                // Mirrors the encoding: a varint element count, then the
+                // elements. The count comes from the serialized document, so
+                // it never sizes an allocation; every element takes at least
+                // one byte, so a count the document cannot hold fails once
+                // the input runs out.
+                let count: usize = buf.read_varint().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading varint of array element count".to_string(),
+                    )
+                })?;
+                let mut items = Vec::new();
+                for _ in 0..count {
+                    items.push(item_type.read_from(buf)?);
+                }
+                Ok((Some(Value::Array(items)), false))
+            }
             DocumentPropertyType::VariableTypeArray(_) => Err(DataContractError::Unsupported(
                 "serialization of variable type arrays not yet supported".to_string(),
             )),
@@ -1287,7 +2005,7 @@ impl DocumentPropertyType {
                     Ok(r_vec)
                 }
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value_as_u32: u32 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_u32.to_be_bytes().to_vec();
                 if required {
@@ -1409,6 +2127,7 @@ impl DocumentPropertyType {
                     Err(get_field_type_matching_error(&value).into())
                 }
             }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.encode_value_ref(&value),
             DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
@@ -1480,7 +2199,7 @@ impl DocumentPropertyType {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_i64.to_be_bytes().to_vec())
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value_as_u32: u32 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_u32.to_be_bytes().to_vec())
             }
@@ -1564,6 +2283,7 @@ impl DocumentPropertyType {
                 len_prepended_vec.append(&mut r_vec);
                 Ok(len_prepended_vec)
             }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array.encode_value_ref(value),
             DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
@@ -1625,7 +2345,7 @@ impl DocumentPropertyType {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(DocumentPropertyType::encode_i64(value_as_i64))
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let value_as_u32 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(DocumentPropertyType::encode_u32(value_as_u32))
             }
@@ -1675,13 +2395,14 @@ impl DocumentPropertyType {
                     "we should never try encoding an object".to_string(),
                 ),
             )),
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try encoding an array".to_string(),
-                    ),
-                ))
-            }
+            // Arrays are never index keys: the parser refuses an index on one
+            DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::DataContractError(
+                DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an array".to_string(),
+                ),
+            )),
         }
     }
 
@@ -1735,7 +2456,7 @@ impl DocumentPropertyType {
                 )?;
                 Ok(Value::I64(integer))
             }
-            DocumentPropertyType::U32 => {
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
                 let integer = DocumentPropertyType::decode_u32(value).ok_or(
                     ProtocolError::DecodingError("could not decode u32".to_string()),
                 )?;
@@ -1798,13 +2519,13 @@ impl DocumentPropertyType {
                     "we should never try decoding an object".to_string(),
                 ),
             )),
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try decoding an array".to_string(),
-                    ),
-                ))
-            }
+            DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::DataContractError(
+                DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try decoding an array".to_string(),
+                ),
+            )),
         }
     }
 
@@ -1848,11 +2569,13 @@ impl DocumentPropertyType {
                     "value is not an i64 integer from string".to_string(),
                 )
             }),
-            DocumentPropertyType::U32 => str.parse::<u32>().map(Value::U32).map_err(|_| {
-                DataContractError::ValueWrongType(
-                    "value is not a u32 integer from string".to_string(),
-                )
-            }),
+            DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_) => {
+                str.parse::<u32>().map(Value::U32).map_err(|_| {
+                    DataContractError::ValueWrongType(
+                        "value is not a u32 integer from string".to_string(),
+                    )
+                })
+            }
             DocumentPropertyType::I32 => str.parse::<i32>().map(Value::I32).map_err(|_| {
                 DataContractError::ValueWrongType(
                     "value is not an i32 integer from string".to_string(),
@@ -1928,7 +2651,10 @@ impl DocumentPropertyType {
                     "we should never try encoding an object".to_string(),
                 ))
             }
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
+            // A string names one value, never a list of them
+            DocumentPropertyType::Array(_)
+            | DocumentPropertyType::VariableTypeArray(_)
+            | DocumentPropertyType::TypedArray(_) => {
                 Err(DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding an array".to_string(),
                 ))
@@ -2480,6 +3206,7 @@ impl DocumentPropertyType {
                 | DocumentPropertyType::U8
                 | DocumentPropertyType::U16
                 | DocumentPropertyType::U32
+                | DocumentPropertyType::KeyIdWithReference(_)
                 | DocumentPropertyType::U64
         )
     }
@@ -2630,17 +3357,32 @@ impl DocumentPropertyType {
                 *value = Value::U16(n as u16);
             }
 
-            (DocumentPropertyType::U32, Value::U32(_)) => {} // Already correct
-            (DocumentPropertyType::U32, Value::U8(n)) => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U32(_),
+            ) => {} // Already correct
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U8(n),
+            ) => {
                 *value = Value::U32(n as u32);
             }
-            (DocumentPropertyType::U32, Value::U16(n)) => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U16(n),
+            ) => {
                 *value = Value::U32(n as u32);
             }
-            (DocumentPropertyType::U32, Value::U64(n)) if n <= u32::MAX as u64 => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U64(n),
+            ) if n <= u32::MAX as u64 => {
                 *value = Value::U32(n as u32);
             }
-            (DocumentPropertyType::U32, Value::U128(n)) if n <= u32::MAX as u128 => {
+            (
+                DocumentPropertyType::U32 | DocumentPropertyType::KeyIdWithReference(_),
+                Value::U128(n),
+            ) if n <= u32::MAX as u128 => {
                 *value = Value::U32(n as u32);
             }
 
@@ -2793,6 +3535,15 @@ impl DocumentPropertyType {
                 if let Value::Array(items) = value {
                     for item in items.iter_mut() {
                         item_type.sanitize_value_mut(item);
+                    }
+                }
+            }
+
+            // A typed array's elements sanitize as scalars of its element type
+            (DocumentPropertyType::TypedArray(typed_array), Value::Array(_)) => {
+                if let Value::Array(items) = value {
+                    for item in items.iter_mut() {
+                        typed_array.item_type.sanitize_value_mut(item);
                     }
                 }
             }
@@ -2976,6 +3727,9 @@ fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPrope
 #[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{KeyType, SecurityLevel};
+    use platform_value::BinaryData;
     use platform_version::version::PlatformVersion;
 
     // -----------------------------------------------------------------------
@@ -3189,6 +3943,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -3198,6 +3954,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -4852,14 +5610,351 @@ mod tests {
         assert_eq!(value, Some(Value::Bytes(vec![10, 20, 30])));
     }
 
-    #[test]
-    fn test_read_optionally_from_array_returns_error() {
+    fn typed_array(item_type: DocumentPropertyType) -> DocumentPropertyType {
+        DocumentPropertyType::TypedArray(TypedArrayProperty {
+            item_type: Box::new(item_type),
+            item_constraints: Default::default(),
+            min_items: None,
+            max_items: 8,
+            unique_items: false,
+        })
+    }
+
+    fn encode_and_read_back(property_type: &DocumentPropertyType, value: &Value) -> Vec<u8> {
         use std::io::BufReader;
-        let prop = DocumentPropertyType::Array(ArrayItemType::Integer);
+        // The document serializer writes the presence flag of a property that
+        // is not required itself
+        let encoded = property_type
+            .encode_value_ref_with_size(value, true)
+            .expect("encodes");
+        let mut reader = BufReader::new(encoded.as_slice());
+        let (decoded, finished) = property_type
+            .read_optionally_from(&mut reader, true)
+            .expect("decodes");
+        assert_eq!(decoded.as_ref(), Some(value), "{property_type:?}");
+        assert!(!finished);
+        assert!(reader.buffer().is_empty(), "{property_type:?} left bytes");
+
+        let mut with_marker = vec![1];
+        with_marker.extend(&encoded);
+        let mut reader = BufReader::new(with_marker.as_slice());
+        let (decoded, _) = property_type
+            .read_optionally_from(&mut reader, false)
+            .expect("decodes behind a presence flag");
+        assert_eq!(
+            decoded.as_ref(),
+            Some(value),
+            "{property_type:?} behind a presence flag"
+        );
+        encoded
+    }
+
+    #[test]
+    fn should_round_trip_every_typed_array_element_type_through_encode_and_read_optionally_from() {
+        for (item_type, items) in [
+            (
+                DocumentPropertyType::I64,
+                vec![Value::I64(i64::MIN), Value::I64(-1), Value::I64(i64::MAX)],
+            ),
+            (
+                DocumentPropertyType::U8,
+                vec![Value::U8(0), Value::U8(u8::MAX)],
+            ),
+            (
+                DocumentPropertyType::I16,
+                vec![Value::I16(i16::MIN), Value::I16(1000)],
+            ),
+            (DocumentPropertyType::U32, vec![Value::U32(u32::MAX)]),
+            (DocumentPropertyType::U128, vec![Value::U128(u128::MAX)]),
+            (
+                DocumentPropertyType::F64,
+                vec![Value::Float(-0.5), Value::Float(1e300)],
+            ),
+            (
+                DocumentPropertyType::String(StringPropertySizes {
+                    min_length: None,
+                    max_length: Some(20),
+                }),
+                vec![Value::Text("".to_string()), Value::Text("über".to_string())],
+            ),
+            (
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                    min_size: Some(1),
+                    max_size: Some(40),
+                }),
+                vec![Value::Bytes(vec![0xFF]), Value::Bytes(vec![7; 40])],
+            ),
+            // Fixed-size elements read back as the fixed-size value kinds
+            (
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                    min_size: Some(32),
+                    max_size: Some(32),
+                }),
+                vec![Value::Bytes32([0x80; 32])],
+            ),
+            (
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                    min_size: Some(3),
+                    max_size: Some(3),
+                }),
+                vec![Value::Bytes(vec![1, 2, 3]), Value::Bytes(vec![4, 5, 6])],
+            ),
+            (
+                DocumentPropertyType::Identifier,
+                vec![Value::Identifier([1; 32]), Value::Identifier([2; 32])],
+            ),
+            (
+                DocumentPropertyType::Boolean,
+                vec![Value::Bool(true), Value::Bool(false)],
+            ),
+        ] {
+            let property_type = typed_array(item_type);
+            for items in [items.clone(), vec![]] {
+                encode_and_read_back(&property_type, &Value::Array(items));
+            }
+        }
+    }
+
+    /// Each element is written exactly as a required scalar property of its
+    /// type is written: after the varint count, an identifier is its 32 raw
+    /// bytes, an integer takes its width, a fixed-size byte array is raw, and
+    /// only strings and variable-size byte arrays carry a length.
+    #[test]
+    fn should_encode_each_typed_array_element_as_a_required_scalar_property_of_its_type() {
+        let identifiers = encode_and_read_back(
+            &typed_array(DocumentPropertyType::Identifier),
+            &Value::Array(vec![
+                Value::Identifier([0xAA; 32]),
+                Value::Identifier([0xBB; 32]),
+            ]),
+        );
+        let mut expected = vec![2];
+        expected.extend([0xAA; 32]);
+        expected.extend([0xBB; 32]);
+        assert_eq!(identifiers, expected);
+
+        let small_integers = encode_and_read_back(
+            &typed_array(DocumentPropertyType::U8),
+            &Value::Array(vec![Value::U8(7), Value::U8(200)]),
+        );
+        assert_eq!(small_integers, vec![2, 7, 200]);
+
+        let wide_integers = encode_and_read_back(
+            &typed_array(DocumentPropertyType::I64),
+            &Value::Array(vec![Value::I64(1)]),
+        );
+        assert_eq!(wide_integers, vec![1, 0, 0, 0, 0, 0, 0, 0, 1]);
+
+        let hashes = encode_and_read_back(
+            &typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(3),
+                max_size: Some(3),
+            })),
+            &Value::Array(vec![Value::Bytes(vec![1, 2, 3])]),
+        );
+        assert_eq!(hashes, vec![1, 1, 2, 3]);
+
+        let blobs = encode_and_read_back(
+            &typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: None,
+                max_size: Some(3),
+            })),
+            &Value::Array(vec![Value::Bytes(vec![1, 2])]),
+        );
+        assert_eq!(blobs, vec![1, 2, 1, 2]);
+
+        let strings = encode_and_read_back(
+            &typed_array(DocumentPropertyType::String(StringPropertySizes {
+                min_length: None,
+                max_length: Some(8),
+            })),
+            &Value::Array(vec![Value::Text("ab".to_string())]),
+        );
+        assert_eq!(strings, vec![1, 2, b'a', b'b']);
+
+        let flags = encode_and_read_back(
+            &typed_array(DocumentPropertyType::Boolean),
+            &Value::Array(vec![Value::Bool(true), Value::Bool(false)]),
+        );
+        assert_eq!(flags, vec![2, 1, 0]);
+    }
+
+    #[test]
+    fn should_refuse_to_encode_a_typed_array_value_that_is_not_a_list_of_its_elements() {
+        let identifiers = typed_array(DocumentPropertyType::Identifier);
+        for value in [
+            Value::Identifier([1; 32]),
+            Value::Array(vec![Value::Null]),
+            Value::Array(vec![Value::Text("not an identifier".to_string())]),
+            Value::Array(vec![Value::Bytes(vec![1; 31])]),
+        ] {
+            assert!(
+                identifiers
+                    .encode_value_ref_with_size(&value, true)
+                    .is_err(),
+                "{value:?}"
+            );
+        }
+        // An element out of a fixed size's bounds is refused, not written raw
+        let hashes = typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(3),
+            max_size: Some(3),
+        }));
+        assert!(hashes
+            .encode_value_ref_with_size(&Value::Array(vec![Value::Bytes(vec![1, 2])]), true)
+            .is_err());
+    }
+
+    #[test]
+    fn should_refuse_a_typed_array_whose_elements_run_past_the_serialized_document() {
+        use std::io::BufReader;
+        // One element claimed, two of its eight bytes present
         let data: &[u8] = &[1, 2, 3];
         let mut reader = BufReader::new(data);
-        let result = prop.read_optionally_from(&mut reader, true);
-        assert!(result.is_err());
+        let result = typed_array(DocumentPropertyType::I64).read_optionally_from(&mut reader, true);
+        assert!(matches!(
+            result,
+            Err(DataContractError::CorruptedSerialization(_))
+        ));
+
+        // One identifier claimed, 31 of its 32 bytes present: refused as a
+        // scalar identifier cut short is
+        let mut data = vec![1];
+        data.extend([5; 31]);
+        let mut reader = BufReader::new(data.as_slice());
+        assert!(typed_array(DocumentPropertyType::Identifier)
+            .read_optionally_from(&mut reader, true)
+            .is_err());
+    }
+
+    /// The count comes from the serialized document, so one above `maxItems`
+    /// is refused before any element is read. Without that, elements of zero
+    /// width (a byte array pinned to zero bytes) would let a few bytes claim
+    /// a list of any length.
+    #[test]
+    fn should_refuse_a_serialized_typed_array_counting_more_elements_than_its_max_items() {
+        use std::io::BufReader;
+        for item_type in [
+            DocumentPropertyType::Boolean,
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(0),
+                max_size: Some(0),
+            }),
+        ] {
+            let property_type = typed_array(item_type);
+            for count in [9u64, u64::MAX] {
+                let mut data = count.encode_var_vec();
+                data.extend([1; 16]);
+                let mut reader = BufReader::new(data.as_slice());
+                let error = property_type
+                    .read_optionally_from(&mut reader, true)
+                    .expect_err("more elements than maxItems");
+                assert!(
+                    matches!(error, DataContractError::CorruptedSerialization(ref message)
+                        if message.contains("more than its maxItems of 8")),
+                    "{error}"
+                );
+            }
+        }
+
+        // maxItems zero-width elements read back as that many empty byte arrays
+        let empties = typed_array(DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+            min_size: Some(0),
+            max_size: Some(0),
+        }));
+        let data: &[u8] = &[8];
+        let mut reader = BufReader::new(data);
+        let (value, _) = empties
+            .read_optionally_from(&mut reader, true)
+            .expect("maxItems elements decode");
+        assert_eq!(value, Some(Value::Array(vec![Value::Bytes(vec![]); 8])));
+    }
+
+    #[test]
+    fn should_bound_a_typed_array_by_its_item_counts_times_its_element_bounds() {
+        let pv = PlatformVersion::latest();
+        let bounded = |item_type, min_items, max_items| {
+            DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type: Box::new(item_type),
+                item_constraints: Default::default(),
+                min_items,
+                max_items,
+                unique_items: true,
+            })
+        };
+
+        // Identifiers are 32 raw bytes each
+        let identifiers = bounded(DocumentPropertyType::Identifier, Some(2), 64);
+        assert_eq!(identifiers.min_byte_size(pv).unwrap(), Some(1 + 2 * 32));
+        assert_eq!(identifiers.max_byte_size(pv).unwrap(), Some(1 + 64 * 32));
+
+        // An integer element takes the width its bounds give it
+        let small_integers = bounded(DocumentPropertyType::U8, Some(1), 10);
+        assert_eq!(small_integers.min_byte_size(pv).unwrap(), Some(2));
+        assert_eq!(small_integers.max_byte_size(pv).unwrap(), Some(11));
+
+        // A fixed-size byte array carries no length; a variable one does
+        let hashes = bounded(
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: Some(20),
+                max_size: Some(20),
+            }),
+            None,
+            4,
+        );
+        assert_eq!(hashes.max_byte_size(pv).unwrap(), Some(1 + 4 * 20));
+        let blobs = bounded(
+            DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                min_size: None,
+                max_size: Some(200),
+            }),
+            None,
+            4,
+        );
+        assert_eq!(blobs.max_byte_size(pv).unwrap(), Some(1 + 4 * (2 + 200)));
+
+        // A string element is sized as a string property is: four bytes per
+        // character of its length bounds, plus its varint length
+        let strings = bounded(
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(3),
+                max_length: Some(40),
+            }),
+            None,
+            200,
+        );
+        assert_eq!(strings.min_byte_size(pv).unwrap(), Some(1));
+        assert_eq!(
+            strings.max_byte_size(pv).unwrap(),
+            Some(2 + 200 * (2 + 160))
+        );
+
+        // Unbounded, or past what a u16 holds, reports u16::MAX
+        let unbounded_elements = bounded(
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: None,
+                max_length: None,
+            }),
+            None,
+            4,
+        );
+        assert_eq!(
+            unbounded_elements.max_byte_size(pv).unwrap(),
+            Some(u16::MAX)
+        );
+        let saturated = bounded(
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(1),
+                max_length: Some(5000),
+            }),
+            Some(1024),
+            1024,
+        );
+        assert_eq!(saturated.max_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(
+            saturated.min_byte_size(pv).unwrap(),
+            Some(2 + 1024 * (1 + 4))
+        );
     }
 
     #[test]
@@ -5552,6 +6647,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         inner_fields.insert(
@@ -5561,6 +6658,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5612,6 +6711,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5632,6 +6733,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         inner_fields.insert(
@@ -5641,6 +6744,8 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6074,6 +7179,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6109,6 +7216,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -6118,6 +7227,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -6136,6 +7247,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -6145,6 +7258,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -6437,6 +7552,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -6446,6 +7563,8 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6506,6 +7625,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -6515,6 +7636,8 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6601,6 +7724,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         sub_fields.insert(
@@ -6610,6 +7735,8 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6876,6 +8003,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6905,6 +8034,8 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         // Second field is required
@@ -6915,6 +8046,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7031,6 +8164,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7049,6 +8184,8 @@ mod tests {
                 required: false,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7355,6 +8492,8 @@ mod tests {
                 required: true,
                 transient: false,
                 required_since: None,
+                distinct_from: None,
+                encrypted_for: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7618,6 +8757,8 @@ mod tests {
             required: false,
             transient: false,
             required_since: None,
+            distinct_from: None,
+            encrypted_for: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -7627,6 +8768,497 @@ mod tests {
             Some(&serde_json::json!({
                 "IdentifierWithReference": "identity"
             }))
+        );
+    }
+
+    #[test]
+    fn should_serialize_key_id_reference_metadata() {
+        let property = DocumentProperty {
+            property_type: DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(
+                KeyReferenceIdentityProperty::OwnerId,
+            )),
+            required: false,
+            transient: false,
+            required_since: None,
+            distinct_from: None,
+            encrypted_for: None,
+        };
+
+        let value = serde_json::to_value(&property).expect("serialization should succeed");
+
+        assert_eq!(
+            value.get("property_type"),
+            Some(&serde_json::json!({
+                "KeyIdWithReference": { "identity_property": "$ownerId" }
+            }))
+        );
+    }
+
+    /// A key id with a reference is a `u32` to everything that sizes, encodes,
+    /// decodes or names a property: the declaration changes what consensus
+    /// checks, not the bytes.
+    #[test]
+    fn should_treat_a_key_id_with_reference_exactly_as_a_u32() {
+        let platform_version = PlatformVersion::latest();
+        let key_id = DocumentPropertyType::KeyIdWithReference(KeyIdReference::new(
+            KeyReferenceIdentityProperty::OwnerId,
+        ));
+        let u32_type = DocumentPropertyType::U32;
+
+        assert_eq!(key_id.name(), u32_type.name());
+        assert!(key_id.is_integer());
+        assert_eq!(key_id.min_size(), u32_type.min_size());
+        assert_eq!(key_id.max_size(), u32_type.max_size());
+        assert_eq!(
+            key_id.middle_size(platform_version),
+            u32_type.middle_size(platform_version)
+        );
+        assert_eq!(
+            key_id.min_byte_size(platform_version).unwrap(),
+            u32_type.min_byte_size(platform_version).unwrap()
+        );
+        assert_eq!(
+            key_id.max_byte_size(platform_version).unwrap(),
+            u32_type.max_byte_size(platform_version).unwrap()
+        );
+
+        let value = Value::U32(7);
+        assert_eq!(
+            key_id.encode_value_for_tree_keys(&value).unwrap(),
+            u32_type.encode_value_for_tree_keys(&value).unwrap()
+        );
+        assert_eq!(
+            key_id.encode_value_with_size(value.clone(), true).unwrap(),
+            u32_type
+                .encode_value_with_size(value.clone(), true)
+                .unwrap()
+        );
+        assert_eq!(
+            key_id.encode_value_ref_with_size(&value, false).unwrap(),
+            u32_type.encode_value_ref_with_size(&value, false).unwrap()
+        );
+        let encoded = key_id.encode_value_for_tree_keys(&value).unwrap();
+        assert_eq!(
+            key_id.decode_value_for_tree_keys(&encoded).unwrap(),
+            u32_type.decode_value_for_tree_keys(&encoded).unwrap()
+        );
+        assert_eq!(
+            key_id.value_from_string("7").unwrap(),
+            u32_type.value_from_string("7").unwrap()
+        );
+
+        let mut widened = Value::U64(7);
+        key_id.sanitize_value_mut(&mut widened);
+        assert_eq!(widened, Value::U32(7));
+    }
+
+    #[test]
+    fn should_spell_the_key_reference_identity_property_as_the_schema_does() {
+        assert_eq!(KeyReferenceIdentityProperty::OwnerId.as_str(), "$ownerId");
+        assert_eq!(
+            KeyReferenceIdentityProperty::OwnerId.to_string(),
+            "$ownerId"
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::CreatorId.as_str(),
+            "$creatorId"
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::Property("meta.toUserId".to_string()).as_str(),
+            "meta.toUserId"
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name("$ownerId"),
+            Some(KeyReferenceIdentityProperty::OwnerId)
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name("$creatorId"),
+            Some(KeyReferenceIdentityProperty::CreatorId)
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name("toUserId"),
+            Some(KeyReferenceIdentityProperty::Property(
+                "toUserId".to_string()
+            ))
+        );
+        // Other system names, the empty path and an overlong path are not admitted
+        assert_eq!(KeyReferenceIdentityProperty::from_wire_name("$id"), None);
+        assert_eq!(KeyReferenceIdentityProperty::from_wire_name(""), None);
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name(&"a".repeat(257)),
+            None
+        );
+        for name in KeyReferenceIdentityProperty::SYSTEM_WIRE_NAMES {
+            assert_eq!(
+                KeyReferenceIdentityProperty::from_wire_name(name).map(|p| p.as_str().to_string()),
+                Some(name.to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn should_meet_a_minimum_age_from_the_recorded_creation_time_at_the_block_time() {
+        let created_at: TimestampMillis = 1_700_000_000_000;
+        let one_hour_ms: TimestampMillis = 3_600_000;
+        // One millisecond short of the minimum is not old enough; the exact minimum is
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            created_at + one_hour_ms - 1
+        ));
+        assert!(ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            created_at + one_hour_ms
+        ));
+        assert!(ContractReferenceRequirement::minimum_age_is_met(
+            Some(created_at),
+            3600,
+            TimestampMillis::MAX
+        ));
+        // A contract that never recorded its creation time is of unknown age
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            None,
+            1,
+            TimestampMillis::MAX
+        ));
+        // The bound saturates rather than wrapping around into the past
+        assert!(!ContractReferenceRequirement::minimum_age_is_met(
+            Some(TimestampMillis::MAX - 1),
+            u32::MAX,
+            TimestampMillis::MAX - 1
+        ));
+
+        let requirements = ContractReferenceRequirements {
+            moderation: None,
+            minimum_age_seconds: Some(3600),
+            minimum_seconds_since_update: Some(60),
+            owner: None,
+            readonly: None,
+            keeps_history: None,
+            owner_protected: None,
+        };
+        assert_eq!(
+            requirements.requirements().collect::<Vec<_>>(),
+            vec![
+                ContractReferenceRequirement::MinimumAgeSeconds(3600),
+                ContractReferenceRequirement::MinimumSecondsSinceUpdate(60)
+            ]
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumAgeSeconds(3600).field(),
+            "minimumAgeSeconds"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumAgeSeconds(3600).required(),
+            "3600"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(60).field(),
+            "minimumSecondsSinceUpdate"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::MinimumSecondsSinceUpdate(60).required(),
+            "60"
+        );
+    }
+
+    #[test]
+    fn should_meet_an_owner_requirement_from_the_referenced_contract_owner_and_the_writer() {
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+
+        let platform_version = PlatformVersion::latest();
+        let contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let owner_id = contract.owner_id();
+        let someone_else = Identifier::from([0x42; 32]);
+        assert_ne!(owner_id, someone_else);
+
+        assert!(ContractReferenceOwner::Writer.is_met_by(&contract, &owner_id));
+        assert!(!ContractReferenceOwner::Writer.is_met_by(&contract, &someone_else));
+        assert!(!ContractReferenceOwner::Other.is_met_by(&contract, &owner_id));
+        assert!(ContractReferenceOwner::Other.is_met_by(&contract, &someone_else));
+
+        assert_eq!(ContractReferenceOwner::Writer.as_str(), "self");
+        assert_eq!(ContractReferenceOwner::Other.as_str(), "other");
+        assert_eq!(
+            ContractReferenceOwner::from_wire_name("self"),
+            Some(ContractReferenceOwner::Writer)
+        );
+        assert_eq!(
+            ContractReferenceOwner::from_wire_name("other"),
+            Some(ContractReferenceOwner::Other)
+        );
+        assert_eq!(ContractReferenceOwner::from_wire_name("owner"), None);
+
+        let requirement = ContractReferenceRequirement::Owner(ContractReferenceOwner::Writer);
+        assert_eq!(requirement.field(), "owner");
+        assert_eq!(requirement.required(), "self");
+        assert_eq!(
+            ContractReferenceRequirement::Owner(ContractReferenceOwner::Other).required(),
+            "other"
+        );
+
+        // The first unmet requirement is reported in declaration order: an owner requirement
+        // is checked after the moderation and duration ones
+        let requirements = ContractReferenceRequirements {
+            owner: Some(ContractReferenceOwner::Other),
+            ..Default::default()
+        };
+        assert_eq!(
+            requirements.requirements().collect::<Vec<_>>(),
+            vec![ContractReferenceRequirement::Owner(
+                ContractReferenceOwner::Other
+            )]
+        );
+        let by_owner = ReferringWrite {
+            owner_id,
+            block_time_ms: 0,
+        };
+        let by_someone_else = ReferringWrite {
+            owner_id: someone_else,
+            block_time_ms: 0,
+        };
+        assert_eq!(
+            requirements.first_unmet_by(&contract, by_owner),
+            Some(ContractReferenceRequirement::Owner(
+                ContractReferenceOwner::Other
+            ))
+        );
+        assert_eq!(
+            requirements.first_unmet_by(&contract, by_someone_else),
+            None
+        );
+        let both = ContractReferenceRequirements {
+            minimum_age_seconds: Some(1),
+            owner: Some(ContractReferenceOwner::Other),
+            ..Default::default()
+        };
+        assert_eq!(
+            both.first_unmet_by(&contract, by_owner),
+            Some(ContractReferenceRequirement::MinimumAgeSeconds(1))
+        );
+    }
+
+    #[test]
+    fn should_meet_a_config_flag_requirement_from_the_referenced_contract_config() {
+        use crate::data_contract::accessors::v0::DataContractV0Setters;
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+            ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        };
+        use crate::data_contract::config::v0::DataContractConfigSettersV0;
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+        use std::collections::BTreeSet;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let write = ReferringWrite {
+            owner_id: Identifier::from([0x42; 32]),
+            block_time_ms: 0,
+        };
+        let readonly = ContractReferenceRequirement::Readonly(true);
+        let keeps_history = ContractReferenceRequirement::KeepsHistory(true);
+        let protected = ContractReferenceRequirement::OwnerProtected(true);
+        let unprotected = ContractReferenceRequirement::OwnerProtected(false);
+
+        // The fixture is neither read-only nor keeping history, and declares no moderation:
+        // it meets none of the flags, whichever value the owner protection requires
+        assert!(!readonly.is_met_by(&contract, write));
+        assert!(!keeps_history.is_met_by(&contract, write));
+        assert!(!protected.is_met_by(&contract, write));
+        assert!(!unprotected.is_met_by(&contract, write));
+
+        let mut config = contract.config().clone();
+        config.set_readonly(true);
+        config.set_keeps_history(true);
+        contract.set_config(config);
+        assert!(readonly.is_met_by(&contract, write));
+        assert!(keeps_history.is_met_by(&contract, write));
+
+        // Appointed moderation still has no owner protection to read
+        contract.set_config(contract.config().clone().with_moderation(Some(
+            ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                warnings: false,
+                moderators: ContractModerators::AppointedModerators(BTreeSet::from([
+                    Identifier::from([0x77; 32]),
+                ])),
+            },
+        )));
+        assert!(!protected.is_met_by(&contract, write));
+        assert!(!unprotected.is_met_by(&contract, write));
+
+        for owner_protected in [true, false] {
+            contract.set_config(contract.config().clone().with_moderation(Some(
+                ContractModerationConfig {
+                    banlist: true,
+                    suspensions: false,
+                    warnings: false,
+                    moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                        join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                        vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                        challenge_cool_down: 1_209_600,
+                        election_delay: None,
+                        moderated_document_types: BTreeMap::from([(
+                            "profile".to_string(),
+                            BTreeSet::from([ModerationAbility::Ban]),
+                        )]),
+                        interim: InterimModerators::ContractOwner,
+                        owner_protected,
+                    })),
+                },
+            )));
+            assert_eq!(protected.is_met_by(&contract, write), owner_protected);
+            assert_eq!(unprotected.is_met_by(&contract, write), !owner_protected);
+        }
+
+        assert_eq!(readonly.field(), "readonly");
+        assert_eq!(readonly.required(), "true");
+        assert_eq!(keeps_history.field(), "keepsHistory");
+        assert_eq!(keeps_history.required(), "true");
+        assert_eq!(protected.field(), "ownerProtected");
+        assert_eq!(protected.required(), "true");
+        assert_eq!(unprotected.required(), "false");
+
+        // The contract is left read-only, keeping history and with its owner unprotected:
+        // requiring the protection is the one requirement it does not meet
+        let requirements = ContractReferenceRequirements {
+            readonly: Some(true),
+            keeps_history: Some(true),
+            owner_protected: Some(true),
+            ..Default::default()
+        };
+        assert!(!requirements.is_empty());
+        assert_eq!(
+            requirements.requirements().collect::<Vec<_>>(),
+            vec![readonly, keeps_history, protected]
+        );
+        assert_eq!(
+            requirements.first_unmet_by(&contract, write),
+            Some(protected)
+        );
+        let met = ContractReferenceRequirements {
+            owner_protected: Some(false),
+            ..requirements
+        };
+        assert_eq!(met.first_unmet_by(&contract, write), None);
+    }
+
+    #[test]
+    fn should_meet_election_open_when_the_contract_declares_no_delay_or_the_delay_passed() {
+        use crate::data_contract::accessors::v0::DataContractV0Setters;
+        use crate::data_contract::accessors::v1::DataContractV1Setters;
+        use crate::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+            ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        };
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+        use std::collections::BTreeSet;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let created_at: TimestampMillis = 1_700_000_000_000;
+        contract.set_created_at(Some(created_at));
+
+        let elected = ContractReferenceModeration::Elected;
+        let open = ContractReferenceModeration::ElectionOpen;
+
+        // No moderation at all: neither is met
+        assert!(!elected.is_met_by(&contract, created_at));
+        assert!(!open.is_met_by(&contract, created_at));
+
+        let declare = |contract: &mut DataContract, election_delay: Option<u32>| {
+            let config =
+                contract
+                    .config()
+                    .clone()
+                    .with_moderation(Some(ContractModerationConfig {
+                        banlist: true,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: 1_209_600,
+                            election_delay,
+                            moderated_document_types: BTreeMap::from([(
+                                "profile".to_string(),
+                                BTreeSet::from([ModerationAbility::Ban]),
+                            )]),
+                            interim: InterimModerators::ContractOwner,
+                            owner_protected: false,
+                        })),
+                    }));
+            contract.set_config(config);
+        };
+
+        // Elected without a delay: open at once
+        declare(&mut contract, None);
+        assert!(elected.is_met_by(&contract, created_at));
+        assert!(open.is_met_by(&contract, created_at));
+
+        // Elected with a delay: elected at once, open once the delay passed
+        declare(&mut contract, Some(3600));
+        assert!(elected.is_met_by(&contract, created_at));
+        assert!(!open.is_met_by(&contract, created_at + 3_599_999));
+        assert!(open.is_met_by(&contract, created_at + 3_600_000));
+
+        // A delay on a contract of unknown age never opens
+        contract.set_created_at(None);
+        assert!(!open.is_met_by(&contract, TimestampMillis::MAX));
+
+        assert_eq!(
+            ContractReferenceModeration::from_wire_name("electionOpen"),
+            Some(ContractReferenceModeration::ElectionOpen)
+        );
+        assert_eq!(
+            ContractReferenceModeration::ElectionOpen.as_str(),
+            "electionOpen"
+        );
+        assert_eq!(
+            ContractReferenceRequirement::Moderation(ContractReferenceModeration::ElectionOpen)
+                .required(),
+            "electionOpen"
+        );
+    }
+
+    #[test]
+    fn should_take_the_last_change_time_from_the_later_of_creation_and_update() {
+        use crate::data_contract::accessors::v1::DataContractV1Setters;
+        use crate::tests::fixtures::get_dashpay_contract_fixture;
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        contract.set_created_at(None);
+        contract.set_updated_at(None);
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            None
+        );
+
+        contract.set_created_at(Some(1_000));
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(1_000)
+        );
+
+        contract.set_updated_at(Some(5_000));
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(5_000)
+        );
+
+        // A recorded update alone counts as the last change
+        contract.set_created_at(None);
+        assert_eq!(
+            ContractReferenceRequirement::last_change_time(&contract),
+            Some(5_000)
         );
     }
 
@@ -7649,10 +9281,105 @@ mod tests {
             DocumentPropertyReferenceTarget::Contract {
                 contract_requirements: ContractReferenceRequirements {
                     moderation: Some(ContractReferenceModeration::Elected),
+                    minimum_age_seconds: None,
+                    minimum_seconds_since_update: None,
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
                 },
             }
             .to_string(),
             "contract with elected moderation"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    minimum_age_seconds: Some(604_800),
+                    minimum_seconds_since_update: Some(86_400),
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
+                },
+            }
+            .to_string(),
+            "contract with elected moderation at least 604800 seconds old unchanged for at least 86400 seconds"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: None,
+                    minimum_age_seconds: Some(1),
+                    minimum_seconds_since_update: None,
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
+                },
+            }
+            .to_string(),
+            "contract at least 1 seconds old"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    owner: Some(ContractReferenceOwner::Writer),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract owned by the writer"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::Elected),
+                    owner: Some(ContractReferenceOwner::Other),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract with elected moderation not owned by the writer"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    readonly: Some(true),
+                    keeps_history: Some(true),
+                    owner_protected: Some(true),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract read-only keeping history with the owner protected"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    owner: Some(ContractReferenceOwner::Other),
+                    owner_protected: Some(false),
+                    ..Default::default()
+                },
+            }
+            .to_string(),
+            "contract not owned by the writer with the owner unprotected"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract {
+                contract_requirements: ContractReferenceRequirements {
+                    moderation: Some(ContractReferenceModeration::ElectionOpen),
+                    minimum_age_seconds: None,
+                    minimum_seconds_since_update: None,
+                    owner: None,
+                    readonly: None,
+                    keeps_history: None,
+                    owner_protected: None,
+                },
+            }
+            .to_string(),
+            "contract with its moderation election open"
         );
         assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
         assert_eq!(
@@ -7722,6 +9449,151 @@ mod tests {
             .is_none());
     }
 
+    fn key_with(purpose: Purpose, contract_bounds: Option<ContractBounds>) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds,
+            key_type: KeyType::ECDSA_HASH160,
+            data: BinaryData::new(vec![0x74; 20]),
+            read_only: false,
+            disabled_at: None,
+        })
+    }
+
+    #[test]
+    fn should_report_the_first_unmet_key_requirement_and_what_the_key_has() {
+        let contract_id = Identifier::new([3; 32]);
+        let other_contract_id = Identifier::new([4; 32]);
+        let requirements = IdentityKeyReferenceRequirements {
+            purpose: Some(Purpose::DECRYPTION),
+            bound_to: Some("submittedCharter".to_string()),
+        };
+        let bound_to_charter = |id: Identifier| ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name: "submittedCharter".to_string(),
+        };
+
+        assert!(requirements
+            .first_unmet_by(
+                &key_with(Purpose::DECRYPTION, Some(bound_to_charter(contract_id))),
+                contract_id,
+            )
+            .is_none());
+
+        // The purpose is checked first, whatever the bound
+        let key = key_with(Purpose::ENCRYPTION, None);
+        let unmet = requirements
+            .first_unmet_by(&key, contract_id)
+            .expect("the purpose is unmet");
+        assert_eq!(
+            unmet,
+            IdentityKeyReferenceRequirement::Purpose(Purpose::DECRYPTION)
+        );
+        assert_eq!(unmet.field(), "purpose");
+        assert_eq!(unmet.required(), "decryption");
+        assert_eq!(unmet.actual_of(&key), "encryption");
+
+        for (key, actual) in [
+            (key_with(Purpose::DECRYPTION, None), "no contract bounds"),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(ContractBounds::SingleContract { id: contract_id }),
+                ),
+                &format!("whole contract {contract_id}, not a document type"),
+            ),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: contract_id,
+                        document_type_name: "joinRequest".to_string(),
+                    }),
+                ),
+                &format!("contract {contract_id} document type joinRequest"),
+            ),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(bound_to_charter(other_contract_id)),
+                ),
+                &format!("contract {other_contract_id} document type submittedCharter"),
+            ),
+            (
+                key_with(
+                    Purpose::DECRYPTION,
+                    Some(ContractBounds::ContractGroup { id: contract_id }),
+                ),
+                &format!("contract group {contract_id}, which never meets a document type bound"),
+            ),
+        ] {
+            let unmet = requirements
+                .first_unmet_by(&key, contract_id)
+                .expect("the bound is unmet");
+            assert_eq!(
+                unmet,
+                IdentityKeyReferenceRequirement::BoundTo("submittedCharter")
+            );
+            assert_eq!(unmet.field(), "boundTo");
+            assert_eq!(unmet.required(), "submittedCharter");
+            assert_eq!(unmet.actual_of(&key), actual);
+        }
+
+        assert!(IdentityKeyReferenceRequirements::default().is_empty());
+        assert!(IdentityKeyReferenceRequirements::default()
+            .first_unmet_by(&key_with(Purpose::ENCRYPTION, None), contract_id)
+            .is_none());
+    }
+
+    #[test]
+    fn should_serialize_key_requirements_by_their_wire_names() {
+        let requirements = IdentityKeyReferenceRequirements {
+            purpose: Some(Purpose::DECRYPTION),
+            bound_to: Some("submittedCharter".to_string()),
+        };
+        let json = serde_json::to_value(&requirements).expect("serializes");
+        assert_eq!(
+            json,
+            serde_json::json!({ "purpose": "decryption", "boundTo": "submittedCharter" })
+        );
+        assert_eq!(
+            serde_json::from_value::<IdentityKeyReferenceRequirements>(json).expect("parses"),
+            requirements
+        );
+        assert_eq!(
+            serde_json::to_value(IdentityKeyReferenceRequirements::default()).expect("serializes"),
+            serde_json::json!({})
+        );
+        for name in ["signing", "system", "DECRYPTION"] {
+            assert!(
+                serde_json::from_value::<IdentityKeyReferenceRequirements>(
+                    serde_json::json!({ "purpose": name })
+                )
+                .is_err(),
+                "{name} should not deserialize as a key purpose requirement"
+            );
+        }
+        assert_eq!(
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: "recipientKeyId".to_string(),
+                key_requirements: requirements,
+            }
+            .to_string(),
+            "identity public key (key id property recipientKeyId) with purpose decryption bound \
+             to document type submittedCharter"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: "recipientKeyId".to_string(),
+                key_requirements: Default::default(),
+            }
+            .to_string(),
+            "identity public key (key id property recipientKeyId)"
+        );
+    }
+
     /// A compile-time guard, not a behavioural test.
     ///
     /// `DocumentPropertyReferenceTarget` is mirrored outside this crate —
@@ -7746,6 +9618,7 @@ mod tests {
             },
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: "signerKeyId".to_string(),
+                key_requirements: Default::default(),
             },
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,
