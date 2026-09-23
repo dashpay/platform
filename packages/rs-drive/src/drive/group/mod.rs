@@ -801,6 +801,37 @@ mod tests {
             "closing without fee history must be rejected at the latest version, got {:?}",
             result
         );
+        // The wrapper owned the transaction, so the rejected close left no trace:
+        // the action is still active and nothing was moved to the closed tree.
+        let is_closed = drive
+            .fetch_action_is_closed(
+                contract_id,
+                0,
+                action_id,
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to check if action is closed");
+        assert!(
+            !is_closed,
+            "a rejected close must not persist: the action is still active"
+        );
+        let closed_signers = drive
+            .fetch_action_signers(
+                contract_id,
+                0,
+                GroupActionStatus::ActionClosed,
+                action_id,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch closed signers");
+        assert!(
+            closed_signers.is_empty(),
+            "nothing moved to the closed tree"
+        );
 
         let (drive, contract_id, _identity_1_id, identity_2_id, action_id) =
             setup_drive_with_contract_and_action();
@@ -821,6 +852,44 @@ mod tests {
                 frozen_platform_version,
             )
             .expect("protocol version 14 prices the shipped shortcut without a history");
+    }
+
+    #[test]
+    fn should_commit_the_owned_transaction_when_pricing_succeeds_at_the_latest_version() {
+        // An opening call frees no flagged bytes, so the wrapper prices it without a
+        // history at every version; generation 1 must still commit what it wrote.
+        let (drive, contract_id, _identity_1_id, identity_2_id, action_id) =
+            setup_drive_with_contract_and_action();
+        let platform_version = PlatformVersion::latest();
+
+        let fee_result = drive
+            .add_group_action(
+                contract_id,
+                0,
+                None,
+                false,
+                action_id,
+                identity_2_id,
+                2,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the second signer");
+        assert!(fee_result.processing_fee > 0);
+
+        let signers = drive
+            .fetch_action_signers(
+                contract_id,
+                0,
+                GroupActionStatus::ActionActive,
+                action_id,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch signers");
+        assert_eq!(signers.len(), 2, "the write was committed");
     }
 
     #[test]

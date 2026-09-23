@@ -6,6 +6,7 @@ use crate::drive::contract::paths::{
     CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::{Drive, RootTree};
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::batch::drive_op_batch::ContractModerationOperationType;
 use crate::util::batch::DriveOperation;
@@ -154,6 +155,26 @@ fn unsuspend(
     apply_moderation(
         drive,
         ContractModerationOperationType::RemoveSuspension {
+            contract_id,
+            identity_id,
+        },
+        block_info,
+        apply,
+        platform_version,
+    )
+}
+
+fn unwarn(
+    drive: &Drive,
+    contract_id: Identifier,
+    identity_id: Identifier,
+    block_info: &BlockInfo,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
+    apply_moderation(
+        drive,
+        ContractModerationOperationType::RemoveWarnings {
             contract_id,
             identity_id,
         },
@@ -1235,8 +1256,7 @@ fn should_warn_accumulate_clear_and_prove_the_status_and_the_entries() {
         }],
     );
 
-    let fee = drive
-        .remove_contract_warnings(contract_id, target, &later, true, None, platform_version)
+    let fee = unwarn(&drive, contract_id, target, &later, true, platform_version)
         .expect("expected to clear the warnings");
     assert!(
         fee.fee_refunds
@@ -1411,4 +1431,181 @@ fn should_keep_the_documents_on_top_of_the_contract_subtree_and_the_banlist_on_t
             "banlist {banlist}, suspensions {suspensions}, warnings {warnings}"
         );
     }
+}
+
+#[test]
+fn should_leave_a_ban_in_place_when_the_bare_wrapper_cannot_price_its_removal() {
+    // The bare wrapper passes no fee history. Removing a moderator-flagged entry
+    // needs it from protocol version 15, and the wrapper now prices before it commits
+    // its owned transaction, so the rejected removal leaves the entry exactly as it
+    // was. The frozen generation at protocol version 14 still prices and removes it.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract_keeping(true, true, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let moderator = contract.owner_id();
+    let target = identity(0x61);
+
+    drive
+        .add_contract_ban(
+            contract_id,
+            target,
+            &reason("spam"),
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to ban");
+    drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            10,
+            &reason("flooding"),
+            false,
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to suspend");
+    drive
+        .add_contract_warning(
+            contract_id,
+            target,
+            &[warning(1, "spam")],
+            false,
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to warn");
+    let before = root_hash(&drive, platform_version);
+
+    for result in [
+        drive.remove_contract_warnings(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+        drive.remove_contract_ban(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+        drive.remove_contract_suspension(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+        drive.add_contract_suspension(
+            contract_id,
+            target,
+            20,
+            &reason("f"),
+            true,
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+    ] {
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "freeing flagged bytes without a fee history must be rejected, got {:?}",
+            result
+        );
+    }
+    assert_eq!(
+        root_hash(&drive, platform_version),
+        before,
+        "a rejected removal must not persist"
+    );
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &[
+            ContractModerationList::Banlist,
+            ContractModerationList::Suspensions,
+            ContractModerationList::Warnings,
+        ],
+        ContractModerationStatus {
+            ban: Some(ContractBan {
+                reason: reason("spam"),
+            }),
+            suspension: Some(ContractSuspension {
+                until: 10,
+                reason: reason("flooding"),
+            }),
+            warnings: vec![warning(1, "spam")],
+        },
+    );
+
+    // Estimation writes nothing and needs no history at any version.
+    let estimated = drive
+        .remove_contract_ban(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+        )
+        .expect("expected to estimate an unban");
+    assert!(estimated.processing_fee > 0);
+    assert_eq!(root_hash(&drive, platform_version), before);
+
+    let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+    let drive = setup_drive_with_initial_state_structure(Some(frozen_platform_version));
+    let contract = moderated_contract(true, false);
+    insert(&drive, &contract, frozen_platform_version);
+    drive
+        .add_contract_ban(
+            contract.id(),
+            target,
+            &reason("spam"),
+            contract.owner_id(),
+            &BlockInfo::default(),
+            true,
+            None,
+            frozen_platform_version,
+        )
+        .expect("expected to ban");
+    drive
+        .remove_contract_ban(
+            contract.id(),
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            frozen_platform_version,
+        )
+        .expect("protocol version 14 prices the shipped shortcut without a history");
+    assert_status(
+        &drive,
+        contract.id(),
+        target,
+        &[ContractModerationList::Banlist],
+        ContractModerationStatus::default(),
+    );
 }
