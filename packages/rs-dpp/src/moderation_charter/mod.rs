@@ -11,7 +11,13 @@
 //! - a `joinRequest` is an identity's offer to serve on the team of a proposal, with a message
 //!   only the leader can read;
 //! - an `electedCharter` is a proposal put to the vote with its team, chosen from the identities
-//!   that asked to join it. Creating one opens or joins the contest for the target contract.
+//!   that asked to join it. Creating one opens or joins the contest for the target contract;
+//! - once a charter is seated, its leader may add members from the same join requests, up to
+//!   the target's `maxAddedModerators` (`addedModerator`), and remove members
+//!   (`removedModerator`), and a member may leave on its own (`resignationRequest`).
+//!
+//! The team that acts is the leader plus [`ElectedCharter::active_members`]: the elected
+//! members and the additions, less the removals and the resignations.
 //!
 //! The schema carries almost every rule through its keywords (references, lookups, key
 //! requirements, `distinctFrom`). What it cannot say is here: [`SubmittedCharter`] and
@@ -26,7 +32,7 @@ use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResu
 use crate::ProtocolError;
 use platform_value::{Identifier, IdentifierBytes32, Value, ValueMap};
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The id of the moderation charters system contract, `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
 ///
@@ -45,6 +51,12 @@ pub const SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME: &str = "submittedCharter";
 pub const JOIN_REQUEST_DOCUMENT_TYPE_NAME: &str = "joinRequest";
 /// The name of the elected charter document type, the one on the contested index.
 pub const ELECTED_CHARTER_DOCUMENT_TYPE_NAME: &str = "electedCharter";
+/// The name of the document type of a member the leader adds after the election.
+pub const ADDED_MODERATOR_DOCUMENT_TYPE_NAME: &str = "addedModerator";
+/// The name of the document type of a member the leader removes.
+pub const REMOVED_MODERATOR_DOCUMENT_TYPE_NAME: &str = "removedModerator";
+/// The name of the document type of a member leaving the team on its own.
+pub const RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME: &str = "resignationRequest";
 
 /// The moderators share a proposal takes when it declares none: the full declared fee.
 pub const FULL_MODERATORS_SHARE: u8 = 100;
@@ -61,6 +73,8 @@ pub mod property_names {
     pub const REWARD_SPLIT_ACTIONS: &str = "actions";
     pub const SUBMITTED_CHARTER_ID: &str = "submittedCharterId";
     pub const MEMBERS: &str = "members";
+    pub const ELECTED_CHARTER_ID: &str = "electedCharterId";
+    pub const MEMBER_ID: &str = "memberId";
 }
 
 /// How a team splits every claim of the moderators pot: three percentages summing to 100.
@@ -291,6 +305,30 @@ impl SubmittedCharter {
 }
 
 impl ElectedCharter {
+    /// The members a seated team acts with besides its leader, `leader_id`: the elected
+    /// members and those the leader added after the election, less those the leader removed
+    /// and those who resigned. `added`, `removed` and `resigned` are the `memberId`s of the
+    /// charter's `addedModerator` and `removedModerator` documents and the owners of its
+    /// `resignationRequest` documents. A removal and a resignation are final, so the order
+    /// the documents were filed in does not matter. The leader is never among the result:
+    /// neither list may name it, and its own resignation does not remove it (leader
+    /// succession is not a resignation).
+    pub fn active_members<'a>(
+        &self,
+        leader_id: Identifier,
+        added: impl IntoIterator<Item = &'a Identifier>,
+        removed: impl IntoIterator<Item = &'a Identifier>,
+        resigned: impl IntoIterator<Item = &'a Identifier>,
+    ) -> BTreeSet<Identifier> {
+        let mut active: BTreeSet<Identifier> = self.members.iter().copied().collect();
+        active.extend(added.into_iter().copied());
+        for gone in removed.into_iter().chain(resigned) {
+            active.remove(gone);
+        }
+        active.remove(&leader_id);
+        active
+    }
+
     /// Reads an elected charter out of the properties of an `electedCharter` document. The
     /// result carries a consensus error, never a charter, when a property is missing or of the
     /// wrong type.

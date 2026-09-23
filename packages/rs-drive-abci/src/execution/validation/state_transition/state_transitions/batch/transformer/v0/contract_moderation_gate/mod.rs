@@ -444,6 +444,7 @@ mod tests {
                     )]),
                     interim: InterimModerators::NotYetUsable,
                     election_delay: None,
+                    max_added_moderators: 0,
                     owner_protected: false,
                 })),
             },

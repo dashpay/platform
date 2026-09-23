@@ -505,9 +505,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; an optional,
 ///     unbounded election delay in seconds after the contract's creation
 ///     before the first charter may be filed (`electionDelay`, read by the
-///     `moderation: "electionOpen"` reference requirement of item 24); the document
-///     types the team moderates, each with the abilities a charter may claim on
-///     it; who moderates until the first team is seated (the owner, an
+///     `moderation: "electionOpen"` reference requirement of item 24); how many
+///     members a seated team's leader may add after the election
+///     (`maxAddedModerators`, 0 when left out, at most
+///     `SYSTEM_LIMITS_V4.max_contract_moderation_added_moderators`, 15); the
+///     document types the team moderates, each with the abilities the seated
+///     team holds on it; who moderates until the first team is seated (the owner, an
 ///     appointed set, or nobody, with the moderated types not yet usable or
 ///     used unmoderated meanwhile); and whether the owner is protected from the
 ///     team. `validate_moderation_config` v0 checks
@@ -761,7 +764,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 33. **The moderation charters system contract**
 ///     (`SystemDataContract::ModerationCharters`, schema v1, the first piece of
-///     decentralized moderation teams) carries four document types, all
+///     decentralized moderation teams) carries seven document types, all
 ///     immutable and undeletable. A `reason` is a ground for a moderation
 ///     action, keyed by its owner and a three-letter `code` unique among the
 ///     owner's reasons. A `submittedCharter` is a leader's proposal to
@@ -782,7 +785,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `moderation: "electionOpen"`, and its `members` are identities each of
 ///     which filed a join request for that proposal (item 32, a lookup through
 ///     the join request's unique index) and none of which is the leader
-///     (item 26). Its `byTargetContract` index is a contested unique index
+///     (item 26). Once a charter is seated, its leader adds members from the
+///     same join requests (`addedModerator`, the same lookup) and removes
+///     members (`removedModerator`), and a member leaves on its own
+///     (`resignationRequest`): each once per member and charter (unique
+///     indexes), removals and resignations final, so the team that acts is the
+///     leader plus the elected members and the additions less the removals and
+///     the resignations (`ElectedCharter::active_members`). The cap on
+///     additions, the target's `maxAddedModerators`, is checked by the seating
+///     pull request, which first lets these documents be written.
+///     Its `byTargetContract` index is a contested unique index
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it

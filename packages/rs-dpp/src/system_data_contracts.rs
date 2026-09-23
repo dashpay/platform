@@ -323,9 +323,10 @@ mod moderation_charters_tests {
     use crate::identity::Purpose;
     use crate::moderation_charter::{
         property_names, validate_submitted_charter, ElectedCharter, ModerationCharterRewardSplit,
-        SubmittedCharter, ELECTED_CHARTER_DOCUMENT_TYPE_NAME, JOIN_REQUEST_DOCUMENT_TYPE_NAME,
-        MODERATION_CHARTERS_CONTRACT_ID, REASON_DOCUMENT_TYPE_NAME,
-        SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+        SubmittedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+        JOIN_REQUEST_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
+        REASON_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+        RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
     };
     use platform_value::{Identifier, Value};
 
@@ -419,9 +420,12 @@ mod moderation_charters_tests {
         assert_eq!(
             names,
             vec![
+                ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
                 ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
                 JOIN_REQUEST_DOCUMENT_TYPE_NAME,
                 REASON_DOCUMENT_TYPE_NAME,
+                REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+                RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
                 SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
             ]
         );
@@ -446,6 +450,9 @@ mod moderation_charters_tests {
             REASON_DOCUMENT_TYPE_NAME,
             SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
             JOIN_REQUEST_DOCUMENT_TYPE_NAME,
+            ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+            REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+            RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
         ] {
             assert!(
                 document_type(&contract, name)
@@ -799,6 +806,112 @@ mod moderation_charters_tests {
                 !schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document)
                     .is_empty(),
                 "{property} is required"
+            );
+        }
+    }
+
+    /// After the election the leader adds members from the same join requests and removes
+    /// members, and a member leaves on its own: each change is written once per member, and
+    /// only by the one entitled to it.
+    #[test]
+    fn should_let_only_the_leader_change_the_team_and_only_a_member_resign() {
+        let contract = contract();
+        let charter_agreement =
+            |type_name| match reference(&contract, type_name, property_names::ELECTED_CHARTER_ID) {
+                PropertyReference::Value(DocumentPropertyReferenceTarget::PermanentDocument {
+                    document_type_name,
+                    property_agreement,
+                    ..
+                }) => {
+                    assert_eq!(document_type_name, ELECTED_CHARTER_DOCUMENT_TYPE_NAME);
+                    property_agreement.clone()
+                }
+                other => panic!("{type_name}.electedCharterId: {other:?}"),
+            };
+
+        let added = charter_agreement(ADDED_MODERATOR_DOCUMENT_TYPE_NAME);
+        assert_eq!(added.get("$ownerId").map(String::as_str), Some("$ownerId"));
+        assert_eq!(
+            added
+                .get(property_names::SUBMITTED_CHARTER_ID)
+                .map(String::as_str),
+            Some(property_names::SUBMITTED_CHARTER_ID)
+        );
+        let removed = charter_agreement(REMOVED_MODERATOR_DOCUMENT_TYPE_NAME);
+        assert_eq!(
+            removed.get("$ownerId").map(String::as_str),
+            Some("$ownerId")
+        );
+        assert!(
+            charter_agreement(RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME).is_empty(),
+            "anyone may resign; only a member's resignation changes the team"
+        );
+
+        match reference(
+            &contract,
+            ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+            property_names::MEMBER_ID,
+        ) {
+            PropertyReference::Value(
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                    document_type_name,
+                    lookup,
+                    ..
+                },
+            ) => {
+                assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
+                assert_eq!(lookup.index, "bySubmittedCharter");
+                assert_eq!(
+                    lookup.keys.get("$ownerId"),
+                    Some(&LookupKeySource::ReferenceValue)
+                );
+            }
+            other => panic!("addedModerator.memberId: {other:?}"),
+        }
+        for type_name in [
+            ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+            REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+        ] {
+            let member = document_type(&contract, type_name)
+                .flattened_properties()
+                .get(property_names::MEMBER_ID)
+                .expect("memberId");
+            assert_eq!(
+                member.distinct_from,
+                Some(DistinctFrom::OwnerId),
+                "{type_name}: the leader is not a member"
+            );
+        }
+
+        for (type_name, index_name, member_property) in [
+            (
+                ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+                "byElectedCharterMember",
+                property_names::MEMBER_ID,
+            ),
+            (
+                REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+                "byElectedCharterMember",
+                property_names::MEMBER_ID,
+            ),
+            (
+                RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+                "byElectedCharterOwner",
+                "$ownerId",
+            ),
+        ] {
+            let index = document_type(&contract, type_name)
+                .indexes()
+                .get(index_name)
+                .unwrap_or_else(|| panic!("{type_name}.{index_name}"));
+            assert!(index.unique, "{type_name}: once per member and charter");
+            assert_eq!(
+                index
+                    .properties
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect::<Vec<_>>(),
+                vec![property_names::ELECTED_CHARTER_ID, member_property]
             );
         }
     }

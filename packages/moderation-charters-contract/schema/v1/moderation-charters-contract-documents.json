@@ -365,5 +365,172 @@
     ],
     "additionalProperties": false,
     "description": "A proposal put to the vote with its team"
+  },
+  "addedModerator": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "indices": [
+      {
+        "name": "byElectedCharterMember",
+        "properties": [
+          {
+            "electedCharterId": "asc"
+          },
+          {
+            "memberId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "electedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "$ownerId": "$ownerId",
+            "submittedCharterId": "submittedCharterId"
+          }
+        },
+        "description": "The seated charter; only its leader may add",
+        "position": 0
+      },
+      "submittedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": 1
+      },
+      "memberId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "distinctFrom": "$ownerId",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "joinRequest",
+          "lookup": {
+            "index": "bySubmittedCharter",
+            "keys": {
+              "submittedCharterId": "submittedCharterId",
+              "$ownerId": "."
+            }
+          }
+        },
+        "description": "An identity that asked to join the proposal",
+        "position": 2
+      }
+    },
+    "required": [
+      "$createdAt",
+      "electedCharterId",
+      "submittedCharterId",
+      "memberId"
+    ],
+    "additionalProperties": false,
+    "description": "A member the leader adds after the election, up to the target's maxAddedModerators"
+  },
+  "removedModerator": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "indices": [
+      {
+        "name": "byElectedCharterMember",
+        "properties": [
+          {
+            "electedCharterId": "asc"
+          },
+          {
+            "memberId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "electedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "$ownerId": "$ownerId"
+          }
+        },
+        "description": "The seated charter; only its leader may remove",
+        "position": 0
+      },
+      "memberId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "distinctFrom": "$ownerId",
+        "position": 1
+      }
+    },
+    "required": [
+      "$createdAt",
+      "electedCharterId",
+      "memberId"
+    ],
+    "additionalProperties": false,
+    "description": "A member the leader removes; final"
+  },
+  "resignationRequest": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "indices": [
+      {
+        "name": "byElectedCharterOwner",
+        "properties": [
+          {
+            "electedCharterId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "electedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "electedCharter"
+        },
+        "position": 0
+      }
+    },
+    "required": [
+      "$createdAt",
+      "electedCharterId"
+    ],
+    "additionalProperties": false,
+    "description": "A member leaving the team; takes effect when filed"
   }
 }

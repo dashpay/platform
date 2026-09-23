@@ -3074,6 +3074,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
                 .collect(),
             interim,
             election_delay: None,
+            max_added_moderators: 0,
             owner_protected: false,
         })),
     }

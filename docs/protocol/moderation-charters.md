@@ -12,7 +12,8 @@ genesis and on the upgrade to protocol version 14.
 - Owner: the all-zero system identity
 - Registry entry: `SystemDataContract::ModerationCharters = 10`
 - Schema version: 1
-- Document types: `reason`, `submittedCharter`, `joinRequest`, `electedCharter`
+- Document types: `reason`, `submittedCharter`, `joinRequest`, `electedCharter`,
+  `addedModerator`, `removedModerator`, `resignationRequest`
 
 Every type is immutable and undeletable, so each document another one refers
 to stays exactly as it was when it was referred to. Additional properties are
@@ -30,10 +31,19 @@ rejected on every type.
    `electedCharter` naming the proposal and the members chosen from those who
    asked to join. That create opens or joins the contest for the target.
 
+5. After the election the leader may add members from the same join requests,
+   up to the target's `maxAddedModerators`, and remove members, and a member
+   may resign.
+
 The seated team acts with the target contract's whole elected moderation
 declaration: every document type and ability it lists. A team narrows what it
 acts on only through the reasons its proposal lists, since every action names
-one. There are no powers: any one member acts alone.
+one. There are no powers: any one member acts alone. The team that acts is:
+
+```
+leader + (electedCharter.members + addedModerator.memberId)
+       - removedModerator.memberId - resignationRequest.$ownerId
+```
 
 ## `reason`
 
@@ -112,6 +122,28 @@ per contest (`DocumentContestIdentityAlreadyContestantError`), every entry of a
 proposal lands in its target's contest, and only the proposal's owner may
 enter, so a proposal has at most one contender at a time. Contenders live in
 the contest until it is awarded, so this index lists seated charters only.
+
+## After the election
+
+All three types refer to an `electedCharter`. A reference finds a document in the
+type's own storage, and only a winner is ever written there (contenders live in
+the contest), so these documents can only name a seated charter. Each is
+unique on the charter and the member, so it is written at most once per member,
+and a removal or a resignation is final.
+
+| Type | Properties | Rules |
+| --- | --- | --- |
+| `addedModerator` | `electedCharterId`, `submittedCharterId`, `memberId` | `electedCharterId` carries `propertyAgreement: { "$ownerId": "$ownerId", "submittedCharterId": "submittedCharterId" }`: only the leader adds, and `submittedCharterId` is the charter's proposal. `memberId` refers to a `joinRequest` through the same `lookup` as `members` and is `distinctFrom: "$ownerId"`: an addition needs the member's consent, disclosed on the proposal |
+| `removedModerator` | `electedCharterId`, `memberId` | Only the leader removes (`propertyAgreement: { "$ownerId": "$ownerId" }`); no resignation is needed; `memberId` is `distinctFrom: "$ownerId"` |
+| `resignationRequest` | `electedCharterId` | The owner is the member leaving; it takes effect when filed, whatever the leader does. A resignation by someone not on the team changes nothing, and neither does the leader's own: leader succession is not a resignation |
+
+**The cap on additions.** The target contract's elected declaration carries
+`maxAddedModerators`: how many members a seated team's leader may add, 0 when
+left out and at most `SystemLimits::max_contract_moderation_added_moderators`
+(15). It counts additions ever filed against a charter, so a removal or a
+resignation frees no slot. The schema cannot count documents, so the seating
+pull request, which first lets this contract's documents be written, refuses an
+addition over the cap.
 
 ## The contest
 

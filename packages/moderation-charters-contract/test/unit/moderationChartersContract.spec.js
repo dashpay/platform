@@ -88,11 +88,14 @@ describe('Moderation Charters Contract', () => {
       .throw();
   });
 
-  it('should have four document types', () => {
+  it('should have seven document types', () => {
     expect(Object.keys(moderationChartersContractDocumentsSchema).sort()).to.deep.equal([
+      'addedModerator',
       'electedCharter',
       'joinRequest',
       'reason',
+      'removedModerator',
+      'resignationRequest',
       'submittedCharter',
     ]);
   });
@@ -361,5 +364,47 @@ describe('Moderation Charters Contract', () => {
 
       expect(error.keyword).to.equal('uniqueItems');
     });
+  });
+
+  describe('addedModerator', () => {
+    const rawAddition = async () => ({
+      electedCharterId: await generateRandomIdentifier(),
+      submittedCharterId: await generateRandomIdentifier(),
+      memberId: await generateRandomIdentifier(),
+    });
+
+    it('should be valid', async () => {
+      expect(validate('addedModerator', await rawAddition()).isValid()).to.be.true();
+    });
+
+    expectRequired('addedModerator', rawAddition, ['electedCharterId', 'submittedCharterId', 'memberId']);
+    expectNoAdditionalProperties('addedModerator', rawAddition, 'power');
+  });
+
+  describe('removedModerator', () => {
+    const rawRemoval = async () => ({
+      electedCharterId: await generateRandomIdentifier(),
+      memberId: await generateRandomIdentifier(),
+    });
+
+    it('should be valid without a resignation', async () => {
+      expect(validate('removedModerator', await rawRemoval()).isValid()).to.be.true();
+    });
+
+    expectRequired('removedModerator', rawRemoval, ['electedCharterId', 'memberId']);
+    expectNoAdditionalProperties('removedModerator', rawRemoval, 'resignationRequestId');
+  });
+
+  describe('resignationRequest', () => {
+    const rawResignation = async () => ({
+      electedCharterId: await generateRandomIdentifier(),
+    });
+
+    it('should be valid', async () => {
+      expect(validate('resignationRequest', await rawResignation()).isValid()).to.be.true();
+    });
+
+    expectRequired('resignationRequest', rawResignation, ['electedCharterId']);
+    expectNoAdditionalProperties('resignationRequest', rawResignation, 'memberId');
   });
 });

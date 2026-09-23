@@ -167,6 +167,10 @@ pub struct SystemLimits {
     /// charter schema pins the same number as the description's `maxLength`, which the JSON
     /// schema validator counts in characters, so the byte cap is this check's.
     pub max_moderation_charter_description_length: u16,
+    /// Most members an elected moderation declaration may let a seated team's leader add
+    /// after the election (`maxAddedModerators`). Read by the declaration's validation
+    /// (protocol version 14) and never reached before.
+    pub max_contract_moderation_added_moderators: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

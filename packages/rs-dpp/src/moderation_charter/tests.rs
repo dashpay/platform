@@ -204,3 +204,39 @@ fn should_round_trip_an_elected_charter_through_its_document_properties() {
         alone
     );
 }
+
+#[test]
+fn should_combine_the_elected_members_the_additions_the_removals_and_the_resignations() {
+    let id = |byte: u8| Identifier::from([byte; 32]);
+    let leader = id(1);
+    let charter = ElectedCharter {
+        target_contract_id: id(9),
+        submitted_charter_id: id(7),
+        members: vec![id(2), id(3), id(4)],
+    };
+
+    // Nothing filed since the election: the elected team
+    assert_eq!(
+        charter.active_members(leader, &[], &[], &[]),
+        [id(2), id(3), id(4)].into()
+    );
+
+    // An addition joins, a removal and a resignation leave, whether the member was elected
+    // or added
+    assert_eq!(
+        charter.active_members(leader, &[id(5), id(6)], &[id(2), id(6)], &[id(3)]),
+        [id(4), id(5)].into()
+    );
+
+    // A removal is final: an addition of a removed member does not bring it back
+    assert_eq!(
+        charter.active_members(leader, &[id(2)], &[id(2)], &[]),
+        [id(3), id(4)].into()
+    );
+
+    // The leader is never among the members and its resignation changes nothing
+    assert_eq!(
+        charter.active_members(leader, &[leader], &[], &[leader]),
+        [id(2), id(3), id(4)].into()
+    );
+}
