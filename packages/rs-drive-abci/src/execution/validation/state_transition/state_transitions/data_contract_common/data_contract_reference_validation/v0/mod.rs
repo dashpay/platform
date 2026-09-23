@@ -2,7 +2,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    is_referenced_system_agreement_property, is_referring_system_agreement_property,
+    is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
     DocumentReferenceDeclaration, DocumentTypeRef, KeyReferenceIdentityProperty, PropertyReference,
     ReferenceHolder,
@@ -40,6 +40,19 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
     a.value_kind() == b.value_kind()
 }
 
+/// Whether a key reference pairing the key id at `key_id_path` with the
+/// identity at `identity_path` of `document_type` would store the key id
+/// without its identity: the identity transient (or inside a transient
+/// object) while the key id is not. A stored key id alone names no key. With
+/// both transient, or the key id alone, nothing unreadable is stored.
+fn stores_key_id_without_identity(
+    document_type: DocumentTypeRef,
+    key_id_path: &str,
+    identity_path: &str,
+) -> bool {
+    is_transient(document_type, identity_path) && !is_transient(document_type, key_id_path)
+}
+
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
@@ -63,7 +76,10 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// parse.
 ///
 /// `identityPublicKey`: the declared key id property must exist in the same
-/// document type and be an integer.
+/// document type and be an integer. On either side of a key reference, a
+/// stored key id may not pair with a transient identity, which would leave it
+/// naming no key; an agreement's referenced property may not be transient,
+/// since no stored document carries its value.
 ///
 /// A declaration on the `items` of a typed array of identifiers holds for
 /// every element and is checked once, exactly as a single reference's: the
@@ -202,6 +218,20 @@ pub(super) fn validate_data_contract_references_v0(
                                 }
                                 Some(_) => {}
                             }
+                            // In place: inert before protocol version 14, which
+                            // alone reaches this module (contract create and
+                            // update state validation 1)
+                            if stores_key_id_without_identity(
+                                document_type.as_ref(),
+                                path,
+                                identity_path,
+                            ) {
+                                return Ok(invalid(&format!(
+                                    "the key id is stored but the identity property \
+                                     {identity_path} is transient or inside a transient object: \
+                                     a reader could not tell whose key it is"
+                                )));
+                            }
                         }
                     }
                     continue;
@@ -314,7 +344,28 @@ fn validate_reference_target_declaration_v0(
                     .into(),
                 ));
             }
-            Some(_) => return Ok(SimpleConsensusValidationResult::new()),
+            Some(_) => {
+                // In place: inert before protocol version 14, which alone
+                // reaches this module (contract create and update state
+                // validation 1)
+                let stored_without_identity = reference_property.is_some_and(|identity_path| {
+                    stores_key_id_without_identity(document_type, key_id_property, identity_path)
+                });
+                if stored_without_identity {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedKeyIdPropertyInvalidError::new(
+                            key_id_property.clone(),
+                            declaration_path,
+                            "the key id is stored but the identity property carrying the \
+                             reference is transient or inside a transient object: a reader \
+                             could not tell whose key it is"
+                                .to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                return Ok(SimpleConsensusValidationResult::new());
+            }
         }
     }
 
@@ -563,6 +614,18 @@ fn validate_reference_target_declaration_v0(
                 "the referenced document type does not define the referenced property",
             ));
         };
+        // No stored document carries a transient value, so a referring
+        // document could only agree by omitting its own side. The referring
+        // side may be transient: it is judged on the transition, a write
+        // gate like the writer's `$ownerId`. In place: inert before protocol
+        // version 14, which alone reaches this module (contract create and
+        // update state validation 1).
+        if is_transient(referenced_document_type, referenced_property) {
+            return Ok(invalid(
+                "the referenced property is transient or inside a transient object: no \
+                 stored document carries its value, so none could be agreed with",
+            ));
+        }
         if matches!(referring_type, DocumentPropertyType::Object(_))
             || matches!(referenced.property_type, DocumentPropertyType::Object(_))
         {

@@ -29,7 +29,8 @@ use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::{
-    DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder, ReferenceOperands,
+    is_transient, DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder,
+    ReferenceOperands,
 };
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::reference_lookup::owner_can_change;
@@ -513,6 +514,8 @@ fn try_from_schema_generation_3(
         validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
+        validate_transient_fields(&v2, name)?;
+        validate_no_transient_index_properties(&v2, name)?;
     }
     // The property a `listElement` reads the list's document through; the list
     // itself is checked where the referenced type is in hand. In every build,
@@ -524,6 +527,77 @@ fn try_from_schema_generation_3(
     }
 
     Ok(v2)
+}
+
+/// Every entry of the `transient` list names a top-level property of the
+/// document type. Drive drops transient values by top-level name before a
+/// document is stored, so an entry naming a nested path, a system property or
+/// nothing at all would mark a property transient in the parsed type and
+/// still leave its value stored: list the object around a nested property.
+///
+/// Full validation only: a contract registered before this version was never
+/// held to it, and a stored contract must stay readable. An update re-parses
+/// the whole contract under full validation, and neither the list nor an index
+/// can change on update, so a contract registered earlier with such a shape
+/// could no longer be updated; a census of every mainnet and testnet contract
+/// (2026-09-23) found none, as for the word-character names rule.
+#[cfg(feature = "validation")]
+fn validate_transient_fields(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    match document_type
+        .transient_fields
+        .iter()
+        .find(|field| !document_type.properties.contains_key(*field))
+    {
+        Some(field) => {
+            let hint = if field.contains('.') && !field.starts_with('$') {
+                ": transient values are dropped by top-level name, so list the object around \
+                 a nested property"
+            } else {
+                ""
+            };
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{field}\" as transient, but it is not a \
+                     top-level property of the document type{hint}"
+                )),
+            ))
+        }
+        None => Ok(()),
+    }
+}
+
+/// No index reads a transient property or a property inside a transient
+/// object. Its value is never stored, so every document would sit in the
+/// index's null branch: a query by the value finds nothing, and a unique index
+/// enforces nothing, since a create is checked against stored entries, none
+/// of which holds the value.
+///
+/// Full validation only, like [`validate_transient_fields`].
+#[cfg(feature = "validation")]
+fn validate_no_transient_index_properties(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        if let Some(property) = index
+            .properties
+            .iter()
+            .find(|property| is_transient(DocumentTypeRef::V2(document_type), &property.name))
+        {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "index \"{}\" of document type \"{name}\" reads \"{}\", which is transient \
+                     or inside a transient object: its value is never stored, so the index \
+                     would never hold it",
+                    index.name, property.name
+                )),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Every typed array property's `maxItems` (which the parse requires) is at
@@ -840,6 +914,8 @@ mod reference_expression_tests;
 mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_test_helpers;
+#[cfg(all(test, feature = "validation"))]
+mod transient_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]
