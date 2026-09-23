@@ -85,23 +85,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// block is silently missed. Accounts exist as soon as our outgoing request
     /// is known, whether or not the contact has reciprocated.
     ///
-    /// This lowers the wallet's SPV `synced_height` to the minimum
-    /// receiving scan checkpoint (`receiving_scan_checkpoint`) across registered
-    /// receival accounts that
-    /// haven't been rescanned yet — the filter manager (`dash-spv`) then
-    /// re-downloads nothing it already has, re-matches the now-larger script
-    /// set, and re-requests the matching blocks. Each contact is recorded in
-    /// [`DashPayState::rescan_triggered`](crate::wallet::identity::DashPayState) so the recurring sweep does
-    /// not re-lower the height every pass (which would reset the in-flight
-    /// backfill and keep it from ever completing). Contacts are deferred
-    /// (neither rewound nor marked) until this process has completed a
-    /// sent-request sweep, unless that sweep already recorded their earliest
-    /// sent-request height. Before that, the checkpoint could come from a newer
-    /// request than the one that first published our receiving xpub.
-    /// Registration sets the same
-    /// mark, since it applies the checkpoint itself. The guard is in-memory,
-    /// so a relaunch — where `synced_height` is restored at its high-water —
-    /// safely re-triggers an interrupted backfill.
+    /// This lowers the wallet's SPV `synced_height` to the minimum receiving
+    /// scan checkpoint (`receiving_scan_checkpoint`) across registered receival
+    /// accounts that haven't been rescanned yet — the filter manager
+    /// (`dash-spv`) then re-downloads nothing it already has, re-matches the
+    /// now-larger script set, and re-requests the matching blocks. Each contact
+    /// is recorded in
+    /// [`DashPayState::rescan_triggered`](crate::wallet::identity::DashPayState)
+    /// so the recurring sweep does not re-lower the height every pass (which
+    /// would reset the in-flight backfill and keep it from ever completing).
+    ///
+    /// Contacts are deferred (neither rewound nor marked) until this process
+    /// has completed a sent-request sweep, unless that sweep already recorded
+    /// their earliest sent-request height. Before that, the checkpoint could
+    /// come from a newer request than the one that first published our
+    /// receiving xpub. Registration sets the same mark, since it applies the
+    /// checkpoint itself. The guard is in-memory, so a relaunch — where
+    /// `synced_height` is restored at its high-water — safely re-triggers an
+    /// interrupted backfill.
     ///
     /// `synced_height` may regress here: that is safe because it is the
     /// filter-scan checkpoint, decoupled from the monotonic
@@ -184,6 +185,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // below the tip (otherwise every handled contact is forward-covered and we
         // record the guard without rewinding). The engine clamps `floor` to its
         // own header/birth floor, so no double-clamp here.
+        //
+        // Known limitation: a plain `update_synced_height` does not invalidate
+        // dash-spv's in-flight filter batches. A batch scanned at the old
+        // checkpoint skipped this wallet's heights up to it, yet can still
+        // commit past the lowered value (same account generation, contiguity
+        // passes), certifying a range never matched for this wallet. Closing
+        // it needs a public rust-dashcore API that lowers the checkpoint and
+        // bumps the account generation together.
+        // TODO: link the tracking issue for that upstream API.
         if let Some(floor) = floor {
             info.core_wallet.update_synced_height(floor);
         }
@@ -1662,6 +1672,7 @@ mod tests {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::Network;
 
+    use super::super::contact_requests::ingest_sent_sweep;
     use crate::changeset::{
         ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
         PlatformWalletPersistence,
@@ -3131,14 +3142,13 @@ mod tests {
                 .identity_manager
                 .managed_identity_mut(&owner)
                 .expect("managed");
-            let newest = super::super::contact_requests::record_and_collapse_sent_requests(
+            assert!(ingest_sent_sweep(
                 managed,
+                &p,
+                owner,
                 vec![older, newer],
-            );
-            assert!(super::super::contact_requests::ingest_sent_requests(
-                managed, &p, owner, newest
+                true
             ));
-            managed.mark_sent_sweep_completed();
         }
 
         assert_eq!(

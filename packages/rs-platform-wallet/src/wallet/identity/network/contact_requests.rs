@@ -21,6 +21,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
+use crate::wallet::persister::WalletPersister;
 use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
@@ -884,6 +885,28 @@ fn newest_sent_per_recipient(
     newest
 }
 
+/// Run the sweep's sent-side pipeline over one identity's fetched sent docs:
+/// record earliest heights, collapse to the newest doc per recipient, ingest,
+/// and mark the sent sweep completed. Returns whether every ingest reached
+/// disk, with the same contract as [`ingest_sent_requests`].
+///
+/// The sweep counts as completed only when `fetch_ok` (the sent fetch
+/// returned without error) and every ingest persisted.
+pub(super) fn ingest_sent_sweep(
+    managed: &mut ManagedIdentity,
+    persister: &WalletPersister,
+    identity_id: Identifier,
+    requests: impl IntoIterator<Item = ContactRequest>,
+    fetch_ok: bool,
+) -> bool {
+    let newest_by_recipient = record_and_collapse_sent_requests(managed, requests);
+    let persisted = ingest_sent_requests(managed, persister, identity_id, newest_by_recipient);
+    if fetch_ok && persisted {
+        managed.mark_sent_sweep_completed();
+    }
+    persisted
+}
+
 /// Record the earliest `$createdAtCoreBlockHeight` per recipient over ALL of
 /// our fetched sent docs, then collapse them to the newest per recipient.
 ///
@@ -891,7 +914,16 @@ fn newest_sent_per_recipient(
 /// checkpoint needs the OLDEST publication of our receiving xpub (see
 /// `receiving_scan_checkpoint`), so it must be read before the older docs are
 /// dropped.
-pub(super) fn record_and_collapse_sent_requests(
+///
+/// Heights are recorded for every fetched doc BEFORE ingest, including docs a
+/// later persist failure leaves un-ingested. That is the safe direction: each
+/// height is a Platform-assigned fact about a document that exists on-chain,
+/// whatever happens to our local copy, and it can only lower the checkpoint
+/// (a deeper scan, never a missed payment). The order is load-bearing too:
+/// `note_sent_request_core_height` compares against the checkpoint the
+/// currently tracked request produced, which ingest may replace with a newer
+/// (possibly rotated) request and so hide an older publication.
+fn record_and_collapse_sent_requests(
     managed: &mut ManagedIdentity,
     requests: impl IntoIterator<Item = ContactRequest>,
 ) -> BTreeMap<Identifier, ContactRequest> {
@@ -1001,9 +1033,9 @@ fn ingest_received_requests(
 ///
 /// `add_sent_contact_request` carries its own duplicate / metadata-loss guard,
 /// so re-ingesting the same range on the next sweep is safe.
-pub(super) fn ingest_sent_requests(
-    managed: &mut crate::wallet::identity::ManagedIdentity,
-    persister: &crate::wallet::persister::WalletPersister,
+fn ingest_sent_requests(
+    managed: &mut ManagedIdentity,
+    persister: &WalletPersister,
     identity_id: Identifier,
     newest_by_recipient: std::collections::BTreeMap<Identifier, ContactRequest>,
 ) -> bool {
@@ -1555,14 +1587,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         .and_then(|v: &Value| v.to_identifier().ok())?;
                     Self::parse_sent_contact_request_doc(doc, identity_id, recipient_id)
                 });
-                let newest_by_recipient = record_and_collapse_sent_requests(managed, parsed_sent);
-
-                let sent_persist_ok = ingest_sent_requests(
-                    managed,
-                    &self.persister,
-                    identity_id,
-                    newest_by_recipient,
-                );
+                let sent_persist_ok =
+                    ingest_sent_sweep(managed, &self.persister, identity_id, parsed_sent, sent_ok);
 
                 // (2a') Rotation self-heal across restart: an external account
                 //       rebuilt from the persisted (tombstone-less) registration
@@ -1641,7 +1667,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
                 if sent_ok && sent_persist_ok {
                     managed.advance_high_water_sent(hw_sent, max_sent);
-                    managed.mark_sent_sweep_completed();
                 }
 
                 // A held-back cursor and a report that says "complete" cannot
@@ -5062,12 +5087,12 @@ mod sweep_tests {
             .identity_manager
             .managed_identity_mut(&our_id)
             .expect("managed identity");
-        let newest = record_and_collapse_sent_requests(managed, docs);
-        assert!(ingest_sent_requests(
+        assert!(ingest_sent_sweep(
             managed,
             &noop_persister(),
             our_id,
-            newest
+            docs,
+            true
         ));
     }
 
@@ -5146,6 +5171,78 @@ mod sweep_tests {
             receiving_scan_checkpoint(&info, &our, &Identifier::from([2u8; 32])),
             49
         );
+    }
+
+    /// A persist failure mid-batch still records every fetched doc's height
+    /// (Platform facts, the safe direction; see
+    /// `record_and_collapse_sent_requests`) but must not certify the sweep
+    /// complete. A retried sweep with a working persister completes it.
+    #[test]
+    fn should_record_all_heights_but_not_complete_sweep_when_sent_persist_fails() {
+        let mut info = info_with_bare_identity(1);
+        let our = Identifier::from([1u8; 32]);
+        let first = Identifier::from([2u8; 32]);
+        let second = Identifier::from([3u8; 32]);
+        let docs = || {
+            vec![
+                sent_at_core_height(1, 2, 100, 100, 100),
+                sent_at_core_height(1, 3, 100, 200, 200),
+            ]
+        };
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our)
+            .expect("managed identity");
+
+        assert!(!ingest_sent_sweep(
+            managed,
+            &failing_persister(),
+            our,
+            docs(),
+            true
+        ));
+        assert_eq!(
+            managed.dashpay().earliest_sent_core_height(&first),
+            Some(100)
+        );
+        assert_eq!(
+            managed.dashpay().earliest_sent_core_height(&second),
+            Some(200)
+        );
+        assert!(
+            managed.dashpay().sent_contact_requests().is_empty(),
+            "nothing reached disk, so nothing was ingested"
+        );
+        assert!(!managed.dashpay().sent_sweep_completed());
+
+        assert!(ingest_sent_sweep(
+            managed,
+            &noop_persister(),
+            our,
+            docs(),
+            true
+        ));
+        assert_eq!(managed.dashpay().sent_contact_requests().len(), 2);
+        assert!(managed.dashpay().sent_sweep_completed());
+    }
+
+    /// A failed sent fetch ingests nothing and must not certify the sweep.
+    #[test]
+    fn should_not_complete_sent_sweep_when_fetch_failed() {
+        let mut info = info_with_bare_identity(1);
+        let our = Identifier::from([1u8; 32]);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our)
+            .expect("managed identity");
+        assert!(ingest_sent_sweep(
+            managed,
+            &noop_persister(),
+            our,
+            Vec::new(),
+            false
+        ));
+        assert!(!managed.dashpay().sent_sweep_completed());
     }
 
     /// A sweep that learns of an older publication than the one a registration
