@@ -72,7 +72,7 @@ mod tests {
         })
     }
 
-    fn proof_of_vote(drive: &crate::drive::Drive, voter: [u8; 32]) -> Vec<u8> {
+    fn proof_of_vote(drive: &Drive, voter: [u8; 32]) -> Vec<u8> {
         let platform_version = PlatformVersion::latest();
         let mut path_query = IdentityBasedVoteDriveQuery {
             identity_id: Identifier::new(voter),
@@ -150,5 +150,103 @@ mod tests {
         )
         .expect("verify");
         assert_eq!(proved, None);
+    }
+
+    /// The generic masternode vote verifier routes a yes/no vote to this one, so a genuine
+    /// absence proof taken from the contested resource votes index (where a yes/no vote never
+    /// lives) cannot pass as "the masternode did not vote".
+    #[test]
+    fn should_route_a_yes_no_vote_through_the_generic_verifier() {
+        use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+        use crate::query::Query;
+        use dpp::tests::json_document::json_document_to_contract;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+        use dpp::voting::votes::resource_vote::ResourceVote;
+        use dpp::voting::votes::Vote;
+        use grovedb::{PathQuery, SizedQuery};
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = json_document_to_contract(
+            "tests/supporting_files/contract/dpns/dpns-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected a data contract");
+        drive
+            .open_yes_no_vote_poll(
+                &poll(),
+                1_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("open");
+        let voter = [7u8; 32];
+        drive
+            .register_yes_no_identity_vote(
+                voter,
+                1,
+                ResolvedYesNoVote {
+                    vote_poll: poll(),
+                    vote_choice: YesNoAbstainVoteChoice::No,
+                    previous_vote_choice_to_remove: None,
+                },
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("register");
+        let yes_no_vote = Vote::YesNoVote(vote(YesNoAbstainVoteChoice::No));
+
+        // The right proof verifies through the generic entry point.
+        let (_, proved) = Drive::verify_masternode_vote(
+            &proof_of_vote(&drive, voter),
+            voter,
+            &yes_no_vote,
+            &data_contract,
+            false,
+            platform_version,
+        )
+        .expect("verify");
+        assert_eq!(proved, Some(yes_no_vote.clone()));
+
+        // An absence proof of the poll id under the contested index is refused.
+        let mut query = Query::new();
+        query.insert_key(poll().unique_id().expect("id").to_vec());
+        let wrong_branch = PathQuery::new(
+            vote_contested_resource_identity_votes_tree_path_for_identity_vec(&voter),
+            SizedQuery::new(query, None, None),
+        );
+        let wrong_branch_proof = drive
+            .grove_get_proved_path_query(&wrong_branch, None, &mut vec![], &platform_version.drive)
+            .expect("proof");
+        assert!(Drive::verify_masternode_vote(
+            &wrong_branch_proof,
+            voter,
+            &yes_no_vote,
+            &data_contract,
+            false,
+            platform_version,
+        )
+        .is_err());
+
+        // A resource vote naming a yes/no poll is refused outright.
+        let resource_vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::YesNoVotePoll(poll()),
+            resource_vote_choice: ResourceVoteChoice::Abstain,
+        }));
+        assert!(matches!(
+            Drive::verify_masternode_vote(
+                &wrong_branch_proof,
+                voter,
+                &resource_vote,
+                &data_contract,
+                false,
+                platform_version,
+            ),
+            Err(Error::Proof(ProofError::InvalidTransition(_)))
+        ));
     }
 }

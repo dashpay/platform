@@ -1,18 +1,22 @@
 //! Votes on yes/no vote polls: the poll's life from opening to the record of its decision.
 
+use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    setup_masternode_voting_identity, take_down_masternode_identities,
+    process_test_state_transition, setup_masternode_voting_identity,
+    take_down_masternode_identities,
 };
+use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
     InternalError, SuccessfulExecution, UnpaidConsensusError,
 };
 use crate::rpc::core::MockCoreRPCLike;
+use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+use crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels;
 use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
@@ -148,7 +152,35 @@ async fn perform_yes_no_vote(
     .await
 }
 
+/// Whether CheckTx admits the serialized transition on its first check. A transition CheckTx
+/// cannot take at all (one not active at the current protocol version fails to decode) is not
+/// admitted either.
+fn check_tx_admits(platform: &TempPlatform<MockCoreRPCLike>, serialized_transition: &[u8]) -> bool {
+    let platform_state = platform.state.load();
+    let platform_version = platform_state
+        .current_platform_version()
+        .expect("expected the current platform version");
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+    platform
+        .check_tx(
+            serialized_transition,
+            CheckTxLevel::FirstTimeCheck,
+            &platform_ref,
+            platform_version,
+        )
+        .is_ok_and(|result| result.is_valid())
+}
+
 /// Processes one masternode vote transition in a block and reports how it went.
+///
+/// Every vote first goes through CheckTx, which asserts under cfg(test) that it leaves committed
+/// state untouched (the devnet paloma height 788 class); a vote CheckTx admits must then pass at
+/// both levels, as the shared masternode vote helper requires of its valid votes.
 async fn perform_vote_transition(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     vote: Vote,
@@ -172,26 +204,16 @@ async fn perform_vote_transition(
     let serialized_transition = masternode_vote_transition
         .serialize_to_bytes()
         .expect("expected to serialize the vote");
+    if check_tx_admits(platform, &serialized_transition) {
+        assert_check_tx_valid_at_all_levels(platform, &serialized_transition, "yes/no vote");
+    }
     let platform_state = platform.state.load();
-    let transaction = platform.drive.grove.start_transaction();
-    let processing_result = platform
-        .platform
-        .process_raw_state_transitions(
-            &[serialized_transition],
-            &platform_state,
-            &BlockInfo::default(),
-            &transaction,
-            platform_version,
-            false,
-            None,
-        )
-        .expect("expected to process state transition");
-    platform
-        .drive
-        .grove
-        .commit_transaction(transaction)
-        .unwrap()
-        .expect("expected to commit transaction");
+    let processing_result = process_test_state_transition(
+        platform,
+        masternode_vote_transition,
+        &platform_state,
+        platform_version,
+    );
     match processing_result.into_execution_results().remove(0) {
         SuccessfulExecution { .. } => Ok(()),
         other => Err(other),
@@ -242,31 +264,13 @@ fn close_ended_polls_at(
     time_ms: u64,
     platform_version: &PlatformVersion,
 ) {
-    let mut platform_state = platform.state.load().clone().deref().clone();
+    fast_forward_to_block(platform, time_ms, 10000, 42, 0, false);
     let block_info = BlockInfo {
         time_ms,
         height: 10000,
         core_height: 42,
         epoch: Default::default(),
     };
-    platform_state.set_last_committed_block_info(Some(
-        ExtendedBlockInfoV0 {
-            basic_info: block_info,
-            app_hash: platform
-                .drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .unwrap(),
-            quorum_hash: [0u8; 32],
-            block_id_hash: [0u8; 32],
-            proposer_pro_tx_hash: [0u8; 32],
-            signature: [0u8; 96],
-            round: 0,
-        }
-        .into(),
-    ));
-    platform.state.store(Arc::new(platform_state));
     let platform_state = platform.state.load();
     let transaction = platform.drive.grove.start_transaction();
     platform
@@ -634,18 +638,35 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
     .await
     .expect_err("expected the vote to be refused");
     // Closing the poll emptied its fund, and the fund pre-check runs before state validation,
-    // so the missing fund is what refuses the vote; the finished status refuses it too.
-    assert!(
-        matches!(
-            &error,
-            UnpaidConsensusError(ConsensusError::StateError(
-                StateError::PrefundedSpecializedBalanceNotFoundError(_)
-            )) | UnpaidConsensusError(ConsensusError::StateError(
-                StateError::YesNoVotePollNotAvailableForVotingError(_)
-            ))
-        ),
-        "unexpected result {:?}",
-        error
+    // so the missing fund is what refuses the vote.
+    assert_matches!(
+        &error,
+        UnpaidConsensusError(ConsensusError::StateError(
+            StateError::PrefundedSpecializedBalanceNotFoundError(_)
+        ))
+    );
+    // With a fund at its id again, the finished status refuses the vote.
+    platform
+        .drive
+        .add_prefunded_specialized_balance(vote_poll_id, FUND, None, platform_version)
+        .expect("expected to fund the finished poll");
+    let error = perform_yes_no_vote(
+        &mut platform,
+        &vote_poll,
+        YesNoAbstainVoteChoice::Yes,
+        &signer,
+        pro_tx_hash,
+        &voting_key,
+        1,
+        platform_version,
+    )
+    .await
+    .expect_err("expected the vote to be refused");
+    assert_matches!(
+        &error,
+        UnpaidConsensusError(ConsensusError::StateError(
+            StateError::YesNoVotePollNotAvailableForVotingError(_)
+        ))
     );
     assert!(platform
         .drive
@@ -848,10 +869,8 @@ async fn should_refuse_a_vote_when_the_poll_has_no_fund() {
     open_poll(&platform, &vote_poll, 0, platform_version);
     let (pro_tx_hash, signer, voting_key) =
         setup_voter(&mut platform, 100, false, platform_version);
-    // Block processing does not act on the prefunded balance pre-check today (its result is
-    // not read in the processor, for either poll kind), so the vote fails when its cost is
-    // deducted; #4904 turns that into an unpaid consensus error. Either way nothing of the
-    // vote is recorded.
+    // The prefunded balance pre-check runs before the vote is transformed, so the missing fund
+    // refuses it unpaid and nothing of the vote is recorded.
     let error = perform_yes_no_vote(
         &mut platform,
         &vote_poll,
@@ -864,16 +883,11 @@ async fn should_refuse_a_vote_when_the_poll_has_no_fund() {
     )
     .await
     .expect_err("expected the vote to be refused");
-    assert!(
-        matches!(&error, InternalError(message) if message.contains("prefunded specialized balance"))
-            || matches!(
-                &error,
-                UnpaidConsensusError(ConsensusError::StateError(
-                    StateError::PrefundedSpecializedBalanceNotFoundError(_)
-                ))
-            ),
-        "unexpected result {:?}",
-        error
+    assert_matches!(
+        &error,
+        UnpaidConsensusError(ConsensusError::StateError(
+            StateError::PrefundedSpecializedBalanceNotFoundError(_)
+        ))
     );
     assert_eq!(
         platform
@@ -1066,6 +1080,70 @@ async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_ti
             .expect("finished")
             .passed
     );
+}
+
+/// The block closes at most `maximum_vote_polls_to_process` polls, counted across every due end
+/// date. When that cuts the last end date short, its tree must stay for the polls still under it:
+/// deleting it in the same batch as the fetched poll's entry fails the whole block.
+#[tokio::test]
+async fn should_keep_an_end_date_the_block_only_partly_closed() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = new_platform();
+    let earlier = two_thirds_poll(b"earlier end date", 1);
+    let later_polls = [
+        two_thirds_poll(b"later end date one", 1),
+        two_thirds_poll(b"later end date two", 1),
+    ];
+    open_poll_ending_at(&platform, &earlier, END_DATE, FUND, platform_version);
+    for vote_poll in &later_polls {
+        open_poll_ending_at(
+            &platform,
+            vote_poll,
+            END_DATE + 1_000,
+            FUND,
+            platform_version,
+        );
+    }
+    let end_dates = |platform: &TempPlatform<MockCoreRPCLike>| {
+        VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        }
+        .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
+        .expect("end dates")
+    };
+    let finished = |platform: &TempPlatform<MockCoreRPCLike>, vote_poll: &YesNoVotePoll| {
+        poll_state(platform, vote_poll, platform_version)
+            .stored_info
+            .expect("stored info")
+            .result()
+            .is_some()
+    };
+
+    // One block past both end dates closes the earlier poll and one of the later two.
+    close_ended_polls_at(&mut platform, END_DATE + 300_000, platform_version);
+    assert!(finished(&platform, &earlier));
+    let finished_later = later_polls
+        .iter()
+        .filter(|vote_poll| finished(&platform, vote_poll))
+        .count();
+    assert_eq!(finished_later, 1);
+    let remaining = end_dates(&platform);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(
+        remaining.get(&(END_DATE + 1_000)).map(|polls| polls.len()),
+        Some(1)
+    );
+
+    // The next block closes the last one and the end date goes with it.
+    close_ended_polls_at(&mut platform, END_DATE + 301_000, platform_version);
+    assert!(later_polls
+        .iter()
+        .all(|vote_poll| finished(&platform, vote_poll)));
+    assert!(end_dates(&platform).is_empty());
 }
 
 /// Protocol version 13 selects the shipped (v0) masternode vote transform and state

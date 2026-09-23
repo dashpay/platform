@@ -19,6 +19,9 @@ impl Drive {
         let path =
             vote_decisions_identity_votes_tree_path_for_identity(masternode_pro_tx_hash.as_bytes());
         for vote_poll_id in vote_poll_ids {
+            // An item delete never reads the pending batch, so it is built against an empty
+            // one instead of copying everything a poll's clean-up has queued so far.
+            let mut delete_operations = vec![];
             self.batch_delete(
                 path.as_slice().into(),
                 vote_poll_id.as_slice(),
@@ -26,9 +29,10 @@ impl Drive {
                     is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                 },
                 transaction,
-                batch_operations,
+                &mut delete_operations,
                 &platform_version.drive,
             )?;
+            batch_operations.append(&mut delete_operations);
         }
         Ok(())
     }

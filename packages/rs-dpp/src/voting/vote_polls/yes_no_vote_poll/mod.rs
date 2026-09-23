@@ -22,6 +22,12 @@ use std::fmt;
 /// masternode list fits a `u32`.
 pub type VotingPower = u32;
 
+/// Prefixed to the serialized poll before its id is hashed. A contested poll's id hashes its
+/// bare encoding, which starts with a 32-byte contract id; matching this 33-byte tag would take
+/// a contract id equal to its first 32 bytes, so the two kinds never share an id (and with it a
+/// prefunded balance and an end date index entry).
+const YES_NO_VOTE_POLL_ID_DOMAIN: &[u8] = b"dash platform yes/no vote poll id";
+
 /// A poll the masternodes answer with yes, no or abstain.
 ///
 /// The poll is keyed by a resource path the feature that opens it chooses (a contract id and a
@@ -95,9 +101,9 @@ impl fmt::Display for YesNoVotePoll {
 
 impl YesNoVotePoll {
     /// Refuses parameters no poll can be opened with: an empty or oversized resource path (the
-    /// poll rides in every vote, whose wire size is bounded), a zero denominator, or a
-    /// numerator that is not below the denominator (yes could never exceed the whole of yes
-    /// plus no).
+    /// poll rides in every vote, whose wire size is bounded), a zero denominator, a zero
+    /// numerator (any single yes would pass against every no), or a numerator that is not below
+    /// the denominator (yes could never exceed the whole of yes plus no).
     pub fn validate_parameters(
         &self,
         platform_version: &PlatformVersion,
@@ -132,6 +138,11 @@ impl YesNoVotePoll {
                 "a yes/no vote poll supermajority denominator must not be zero".to_string(),
             ));
         }
+        if self.supermajority_numerator == 0 {
+            return Err(ProtocolError::VoteError(
+                "a yes/no vote poll supermajority numerator must not be zero".to_string(),
+            ));
+        }
         if self.supermajority_numerator >= self.supermajority_denominator {
             return Err(ProtocolError::VoteError(format!(
                 "a yes/no vote poll supermajority numerator ({}) must be below its denominator ({})",
@@ -151,10 +162,12 @@ impl YesNoVotePoll {
         yes * self.supermajority_denominator as u64 > cast * self.supermajority_numerator as u64
     }
 
-    /// The double SHA-256 of the serialized `VotePoll` carrying this poll.
+    /// The double SHA-256 of the yes/no poll id domain tag followed by the serialized
+    /// `VotePoll` carrying this poll.
     pub fn sha256_2_hash(&self) -> Result<[u8; 32], ProtocolError> {
-        let encoded = VotePoll::YesNoVotePoll(self.clone()).serialize_to_bytes()?;
-        Ok(hash_double(encoded))
+        let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
+        preimage.extend(VotePoll::YesNoVotePoll(self.clone()).serialize_to_bytes()?);
+        Ok(hash_double(preimage))
     }
 
     /// The prefunded balance the votes on this poll are paid from: the poll's unique id.
@@ -240,6 +253,13 @@ mod tests {
         }
         .validate_parameters(platform_version)
         .is_err());
+        // A zero numerator would let one yes pass against any amount of no.
+        assert!(YesNoVotePoll {
+            supermajority_numerator: 0,
+            ..poll()
+        }
+        .validate_parameters(platform_version)
+        .is_err());
         // A simple majority is a valid rule.
         assert!(YesNoVotePoll {
             supermajority_numerator: 1,
@@ -310,6 +330,20 @@ mod tests {
             assert_ne!(other.unique_id().expect("id"), base);
         }
         assert_eq!(poll().specialized_balance_id().expect("balance id"), base);
+    }
+
+    #[test]
+    fn should_hash_the_id_under_the_yes_no_domain_tag() {
+        let encoded = VotePoll::YesNoVotePoll(poll())
+            .serialize_to_bytes()
+            .expect("encoded poll");
+        let untagged = Identifier::new(hash_double(&encoded));
+        let tagged = Identifier::new(hash_double(
+            [YES_NO_VOTE_POLL_ID_DOMAIN, encoded.as_slice()].concat(),
+        ));
+        let id = poll().unique_id().expect("id");
+        assert_eq!(id, tagged);
+        assert_ne!(id, untagged);
     }
 }
 

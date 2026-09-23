@@ -1,14 +1,15 @@
-use crate::drive::votes::paths::vote_decisions_identity_votes_tree_path_for_identity_vec;
-use crate::drive::votes::storage_form::yes_no_vote_reference_storage_form::YesNoVoteReferenceStorageForm;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::query::Query;
+use crate::query::IdentityBasedVoteDriveQuery;
+use crate::verify::bounded_decode::decode_yes_no_vote_reference;
 use crate::verify::RootHash;
+use dpp::identifier::Identifier;
+use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
 use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 use dpp::voting::votes::yes_no_vote::YesNoVote;
-use grovedb::{GroveDb, PathQuery, SizedQuery};
+use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -20,12 +21,12 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<YesNoVote>), Error> {
-        let path =
-            vote_decisions_identity_votes_tree_path_for_identity_vec(&masternode_pro_tx_hash);
-        let vote_poll_id = vote.vote_poll().unique_id()?;
-        let mut query = Query::new();
-        query.insert_key(vote_poll_id.to_vec());
-        let path_query = PathQuery::new(path, SizedQuery::new(query, Some(1), None));
+        // The prover's own query, so where a masternode's yes/no vote lives is written once.
+        let path_query = IdentityBasedVoteDriveQuery {
+            identity_id: Identifier::new(masternode_pro_tx_hash),
+            vote_poll: VotePoll::YesNoVotePoll(vote.vote_poll().clone()),
+        }
+        .construct_path_query()?;
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_with_absence_proof(
                 proof,
@@ -48,13 +49,7 @@ impl Drive {
         let maybe_vote = maybe_element
             .map(|element| {
                 let bytes = element.into_item_bytes()?;
-                let storage_form =
-                    YesNoVoteReferenceStorageForm::deserialize(&bytes).map_err(|e| {
-                        Error::Proof(ProofError::CorruptedProof(format!(
-                            "the proved yes/no vote could not be decoded: {}",
-                            e
-                        )))
-                    })?;
+                let storage_form = decode_yes_no_vote_reference(&bytes)?;
                 let proved_vote = YesNoVote::V0(YesNoVoteV0 {
                     vote_poll: vote.vote_poll().clone(),
                     vote_choice: storage_form.vote_choice,

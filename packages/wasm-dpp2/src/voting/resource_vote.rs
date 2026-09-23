@@ -1,6 +1,8 @@
+use crate::error::WasmDppResult;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
+use crate::voting::vote::contested_poll_for_resource_vote;
 use crate::voting::vote_poll::VotePollWasm;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
@@ -57,11 +59,14 @@ impl From<ResourceVoteWasm> for ResourceVote {
 #[wasm_bindgen(js_class = ResourceVote)]
 impl ResourceVoteWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(poll: &VotePollWasm, choice: &ResourceVoteChoiceWasm) -> Self {
-        ResourceVoteWasm(ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: poll.clone().into(),
+    pub fn constructor(
+        poll: &VotePollWasm,
+        choice: &ResourceVoteChoiceWasm,
+    ) -> WasmDppResult<ResourceVoteWasm> {
+        Ok(ResourceVoteWasm(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: contested_poll_for_resource_vote(poll)?,
             resource_vote_choice: choice.clone().into(),
-        }))
+        })))
     }
 
     #[wasm_bindgen(getter = poll)]
@@ -75,16 +80,18 @@ impl ResourceVoteWasm {
     }
 
     #[wasm_bindgen(setter = poll)]
-    pub fn set_poll(&mut self, poll: &VotePollWasm) {
+    pub fn set_poll(&mut self, poll: &VotePollWasm) -> WasmDppResult<()> {
         let ResourceVote::V0(ResourceVoteV0 {
             resource_vote_choice,
             ..
         }) = self.0.clone();
 
         self.0 = ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: poll.clone().into(),
+            vote_poll: contested_poll_for_resource_vote(poll)?,
             resource_vote_choice,
         });
+
+        Ok(())
     }
 
     #[wasm_bindgen(setter = choice)]

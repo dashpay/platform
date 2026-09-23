@@ -818,9 +818,9 @@ impl<C> Platform<C> {
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
 
         // Vote decisions trees: the active yes/no polls and the identity votes index of the
-        // decisions branch. Fresh chains create them at genesis
-        // (`add_initial_vote_tree_main_structure_operations` v1). Like everything in this
-        // function it runs only on the block entering protocol version 14.
+        // decisions branch. Fresh chains call the same helper from
+        // `create_initial_state_structure` v4, after the fee pot trees as here. Like everything
+        // in this function it runs only on the block entering protocol version 14.
         self.drive
             .insert_vote_decisions_trees(Some(transaction), platform_version)?;
 

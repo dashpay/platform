@@ -3,6 +3,7 @@ use crate::drive::votes::paths::{
     vote_end_date_queries_tree_path_vec,
 };
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::VotePollsByEndDateDriveQuery;
@@ -52,29 +53,27 @@ impl Drive {
                 )?;
             }
 
-            // The block closes at most `maximum_vote_polls_to_process` polls. Fewer than that
-            // at one end date means every poll ending then was fetched, so the tree empties;
-            // otherwise look whether more are queued behind the ones processed.
-            let maximum_vote_polls_to_process = platform_version
-                .drive_abci
-                .validation_and_processing
-                .event_constants
-                .maximum_vote_polls_to_process;
-            let should_delete_parent_time_tree = if count < maximum_vote_polls_to_process as usize {
-                true
-            } else {
-                let total_count =
-                        VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query_only_check_end_time(
-                            end_date,
-                            maximum_vote_polls_to_process + 1,
-                            self,
-                            transaction,
-                            &mut vec![],
-                            platform_version,
-                        )?
-                        .len();
-                total_count <= count
-            };
+            // The tree goes only once nothing of either kind is left under it. The block's
+            // fetch shares one limit across every due end date, so the last end date it reached
+            // can be cut short: count what the tree holds instead of inferring it from how many
+            // polls were processed at that date.
+            let limit = u16::try_from(count)
+                .ok()
+                .and_then(|count| count.checked_add(1))
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "more polls closed at one end date than an end date query can count",
+                )))?;
+            let total_count =
+                VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query_only_check_end_time(
+                    end_date,
+                    limit,
+                    self,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?
+                .len();
+            let should_delete_parent_time_tree = total_count <= count;
 
             if should_delete_parent_time_tree {
                 self.batch_delete(

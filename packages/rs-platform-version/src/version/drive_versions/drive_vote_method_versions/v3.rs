@@ -1,7 +1,7 @@
 use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_vote_method_versions::{
     DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions,
-    DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
+    DriveVoteMethodVersions,
 };
 
 /// Drive vote method versions 3. Introduced in protocol version 14 with the yes/no poll
@@ -10,9 +10,6 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 /// * `contested_resource_insert.register_identity_vote` 1 (the slot `register_identity_vote`
 ///   dispatches on; `insert.register_identity_vote` is read by nothing) dispatches a resolved
 ///   vote of either kind (v0 knows only contested resource votes).
-/// * `add_initial_vote_tree_main_structure_operations` 1 creates the active polls and
-///   identity votes trees under the decisions branch at genesis (a chain upgrading to
-///   protocol version 14 creates them on its first block).
 /// * `remove_all_votes_given_by_identities` 1 also removes the yes/no votes of a masternode
 ///   that left the list.
 ///
@@ -25,9 +22,6 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V3: DriveVoteMethodVersions = DriveVoteMeth
     cleanup: DriveVoteCleanupMethodVersions {
         remove_all_votes_given_by_identities: 1,
         ..DRIVE_VOTE_METHOD_VERSIONS_V2.cleanup
-    },
-    setup: DriveVoteSetupMethodVersions {
-        add_initial_vote_tree_main_structure_operations: 1,
     },
     ..DRIVE_VOTE_METHOD_VERSIONS_V2
 };

@@ -85,7 +85,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
-        vote: DRIVE_VOTE_METHOD_VERSIONS_V3, // changed in v14: the yes/no poll kind (register_identity_vote 1, genesis vote trees 1, masternode removal sweep 1)
+        vote: DRIVE_VOTE_METHOD_VERSIONS_V3, // changed in v14: the yes/no poll kind (register_identity_vote 1, masternode removal sweep 1)
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V4, // changed in v9: add_contract_to_storage v1 writes the contract version item beside the contract; update_contract v2 creates the distribution storage and mints the base supply of tokens added by an update
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
         estimated_costs: DriveEstimatedCostsMethodVersions {

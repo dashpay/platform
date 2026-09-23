@@ -458,11 +458,12 @@ impl Sdk {
             }
 
             let mut last_timestamp = None;
-            let mut polls_in_last_group = 0;
+            let mut polls_in_page = 0;
 
             // Process each timestamp group
             for (timestamp, polls) in result.0 {
-                let mut dpns_polls_count = 0;
+                polls_in_page += polls.len();
+                last_timestamp = Some(timestamp);
 
                 for contested_poll in polls.iter().filter_map(|poll| match poll {
                     VotePoll::ContestedDocumentResourceVotePoll(contested_poll) => {
@@ -477,31 +478,29 @@ impl Sdk {
                         if contested_poll.index_values.len() >= 2 {
                             if let Value::Text(label) = &contested_poll.index_values[1] {
                                 name_to_end_time.insert(label.clone(), timestamp);
-                                dpns_polls_count += 1;
                             }
                         }
                     }
                 }
-
-                if dpns_polls_count > 0 {
-                    last_timestamp = Some(timestamp);
-                    polls_in_last_group = dpns_polls_count;
-                }
             }
 
-            // Check if we should continue pagination
-            // If we got less than the limit, we've reached the end
-            if polls_in_last_group < query_limit as usize {
+            // The limit counts every poll of every kind across all of the page's end dates, so
+            // only a full page can have more behind it.
+            if polls_in_page < query_limit as usize {
                 break;
             }
 
-            // Set up for next query - use the last timestamp as the new start
-            // with false (not included) to avoid duplicates
-            if let Some(last_ts) = last_timestamp {
-                current_start_time = Some((last_ts, false));
+            // The limit may have cut the last end date short, so the next page starts at it
+            // again (a name seen twice is just written again). If that end date alone filled
+            // the page, starting at it again would return the same page, so move past it.
+            let Some(last_ts) = last_timestamp else {
+                break;
+            };
+            current_start_time = if current_start_time == Some((last_ts, true)) {
+                Some((last_ts, false))
             } else {
-                break;
-            }
+                Some((last_ts, true))
+            };
         }
 
         Ok(name_to_end_time)

@@ -104,6 +104,13 @@ impl Drive {
         // sequence of inserts on both node populations.
         self.insert_contract_fee_pot_trees(transaction, platform_version)?;
 
+        // Vote decisions trees (protocol version 14): the active yes/no polls and the identity
+        // votes index under the votes tree's decisions branch, which the batch above creates.
+        // The upgrade path (`Platform::transition_to_version_14`) calls the same helper after
+        // the fee pot trees, so both node populations build the decisions Merk from the same
+        // sequence of inserts.
+        self.insert_vote_decisions_trees(transaction, platform_version)?;
+
         Ok(())
     }
 }

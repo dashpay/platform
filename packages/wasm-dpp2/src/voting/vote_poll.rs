@@ -29,30 +29,54 @@ export interface VotePollOptions {
 }
 
 /**
+ * A yes/no poll's fields as a plain object. A yes/no vote carries its poll
+ * like this, without a `$type` tag.
+ */
+export interface YesNoVotePollFieldsObject {
+    resourcePath: Uint8Array[];
+    supermajorityNumerator: number;
+    supermajorityDenominator: number;
+    minimumVotingPower: number;
+}
+
+/**
+ * A yes/no poll's fields as JSON (resource path segments in base64).
+ */
+export interface YesNoVotePollFieldsJSON {
+    resourcePath: string[];
+    supermajorityNumerator: number;
+    supermajorityDenominator: number;
+    minimumVotingPower: number;
+}
+
+/**
  * VotePoll serialized as a plain object.
  *
- * Internally tagged with `type` (plain — no `$`-prefixed neighbors at
- * this level). Inner ContestedDocumentResourceVotePoll fields flatten at
- * the same level — no `data` wrapper.
+ * Internally tagged with `$type`. The inner poll's fields flatten at the
+ * same level — no `data` wrapper.
  */
-export interface VotePollObject {
-    $type: "contestedDocumentResourceVotePoll";
-    contractId: Uint8Array;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
-}
+export type VotePollObject =
+    | {
+          $type: "contestedDocumentResourceVotePoll";
+          contractId: Uint8Array;
+          documentTypeName: string;
+          indexName: string;
+          indexValues: any[];
+      }
+    | ({ $type: "yesNoVotePoll" } & YesNoVotePollFieldsObject);
 
 /**
  * VotePoll serialized as JSON.
  */
-export interface VotePollJSON {
-    $type: "contestedDocumentResourceVotePoll";
-    contractId: string;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
-}
+export type VotePollJSON =
+    | {
+          $type: "contestedDocumentResourceVotePoll";
+          contractId: string;
+          documentTypeName: string;
+          indexName: string;
+          indexValues: any[];
+      }
+    | ({ $type: "yesNoVotePoll" } & YesNoVotePollFieldsJSON);
 "#;
 
 #[wasm_bindgen]
