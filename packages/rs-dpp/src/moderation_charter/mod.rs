@@ -73,8 +73,9 @@ pub fn is_charter_election(contract_id: &Identifier, document_type_name: &str) -
 }
 
 /// The contract a moderation election contends for: the single value of the contested index's
-/// key, `targetContractId`. `None` for every other contest, and for index values that do not
-/// name one contract, which an `electedCharter` never produces.
+/// key, `targetContractId`, in one of the 32-byte forms a document's identifier takes. `None`
+/// for every other contest, and for index values that do not name one contract that way (a
+/// base58 string or an array of integers included), which an `electedCharter` never produces.
 pub fn charter_election_target(
     contract_id: &Identifier,
     document_type_name: &str,
@@ -84,7 +85,8 @@ pub fn charter_election_target(
         return None;
     }
     match index_values {
-        [target] => target.to_identifier().ok(),
+        [Value::Identifier(bytes) | Value::Bytes32(bytes)] => Some(Identifier::new(*bytes)),
+        [Value::Bytes(bytes)] => Identifier::from_bytes(bytes).ok(),
         _ => None,
     }
 }

@@ -73,23 +73,33 @@ mod tests {
         assert_eq!(version1, version2, "VoteResolutionFundFees equality test failed. If a field was added or removed, update the Eq implementation.");
     }
 
-    /// A pre-1.4 platform state stored three amounts; it must still decode, and it converts
-    /// to the schedule every protocol version before 14 uses.
+    /// A pre-1.4 platform state stored exactly three amounts, in this order. Their encoding
+    /// is built here from a plain tuple, not from the frozen struct, so a field added to or
+    /// reordered in the struct fails to decode it or decodes it wrongly.
     #[test]
     fn should_decode_the_three_field_encoding_of_pre_1_4_platform_states() {
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
-        let stored = VoteResolutionFundFeesFieldsBeforeVersion4 {
-            contested_document_vote_resolution_fund_required_amount: 20_000_000_000,
-            contested_document_vote_resolution_unlock_fund_required_amount: 400_000_000_000,
-            contested_document_single_vote_cost: 10_000_000,
-        };
-        let bytes = bincode::encode_to_vec(&stored, config).expect("encodes");
+        let stored: (u64, u64, u64) = (20_000_000_000, 400_000_000_000, 10_000_000);
+        let bytes = bincode::encode_to_vec(stored, config).expect("encodes");
 
         let (decoded, read): (VoteResolutionFundFeesFieldsBeforeVersion4, usize) =
             bincode::decode_from_slice(&bytes, config).expect("decodes");
         assert_eq!(read, bytes.len(), "no trailing bytes are expected");
+        assert_eq!(
+            decoded,
+            VoteResolutionFundFeesFieldsBeforeVersion4 {
+                contested_document_vote_resolution_fund_required_amount: 20_000_000_000,
+                contested_document_vote_resolution_unlock_fund_required_amount: 400_000_000_000,
+                contested_document_single_vote_cost: 10_000_000,
+            }
+        );
+        assert_eq!(
+            bincode::encode_to_vec(&decoded, config).expect("encodes"),
+            bytes,
+            "the frozen struct encodes as the three amounts and nothing else"
+        );
         assert_eq!(
             VoteResolutionFundFees::from(decoded),
             VOTE_RESOLUTION_FUND_FEES_VERSION1

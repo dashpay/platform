@@ -176,7 +176,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `verify_ranked_top_k_proof`. All are 0 today. The same table bumps the
 ///   four index walkers to v2 and the document update walker to v1 for the
 ///   shared-prefix fix; those same walker versions carry the time-range
-///   bucket fan-out, so both features gate on one table entry.
+///   bucket fan-out, so both features gate on one table entry. It also sets
+///   `insert_contested.fetch_charter_election_windows` to `Some(0)`: a
+///   moderation election (an `electedCharter` contest) runs on its target
+///   contract's join and vote windows, which the document create join check
+///   and the contested insert read.
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
 ///   opening two routes on the v1 document-query handler: the ranked path

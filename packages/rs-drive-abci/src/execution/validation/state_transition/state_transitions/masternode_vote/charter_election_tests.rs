@@ -17,7 +17,6 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
-use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
     ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
@@ -50,6 +49,7 @@ use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
 use drive::drive::contract::paths::contract_root_path;
+use drive::drive::document::ContestWindows;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::error::Error as DriveError;
 use drive::grovedb::Error as GroveError;
@@ -71,6 +71,7 @@ const ONE_DAY: u32 = 86_400;
 const ONE_WEEK: u32 = 604_800;
 const FOUR_WEEKS: u32 = 2_419_200;
 const DAY_MS: TimestampMillis = 86_400_000;
+const TWO_HOURS_MS: TimestampMillis = 7_200_000;
 
 type IdentityInfo = (Identity, SimpleSigner, IdentityPublicKey);
 
@@ -938,20 +939,8 @@ async fn should_keep_the_generic_windows_and_fund_for_a_dpns_contest() {
     else {
         panic!("expected the contest to run");
     };
-    let generic_poll_duration = match platform.drive.config.network {
-        Network::Mainnet => {
-            platform_version
-                .dpp
-                .voting_versions
-                .default_vote_poll_time_duration_mainnet_ms
-        }
-        _ => {
-            platform_version
-                .dpp
-                .voting_versions
-                .default_vote_poll_time_duration_test_network_ms
-        }
-    };
+    let generic_poll_duration =
+        ContestWindows::generic(platform.drive.config.network, platform_version).poll_duration_ms;
     assert_eq!(end_date - start_block.time_ms, generic_poll_duration);
     assert_eq!(
         prefunded_balance(&platform, &poll, platform_version),
@@ -1006,7 +995,16 @@ async fn should_end_an_election_whose_target_changed_kind() {
         platform_version,
     )
     .await;
-    process_refused(&platform, late, start + 60_000, platform_version);
+    // Two hours in: past the generic join window of test networks, so only the reference
+    // validation can refuse it, and it names why
+    let refusal = process_refused(&platform, late, start + TWO_HOURS_MS, platform_version);
+    assert!(
+        matches!(
+            refusal,
+            ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(_))
+        ),
+        "expected the target's missing elected moderation to refuse it, got {refusal:?}"
+    );
 
     end_polls_at(&platform, start + DAY_MS, 10, platform_version);
     assert_eq!(
@@ -1075,12 +1073,75 @@ async fn should_end_an_election_whose_target_disappeared() {
         platform_version,
     )
     .await;
-    process_refused(&platform, late, start + 60_000, platform_version);
+    // Two hours in: past the generic join window of test networks, so only the reference
+    // validation can refuse it, and it names why
+    let refusal = process_refused(&platform, late, start + TWO_HOURS_MS, platform_version);
+    assert!(
+        matches!(
+            refusal,
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_))
+        ),
+        "expected the missing target to refuse it, got {refusal:?}"
+    );
 
     end_polls_at(&platform, start + DAY_MS, 10, platform_version);
     assert_eq!(
         status(&platform, &poll, platform_version),
         ContestedDocumentVotePollStatus::Awarded(alice.id())
+    );
+    assert!(end_dates(&platform, platform_version).is_empty());
+}
+
+/// A contest moves its end from the join window to the vote window by finding the entry it opened
+/// with. The target's windows are frozen, so they are rewritten here to force what a later
+/// protocol version reading the windows differently could cause: the join-window entry is not
+/// where the windows now say. The second applicant is admitted, the contest keeps the end it has,
+/// and nothing fails.
+#[tokio::test]
+async fn should_keep_the_end_date_when_the_windows_changed_during_an_election() {
+    let (mut platform, platform_version, charters, mut rng) = setup();
+    let target = elected_target(&platform, 0xA8, ONE_DAY, ONE_WEEK, platform_version);
+    let poll = charter_poll(target);
+    let mut alice = applicant(&mut platform, &mut rng);
+    let mut bob = applicant(&mut platform, &mut rng);
+
+    let (start, _) = apply(
+        &platform,
+        &charters,
+        &mut alice,
+        target,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    elected_target(&platform, 0xA8, 2 * ONE_DAY, ONE_WEEK, platform_version);
+
+    apply(
+        &platform,
+        &charters,
+        &mut bob,
+        target,
+        start + TWO_HOURS_MS,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(
+        end_dates(&platform, platform_version),
+        vec![(
+            start + DAY_MS,
+            VotePoll::ContestedDocumentResourceVotePoll(poll.clone())
+        )],
+        "the contest keeps the end it opened with"
+    );
+
+    end_polls_at(&platform, start + DAY_MS, 10, platform_version);
+    assert_eq!(
+        status(&platform, &poll, platform_version),
+        ContestedDocumentVotePollStatus::Awarded(alice.id()),
+        "with no votes the earliest applicant wins"
     );
     assert!(end_dates(&platform, platform_version).is_empty());
 }

@@ -1,3 +1,4 @@
+use crate::drive::contract::paths::contract_root_path;
 use crate::drive::document::ContestWindows;
 use crate::drive::votes::paths::{
     vote_contested_resource_end_date_queries_at_time_tree_path_vec,
@@ -11,11 +12,14 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
 };
-use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
+use crate::query::GroveError;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::Network;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::ContestedIndexResolution;
+use dpp::moderation_charter::charter_election_target;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfo,
@@ -23,7 +27,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
 };
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
+use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -73,30 +77,7 @@ impl Drive {
             platform_version,
         )?;
 
-        let generic_windows = match self.config.network {
-            Network::Mainnet => ContestWindows {
-                join_window_ms: platform_version
-                    .dpp
-                    .validation
-                    .voting
-                    .allow_other_contenders_time_mainnet_ms,
-                poll_duration_ms: platform_version
-                    .dpp
-                    .voting_versions
-                    .default_vote_poll_time_duration_mainnet_ms,
-            },
-            _ => ContestWindows {
-                join_window_ms: platform_version
-                    .dpp
-                    .validation
-                    .voting
-                    .allow_other_contenders_time_testing_ms,
-                poll_duration_ms: platform_version
-                    .dpp
-                    .voting_versions
-                    .default_vote_poll_time_duration_test_network_ms,
-            },
-        };
+        let generic_windows = ContestWindows::generic(self.config.network, platform_version);
         let estimating = estimated_costs_only_with_layer_info.is_some();
 
         let no_locking = contested_document_resource_vote_poll
@@ -219,16 +200,40 @@ impl Drive {
                     contested_document_resource_vote_poll.into(),
                 );
 
-                if join_end != vote_end {
-                    let unique_id = vote_poll.unique_id()?;
+                let unique_id = vote_poll.unique_id()?;
+                let join_end_path =
+                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(join_end);
+                // The windows are read again rather than remembered, so the entry the contest
+                // opened with is looked up before it is moved: should the windows ever differ
+                // from those it opened on (a later protocol version reading them differently),
+                // the contest keeps the end it has instead of failing to delete a missing entry
+                let join_entry_exists = match self.grove_get_raw_optional(
+                    join_end_path.as_slice().into(),
+                    unique_id.as_slice(),
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                ) {
+                    Ok(entry) => entry.is_some(),
+                    Err(Error::GroveDB(error))
+                        if matches!(
+                            *error,
+                            GroveError::PathNotFound(_)
+                                | GroveError::PathParentLayerNotFound(_)
+                                | GroveError::PathKeyNotFound(_)
+                        ) =>
+                    {
+                        false
+                    }
+                    Err(error) => return Err(error),
+                };
+
+                if join_end != vote_end && join_entry_exists {
                     // The join-window entry goes, and its time tree with it when it was
                     // the only entry at that time
                     self.batch_delete_up_tree_while_empty(
-                        KeyInfoPath::from_known_owned_path(
-                            vote_contested_resource_end_date_queries_at_time_tree_path_vec(
-                                join_end,
-                            ),
-                        ),
+                        KeyInfoPath::from_known_owned_path(join_end_path),
                         unique_id.as_slice(),
                         Some(vote_end_date_queries_tree_path_vec().len() as u16),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
@@ -274,6 +279,31 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<ContestWindows, Error> {
         if estimating {
+            // The windows change nothing an estimate measures, but the read of a moderation
+            // election's target does: it is estimated as a read of the target's stored
+            // contract at the largest size contracts are estimated at
+            if let Some(target_contract_id) = charter_election_target(
+                &contested_document_resource_vote_poll.contract.as_ref().id(),
+                &contested_document_resource_vote_poll.document_type_name,
+                &contested_document_resource_vote_poll.index_values,
+            ) {
+                self.grove_get_raw_optional(
+                    (&contract_root_path(target_contract_id.as_bytes())).into(),
+                    &[0],
+                    DirectQueryType::StatelessDirectQuery {
+                        in_tree_type: TreeType::NormalTree,
+                        query_target: QueryTargetValue(
+                            platform_version
+                                .system_limits
+                                .estimated_contract_max_serialized_size
+                                as u32,
+                        ),
+                    },
+                    transaction,
+                    batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
             return Ok(generic_windows);
         }
         let (fee_result, charter_election_windows) = self.fetch_charter_election_windows(

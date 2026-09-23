@@ -3370,7 +3370,7 @@ mod creation_tests {
     /// PROTOCOL_VERSION_13: the join check reads the generic join window there too; the
     /// target contract's window of a moderation election is read only from 14 on.
     #[tokio::test]
-    async fn test_that_a_contested_document_can_not_be_added_to_after_a_week_protocol_version_13() {
+    async fn should_refuse_joining_a_contest_after_the_join_window_protocol_version_13() {
         run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(13).await;
     }
 

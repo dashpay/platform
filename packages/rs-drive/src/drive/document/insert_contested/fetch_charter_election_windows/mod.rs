@@ -5,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
+use dpp::dashcore::Network;
 use dpp::data_contract::config::moderation::ElectedModerators;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::TimestampMillis;
@@ -23,6 +24,23 @@ pub struct ContestWindows {
 }
 
 impl ContestWindows {
+    /// The generic windows of the version tables, which every contest but a moderation election
+    /// runs on: the mainnet ones on mainnet, the shorter test ones on every other network.
+    pub fn generic(network: Network, platform_version: &PlatformVersion) -> Self {
+        let validation = &platform_version.dpp.validation.voting;
+        let voting = &platform_version.dpp.voting_versions;
+        match network {
+            Network::Mainnet => ContestWindows {
+                join_window_ms: validation.allow_other_contenders_time_mainnet_ms,
+                poll_duration_ms: voting.default_vote_poll_time_duration_mainnet_ms,
+            },
+            _ => ContestWindows {
+                join_window_ms: validation.allow_other_contenders_time_testing_ms,
+                poll_duration_ms: voting.default_vote_poll_time_duration_test_network_ms,
+            },
+        }
+    }
+
     /// The windows an elected moderation declaration gives the elections for its contract. Its
     /// windows are seconds, each one day to four weeks.
     pub fn of_elected_moderators(elected: &ElectedModerators) -> Self {

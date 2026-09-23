@@ -7,7 +7,6 @@ use dpp::consensus::state::document::document_contest_document_with_same_id_alre
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
@@ -18,6 +17,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters};
+use drive::drive::document::ContestWindows;
 use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
 use crate::error::Error;
@@ -264,15 +264,19 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                                 platform_version,
                             )
                             .map_err(Error::Drive)?;
+                        // The target is read, and billed, exactly for a moderation election
+                        let is_charter_election = charter_election_fee.is_some();
                         if let Some(fee_result) = charter_election_fee {
                             execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
                         }
                         let join_time_allowed = match charter_election_windows {
                             Some(windows) => windows.join_window_ms,
-                            None => match platform.config.network {
-                                Network::Mainnet => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
-                                _ => platform_version.dpp.validation.voting.allow_other_contenders_time_testing_ms
-                            },
+                            // A moderation election whose target is missing or declares no
+                            // elected moderation has no join window to refuse it by: the
+                            // reference validation that follows at 14 refuses it with the
+                            // error that names why
+                            None if is_charter_election => u64::MAX,
+                            None => ContestWindows::generic(platform.config.network, platform_version).join_window_ms,
                         };
                         if time_ms_since_start > join_time_allowed {
                             return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestNotJoinableError(
