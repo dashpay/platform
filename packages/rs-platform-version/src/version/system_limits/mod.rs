@@ -18,6 +18,16 @@ pub struct SystemLimits {
     /// document type parser generation 3 (protocol version 14), the only generation that
     /// parses typed arrays, and never reached before.
     pub max_typed_array_items: u16,
+    /// Maximum number of references one document of a document type may carry, counted at
+    /// contract registration or update from the type's `refersTo` declarations: one for each
+    /// property that declares one (an identifier, or a key id carrying a key reference), and
+    /// `maxItems` for each typed array whose identifier elements declare one. Every reference is checked against state when the
+    /// document is created or replaced, each check a billed read, so this bounds the reads one
+    /// document write can cause; without it a type could declare many typed arrays of
+    /// `max_typed_array_items` references each. Refused under full validation only, like
+    /// `max_typed_array_items`. Read by document type parser generation 3 (protocol version
+    /// 14), the only generation that parses `refersTo`, and never reached before.
+    pub max_references_per_document: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config

@@ -927,7 +927,7 @@ impl DataContractWasm {
                 ))
             })?;
 
-        let typed_arrays = typed_arrays_for_document_type(document_type)?;
+        let typed_arrays = typed_arrays_for_document_type(document_type, self.0.id())?;
         Ok(JsValue::from(typed_arrays).into())
     }
 
@@ -941,7 +941,7 @@ impl DataContractWasm {
         let map = js_sys::Map::new();
 
         for (name, document_type) in self.0.document_types() {
-            let typed_arrays = typed_arrays_for_document_type(document_type.as_ref())?;
+            let typed_arrays = typed_arrays_for_document_type(document_type.as_ref(), self.0.id())?;
             if typed_arrays.length() > 0 {
                 map.set(&JsValue::from_str(name), &typed_arrays.into());
             }

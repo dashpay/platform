@@ -9,11 +9,13 @@
 //! are lists, and of what?", without hand-parsing the contract's raw JSON
 //! schema.
 
+use crate::data_contract::document_type_reference::reference_target_to_js;
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::array::{ArrayItemConstraints, TypedArrayProperty};
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::platform_value::Value;
+use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -38,7 +40,18 @@ export type DocumentTypedArrayItem =
   | { type: 'boolean'; enum?: boolean[] }
   | { type: 'string'; minLength?: number; maxLength?: number; enum?: string[] }
   | { type: 'byteArray'; minItems?: number; maxItems?: number }
-  | { type: 'identifier' };
+  | {
+      type: 'identifier';
+      /**
+       * The `refersTo` declaration every element carries, when the `items`
+       * schema declares one: consensus checks each element as a single
+       * reference when a document is created or replaced, and a write error
+       * names the failing element by its list path (`"reasons[2]"`). Never
+       * `identityPublicKey`. The same declaration is listed by
+       * `documentTypeReferences` at the path `"<path>[]"`.
+       */
+      refersTo?: DocumentPropertyReferenceTarget;
+    };
 
 /**
  * A single typed array property of a document type.
@@ -112,9 +125,12 @@ fn scalar_to_js(value: &Value) -> Option<JsValue> {
 }
 
 /// Build the flat, internally-tagged JS object for one element type.
+/// `declaring_contract_id` resolves an element reference's absent
+/// `contractId`, as `documentTypeReferences` does.
 fn item_to_js(
     item_type: &DocumentPropertyType,
     constraints: &ArrayItemConstraints,
+    declaring_contract_id: Identifier,
     path: &str,
 ) -> WasmDppResult<JsValue> {
     let object = Object::new();
@@ -156,6 +172,14 @@ fn item_to_js(
             set_bound(&object, "minItems", sizes.min_size, path)?;
             set_bound(&object, "maxItems", sizes.max_size, path)?;
         }
+        DocumentPropertyType::IdentifierWithReference(target) => {
+            set_field(
+                &object,
+                "refersTo",
+                &reference_target_to_js(target, declaring_contract_id, path)?,
+                path,
+            )?;
+        }
         _ => {}
     }
 
@@ -178,13 +202,22 @@ fn item_to_js(
 }
 
 /// Build the JS object for one typed array property.
-fn typed_array_to_js(path: &str, typed_array: &TypedArrayProperty) -> WasmDppResult<JsValue> {
+fn typed_array_to_js(
+    path: &str,
+    typed_array: &TypedArrayProperty,
+    declaring_contract_id: Identifier,
+) -> WasmDppResult<JsValue> {
     let object = Object::new();
     set_field(&object, "path", &JsValue::from_str(path), path)?;
     set_field(
         &object,
         "items",
-        &item_to_js(&typed_array.item_type, &typed_array.item_constraints, path)?,
+        &item_to_js(
+            &typed_array.item_type,
+            &typed_array.item_constraints,
+            declaring_contract_id,
+            path,
+        )?,
         path,
     )?;
     set_bound(&object, "minItems", typed_array.min_items, path)?;
@@ -210,12 +243,17 @@ fn typed_array_to_js(path: &str, typed_array: &TypedArrayProperty) -> WasmDppRes
 /// object property and names it by its dotted path.
 pub(crate) fn typed_arrays_for_document_type(
     document_type: DocumentTypeRef<'_>,
+    declaring_contract_id: Identifier,
 ) -> WasmDppResult<Array> {
     let typed_arrays = Array::new();
 
     for (path, property) in document_type.flattened_properties() {
         if let DocumentPropertyType::TypedArray(typed_array) = &property.property_type {
-            typed_arrays.push(&typed_array_to_js(path, typed_array)?);
+            typed_arrays.push(&typed_array_to_js(
+                path,
+                typed_array,
+                declaring_contract_id,
+            )?);
         }
     }
 

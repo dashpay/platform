@@ -403,6 +403,7 @@ fn make_replace_v0() -> DocumentReplaceTransitionActionV0 {
         changed_data_fields: BTreeSet::from(["field".to_string()]),
         added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
+        stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
     }
 }
@@ -2980,6 +2981,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         changed_data_fields: BTreeSet::from(["field".to_string()]),
         added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
+        stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
     })
 }

@@ -860,6 +860,53 @@ impl DocumentPropertyReferenceTarget {
     }
 }
 
+/// A property's `refersTo` declaration and what holds the reference: the
+/// property's own value, every element of a typed array of identifiers, or,
+/// for a key reference declared on the key id itself, the key id. Returned
+/// by [`DocumentPropertyType::reference`], which is how the registration and
+/// write-time validators, the per-document reference bound and the client
+/// bindings enumerate a document type's references, so no kind can be
+/// skipped by a caller matching one property type.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PropertyReference<'a> {
+    /// An identifier property: its value is the referenced id.
+    Value(&'a DocumentPropertyReferenceTarget),
+    /// A typed array whose elements are identifiers carrying `refersTo`
+    /// (declared on its `items`): each element is a referenced id, all of
+    /// them to `target`, at most `max_items` of them. Never an
+    /// [`DocumentPropertyReferenceTarget::IdentityPublicKey`], which the
+    /// parser refuses on an element.
+    Elements {
+        target: &'a DocumentPropertyReferenceTarget,
+        max_items: u16,
+    },
+    /// A key id property carrying an `identityPublicKey` declaration that
+    /// names whose key it is ([`DocumentPropertyType::KeyIdWithReference`]).
+    KeyId(&'a KeyIdReference),
+}
+
+impl<'a> PropertyReference<'a> {
+    /// The declaration of an identifier or element reference; `None` for a
+    /// key reference on the key id, which has no identifier target.
+    pub fn target(&self) -> Option<&'a DocumentPropertyReferenceTarget> {
+        match self {
+            PropertyReference::Value(target) | PropertyReference::Elements { target, .. } => {
+                Some(target)
+            }
+            PropertyReference::KeyId(_) => None,
+        }
+    }
+
+    /// How many referenced values one document can carry through this
+    /// declaration: `max_items` for a typed array, one otherwise.
+    pub fn max_references(&self) -> u32 {
+        match self {
+            PropertyReference::Elements { max_items, .. } => u32::from(*max_items),
+            PropertyReference::Value(_) | PropertyReference::KeyId(_) => 1,
+        }
+    }
+}
+
 /// The system properties of a referenced document that the referenced side
 /// of a `propertyAgreement` pair may name, next to the referenced document
 /// type's schema properties: `$ownerId`, the current owner (which follows
@@ -1177,6 +1224,31 @@ impl DocumentPropertyType {
                 "array".to_string()
             }
             DocumentPropertyType::VariableTypeArray(_) => "variableTypeArray".to_string(),
+        }
+    }
+
+    /// The `refersTo` declaration this property carries, on its own value
+    /// (an identifier property), on every element (a typed array whose
+    /// `items` declare it) or on the key id (a key reference naming whose
+    /// key it is); `None` for a property without one.
+    pub fn reference(&self) -> Option<PropertyReference<'_>> {
+        match self {
+            DocumentPropertyType::IdentifierWithReference(target) => {
+                Some(PropertyReference::Value(target))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => match typed_array.item_type.as_ref() {
+                DocumentPropertyType::IdentifierWithReference(target) => {
+                    Some(PropertyReference::Elements {
+                        target,
+                        max_items: typed_array.max_items,
+                    })
+                }
+                _ => None,
+            },
+            DocumentPropertyType::KeyIdWithReference(reference) => {
+                Some(PropertyReference::KeyId(reference))
+            }
+            _ => None,
         }
     }
 

@@ -1,6 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::document::{property_names, Document, DocumentV0Getters};
-use dpp::platform_value::Identifier;
+use dpp::platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
@@ -163,6 +163,19 @@ impl DocumentReplaceTransitionActionV0 {
             )
             .collect();
 
+        // What the stored document held for each changed property, so the
+        // reference validation can tell a list's new elements from the ones
+        // it already held
+        let stored_changed_values: BTreeMap<String, Value> = changed_fields
+            .iter()
+            .filter_map(|key| {
+                original_document
+                    .properties()
+                    .get(key)
+                    .map(|value| (key.clone(), value.clone()))
+            })
+            .collect();
+
         Ok((
             BatchedTransitionAction::DocumentAction(DocumentTransitionAction::ReplaceAction(
                 DocumentReplaceTransitionActionV0 {
@@ -182,6 +195,7 @@ impl DocumentReplaceTransitionActionV0 {
                     changed_data_fields: changed_fields,
                     added_data_fields: added_fields,
                     removed_identifier_fields,
+                    stored_changed_values,
                     creator_id: original_creator_id,
                 }
                 .into(),

@@ -11,6 +11,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     // v12 is already active on live networks; the depth limit activates in v13 (see v3).
     max_document_value_depth: None,
     max_typed_array_items: 1024,
+    max_references_per_document: 256,
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.

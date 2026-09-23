@@ -53,6 +53,11 @@ use crate::version::system_limits::SystemLimits;
 /// * Typed array document properties (protocol version 14): a typed array property declares
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
 ///   earlier tables, whose parsers never read it).
+/// * References (protocol version 14): one document of a document type carries at most 256
+///   references, counted at registration as one per property with `refersTo` and
+///   `maxItems` per typed array whose elements declare one (`max_references_per_document`,
+///   backfilled into the earlier tables, whose parsers never read it). Each reference is a
+///   billed state read when the document is written.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -60,6 +65,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // instance budget, bounding pre-schema work well above known document requirements.
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
+    max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
