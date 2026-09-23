@@ -32,8 +32,8 @@ sealed class ParsedBatchedTransition {
      * rendered for display. Null when [complete].
      */
     abstract val details: String?
-    /** Credits or tokens the transition moves, when it moves any. */
-    abstract val amount: Long?
+    /** Credits or tokens the transition moves, when it moves any (a protocol u64). */
+    abstract val amount: ULong?
     /**
      * The identity on the other side of the transition, when there is one.
      * Interpret it against [action]: a transfer's recipient, a mint's
@@ -51,7 +51,7 @@ sealed class ParsedBatchedTransition {
         val documentType: String,
         val documentId: ByteArray,
         override val action: String,
-        override val amount: Long?,
+        override val amount: ULong?,
         override val recipientId: ByteArray?,
         override val complete: Boolean,
         override val details: String?,
@@ -86,10 +86,10 @@ sealed class ParsedBatchedTransition {
         val tokenId: ByteArray,
         val tokenContractPosition: Int,
         override val action: String,
-        override val amount: Long?,
+        override val amount: ULong?,
         override val recipientId: ByteArray?,
         /** A `DirectPurchase`'s token count ([amount] is its total agreed price). */
-        val tokenCount: Long?,
+        val tokenCount: ULong?,
         override val complete: Boolean,
         override val details: String?,
     ) : ParsedBatchedTransition() {
@@ -133,7 +133,7 @@ sealed class ParsedStateTransitionKind {
     class CreditTransfer(
         val identityId: ByteArray,
         val recipientId: ByteArray,
-        val amount: Long,
+        val amount: ULong,
     ) : ParsedStateTransitionKind()
 
     /** `DataContractCreateTransition`. */
@@ -272,7 +272,7 @@ object StateTransitionParser {
                 ParsedStateTransitionKind.Batch(batchOwner, transitions)
             }
             KIND_CREDIT_TRANSFER ->
-                ParsedStateTransitionKind.CreditTransfer(readId32(buf), readId32(buf), buf.long)
+                ParsedStateTransitionKind.CreditTransfer(readId32(buf), readId32(buf), readU64(buf))
             KIND_DATA_CONTRACT_CREATE ->
                 ParsedStateTransitionKind.DataContractCreate(readDataContract(buf))
             KIND_DATA_CONTRACT_UPDATE ->
@@ -299,8 +299,8 @@ object StateTransitionParser {
         val boundsId = if (boundsKind != 0) readId32(buf) else null
         val docType = if (boundsKind == 2) readString16(buf) else null
         val flags = buf.get().toInt() and 0xFF
-        val totalBudget = if (flags and 1 != 0) buf.long else null
-        val expiresAt = if (flags and 2 != 0) buf.long else null
+        val totalBudget = if (flags and 1 != 0) readLimit(buf, "totalBudget") else null
+        val expiresAt = if (flags and 2 != 0) readLimit(buf, "expiresAt") else null
 
         val bounds: ContractBounds? = when (boundsKind) {
             0 -> null
@@ -333,9 +333,9 @@ object StateTransitionParser {
             FAMILY_DOCUMENT -> {
                 val documentType = readString16(buf)
                 val documentId = readId32(buf)
-                val amount = if (readBool(buf)) buf.long else null
+                val amount = if (readBool(buf)) readU64(buf) else null
                 val recipient = if (readBool(buf)) readId32(buf) else null
-                val tokenCount = if (readBool(buf)) buf.long else null
+                val tokenCount = if (readBool(buf)) readU64(buf) else null
                 require(tokenCount == null) { "malformed parse blob: token count on a document row" }
                 val complete = readBool(buf)
                 val details = readString32(buf).ifEmpty { null }
@@ -346,9 +346,9 @@ object StateTransitionParser {
             FAMILY_TOKEN -> {
                 val position = buf.short.toInt() and 0xFFFF
                 val tokenId = readId32(buf)
-                val amount = if (readBool(buf)) buf.long else null
+                val amount = if (readBool(buf)) readU64(buf) else null
                 val recipient = if (readBool(buf)) readId32(buf) else null
-                val tokenCount = if (readBool(buf)) buf.long else null
+                val tokenCount = if (readBool(buf)) readU64(buf) else null
                 val complete = readBool(buf)
                 val details = readString32(buf).ifEmpty { null }
                 ParsedBatchedTransition.Token(
@@ -381,6 +381,21 @@ object StateTransitionParser {
         val len = buf.short.toInt() and 0xFFFF
         val bytes = ByteArray(len).also { buf.get(it) }
         return String(bytes, Charsets.UTF_8)
+    }
+
+    /** A protocol u64, big-endian. */
+    private fun readU64(buf: ByteBuffer): ULong = buf.long.toULong()
+
+    /**
+     * A key limit. [IdentityPubkey] carries limits as non-negative `Long`s, so
+     * a u64 above `Long.MAX_VALUE` is refused rather than read as negative.
+     */
+    private fun readLimit(buf: ByteBuffer, what: String): Long {
+        val value = readU64(buf)
+        require(value <= Long.MAX_VALUE.toULong()) {
+            "unsupported parsed transition: $what $value exceeds ${Long.MAX_VALUE}"
+        }
+        return value.toLong()
     }
 
     /** `u32 len + UTF-8 bytes`; an empty string encodes "none". */
