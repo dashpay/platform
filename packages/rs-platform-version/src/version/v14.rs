@@ -852,6 +852,35 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     rules, never on a transfer or a purchase, and frozen on update the same
 ///     way.
 ///
+/// 35. **Transient properties are never stored**: a transient property is
+///     judged on the transition and dropped before its document is stored.
+///     Up to v13 only a create dropped it and a replace stored whatever it
+///     carried; `document_from_replace_transition_action` 1 (paired with the
+///     contract-version stamp, edited in place, only selected by this
+///     version) drops the transient values of a replace by top-level name as
+///     a create does. The rules that read a stored value refuse a transient
+///     one, by the property's path and every enclosing object's
+///     (`is_transient`): at registration (parser generation 3 under full
+///     validation) every `transient` entry must name a top-level property,
+///     since Drive drops values by top-level name, and no index may read a
+///     transient property, which every document would leave in the index's
+///     null branch; a lookup's referenced side refuses such an index too
+///     (`referenced_side_error`); the contract reference validation
+///     (`data_contract_reference_validation` 0, extended in place, only
+///     reached from this version) refuses a `propertyAgreement` whose
+///     referenced property is transient, which no stored document carries,
+///     and a key reference that stores the key id while its identity is
+///     transient, in either form (`identityProperty` on the key id,
+///     `keyIdProperty` on the identity). A transient referring side of an
+///     agreement stays allowed: it is a write gate, judged on the
+///     transition. Changing the `transient` list on contract update was an
+///     unsupported keyword to the schema compatibility check, an internal
+///     error that dropped the transition unpaid; `validate_schema_compatibility`
+///     1 freezes it as it freezes `refersTo`, an incompatible schema change.
+///     A census of every mainnet and testnet contract (2026-09-23) found
+///     `transient` only on DPNS-shaped `domain` types, which are immutable,
+///     index no transient property and list top-level properties only.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

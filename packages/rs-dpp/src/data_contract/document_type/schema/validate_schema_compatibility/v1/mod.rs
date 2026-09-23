@@ -32,7 +32,8 @@
 //!
 //! The top-level `ownerRefersTo` and `creatorRefersTo` keys (protocol version
 //! 14) get the frozen rule of the property `refersTo`, so any change to them
-//! is an incompatible schema change.
+//! is an incompatible schema change. So does the top-level `transient` list,
+//! which generation 0 fails on as an unsupported keyword.
 
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
@@ -68,8 +69,14 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     // also reads, because no earlier protocol version knows the keywords.
     // Without a `refersTo` rule to copy, a diff under either fails as an
     // unsupported keyword, an error rather than a panic.
+    // The top-level `transient` list gets the same frozen rule: it decides
+    // which values a stored document carries and how each property is encoded
+    // (a transient one takes a presence byte even when required), so documents
+    // written under one list could not be read under another. Without a rule
+    // the differ fails on any change to it as an unsupported keyword, an
+    // internal error instead of an incompatible schema change.
     let refers_to_rule = KEYWORD_COMPATIBILITY_RULES.get("refersTo");
-    let doctype_refers_to_rules = ["ownerRefersTo", "creatorRefersTo"]
+    let frozen_doctype_rules = ["ownerRefersTo", "creatorRefersTo", "transient"]
         .into_iter()
         .filter_map(|keyword| refers_to_rule.map(|rule| (keyword, rule.clone())));
 
@@ -77,7 +84,7 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
         override_rules: CompatibilityRulesCollection::from_iter(
             [("required", required_rule)]
                 .into_iter()
-                .chain(doctype_refers_to_rules),
+                .chain(frozen_doctype_rules),
         ),
     }
 });
@@ -345,6 +352,84 @@ mod tests {
             ProtocolError::DataContractError(DataContractError::JsonSchema(
                 JsonSchemaError::SchemaCompatibilityValidationError(message)
             )) if message == "schema keyword 'indices' at path '/indices/0/unique' is not supported"
+        );
+    }
+
+    fn with_transient(transient: Option<serde_json::Value>) -> serde_json::Value {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0},
+                "b": {"type": "string", "position": 1},
+            },
+            "additionalProperties": false,
+        });
+        if let Some(transient) = transient {
+            schema["transient"] = transient;
+        }
+        schema
+    }
+
+    /// Stored documents are encoded by the transient list (a transient
+    /// property takes a presence byte), so no change to it is compatible.
+    #[test]
+    fn should_report_every_transient_list_change_as_incompatible() {
+        let platform_version = PlatformVersion::latest();
+        for (original, new, change_name, change_path) in [
+            (None, Some(json!(["a"])), "add", "/transient"),
+            (Some(json!(["a"])), None, "remove", "/transient"),
+            (
+                Some(json!(["a"])),
+                Some(json!(["a", "b"])),
+                "add",
+                "/transient/1",
+            ),
+            (
+                Some(json!(["a"])),
+                Some(json!(["b"])),
+                "replace",
+                "/transient/0",
+            ),
+        ] {
+            let result = validate_schema_compatibility(
+                &with_transient(original.clone()),
+                &with_transient(new.clone()),
+                platform_version,
+            )
+            .expect("a transient change is judged, not an unsupported keyword");
+            assert_matches!(
+                result.errors.as_slice(),
+                [change] if change.name == change_name && change.path == change_path,
+                "{original:?} -> {new:?}"
+            );
+        }
+
+        // An unchanged list is no change at all
+        let unchanged = with_transient(Some(json!(["a"])));
+        assert!(
+            validate_schema_compatibility(&unchanged, &unchanged, platform_version)
+                .expect("an unchanged schema is judged")
+                .is_valid()
+        );
+    }
+
+    // Replay-safety pin: protocol version 13 dispatches to v0, where a
+    // `/transient` diff still hits the unsupported-keyword hard error.
+    #[test]
+    fn v0_should_error_on_transient_diff() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 must exist");
+        let error = validate_schema_compatibility(
+            &with_transient(Some(json!(["a"]))),
+            &with_transient(Some(json!(["a", "b"]))),
+            platform_version,
+        )
+        .expect_err("a transient diff must hard-error under v0");
+
+        assert_matches!(
+            error,
+            ProtocolError::DataContractError(DataContractError::JsonSchema(
+                JsonSchemaError::SchemaCompatibilityValidationError(message)
+            )) if message == "schema keyword 'transient' at path '/transient/1' is not supported"
         );
     }
 }

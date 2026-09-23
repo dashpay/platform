@@ -355,6 +355,88 @@ mod tests {
             assert_state_consensus_errors!(result, DataContractIsReadonlyError, 1);
         }
 
+        /// Stored documents are encoded by the `transient` list, so an update
+        /// may not change it. The schema compatibility check had no rule for
+        /// the keyword and failed with an internal error, dropping the
+        /// transition unpaid; it now reports an incompatible schema change.
+        #[test]
+        pub fn should_refuse_an_update_changing_the_transient_list_as_an_incompatible_schema() {
+            use dpp::consensus::basic::BasicError;
+            use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+            let platform_version = PlatformVersion::latest();
+            let TestData {
+                mut data_contract,
+                platform,
+            } = setup_test();
+            apply_contract(&platform, &data_contract, Default::default());
+
+            let mut updated_document = data_contract
+                .document_type_for_name("niceDocument")
+                .expect("the fixture's niceDocument")
+                .schema()
+                .clone();
+            updated_document
+                .set_value("transient", platform_value!(["name"]))
+                .expect("the transient list sets");
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("to be able to set document schema");
+
+            let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract,
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
+                signature: BinaryData::new(vec![0; 65]),
+                signature_public_key_id: 0,
+            };
+
+            let state = platform.state.load();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
+            let result = DataContractUpdateTransition::V0(state_transition)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &BlockInfo::default(),
+                    &mut execution_context,
+                    None,
+                )
+                .expect("a transient change is a consensus error, not an internal one");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.document_type_name() == "niceDocument"
+                    && e.operation() == "add"
+                    && e.property_path() == "/transient"
+            );
+        }
+
         #[test]
         pub fn should_keep_history_if_contract_config_keeps_history_is_true() {
             let TestData {

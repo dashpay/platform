@@ -1727,7 +1727,8 @@
       "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "description": "Names of top-level properties whose values are validated on the transition but never stored: a create, and from protocol version 14 a replace, drops them before the document is written. From protocol version 14 every entry must name a top-level property (list the object around a nested one); no index may read a transient property or one inside a transient object; a refersTo lookup may not read one on either side, a propertyAgreement may not name one on its referenced side, and a stored key id may not pair with a transient identity; encryptedFor may not name one. Adding, removing or changing an entry on contract update is an incompatible schema change."
     },
     "immutable": {
       "type": "array",

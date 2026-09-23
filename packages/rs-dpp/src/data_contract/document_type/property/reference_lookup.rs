@@ -223,7 +223,8 @@ impl DocumentReferenceLookup {
     /// index must exist and be unique, so the key finds at most one document;
     /// it may not bucket a timestamp (`timeRange`), since its first key part
     /// is then a bucket start no referring value names; the referenced type
-    /// may not be `indexOnly`; `keys` must map every property of the index
+    /// may not be `indexOnly`; no index property may be transient, a value
+    /// no stored document holds; `keys` must map every property of the index
     /// exactly once and nothing else; and each source must hold the same kind
     /// of value as the index property it fills, or no document could ever
     /// match. The key must also stay with the document it found, see
@@ -259,6 +260,22 @@ impl DocumentReferenceLookup {
             return Some(format!(
                 "\"{}\" is an indexOnly document type, which a lookup cannot reference",
                 referenced.name()
+            ));
+        }
+        // A transient value is never stored, so no document would ever sit in
+        // the index under a key naming it
+        if let Some(transient) = index
+            .properties
+            .iter()
+            .find(|property| is_transient(referenced, &property.name))
+        {
+            return Some(format!(
+                "index \"{}\" of \"{}\" keys documents by \"{}\", which is transient or inside \
+                 a transient object: its value is never stored, so the lookup could never find \
+                 a document",
+                self.index,
+                referenced.name(),
+                transient.name
             ));
         }
         if let Some(missing) = index
@@ -692,6 +709,33 @@ mod tests {
                 "immutable": ["submittedCharterId"]
             }))),
             None
+        );
+    }
+
+    /// A registration refuses an index over a transient property, but a type
+    /// parsed without full validation (a stored contract) still reaches the
+    /// lookup's own check, which must never find a document through it.
+    #[test]
+    fn should_refuse_a_lookup_into_an_index_reading_a_transient_property() {
+        let lookup = lookup(
+            "bySubmittedCharter",
+            &[
+                ("submittedCharterId", "submittedCharterId"),
+                ("$ownerId", "."),
+            ],
+        );
+        let referenced = join_request_with(platform_value!({
+            "transient": ["submittedCharterId"]
+        }));
+        let error = lookup
+            .referenced_side_error(elected_charter().as_ref(), referenced.as_ref())
+            .expect("an index over a transient property should be refused");
+        assert!(
+            error.contains(
+                "index \"bySubmittedCharter\" of \"joinRequest\" keys documents by \
+                 \"submittedCharterId\", which is transient or inside a transient object"
+            ),
+            "{error}"
         );
     }
 

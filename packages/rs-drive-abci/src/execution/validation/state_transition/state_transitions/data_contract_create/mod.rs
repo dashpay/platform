@@ -5964,6 +5964,42 @@ mod tests {
             );
         }
 
+        /// No stored document carries a transient value, so an agreement with
+        /// one on the referenced side could only hold for a referring document
+        /// omitting its own side, and a required one never.
+        #[tokio::test]
+        async fn should_reject_agreement_on_a_transient_referenced_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referenced.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.reason().contains("the referenced property is transient")
+            );
+        }
+
+        /// The referring side is judged on the transition, so a transient one is
+        /// a write gate and registers.
+        #[tokio::test]
+        async fn should_register_agreement_on_a_transient_referring_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
         /// `refersTo` on the items of a typed array registers with every target
         /// the fixture uses: permanent and deletable document elements, an
         /// agreement keyed by the writer and one on a schema property.
@@ -6285,6 +6321,52 @@ mod tests {
                     ),
                     ..
                 } if e.message().contains("must be an identifier")
+            );
+        }
+
+        /// A stored key id whose identity is transient names no key a reader
+        /// could find, whichever side declares the pair: `identityProperty` on
+        /// the key id, or `keyIdProperty` on the identity.
+        #[tokio::test]
+        async fn should_reject_a_stored_key_id_paired_with_a_transient_identity() {
+            for (fixture, key_id_property) in [
+                (
+                    "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key-transient-identity.json",
+                    "recipientKeyId",
+                ),
+                (
+                    "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-transient-identity.json",
+                    "toKeyIndex",
+                ),
+            ] {
+                let result = run_contract_create(fixture).await;
+
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::ReferencedKeyIdPropertyInvalidError(e)
+                        ),
+                        ..
+                    } if e.key_id_property() == key_id_property
+                        && e.message().contains("transient or inside a transient object"),
+                    "{fixture}"
+                );
+            }
+        }
+
+        /// With the key id transient too, nothing unreadable is stored: the
+        /// pair is judged on the transition alone.
+        #[tokio::test]
+        async fn should_register_a_key_reference_whose_key_id_and_identity_are_both_transient() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key-transient-pair.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
         }
 

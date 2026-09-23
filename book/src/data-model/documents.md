@@ -466,6 +466,26 @@ Enforcement lives in the replace action's state validation (generation 1). The a
 
 In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`. Earlier document type generations return empty sets.
 
+## Transient Properties
+
+The doctype-level `transient` keyword lists top-level properties whose values are validated on the transition but never stored. DPNS uses it for the `domain`'s `preorderSalt`: the write proves the salted preorder, and the salt is then dropped.
+
+```json
+"transient": ["preorderSalt"]
+```
+
+A create drops the listed values before its document is built. Before protocol version 14 a replace stored whatever it carried, so a replaced document kept values its create had dropped; from protocol version 14 a replace drops them the same way (`document_from_replace_transition_action` 1). Values are dropped by top-level name, so a leaf of a transient object goes with the object.
+
+Because no stored document carries a transient value, a rule that reads a stored value refuses a transient one, judged by the property's path and every object around it (`is_transient`). From protocol version 14, at registration:
+
+- Every `transient` entry names a top-level property. A nested path, a system property or an undeclared name would mark a property transient in the parsed type while its value was still stored.
+- No index reads a transient property. Every document would sit in the index's null branch, so a query by the value would find nothing and a unique index would enforce nothing.
+- A `refersTo` lookup reads no transient property to assemble its key, and its index keys documents by none. A `propertyAgreement` names none on its referenced side. The referring side may be transient: it is judged on the transition, a write gate like the writer's `$ownerId`.
+- A key reference does not store its key id with a transient identity, whichever side declares it (`identityProperty` on the key id, `keyIdProperty` on the identity): the key id alone names no key.
+- `encryptedFor` names no transient recipient or key id.
+
+The list cannot change on contract update: it decides which values stored documents carry and how every property is encoded (a transient property takes a presence byte even when required). From protocol version 14 any change is an incompatible schema change; before it, the schema compatibility check failed on the keyword as unsupported, an internal error.
+
 ## Typed Arrays
 
 Up to protocol version 13 a `type: "array"` property had to be a byte array (`byteArray: true`). Protocol version 14 adds typed arrays: a list whose `items` schema says what every element is.

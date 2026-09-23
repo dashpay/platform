@@ -1195,7 +1195,7 @@ pub fn is_referring_system_agreement_property(name: &str) -> bool {
 /// around it, is transient: either way its value is never stored.
 /// `transient_fields()` holds the paths as declared, so a leaf of a transient
 /// object is found only through the object's path, a prefix of its own.
-pub(crate) fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
+pub fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
     let transient_fields = document_type.transient_fields();
     path.match_indices('.')
         .map(|(end, _)| &path[..end])
