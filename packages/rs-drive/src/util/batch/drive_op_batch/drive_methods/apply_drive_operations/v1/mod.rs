@@ -223,7 +223,7 @@ impl Drive {
 /// for them. Given the costs of a batch in which only a moderator's deletion's document
 /// operations free bytes: the document's, whoever paid for it, its owner or an earlier one, and
 /// those of any index subtree the deletion empties, whoever created it.
-fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
+pub(super) fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {
         let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation else {
             continue;
