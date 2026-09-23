@@ -3,35 +3,11 @@
 //! registration lints (`full_validation` only), so a stored contract stays
 //! readable, and generation 2 (protocol version 13) keeps accepting both.
 
+use super::immutable_tests::{expect_structure_error, parse_dispatched};
 use super::*;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::data_contract::errors::DataContractError;
 use platform_value::platform_value;
 
-fn parse_dispatched(
-    schema: Value,
-    platform_version: &PlatformVersion,
-    full_validation: bool,
-) -> Result<DocumentType, ProtocolError> {
-    let config = DataContractConfig::default_for_version(platform_version)
-        .expect("default config available on this platform version");
-    DocumentType::try_from_schema(
-        Identifier::new([1; 32]),
-        1,
-        config.version(),
-        "note",
-        schema,
-        None,
-        &BTreeMap::new(),
-        &config,
-        full_validation,
-        &mut vec![],
-        platform_version,
-    )
-}
-
-/// A `note` type with a short `code`, a long `body` and a required `meta`
+/// A type (parsed as `post`) with a short `code`, a long `body` and a required `meta`
 /// object around a required `tag`, with `extra` set on top.
 fn note_schema_with(extra: Value) -> Value {
     let mut schema = platform_value!({
@@ -61,32 +37,6 @@ fn note_schema_with(extra: Value) -> Value {
     schema
 }
 
-fn expect_structure_error<T: std::fmt::Debug>(result: Result<T, ProtocolError>, needle: &str) {
-    let message = match result {
-        Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-            message,
-        ))) => message,
-        Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
-            ConsensusError::BasicError(BasicError::ContractError(
-                DataContractError::InvalidContractStructure(message),
-            )) => message,
-            other => {
-                panic!("expected InvalidContractStructure containing {needle:?}, got {other:?}")
-            }
-        },
-        Err(other) => {
-            panic!("expected InvalidContractStructure containing {needle:?}, got {other}")
-        }
-        Ok(parsed) => {
-            panic!("expected rejection containing {needle:?}, but the schema parsed: {parsed:?}")
-        }
-    };
-    assert!(
-        message.contains(needle),
-        "expected structure error containing {needle:?}, got: {message}"
-    );
-}
-
 #[test]
 fn should_accept_transient_top_level_properties_and_objects() {
     for transient in [
@@ -109,7 +59,7 @@ fn should_refuse_a_transient_entry_that_is_not_a_top_level_property() {
         expect_structure_error(
             parse_dispatched(schema.clone(), PlatformVersion::latest(), true),
             &format!(
-                "document type \"note\" lists \"{entry}\" as transient, but it is not a \
+                "document type \"post\" lists \"{entry}\" as transient, but it is not a \
                  top-level property of the document type"
             ),
         );
@@ -149,7 +99,7 @@ fn should_refuse_an_index_reading_a_transient_property_or_one_inside_a_transient
         expect_structure_error(
             parse_dispatched(schema.clone(), PlatformVersion::latest(), true),
             &format!(
-                "index \"byValue\" of document type \"note\" reads \"{index_property}\", which \
+                "index \"byValue\" of document type \"post\" reads \"{index_property}\", which \
                  is transient or inside a transient object"
             ),
         );

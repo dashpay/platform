@@ -33,8 +33,10 @@
 //! The top-level `ownerRefersTo` and `creatorRefersTo` keys (protocol version
 //! 14) get the frozen rule of the property `refersTo`, so any change to them
 //! is an incompatible schema change. So does the top-level `transient` list,
-//! which generation 0 fails on as an unsupported keyword.
+//! which generation 0 fails on as an unsupported keyword, compared as the set
+//! of names the parse reads: sorted and deduplicated before the diff.
 
+use crate::data_contract::document_type::property_names::TRANSIENT;
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::JsonValue;
@@ -74,9 +76,11 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     // (a transient one takes a presence byte even when required), so documents
     // written under one list could not be read under another. Without a rule
     // the differ fails on any change to it as an unsupported keyword, an
-    // internal error instead of an incompatible schema change.
+    // internal error instead of an incompatible schema change. The parse reads
+    // the list as a set, so it is sorted and deduplicated before the diff
+    // ([`prepared_for_diff`]): only a changed set of names is a change.
     let refers_to_rule = KEYWORD_COMPATIBILITY_RULES.get("refersTo");
-    let frozen_doctype_rules = ["ownerRefersTo", "creatorRefersTo", "transient"]
+    let frozen_doctype_rules = ["ownerRefersTo", "creatorRefersTo", TRANSIENT]
         .into_iter()
         .filter_map(|keyword| refers_to_rule.map(|rule| (keyword, rule.clone())));
 
@@ -101,22 +105,29 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
 const TOP_LEVEL_VALIDATED_KEYS: [&str; 4] =
     ["indices", "required", "immutable", "immutableAllowSetting"];
 
-/// Strips [`TOP_LEVEL_VALIDATED_KEYS`] from a document type schema before it
-/// is diffed. Only the document type's own top-level keys are removed; a
-/// nested object property's `required` array lives under
+/// Prepares a document type schema to be diffed: strips
+/// [`TOP_LEVEL_VALIDATED_KEYS`], and sorts and deduplicates the top-level
+/// `transient` list, which the parse reads as a set, so reordering or
+/// repeating names is no change. Only the document type's own top-level keys
+/// are touched; a nested object property's `required` array lives under
 /// `/properties/<name>/required` and stays governed by the differ's frozen
-/// `required` rule, as do properties named `indices`, `required` or
-/// `immutable`.
-fn without_top_level_validated_keys(schema: &JsonValue) -> Cow<'_, JsonValue> {
+/// `required` rule, as do properties named `indices`, `required`,
+/// `immutable` or `transient`.
+fn prepared_for_diff(schema: &JsonValue) -> Cow<'_, JsonValue> {
     match schema {
         JsonValue::Object(map)
-            if TOP_LEVEL_VALIDATED_KEYS
-                .iter()
-                .any(|key| map.contains_key(*key)) =>
+            if map.contains_key(TRANSIENT)
+                || TOP_LEVEL_VALIDATED_KEYS
+                    .iter()
+                    .any(|key| map.contains_key(*key)) =>
         {
             let mut map = map.clone();
             for key in TOP_LEVEL_VALIDATED_KEYS {
                 map.remove(key);
+            }
+            if let Some(JsonValue::Array(names)) = map.get_mut(TRANSIENT) {
+                names.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+                names.dedup();
             }
             Cow::Owned(JsonValue::Object(map))
         }
@@ -137,8 +148,8 @@ pub(super) fn validate_schema_compatibility_v1(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
 ) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
-    let original_schema = without_top_level_validated_keys(original_schema);
-    let new_schema = without_top_level_validated_keys(new_schema);
+    let original_schema = prepared_for_diff(original_schema);
+    let new_schema = prepared_for_diff(new_schema);
 
     validate_schemas_compatibility(&original_schema, &new_schema, OPTIONS.deref())
         .map(|result| {
@@ -413,10 +424,26 @@ mod tests {
         );
     }
 
+    /// The parse reads the list as a set, so reordering or repeating names
+    /// changes nothing a stored document depends on.
+    #[test]
+    fn should_accept_a_reordered_or_repeated_transient_list() {
+        let platform_version = PlatformVersion::latest();
+        for new in [json!(["b", "a"]), json!(["a", "b", "a"])] {
+            let result = validate_schema_compatibility(
+                &with_transient(Some(json!(["a", "b"]))),
+                &with_transient(Some(new.clone())),
+                platform_version,
+            )
+            .expect("a transient change is judged, not an unsupported keyword");
+            assert!(result.is_valid(), "{new:?}: {:?}", result.errors);
+        }
+    }
+
     // Replay-safety pin: protocol version 13 dispatches to v0, where a
     // `/transient` diff still hits the unsupported-keyword hard error.
     #[test]
-    fn v0_should_error_on_transient_diff() {
+    fn should_hard_error_on_a_transient_diff_at_protocol_version_13() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13 must exist");
         let error = validate_schema_compatibility(
             &with_transient(Some(json!(["a"]))),

@@ -263,6 +263,7 @@ mod tests {
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -361,9 +362,6 @@ mod tests {
         /// transition unpaid; it now reports an incompatible schema change.
         #[test]
         pub fn should_refuse_an_update_changing_the_transient_list_as_an_incompatible_schema() {
-            use dpp::consensus::basic::BasicError;
-            use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-
             let platform_version = PlatformVersion::latest();
             let TestData {
                 mut data_contract,

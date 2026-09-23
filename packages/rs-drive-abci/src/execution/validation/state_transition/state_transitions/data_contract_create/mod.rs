@@ -5966,23 +5966,27 @@ mod tests {
 
         /// No stored document carries a transient value, so an agreement with
         /// one on the referenced side could only hold for a referring document
-        /// omitting its own side, and a required one never.
+        /// omitting its own side, and a required one never. A property inside a
+        /// transient object is dropped with the object.
         #[tokio::test]
         async fn should_reject_agreement_on_a_transient_referenced_property() {
-            let result = run_contract_create(
+            for fixture in [
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referenced.json",
-            )
-            .await;
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referenced-object.json",
+            ] {
+                let result = run_contract_create(fixture).await;
 
-            assert_matches!(
-                result,
-                StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::StateError(
-                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
-                    ),
-                    ..
-                } if error.reason().contains("the referenced property is transient")
-            );
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                        ),
+                        ..
+                    } if error.reason().contains("the referenced property is transient"),
+                    "{fixture}"
+                );
+            }
         }
 
         /// The referring side is judged on the transition, so a transient one is
@@ -6338,6 +6342,10 @@ mod tests {
                     "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-transient-identity.json",
                     "toKeyIndex",
                 ),
+                (
+                    "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key-transient-object.json",
+                    "recipientKeyId",
+                ),
             ] {
                 let result = run_contract_create(fixture).await;
 
@@ -6356,18 +6364,21 @@ mod tests {
         }
 
         /// With the key id transient too, nothing unreadable is stored: the
-        /// pair is judged on the transition alone.
+        /// pair is judged on the transition alone, in either form.
         #[tokio::test]
         async fn should_register_a_key_reference_whose_key_id_and_identity_are_both_transient() {
-            let result = run_contract_create(
+            for fixture in [
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key-transient-pair.json",
-            )
-            .await;
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-transient-pair.json",
+            ] {
+                let result = run_contract_create(fixture).await;
 
-            assert_matches!(
-                result,
-                StateTransitionExecutionResult::SuccessfulExecution { .. }
-            );
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "{fixture}"
+                );
+            }
         }
 
         #[tokio::test]

@@ -876,7 +876,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     transition. Changing the `transient` list on contract update was an
 ///     unsupported keyword to the schema compatibility check, an internal
 ///     error that dropped the transition unpaid; `validate_schema_compatibility`
-///     1 freezes it as it freezes `refersTo`, an incompatible schema change.
+///     1 freezes the set of names it lists (sorted and deduplicated before
+///     the diff, so a reordering is no change) as it freezes `refersTo`, an
+///     incompatible schema change.
 ///     A census of every mainnet and testnet contract (2026-09-23) found
 ///     `transient` only on DPNS-shaped `domain` types, which are immutable,
 ///     index no transient property and list top-level properties only.

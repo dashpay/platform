@@ -527,7 +527,11 @@ fn try_from_schema_generation_3(
 /// still leave its value stored: list the object around a nested property.
 ///
 /// Full validation only: a contract registered before this version was never
-/// held to it, and a stored contract must stay readable.
+/// held to it, and a stored contract must stay readable. An update re-parses
+/// the whole contract under full validation, and neither the list nor an index
+/// can change on update, so a contract registered earlier with such a shape
+/// could no longer be updated; a census of every mainnet and testnet contract
+/// (2026-09-23) found none, as for the word-character names rule.
 #[cfg(feature = "validation")]
 fn validate_transient_fields(
     document_type: &DocumentTypeV2,
@@ -538,13 +542,20 @@ fn validate_transient_fields(
         .iter()
         .find(|field| !document_type.properties.contains_key(*field))
     {
-        Some(field) => Err(consensus_or_protocol_data_contract_error(
-            DataContractError::InvalidContractStructure(format!(
-                "document type \"{name}\" lists \"{field}\" as transient, but it is not a \
-                 top-level property of the document type: transient values are dropped by \
-                 top-level name, so list the object around a nested property"
-            )),
-        )),
+        Some(field) => {
+            let hint = if field.contains('.') && !field.starts_with('$') {
+                ": transient values are dropped by top-level name, so list the object around \
+                 a nested property"
+            } else {
+                ""
+            };
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{field}\" as transient, but it is not a \
+                     top-level property of the document type{hint}"
+                )),
+            ))
+        }
         None => Ok(()),
     }
 }

@@ -12,8 +12,6 @@
 //! name. Edited in place: protocol version 14, the only one selecting this
 //! generation, is unreleased.
 
-use std::collections::BTreeSet;
-
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
@@ -22,6 +20,7 @@ use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::drop_transient_values;
 use super::{DocumentFromReplaceTransitionActionV0, DocumentReplaceTransitionActionV0};
 
 /// document from replace transition v1
@@ -59,33 +58,27 @@ impl DocumentFromReplaceTransitionActionV1 for Document {
             Self::try_from_replace_transition_action_v0(value, owner_id, platform_version)?;
         document.set_contract_version(Some(contract_version));
         drop_transient_values(
-            &mut document,
+            document.properties_mut(),
             value.base.document_type()?.transient_fields(),
         );
         Ok(document)
     }
 
     fn try_from_owned_replace_transition_action_v1(
-        value: DocumentReplaceTransitionActionV0,
+        mut value: DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let contract_version = value.base.data_contract_fetch_info_ref().contract.version();
-        let transient_fields = value.base.document_type()?.transient_fields().clone();
+        // Dropped from the action's own data before it moves into the document,
+        // as the create action does
+        drop_transient_values(
+            &mut value.data,
+            value.base.document_type()?.transient_fields(),
+        );
         let mut document =
             Self::try_from_owned_replace_transition_action_v0(value, owner_id, platform_version)?;
         document.set_contract_version(Some(contract_version));
-        drop_transient_values(&mut document, &transient_fields);
         Ok(document)
-    }
-}
-
-/// Drops the values of `transient_fields` from `document`, as the create action
-/// drops them from its data.
-fn drop_transient_values(document: &mut Document, transient_fields: &BTreeSet<String>) {
-    if !transient_fields.is_empty() {
-        document
-            .properties_mut()
-            .retain(|key, _| !transient_fields.contains(key));
     }
 }

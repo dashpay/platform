@@ -484,7 +484,7 @@ Because no stored document carries a transient value, a rule that reads a stored
 - A key reference does not store its key id with a transient identity, whichever side declares it (`identityProperty` on the key id, `keyIdProperty` on the identity): the key id alone names no key.
 - `encryptedFor` names no transient recipient or key id.
 
-The list cannot change on contract update: it decides which values stored documents carry and how every property is encoded (a transient property takes a presence byte even when required). From protocol version 14 any change is an incompatible schema change; before it, the schema compatibility check failed on the keyword as unsupported, an internal error.
+The list cannot change on contract update: it decides which values stored documents carry and how every property is encoded (a transient property takes a presence byte even when required). From protocol version 14 any change to the names it lists is an incompatible schema change (the list is compared as a set, so reordering or repeating a name is no change); before it, the schema compatibility check failed on the keyword as unsupported, an internal error.
 
 ## Typed Arrays
 

@@ -210,6 +210,9 @@ pub(super) fn validate_data_contract_references_v0(
                                 }
                                 Some(_) => {}
                             }
+                            // In place: inert before protocol version 14, which
+                            // alone reaches this module (contract create and
+                            // update state validation 1)
                             if stores_key_id_without_identity(
                                 document_type.as_ref(),
                                 path,
@@ -334,6 +337,9 @@ fn validate_reference_target_declaration_v0(
                 ));
             }
             Some(_) => {
+                // In place: inert before protocol version 14, which alone
+                // reaches this module (contract create and update state
+                // validation 1)
                 let stored_without_identity = reference_property.is_some_and(|identity_path| {
                     stores_key_id_without_identity(document_type, key_id_property, identity_path)
                 });
@@ -580,7 +586,9 @@ fn validate_reference_target_declaration_v0(
         // No stored document carries a transient value, so a referring
         // document could only agree by omitting its own side. The referring
         // side may be transient: it is judged on the transition, a write
-        // gate like the writer's `$ownerId`.
+        // gate like the writer's `$ownerId`. In place: inert before protocol
+        // version 14, which alone reaches this module (contract create and
+        // update state validation 1).
         if is_transient(referenced_document_type, referenced_property) {
             return Ok(invalid(
                 "the referenced property is transient or inside a transient object: no \
