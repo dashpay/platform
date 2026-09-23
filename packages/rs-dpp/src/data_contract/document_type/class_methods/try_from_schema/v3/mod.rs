@@ -52,7 +52,8 @@ use crate::consensus::ConsensusError;
 
 use super::common;
 use super::{
-    parse_doctype_reference, validate_encrypted_for_declarations, validate_reference_lookup_sources,
+    parse_doctype_reference, validate_encrypted_for_declarations, validate_list_element_sources,
+    validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -513,6 +514,14 @@ fn try_from_schema_generation_3(
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
     }
+    // The property a `listElement` reads the list's document through; the list
+    // itself is checked where the referenced type is in hand. In every build,
+    // like the lookup sources above: without it a same-contract list check
+    // would silently skip a declaration whose property finds no document
+    if full_validation {
+        validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+    }
 
     Ok(v2)
 }
@@ -664,6 +673,11 @@ fn with_own_contract_id_omitted(
                 *referenced = None;
             }
         }
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            if reference.contract_id == Some(contract_id) {
+                reference.contract_id = None;
+            }
+        }
         DocumentPropertyReferenceTarget::AnyOf(operands)
         | DocumentPropertyReferenceTarget::AllOf(operands) => {
             *operands = ReferenceOperands::new(
@@ -810,6 +824,8 @@ mod index_only_tests;
 
 #[cfg(test)]
 mod keep_history_tests;
+#[cfg(all(test, feature = "validation"))]
+mod list_element_reference_tests;
 #[cfg(test)]
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]

@@ -14,10 +14,12 @@ use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    LookupKeySource, ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
+    ListElementReference, LookupKeySource, ReferenceCombinator, ReferenceOperands,
+    COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::document::property_names::ID;
 use crate::identity::Purpose;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::operations::ProtocolValidationOperation;
@@ -802,13 +804,25 @@ fn validate_reference_target_keys(
     // `propertyAgreement` compares against a referenced DOCUMENT's values;
     // no other target kind has a document body to agree with
     if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
-        && !matches!(reference_type, "permanentDocument" | "deletableDocument")
+        && !matches!(
+            reference_type,
+            "permanentDocument" | "deletableDocument" | "listElement"
+        )
     {
         return Err(DataContractError::InvalidContractStructure(
-            "propertyAgreement is only allowed on permanentDocument and deletableDocument \
-             references"
+            "propertyAgreement is only allowed on permanentDocument, deletableDocument and \
+             listElement references"
                 .to_string(),
         ));
+    }
+
+    // `inList` names the list a list element belongs to; no other target
+    // reads a list
+    if refers_to_map.contains_key(property_names::IN_LIST) && reference_type != "listElement" {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo does not take inList: it is only allowed on listElement \
+             references"
+        )));
     }
 
     // `lookup` finds a referenced DOCUMENT through an index of its type, and
@@ -838,10 +852,12 @@ fn parse_reference_target(
             contract_requirements: parse_contract_reference_requirements(refers_to_map)?,
         },
         "token" => DocumentPropertyReferenceTarget::Token,
-        // The two document targets share one declaration shape; they differ
-        // only in whether the referenced document type must forbid deletion,
-        // which is checked against state at contract registration
-        document_target @ ("permanentDocument" | "deletableDocument") => {
+        // The three document targets share one declaration shape; they
+        // differ in whether the referenced document type must forbid deletion,
+        // checked against state at contract registration, and in how the
+        // document is found: by the value, through a lookup, or, for a list
+        // element, by a `$id` agreement pair
+        document_target @ ("permanentDocument" | "deletableDocument" | "listElement") => {
             // An absent contractId means the reference targets a document
             // type of the declaring contract itself
             let contract_id = refers_to_map
@@ -863,92 +879,40 @@ fn parse_reference_target(
                 )));
             }
 
-            let property_agreement = match refers_to_map.get(property_names::PROPERTY_AGREEMENT) {
-                None => BTreeMap::new(),
-                Some(agreement_value) => {
-                    let agreement_map = agreement_value.to_btree_ref_string_map()?;
-                    if agreement_map.is_empty() || agreement_map.len() > 10 {
-                        return Err(DataContractError::InvalidContractStructure(format!(
-                            "{document_target} refersTo propertyAgreement must declare \
-                             between 1 and 10 property pairs"
-                        )));
-                    }
-                    agreement_map
-                        .iter()
-                        .map(|(referring_property, referenced_value)| {
-                            let referenced_property =
-                                referenced_value.as_text().ok_or_else(|| {
-                                    DataContractError::InvalidContractStructure(
-                                        "propertyAgreement values must be referenced \
-                                         property paths (strings)"
-                                            .to_string(),
-                                    )
-                                })?;
-                            for path in [referring_property.as_str(), referenced_property] {
-                                if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
-                                    return Err(DataContractError::InvalidContractStructure(
-                                        format!(
-                                            "propertyAgreement property paths must be between 1 \
-                                             and {MAX_PROPERTY_PATH_LENGTH} characters"
-                                        ),
-                                    ));
-                                }
-                            }
-                            // Either side may name a system property, but only one
-                            // the agreement can read back as an identifier: the
-                            // writer's `$ownerId` on the referring side (a write
-                            // gate), `$ownerId` or `$creatorId` on the referenced
-                            // side.
-                            if referring_property.starts_with('$')
-                                && !is_referring_system_agreement_property(referring_property)
-                            {
-                                return Err(DataContractError::InvalidContractStructure(
-                                    "propertyAgreement keys must name a schema property of \
-                                     the declaring document type or its $ownerId"
-                                        .to_string(),
-                                ));
-                            }
-                            if referenced_property.starts_with('$')
-                                && !is_referenced_system_agreement_property(referenced_property)
-                            {
-                                return Err(DataContractError::InvalidContractStructure(
-                                    "propertyAgreement values must name a schema property of \
-                                     the referenced document type or one of its $ownerId and \
-                                     $creatorId system properties"
-                                        .to_string(),
-                                ));
-                            }
-                            Ok((referring_property.clone(), referenced_property.to_string()))
-                        })
-                        .collect::<Result<BTreeMap<String, String>, DataContractError>>()?
-                }
-            };
+            let property_agreement = parse_property_agreement(refers_to_map, document_target)?;
 
             let document_type_name = document_type_name.to_string();
-            if document_target == "permanentDocument" {
-                // A lookup is its own variant, so an id reference keeps its
-                // shape (and its encoding in the reference errors)
-                match refers_to_map.get(property_names::LOOKUP) {
-                    Some(lookup_value) => {
-                        DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            match document_target {
+                "permanentDocument" => {
+                    // A lookup is its own variant, so an id reference keeps its
+                    // shape (and its encoding in the reference errors)
+                    match refers_to_map.get(property_names::LOOKUP) {
+                        Some(lookup_value) => {
+                            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                                contract_id,
+                                document_type_name,
+                                property_agreement,
+                                lookup: parse_document_reference_lookup(lookup_value)?,
+                            }
+                        }
+                        None => DocumentPropertyReferenceTarget::PermanentDocument {
                             contract_id,
                             document_type_name,
                             property_agreement,
-                            lookup: parse_document_reference_lookup(lookup_value)?,
-                        }
+                        },
                     }
-                    None => DocumentPropertyReferenceTarget::PermanentDocument {
-                        contract_id,
-                        document_type_name,
-                        property_agreement,
-                    },
                 }
-            } else {
-                DocumentPropertyReferenceTarget::DeletableDocument {
+                "deletableDocument" => DocumentPropertyReferenceTarget::DeletableDocument {
                     contract_id,
                     document_type_name,
                     property_agreement,
-                }
+                },
+                _ => DocumentPropertyReferenceTarget::ListElement(parse_list_element_reference(
+                    refers_to_map,
+                    contract_id,
+                    document_type_name,
+                    property_agreement,
+                )?),
             }
         }
         "identityPublicKey" => {
@@ -976,6 +940,169 @@ fn parse_reference_target(
     };
 
     Ok(target)
+}
+
+/// The `propertyAgreement` of a document reference of `document_target`: each
+/// `{referring property: referenced property}` pair, either side a property
+/// path or the system property its side admits (the writer's `$ownerId` on the
+/// referring side; `$ownerId`, `$creatorId` or `$id` on the referenced side).
+/// What the names resolve to is checked at registration.
+fn parse_property_agreement(
+    refers_to_map: &BTreeMap<String, &Value>,
+    document_target: &str,
+) -> Result<BTreeMap<String, String>, DataContractError> {
+    let Some(agreement_value) = refers_to_map.get(property_names::PROPERTY_AGREEMENT) else {
+        return Ok(BTreeMap::new());
+    };
+    let agreement_map = agreement_value.to_btree_ref_string_map()?;
+    if agreement_map.is_empty() || agreement_map.len() > 10 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{document_target} refersTo propertyAgreement must declare between 1 and 10 \
+             property pairs"
+        )));
+    }
+    agreement_map
+        .iter()
+        .map(|(referring_property, referenced_value)| {
+            let referenced_property = referenced_value.as_text().ok_or_else(|| {
+                DataContractError::InvalidContractStructure(
+                    "propertyAgreement values must be referenced property paths (strings)"
+                        .to_string(),
+                )
+            })?;
+            for path in [referring_property.as_str(), referenced_property] {
+                if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "propertyAgreement property paths must be between 1 and \
+                         {MAX_PROPERTY_PATH_LENGTH} characters"
+                    )));
+                }
+            }
+            // Either side may name a system property, but only one the
+            // agreement can read back as an identifier: the writer's
+            // `$ownerId` on the referring side (a write gate); `$ownerId`,
+            // `$creatorId` or `$id` on the referenced side.
+            if referring_property.starts_with('$')
+                && !is_referring_system_agreement_property(referring_property)
+            {
+                return Err(DataContractError::InvalidContractStructure(
+                    "propertyAgreement keys must name a schema property of the declaring \
+                     document type or its $ownerId"
+                        .to_string(),
+                ));
+            }
+            if referenced_property.starts_with('$')
+                && !is_referenced_system_agreement_property(referenced_property)
+            {
+                return Err(DataContractError::InvalidContractStructure(
+                    "propertyAgreement values must name a schema property of the referenced \
+                     document type or one of its $ownerId, $creatorId and $id system \
+                     properties"
+                        .to_string(),
+                ));
+            }
+            Ok((referring_property.clone(), referenced_property.to_string()))
+        })
+        .collect()
+}
+
+/// A `listElement` declaration beyond what it shares with the other document
+/// references: `inList`, the typed array of identifiers of the referenced
+/// type the value must be an element of, and, in `property_agreement`, exactly
+/// one pair with `$id` on the referenced side, whose referring side names the
+/// property holding the id of the document the list is read from (a schema
+/// property: no document has the writer's id). What the names resolve to is
+/// checked under full validation, once the document types are parsed: the
+/// `$id` pair's property against the declaring type
+/// ([`validate_list_element_sources`]), the list against the referenced one
+/// (at contract level for a type of the same contract, at registration for
+/// one of another contract), the other pairs as every agreement's.
+fn parse_list_element_reference(
+    refers_to_map: &BTreeMap<String, &Value>,
+    contract_id: Option<Identifier>,
+    document_type_name: String,
+    property_agreement: BTreeMap<String, String>,
+) -> Result<ListElementReference, DataContractError> {
+    let id_pairs = property_agreement
+        .iter()
+        .filter(|(_, referenced)| referenced.as_str() == ID)
+        .count();
+    if id_pairs != 1 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "listElement refersTo propertyAgreement must hold exactly one pair with $id on the \
+             referenced side, naming the property whose value is the id of the document \
+             holding the list, found {id_pairs}"
+        )));
+    }
+    if property_agreement
+        .iter()
+        .any(|(referring, referenced)| referenced.as_str() == ID && referring.starts_with('$'))
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "listElement refersTo $id pair must read a property of the referring document \
+             type: no document has the writer's id"
+                .to_string(),
+        ));
+    }
+
+    let in_list = refers_to_map
+        .get_str(property_names::IN_LIST)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+    if in_list.is_empty() || in_list.len() > MAX_PROPERTY_PATH_LENGTH || in_list.starts_with('$') {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "listElement refersTo inList must be a property path of 1 to \
+             {MAX_PROPERTY_PATH_LENGTH} characters"
+        )));
+    }
+
+    Ok(ListElementReference {
+        contract_id,
+        document_type_name,
+        property_agreement,
+        in_list: in_list.to_string(),
+    })
+}
+
+/// Checks the referring side of every `refersTo: listElement` of a document
+/// type, alone or as a leaf of a reference expression, once all its
+/// properties are parsed: the `$id` pair must read a stored identifier
+/// property of the type. See [`ListElementReference::referring_side_error`].
+///
+/// Full validation only (registration), like the meta-schema, but in every
+/// build: a contract read back from state passed it when it was written, and
+/// the write-time check refuses a value whose `$id` property finds no
+/// document rather than relying on it. Generation 3 is the only parser
+/// admitting `refersTo` at all.
+pub(super) fn validate_list_element_sources(
+    document_type: DocumentTypeRef,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    // On the writer or the creator, on an identifier property or on the
+    // elements of a typed array
+    for (holder, reference) in document_type.reference_declarations() {
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        // Each leaf of a reference expression is checked as it would be
+        // alone, and the error names the leaf (`refersTo anyOf[1] listElement`)
+        for (leaf_path, leaf) in target.leaves_with_paths() {
+            let Some(list_reference) = leaf.as_list_element_reference() else {
+                continue;
+            };
+            if let Some(reason) = list_reference.referring_side_error(document_type) {
+                let at = if leaf_path.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {leaf_path}")
+                };
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "document type \"{document_type_name}\" {}{at} listElement: {reason}",
+                    holder.describe()
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// An `identityPublicKey` declaration on the KEY ID property: `identityProperty` names
@@ -1103,8 +1230,9 @@ fn apply_element_reference_v0(
 /// errors. The declaration goes through [`apply_property_reference`] as one
 /// declared on an identifier property does, `propertyAgreement` and `lookup`
 /// included (where `"."` is that identity), but only two targets can hold an
-/// identity: `identity`, and a `permanentDocument` found through a `lookup`,
-/// alone or as the leaves of an `anyOf` / `allOf` expression.
+/// identity: `identity`, a `permanentDocument` found through a `lookup`, and a
+/// `listElement` (the identity an element of the list), alone or as the leaves
+/// of an `anyOf` / `allOf` expression.
 /// The others are refused: `contract`, `token` and a document by id, since an
 /// identity id is never a contract, token or document id, so a type declaring
 /// one could never be written, and `identityPublicKey`, which pairs the value
@@ -1193,8 +1321,11 @@ pub(super) fn parse_doctype_reference(
             format!(" {leaf_path}")
         };
         match leaf {
+            // An identity id can be an element of a list of identities: the
+            // charters' "the writer is a seated member"
             DocumentPropertyReferenceTarget::Identity
-            | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => {}
+            | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
+            | DocumentPropertyReferenceTarget::ListElement(_) => {}
             DocumentPropertyReferenceTarget::PermanentDocument { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "{keyword}{at} takes a permanentDocument reference only with a lookup: its \
@@ -1203,8 +1334,8 @@ pub(super) fn parse_doctype_reference(
             }
             _ => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} takes an identity reference or a permanentDocument reference \
-                     with a lookup"
+                    "{keyword}{at} takes an identity reference, a permanentDocument reference \
+                     with a lookup or a listElement reference"
                 )))
             }
         }
@@ -2188,18 +2319,21 @@ mod tests {
 
     #[test]
     fn should_reject_other_system_properties_on_the_referenced_side_of_an_agreement() {
-        for referenced in ["$id", "$createdAt", "$revision", "$owner"] {
+        for referenced in ["$createdAt", "$revision", "$owner"] {
             let err = try_document_type_from_schema(system_agreement_schema(json!({
                 "authorId": referenced
             })))
-            .expect_err("only $ownerId and $creatorId may be referenced");
+            .expect_err("only $ownerId, $creatorId and $id may be referenced");
 
             let message = err.to_string();
             assert!(
-                message.contains("$ownerId and $creatorId system properties"),
+                message.contains("$ownerId, $creatorId and $id system properties"),
                 "unexpected error for {referenced}: {message}"
             );
         }
+        // `$id`, the referenced document's own id, is one of them
+        try_document_type_from_schema(system_agreement_schema(json!({ "authorId": "$id" })))
+            .expect("$id may be referenced");
     }
 
     #[test]

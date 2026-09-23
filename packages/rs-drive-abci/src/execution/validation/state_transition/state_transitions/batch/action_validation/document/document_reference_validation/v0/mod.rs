@@ -12,13 +12,14 @@ use dpp::data_contract::document_type::accessors::{
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef,
-    IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, PropertyReference,
+    DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceLookup, DocumentTypeRef,
+    IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
+    PropertyReference,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
-use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
-use dpp::document::DocumentV0Getters;
+use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
@@ -227,6 +228,9 @@ fn validate_document_type_references_v0(
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
+    // The documents this write's references fetch by id, shared among them
+    let mut fetched_documents = FetchedDocuments::default();
+
     // A reference is the writer's (`ownerRefersTo`, whose value is the
     // document's `$ownerId` and which the errors name by that path), the
     // creator's (`creatorRefersTo`, `$creatorId`), an identifier property's
@@ -372,6 +376,7 @@ fn validate_document_type_references_v0(
                 referenced_id,
                 path,
                 &mut referenced_contracts,
+                &mut fetched_documents,
                 platform,
                 block_info,
                 transaction,
@@ -450,6 +455,7 @@ fn validate_document_type_references_v0(
                     referenced_id,
                     &element_path,
                     &mut referenced_contracts,
+                    &mut fetched_documents,
                     platform,
                     block_info,
                     transaction,
@@ -464,6 +470,88 @@ fn validate_document_type_references_v0(
     }
 
     Ok(SimpleConsensusValidationResult::new())
+}
+
+/// The documents one write's references fetched by id, by (contract,
+/// document id) and then document type name, each with the lists collected
+/// from it for its list elements, by list path: a document two references
+/// name (a `permanentDocument` reference to a charter and a `listElement`
+/// read through the same `$id` property, or the elements of one typed array)
+/// is fetched and billed once, and a list is collected into a set once. A
+/// hit allocates nothing. Lookup results are not kept: a key is not an id.
+#[derive(Default)]
+struct FetchedDocuments {
+    documents: BTreeMap<(Identifier, Identifier), BTreeMap<String, FetchedDocument>>,
+}
+
+/// One document fetched by id (`None` when it does not exist) and the lists
+/// read from it.
+struct FetchedDocument {
+    document: Option<Document>,
+    lists: BTreeMap<String, BTreeSet<[u8; 32]>>,
+}
+
+impl FetchedDocuments {
+    /// The document `document_type_name` of `contract_id` holds under
+    /// `document_id`, fetched with `fetch` the first time this write asks.
+    fn document(
+        &mut self,
+        contract_id: Identifier,
+        document_type_name: &str,
+        document_id: Identifier,
+        fetch: impl FnOnce() -> Result<Option<Document>, Error>,
+    ) -> Result<Option<&Document>, Error> {
+        let by_type = self
+            .documents
+            .entry((contract_id, document_id))
+            .or_default();
+        if !by_type.contains_key(document_type_name) {
+            let document = fetch()?;
+            by_type.insert(
+                document_type_name.to_string(),
+                FetchedDocument {
+                    document,
+                    lists: BTreeMap::new(),
+                },
+            );
+        }
+        Ok(by_type
+            .get(document_type_name)
+            .and_then(|fetched| fetched.document.as_ref()))
+    }
+
+    /// Whether `value` is an element of `list_reference`'s list on the
+    /// document [`Self::document`] fetched for the same key, collected into a
+    /// set the first time; `false` when no such document was fetched or it
+    /// does not exist.
+    fn is_listed(
+        &mut self,
+        contract_id: Identifier,
+        document_type_name: &str,
+        document_id: Identifier,
+        list_reference: &ListElementReference,
+        value: &[u8; 32],
+    ) -> bool {
+        let Some(FetchedDocument {
+            document: Some(document),
+            lists,
+        }) = self
+            .documents
+            .get_mut(&(contract_id, document_id))
+            .and_then(|by_type| by_type.get_mut(document_type_name))
+        else {
+            return false;
+        };
+        if !lists.contains_key(&list_reference.in_list) {
+            lists.insert(
+                list_reference.in_list.clone(),
+                list_reference.listed_values(document.properties()),
+            );
+        }
+        lists
+            .get(&list_reference.in_list)
+            .is_some_and(|listed| listed.contains(value))
+    }
 }
 
 /// Whether a replace that changed `changed_fields` must re-validate a
@@ -520,6 +608,16 @@ fn binds_a_changed_property(
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property, ..
         } => is_changed_field(changed_fields, key_id_property),
+        // A list element binds the properties its agreement reads, the
+        // `$id` pair's among them: a changed one may name another document,
+        // whose list is then checked against every value
+        DocumentPropertyReferenceTarget::ListElement(reference) => reference
+            .property_agreement
+            .keys()
+            .any(|referring_property| {
+                is_referring_system_agreement_property(referring_property)
+                    || is_changed_field(changed_fields, referring_property)
+            }),
         DocumentPropertyReferenceTarget::Identity
         | DocumentPropertyReferenceTarget::Contract { .. }
         | DocumentPropertyReferenceTarget::Token => false,
@@ -562,6 +660,7 @@ fn validate_reference_v0(
     referenced_id: [u8; 32],
     path: &str,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
+    fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     transaction: TransactionArg,
@@ -578,6 +677,7 @@ fn validate_reference_v0(
             referenced_id,
             path,
             referenced_contracts,
+            fetched_documents,
             platform,
             block_info,
             transaction,
@@ -603,6 +703,7 @@ fn validate_reference_v0(
             referenced_id,
             path,
             referenced_contracts,
+            fetched_documents,
             platform,
             block_info,
             transaction,
@@ -644,6 +745,7 @@ fn validate_reference_target_v0(
     referenced_id: [u8; 32],
     path: &str,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
+    fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     transaction: TransactionArg,
@@ -722,27 +824,27 @@ fn validate_reference_target_v0(
 
             referenced_token_info.is_some()
         }
-        DocumentPropertyReferenceTarget::PermanentDocument {
-            contract_id: referenced_contract_id,
-            document_type_name,
-            property_agreement,
-        }
-        | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-            contract_id: referenced_contract_id,
-            document_type_name,
-            property_agreement,
-            ..
-        }
-        | DocumentPropertyReferenceTarget::DeletableDocument {
-            contract_id: referenced_contract_id,
-            document_type_name,
-            property_agreement,
-        } => {
-            let permanent = matches!(
-                reference_target,
-                DocumentPropertyReferenceTarget::PermanentDocument { .. }
-                    | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
-            );
+        // The document references: found by the value (their id), through a
+        // lookup, or, for a list element, by the document its `$id`
+        // agreement pair names, whose list must then hold the value
+        DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
+        | DocumentPropertyReferenceTarget::DeletableDocument { .. }
+        | DocumentPropertyReferenceTarget::ListElement(_) => {
+            let Some(DocumentReferenceDeclaration {
+                contract_id: referenced_contract_id,
+                document_type_name,
+                property_agreement,
+                permanent,
+                lookup,
+                in_list: _,
+            }) = reference_target.as_any_document_reference()
+            else {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "every document reference target carries a document reference declaration",
+                )));
+            };
+            let list_reference = reference_target.as_list_element_reference();
             // An absent contract id targets the declaring contract itself; the
             // declaring contract may also name its own id explicitly. Either
             // way it is already loaded for this transition, so no fetch is
@@ -788,7 +890,7 @@ fn validate_reference_target_v0(
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeNotFoundError::new(
                             effective_contract_id,
-                            document_type_name.clone(),
+                            document_type_name.to_string(),
                             path.to_string(),
                         )
                         .into(),
@@ -805,7 +907,7 @@ fn validate_reference_target_v0(
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeNotFoundError::new(
                         effective_contract_id,
-                        document_type_name.clone(),
+                        document_type_name.to_string(),
                         path.to_string(),
                     )
                     .into(),
@@ -828,7 +930,7 @@ fn validate_reference_target_v0(
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeDeletableError::new(
                         effective_contract_id,
-                        document_type_name.clone(),
+                        document_type_name.to_string(),
                         path.to_string(),
                     )
                     .into(),
@@ -838,46 +940,78 @@ fn validate_reference_target_v0(
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeNotDeletableError::new(
                         effective_contract_id,
-                        document_type_name.clone(),
+                        document_type_name.to_string(),
                         path.to_string(),
                     )
                     .into(),
                 ));
             }
 
-            // The value is the referenced document's id, unless the
-            // (permanentDocument) declaration looks the document up through a
-            // unique index of its type, with the value, or the element, as one
-            // part of the key
-            let lookup = match reference_target {
-                DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. } => {
-                    Some(lookup)
+            // The document: the one whose id the value is, or the one the
+            // (permanentDocument) lookup finds through a unique index of its
+            // type with the value as one key part, or, for a list element, the
+            // one whose id the `$id` pair's property holds (unset: no document,
+            // so no list holds the value). A by-id fetch is shared with every
+            // other reference of the same document in this write
+            let document_id = match list_reference {
+                None => Some(referenced_id),
+                Some(list_reference) => {
+                    let Some(id_property) = list_reference.document_id_property() else {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "a listElement reference carries a $id agreement pair, which the \
+                             parser enforces",
+                        )));
+                    };
+                    match document_data.get_optional_identifier_at_path(id_property) {
+                        Ok(Some(document_id)) => Some(document_id),
+                        Ok(None) => None,
+                        Err(err) => {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidIdentifierError::new(
+                                    id_property.to_string(),
+                                    err.to_string(),
+                                )
+                                .into(),
+                            ))
+                        }
+                    }
                 }
-                _ => None,
             };
-            let referenced_document = match lookup {
-                None => fetch_document_with_id(
-                    platform.drive,
-                    referenced_contract,
-                    referenced_document_type,
-                    Identifier::from(referenced_id),
-                    &block_info.epoch,
-                    execution_context,
-                    transaction,
-                    platform_version,
-                )?,
-                Some(lookup) => fetch_document_through_lookup(
-                    platform.drive,
-                    referenced_contract,
-                    referenced_document_type,
-                    lookup,
-                    Identifier::from(referenced_id),
-                    document_data,
-                    owner_id,
-                    &block_info.epoch,
-                    execution_context,
-                    transaction,
-                    platform_version,
+            let looked_up_document;
+            let referenced_document: Option<&Document> = match (lookup, document_id) {
+                (_, None) => None,
+                (Some(lookup), Some(document_id)) => {
+                    looked_up_document = fetch_document_through_lookup(
+                        platform.drive,
+                        referenced_contract,
+                        referenced_document_type,
+                        lookup,
+                        Identifier::from(document_id),
+                        document_data,
+                        owner_id,
+                        &block_info.epoch,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?;
+                    looked_up_document.as_ref()
+                }
+                (None, Some(document_id)) => fetched_documents.document(
+                    effective_contract_id,
+                    document_type_name,
+                    Identifier::from(document_id),
+                    || {
+                        fetch_document_with_id(
+                            platform.drive,
+                            referenced_contract,
+                            referenced_document_type,
+                            Identifier::from(document_id),
+                            &block_info.epoch,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )
+                    },
                 )?,
             };
 
@@ -898,8 +1032,13 @@ fn validate_reference_target_v0(
             // side's absence is what lets a referring doctype whose
             // agreement key triggers a skipIfAbsent index stay
             // consistently absent for untagged targets.
-            if let Some(referenced_document) = &referenced_document {
+            if let Some(referenced_document) = referenced_document {
                 for (referring_property, referenced_property) in property_agreement {
+                    // A list element's document is the one its `$id` pair
+                    // names, fetched by that very id: the pair holds
+                    if list_reference.is_some() && referenced_property == ID {
+                        continue;
+                    }
                     let mismatch = || {
                         SimpleConsensusValidationResult::new_with_error(
                             ReferencedDocumentPropertyMismatchError::new(
@@ -929,18 +1068,22 @@ fn validate_reference_target_v0(
                         };
                         referring_value.map(Cow::Borrowed)
                     };
-                    // The referenced side may name one of the two system
+                    // The referenced side may name one of the system
                     // identifiers a document carries outside its data:
                     // `$ownerId`, which follows the document through
-                    // transfers, and `$creatorId`, set once at creation
-                    // and absent on document types that do not record
-                    // it. Contract registration validated that either
-                    // faces an identifier property on the referring
-                    // side, and the key serializer below already encodes
-                    // both names as 32-byte identifiers.
+                    // transfers, `$creatorId`, set once at creation and
+                    // absent on document types that do not record it, and
+                    // `$id`, the document's own (the pair a list element is
+                    // found by, which holds by construction). Contract
+                    // registration validated that each faces an identifier
+                    // property on the referring side, and the key serializer
+                    // below already encodes the names as 32-byte identifiers.
                     let referenced_value: Option<Cow<Value>> = match referenced_property.as_str() {
                         OWNER_ID => Some(Cow::Owned(Value::Identifier(
                             referenced_document.owner_id().to_buffer(),
+                        ))),
+                        ID => Some(Cow::Owned(Value::Identifier(
+                            referenced_document.id().to_buffer(),
                         ))),
                         CREATOR_ID => referenced_document.creator_id().map(|creator_id| {
                             Cow::Owned(Value::Identifier(creator_id.to_buffer()))
@@ -986,7 +1129,22 @@ fn validate_reference_target_v0(
                 }
             }
 
-            referenced_document.is_some()
+            // A list element exists when the document does and its list
+            // holds the value; the list is collected once per document and
+            // path, so each value is a set lookup
+            let document_exists = referenced_document.is_some();
+            match (list_reference, document_id) {
+                (Some(list_reference), Some(document_id)) if document_exists => fetched_documents
+                    .is_listed(
+                        effective_contract_id,
+                        document_type_name,
+                        Identifier::from(document_id),
+                        list_reference,
+                        &referenced_id,
+                    ),
+                (Some(_), _) => false,
+                (None, _) => document_exists,
+            }
         }
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property,

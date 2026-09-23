@@ -270,7 +270,7 @@ Revision 0 is never used for active documents. This allows `0` to serve as a sen
 
 ## Document References (`refersTo`)
 
-From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument` and `identityPublicKey`, or a reference expression combining several with `anyOf` and `allOf` (see [Reference expressions](#reference-expressions-anyof-allof)). Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
+From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument`, `identityPublicKey` and `listElement` (see [An element of a list](#an-element-of-a-list-listelement)), or a reference expression combining several with `anyOf` and `allOf` (see [Reference expressions](#reference-expressions-anyof-allof)). Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
 
 An `identityPublicKey` reference names one key of one identity, and comes in two forms that differ in which property carries what:
 
@@ -378,6 +378,60 @@ When the referring document is created or replaced, the document reference valid
 
 Joins and preallocated indexes need one target: a chained query or a composite by-id join refuses an expression join property, and a `preallocated` index is never bound through one. In Rust the combinators are `DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands)` and `AllOf(ReferenceOperands)`, appended to the enum so every single target keeps its encoding. An expression is no document reference as a whole (`as_any_document_reference` is `None`); code that checks every declaration walks `DocumentPropertyReferenceTarget::leaves` (or `leaves_with_paths`), the leaves of an expression or the declaration itself. Since the enum is embedded in consensus errors, which clients decode from bytes a node sends, decoding refuses a nesting deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH` (16, above every protocol version's registration limit, which a test holds it to), so no bytes can drive the decoder into unbounded recursion. A reference error never carries a combinator: a refusal is a leaf's error.
 
+### An element of a list (`listElement`)
+
+A `listElement` reference says the value must be one of the identifiers a list of another document holds, the document an agreement pair names by its `$id`:
+
+```json
+"resignation": {
+  "type": "object",
+  "properties": {
+    "electedCharterId": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "refersTo": { "type": "permanentDocument", "documentType": "electedCharter" },
+      "position": 0
+    },
+    "memberId": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "refersTo": {
+        "type": "listElement",
+        "documentType": "electedCharter",
+        "propertyAgreement": { "electedCharterId": "$id" },
+        "inList": "members"
+      },
+      "position": 1
+    }
+  },
+  "required": ["electedCharterId", "memberId"],
+  "additionalProperties": false
+}
+```
+
+reads: `memberId` must be one of the `members` of the `electedCharter` document whose `$id` this document's `electedCharterId` holds. The moderation charters, whose elected charter holds its `members`, are the first users. The declaration sits on an identifier property, on the `items` of a typed array of identifiers, where every element must be listed (see [References on the Elements](#references-on-the-elements)), as a leaf of a reference expression (see [Reference expressions](#reference-expressions-anyof-allof)), or on the writer or the creator (see [On the writer or the creator](#on-the-writer-or-the-creator-ownerrefersto-creatorrefersto)), where the value is that identity: `"ownerRefersTo": { "anyOf": [<listElement>, <addedModerator lookup>] }` is the charters' rule that the writer is a seated or an added moderator.
+
+A list element is a document reference in every respect but one. It takes the `contractId`, `documentType` and `propertyAgreement` of a `permanentDocument` reference, with the same checks (the referenced type must forbid deletion, every pair must exist and share one value kind), and `$id` joins `$ownerId` and `$creatorId` as a system name the referenced side of any agreement pair may carry. What differs is what the value is: not the referenced document's id but an element of its list. The document is the one the pair with `$id` on the referenced side names, so a `listElement` holds exactly one such pair, read from an identifier property of the referring type (a schema property, never `$ownerId`: no document has the writer's id), and `inList` names the typed array of identifiers on the referenced type. What is checked when the contract enters the chain:
+
+- The `$id` pair reads a stored identifier property of the referring type (it and every object around it not transient), so a reader can tell from the stored document which list the value was checked against. It may be optional, and it needs no `refersTo` of its own. Checked by the parse under full validation (generation 3), a leaf of an expression as it would be alone.
+- The list's document type forbids deletion, and `inList` is a stored typed array of identifiers on it that never changes once a document is written: the type is immutable (`documentsMutable: false`), or the list's top-level property is listed under `immutable`, the rule a lookup's key parts are judged by. An `immutableAllowSetting` entry can only be set on a document that has no value for it, against which no value was ever accepted, so it does not weaken the rule. For a type of the same contract the contract parse checks this (`create_document_types_from_document_schemas` 1); for a type of another contract, registration checks it against that contract in state and refuses a list that does not qualify with `ReferencedDocumentListInvalidError` (state code 40138). A missing document type is refused as for any document reference (40121), and a deletable one by the parse for the same contract (with the list reason) or by registration for another (40122).
+- Each value counts against `SystemLimits::max_references_per_document`, one for a property, `maxItems` for a typed array, like every other reference.
+- A changed, added or removed `listElement` is an incompatible schema change on update.
+
+When the referring document is created or replaced, the document reference validation fetches the document whose id the `$id` pair's property holds, by id, checks the other pairs against it exactly as for a `permanentDocument`, and requires the value to be in its list. Every by-id document fetch of one write is shared: a charter that `electedCharterId`'s own reference already fetched, or that the elements of one typed array all name, is fetched and billed once, and the list is collected once into a set, so each value is a set lookup. A value the list does not hold, a document the id names that does not exist, or a value set while the `$id` property is not, refuses the write, paid, with `ReferencedEntityNotFoundError` (40120) naming the property, or the element by its list path (`witnesses[1]`); its target reads "list element (`<inList>` of the `<documentType>` document `<property>` names)". A failing extra pair is `ReferencedDocumentPropertyMismatchError` (40127), as always. A replace checks a list element again when its value changed or when the referring side of any of its pairs changed (the `$id` property among them, since it may name another charter), the rule every agreement follows, and then every value, every element included; only a list that changed on its own leaves out the elements the stored list already held. Nothing else can make a validated value unlisted: the list's document can never be deleted and its list never changes.
+
+For example:
+
+```text
+electedCharter 7kX...: members [Alice, Bob]
+resignation { electedCharterId: 7kX..., memberId: Alice }  -> accepted
+resignation { electedCharterId: 7kX..., memberId: Carol }  -> refused, 40120:
+  referenced list element (members of the electedCharter document electedCharterId names)
+  <Carol> not found for path memberId
+```
+
+In Rust the declaration is the appended variant `DocumentPropertyReferenceTarget::ListElement(ListElementReference)`, so every earlier variant keeps its encoding in the reference errors; the rules are on `ListElementReference` (`document_id_property`, `referring_side_error`, `referenced_side_error`, `listed_values`). `as_any_document_reference` carries it with `in_list` set, so the registration validator checks its contract, type and pairs through the same code as the other document references, while `as_document_reference` leaves it out, as it does a lookup: joins and `preallocated` indexes never go through it.
+
 ### On the writer or the creator (`ownerRefersTo`, `creatorRefersTo`)
 
 A property's reference constrains a value the writer chose. Some rules constrain the writer instead: in the moderation charters, a `resignationRequest` may only come from a moderator of the team it resigns from. A document type states that with the doctype-level `ownerRefersTo` keyword, one `refersTo` declaration whose value is the document's `$ownerId`, the writer, rather than a property's value:
@@ -399,7 +453,7 @@ A property's reference constrains a value the writer chose. Some rules constrain
 
 reads: the writer must be the `memberId` of an `addedModerator` for this document's `electedCharterId`.
 
-- The declaration is the one an identifier property carries, read by the same code (`apply_property_reference` 0), but only two targets can hold a writer: `identity`, and a `permanentDocument` found through a `lookup`, alone or as the leaves of a reference expression (above). The rest are refused, as a leaf of an expression too. `contract`, `token` and a document by id would need the writer's identity id to be a contract, token or document id, which it never is, so a document type declaring one could never be written; `identityPublicKey` pairs the value with a key id the writer does not carry. Meta-schema v3 reuses the property declaration by `$ref` and admits only those two forms; the parser (generation 3, `parse_owner_reference`, which reads the stored schema once the core parse has run the meta-schema) refuses the others on the stored path too. The parsed declaration is `DocumentTypeV2::owner_reference`, read through `DocumentTypeV2Getters::owner_reference`, and the property types are unchanged.
+- The declaration is the one an identifier property carries, read by the same code (`apply_property_reference` 0), but only three targets can hold a writer: `identity`, a `permanentDocument` found through a `lookup`, and a `listElement` (the writer an element of the list, see [An element of a list](#an-element-of-a-list-listelement)), alone or as the leaves of a reference expression (above). The rest are refused, as a leaf of an expression too. `contract`, `token` and a document by id would need the writer's identity id to be a contract, token or document id, which it never is, so a document type declaring one could never be written; `identityPublicKey` pairs the value with a key id the writer does not carry. Meta-schema v3 reuses the property declaration by `$ref` and admits only those forms; the parser (generation 3, `parse_owner_reference`, which reads the stored schema once the core parse has run the meta-schema) refuses the others on the stored path too. The parsed declaration is `DocumentTypeV2::owner_reference`, read through `DocumentTypeV2Getters::owner_reference`, and the property types are unchanged.
 - Only a document type whose documents can be neither transferred nor traded may declare it, checked on every parse. A transfer or a purchase is not a write, so it would hand the document to an owner the declaration never checked; with neither possible, the owner of every document is the writer that was checked.
 - In a `lookup`, `"."` is the writer, and a `"$ownerId"` key part is the writer as well. Every referring-side rule of a property's lookup applies unchanged (its `"$ownerId"` rule holds by the point above), and so does every referenced-side rule, for a type of the same contract at contract level and for one of another contract at registration.
 - A `propertyAgreement` works as on a property reference; its referring side may name `$ownerId`, which is then the same writer as the reference's value.
@@ -426,7 +480,7 @@ A document type whose documents can be transferred or traded declares `creatorRe
 }
 ```
 
-- It takes the same two targets, with `"."` the creator in a lookup, and is refused where `ownerRefersTo` is admitted: only a document type that records creator ids may declare it, a transferable or tradeable type of a format-1 contract (`should_use_creator_id`), checked on every parse. A type therefore declares at most one of the two. A `"$ownerId"` key part in its lookup is refused, as in a property's lookup on such a type, since the owner moves.
+- It takes the same three targets, with `"."` the creator in a lookup, and is refused where `ownerRefersTo` is admitted: only a document type that records creator ids may declare it, a transferable or tradeable type of a format-1 contract (`should_use_creator_id`), checked on every parse. A type therefore declares at most one of the two. A `"$ownerId"` key part in its lookup is refused, as in a property's lookup on such a type, since the owner moves.
 - When a document is created its creator is the writer; on a replace, the value is the stored creator, whoever writes, and the replace rules are those of its target, as for the owner reference. A transfer or a purchase needs no check. A failure is the target's error at the path `$creatorId`, and registration names the declaration `<documentType>.$creatorId`. An `identity` target reads nothing: the creator existed when it wrote the document, and an identity is never removed. It counts one against `max_references_per_document`, and a change to it is an incompatible schema change on update.
 
 ## Immutable Properties on Mutable Document Types

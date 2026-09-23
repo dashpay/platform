@@ -758,7 +758,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     incompatible schema change on update. Chained queries and composite
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
-///
 /// 33. **Reference expressions (`anyOf` / `allOf`)**: a `refersTo`, on an
 ///     identifier property or on the elements of a typed array (item 31), may
 ///     be `{ "anyOf": [operand, ...] }`, holding if at least one operand
@@ -800,7 +799,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     changed. A changed expression is an incompatible schema change on
 ///     update. Chained queries and composite by-id joins refuse an expression
 ///     join property, and preallocated indexes are never bound through one.
-///
 /// 34. **References on the document's writer or creator (`ownerRefersTo`,
 ///     `creatorRefersTo`)**: a document type may declare one `refersTo`
 ///     declaration of its own, under the doctype-level `ownerRefersTo`
@@ -851,6 +849,49 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     writer on a create and the stored creator on a replace under the same
 ///     rules, never on a transfer or a purchase, and frozen on update the same
 ///     way.
+/// 35. **References to an element of a list of a referenced document**: a
+///     new `refersTo` target, `listElement` (meta-schema v3,
+///     `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::ListElement`, so every earlier
+///     variant keeps its encoding), on an identifier property, on the
+///     elements of a typed array (item 31), as a leaf of a reference
+///     expression (item 33), or on the writer or the creator (item 34, whose
+///     identity then must be listed; a third target those two take next to
+///     `identity` and a `permanentDocument` lookup, since an identity id can
+///     be an element of a list of identities): the value must be an element
+///     of the typed array
+///     of identifiers `inList` held by one document of `documentType`, the
+///     document whose `$id` the `propertyAgreement` pair with `$id` on the
+///     referenced side reads from an identifier property of the referring
+///     type (stored, optional or not; generation 3 of the parser checks it
+///     under full validation). `$id` joins `$ownerId` and `$creatorId` as a
+///     referenced-side agreement name for every document reference. In every
+///     other respect a list element is a document reference: `contractId`,
+///     `documentType` and its other agreement pairs are checked at
+///     registration as a `permanentDocument`'s are (the type must forbid
+///     deletion), and the list must be a stored typed array of identifiers
+///     fixed once a document is written (the type is immutable or lists the
+///     list's top-level property under `immutable`).
+///     `create_document_types_from_document_schemas` 1, edited in place like
+///     for items 29 and 32 (inert before this version, where no parsed
+///     reference is a list element), checks a list in the same contract
+///     under full validation, and the contract reference validation checks
+///     one in another contract, refusing it with
+///     `ReferencedDocumentListInvalidError` (40138). The document reference
+///     validation (generation 0, reached only from this version) fetches the
+///     list's document by the `$id` pair's value, once per write and shared
+///     with any other reference of the same document (every by-id document
+///     fetch of one write is now memoized), checks the other pairs against it,
+///     and refuses a value the list does not hold, or one set while the `$id`
+///     property is not, with `ReferencedEntityNotFoundError` (40120, the list
+///     element declaration as its entity type, an element named by its list
+///     path); the list is collected once, each value a set lookup. A replace
+///     checks it again when its value or a referring side of any pair
+///     changed, as every agreement is. Each value counts against
+///     `SystemLimits::max_references_per_document` like every other
+///     reference. A changed `listElement` is an incompatible schema change on
+///     update.
+///
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

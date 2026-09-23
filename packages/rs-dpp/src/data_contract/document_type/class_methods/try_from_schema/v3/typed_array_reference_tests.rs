@@ -289,8 +289,8 @@ fn should_refuse_refers_to_on_the_typed_array_itself() {
 
 /// The rules the parse itself holds for a `propertyAgreement`, identical for
 /// an element declaration: only `$ownerId` among the referring document's
-/// system properties, only `$ownerId` and `$creatorId` among the referenced
-/// document's. Whether a named schema property exists on either side is
+/// system properties, only `$ownerId`, `$creatorId` and `$id` among the
+/// referenced document's. Whether a named schema property exists on either side is
 /// checked at registration against the referenced contract (drive-abci).
 #[test]
 fn should_refuse_an_element_property_agreement_naming_an_unusable_system_property() {
@@ -300,7 +300,7 @@ fn should_refuse_an_element_property_agreement_naming_an_unusable_system_propert
             "propertyAgreement keys must name a schema property",
         ),
         (
-            platform_value!({ "topic": "$id" }),
+            platform_value!({ "topic": "$createdAt" }),
             "propertyAgreement values must name a schema property",
         ),
     ] {

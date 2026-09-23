@@ -5,7 +5,7 @@
   "type": "object",
   "$defs": {
     "referenceOperands": {
-      "description": "The operands of a refersTo anyOf or allOf: two or more, no two alike, each a leaf or an expression of the other combinator. At most SystemLimits max_reference_operands of them in one list, and at most SystemLimits max_reference_expression_depth combinators on any path from the declaration to a leaf (4 and 4 from protocol version 14), checked at contract registration; every leaf counts against max_references_per_document, since each may be read for each value. A leaf is an identity or permanentDocument target (by id or through a lookup): both are existence checks against entities that are never deleted, so an expression of them holds for good once it holds and is re-validated on replace only when its value or a property bound to one of its leaves changes, as a single target is. The other types do not compose with other operands: deletableDocument is re-validated on every replace and may be cleared once its document is deleted, which assumes the property refers to that one target; identityPublicKey pairs the value with a key id property no other operand reads; a contract target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. A propertyAgreement belongs to its leaf and is checked only against that leaf's document. Allowed on identifier properties and on the items of a typed array of identifiers; a changed expression is an incompatible schema change on update",
+      "description": "The operands of a refersTo anyOf or allOf: two or more, no two alike, each a leaf or an expression of the other combinator. At most SystemLimits max_reference_operands of them in one list, and at most SystemLimits max_reference_expression_depth combinators on any path from the declaration to a leaf (4 and 4 from protocol version 14), checked at contract registration; every leaf counts against max_references_per_document, since each may be read for each value. A leaf is an identity, permanentDocument (by id or through a lookup) or listElement target: all are existence checks against entities that are never deleted (a list element reads a list that never changes on a document that is never deleted), so an expression of them holds for good once it holds and is re-validated on replace only when its value or a property bound to one of its leaves changes, as a single target is. The other types do not compose with other operands: deletableDocument is re-validated on every replace and may be cleared once its document is deleted, which assumes the property refers to that one target; identityPublicKey pairs the value with a key id property no other operand reads; a contract target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. A propertyAgreement belongs to its leaf and is checked only against that leaf's document. Allowed on identifier properties and on the items of a typed array of identifiers; a changed expression is an incompatible schema change on update",
       "type": "array",
       "minItems": 2,
       "uniqueItems": true,
@@ -15,7 +15,8 @@
           "type": {
             "enum": [
               "identity",
-              "permanentDocument"
+              "permanentDocument",
+              "listElement"
             ]
           },
           "identityProperty": false
@@ -157,7 +158,8 @@
                 "token",
                 "permanentDocument",
                 "identityPublicKey",
-                "deletableDocument"
+                "deletableDocument",
+                "listElement"
               ]
             },
             "anyOf": {
@@ -200,7 +202,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared",
+              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. For listElement, the document type holding the list, whose documents must forbid deletion; the document is the one the propertyAgreement's $id pair names",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -294,7 +296,7 @@
               "additionalProperties": false
             },
             "propertyAgreement": {
-              "description": "permanentDocument and deletableDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
+              "description": "permanentDocument, deletableDocument and listElement references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A listElement reference holds exactly one pair with $id on the referenced side, read from a schema identifier property (not $ownerId): it names the document whose list the value must be in",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -319,11 +321,19 @@
                   {
                     "enum": [
                       "$ownerId",
-                      "$creatorId"
+                      "$creatorId",
+                      "$id"
                     ]
                   }
                 ]
               }
+            },
+            "inList": {
+              "description": "listElement references only: the typed array of identifiers of documentType (a dotted path when nested) the value must be an element of. The document holding it is the one whose $id the propertyAgreement's $id pair reads from an identifier property of the referring document type (stored, not transient nor inside a transient object, checked at contract registration; it may be optional). At contract registration documentType must forbid deletion, and the list must be stored and fixed once a document is written: documentType is immutable (documentsMutable: false) or lists the list's top-level property under immutable, so a value accepted as an element stays one. When the referring document is created or replaced, consensus fetches that document by its id (once per write, shared with any other reference of the same document), checks the other agreement pairs against it, and requires the value (on a typed array, every element) to be an element of its list; a value that is not, or one set while the $id property is not, refuses the write with ReferencedEntityNotFoundError (40120). A replace checks it again when the value or a referring side of any pair changed, as every agreement is",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
             },
             "lookup": {
               "description": "permanentDocument references only (a key into a deletable type could find a new document once the one it found is deleted, where an id is produced at most once): the property's value is not the referenced document's id. The referenced document is the one the named unique index of the referenced document type finds for a key assembled from the referring document, and the reference holds if that document exists. index names an index of the referenced document type that is unique, carries no timeRange and does not belong to an indexOnly type; its key must stay with the document it found (every schema property of the index fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles; keys maps every property of that index (by its name on the referenced side, system ones such as $ownerId included), in any order, to where its value comes from: a property path of the referring document type, \"$ownerId\" for the referring document's owner, or \".\" for the value of the property carrying the reference (on an array element, the element), which must appear exactly once. A property a key reads must be required (and so must every object around it), not transient nor inside a transient object, and hold the same kind of value as its index property, so a lookup never runs with a missing key part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries the index for the assembled key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; propertyAgreement pairs are checked against the document found. A replace re-validates the reference when a property a key reads changed, and on every replace when a key reads $ownerId",
@@ -395,7 +405,7 @@
             {
               "if": {
                 "properties": {
-                  "type": { "enum": ["permanentDocument", "deletableDocument"] }
+                  "type": { "enum": ["permanentDocument", "deletableDocument", "listElement"] }
                 },
                 "required": ["type"]
               },
@@ -406,6 +416,20 @@
                 "properties": {
                   "contractId": false,
                   "documentType": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "type": { "const": "listElement" } },
+                "required": ["type"]
+              },
+              "then": {
+                "required": ["type", "documentType", "propertyAgreement", "inList"]
+              },
+              "else": {
+                "properties": {
+                  "inList": false
                 }
               }
             },
@@ -1746,13 +1770,14 @@
       "description": "The subset of the immutable properties a replace may still set while the stored document has no value for them: a first-time set is accepted, after which the property is frozen like the rest of the immutable list (it can neither change nor be removed). Every entry must also appear in immutable; it is only meaningful for optional properties, since a required one always has a value from creation. On contract update an entry may be dropped (tightening) at any time, but may only be added for a property that becomes immutable in the same update: an already-immutable property cannot start allowing a set. Available from protocol version 14."
     },
     "ownerRefersTo": {
-      "description": "A refersTo declaration whose value is the document's $ownerId, the writer, instead of a property's value: the declaration of an identifier property, with the same keys and the same checks, for the two targets a writer can be: identity, or a permanentDocument found through a lookup, where \".\" is the writer, or an anyOf or allOf expression whose every leaf is one of them and \"$ownerId\" names the writer as well. contract, token and a document by id are refused, since the writer's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the writer does not carry. A propertyAgreement's referring side is still a property of the document or its $ownerId, the same writer. Only on a document type whose documents can be neither transferred nor traded, so the writer stays the owner; on a type whose documents can, creatorRefersTo checks the creator instead. When a document is created, and when a replace changes a property the lookup or a propertyAgreement reads (every replace for a $ownerId agreement pair), consensus checks the writer against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $ownerId as the path. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
+      "description": "A refersTo declaration whose value is the document's $ownerId, the writer, instead of a property's value: the declaration of an identifier property, with the same keys and the same checks, for the three targets a writer can be: identity, a permanentDocument found through a lookup, where \".\" is the writer, or a listElement, the writer an element of the list, or an anyOf or allOf expression whose every leaf is one of them and \"$ownerId\" names the writer as well. contract, token and a document by id are refused, since the writer's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the writer does not carry. A propertyAgreement's referring side is still a property of the document or its $ownerId, the same writer. Only on a document type whose documents can be neither transferred nor traded, so the writer stays the owner; on a type whose documents can, creatorRefersTo checks the creator instead. When a document is created, and when a replace changes a property the lookup or a propertyAgreement reads (every replace for a $ownerId agreement pair), consensus checks the writer against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $ownerId as the path. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
       "$ref": "#/$defs/documentSchema/properties/refersTo",
       "properties": {
         "type": {
           "enum": [
             "identity",
-            "permanentDocument"
+            "permanentDocument",
+            "listElement"
           ]
         }
       },
@@ -1773,13 +1798,14 @@
       }
     },
     "creatorRefersTo": {
-      "description": "A refersTo declaration whose value is the document's $creatorId, its creator, instead of a property's value: the counterpart of ownerRefersTo for a document type whose documents can be transferred or traded, since the creator never changes. The declaration of an identifier property, with the same keys and the same checks, for the two targets a creator can be: identity, or a permanentDocument found through a lookup, where \".\" is the creator, or an anyOf or allOf expression whose every leaf is one of them. contract, token and a document by id are refused, since the creator's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the creator does not carry. A propertyAgreement's referring side is still a property of the document or its $ownerId, the writer. Only on a document type that records creator ids: a transferable or tradeable document type of a format-1 contract; a type declares at most one of ownerRefersTo and creatorRefersTo. When a document is created (by its creator) and when a replace changes a property the lookup or a propertyAgreement reads (every replace for a $ownerId agreement pair), consensus checks the creator against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $creatorId as the path. A transfer or a purchase needs no check: it does not change the creator. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
+      "description": "A refersTo declaration whose value is the document's $creatorId, its creator, instead of a property's value: the counterpart of ownerRefersTo for a document type whose documents can be transferred or traded, since the creator never changes. The declaration of an identifier property, with the same keys and the same checks, for the three targets a creator can be: identity, a permanentDocument found through a lookup, where \".\" is the creator, or a listElement, the creator an element of the list, or an anyOf or allOf expression whose every leaf is one of them. contract, token and a document by id are refused, since the creator's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the creator does not carry. A propertyAgreement's referring side is still a property of the document or its $ownerId, the writer. Only on a document type that records creator ids: a transferable or tradeable document type of a format-1 contract; a type declares at most one of ownerRefersTo and creatorRefersTo. When a document is created (by its creator) and when a replace changes a property the lookup or a propertyAgreement reads (every replace for a $ownerId agreement pair), consensus checks the creator against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $creatorId as the path. A transfer or a purchase needs no check: it does not change the creator. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
       "$ref": "#/$defs/documentSchema/properties/refersTo",
       "properties": {
         "type": {
           "enum": [
             "identity",
-            "permanentDocument"
+            "permanentDocument",
+            "listElement"
           ]
         }
       },

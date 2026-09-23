@@ -150,6 +150,7 @@ type Reference = {
   identityProperty?: string;
   propertyAgreement?: Record<string, string>;
   lookup?: { index: string; keys: Record<string, string> };
+  inList?: string;
 };
 
 /**
@@ -451,6 +452,80 @@ describe('DataContract — refersTo declarations (v14)', () => {
       });
 
       expect(build).to.throw(/is not unique/);
+    });
+  });
+
+  describe('listElement', () => {
+    /**
+     * An `electedCharter` that can be neither deleted nor replaced holds its
+     * `members`, and a `resignation` names its charter (`electedCharterId`)
+     * and a `memberId` that must be one of that charter's members.
+     */
+    const listElementSchemas = {
+      electedCharter: {
+        type: 'object',
+        canBeDeleted: false,
+        // The list must be fixed once the charter is written
+        documentsMutable: false,
+        properties: {
+          members: {
+            type: 'array',
+            maxItems: 15,
+            items: {
+              type: 'array',
+              byteArray: true,
+              minItems: 32,
+              maxItems: 32,
+              contentMediaType: 'application/x.dash.dpp.identifier',
+            },
+            position: 0,
+          },
+        },
+        required: ['members'],
+        additionalProperties: false,
+      },
+      resignation: {
+        type: 'object',
+        properties: {
+          electedCharterId: plainIdentifier,
+          memberId: identifierProperty(1, {
+            type: 'listElement',
+            documentType: 'electedCharter',
+            propertyAgreement: { electedCharterId: '$id' },
+            inList: 'members',
+          }),
+        },
+        required: ['electedCharterId'],
+        additionalProperties: false,
+      },
+    };
+    const buildListElementContract = (schemas: object) => new wasm.DataContract({
+      ownerId,
+      identityNonce: BigInt(2),
+      schemas,
+      definitions: null,
+      fullValidation: true,
+      platformVersion: new PlatformVersion(14),
+    });
+
+    it('should carry the list and the agreement pair naming its document', () => {
+      const contract = buildListElementContract(listElementSchemas);
+      const member = (contract.documentTypeReferences('resignation') as Reference[]).find(
+        (reference) => reference.path === 'memberId',
+      )!;
+
+      expect(member.type).to.equal('listElement');
+      expect(member.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(member.documentType).to.equal('electedCharter');
+      expect(member.propertyAgreement).to.deep.equal({ electedCharterId: '$id' });
+      expect(member.inList).to.equal('members');
+    });
+
+    it('should refuse a list the document holding it can replace', () => {
+      const replaceable = structuredClone(listElementSchemas);
+      replaceable.electedCharter.documentsMutable = true;
+
+      expect(() => buildListElementContract(replaceable)).to.throw(/can be changed by a replace/);
     });
   });
 
@@ -784,6 +859,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedContractRequirementNotMet).to.equal(40135);
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentListInvalid).to.equal(40138);
     });
 
     it('should resolve a code back to its name', () => {

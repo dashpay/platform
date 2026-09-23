@@ -36,12 +36,16 @@ use bincode::{BorrowDecode, BorrowDecodeUntrusted, Decode, DecodeUntrusted, Enco
 use serde::Serialize;
 use std::cell::Cell;
 
-/// The `type` values a leaf of a reference expression may declare.
+/// The `type` values a leaf of a reference expression may declare: existence
+/// checks against entities that are never deleted (`listElement` reads a
+/// list that never changes on a document that is never deleted, so it holds
+/// for good once it holds, as the other two do).
 ///
 /// Read by `apply_property_reference` 0 (protocol version 14). Admitting
 /// another type once that version is released takes a new generation of the
 /// parser (and a new meta-schema), not an edit here.
-pub const COMBINABLE_REFERENCE_TARGET_TYPES: [&str; 2] = ["identity", "permanentDocument"];
+pub const COMBINABLE_REFERENCE_TARGET_TYPES: [&str; 3] =
+    ["identity", "permanentDocument", "listElement"];
 
 /// The deepest nesting of `anyOf` and `allOf` a decoder accepts. It only keeps
 /// crafted bytes from driving the decoder into unbounded recursion: the

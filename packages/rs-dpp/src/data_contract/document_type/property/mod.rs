@@ -20,7 +20,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::DataContract;
-use crate::document::property_names::{CREATOR_ID, OWNER_ID};
+use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::{IdentityPublicKey, Purpose};
@@ -41,10 +41,12 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod list_element_reference;
 pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use list_element_reference::ListElementReference;
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
@@ -877,11 +879,30 @@ pub enum DocumentPropertyReferenceTarget {
     /// read is billed. Otherwise as [`Self::AnyOf`].
     #[serde(rename = "allOf")]
     AllOf(ReferenceOperands),
+    /// An element of a list: the value must be one of the identifiers the
+    /// typed array [`ListElementReference::in_list`] holds on the one
+    /// document of a permanent document type that agrees with the referring
+    /// document on every `propertyAgreement` pair, found by the pair whose
+    /// referenced side is `$id`. A document reference in every other respect
+    /// ([`Self::as_any_document_reference`] carries it with `in_list` set):
+    /// the value is neither the document's id nor a lookup key, so
+    /// [`Self::as_document_reference`] leaves it out. The list's document can
+    /// never be deleted and its list never changes (checked at registration),
+    /// so an accepted value stays an element for good. Appended, so every
+    /// earlier variant keeps its consensus encoding.
+    #[serde(rename = "listElement")]
+    ListElement(ListElementReference),
 }
 
-/// The declaration content the two document reference targets,
+/// The declaration content every document reference target shares:
 /// [`DocumentPropertyReferenceTarget::PermanentDocument`] and
-/// [`DocumentPropertyReferenceTarget::DeletableDocument`], share.
+/// [`DocumentPropertyReferenceTarget::DeletableDocument`], whose value is the
+/// referenced document's id, [`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]
+/// (`lookup` set), whose value is one part of a key, and
+/// [`DocumentPropertyReferenceTarget::ListElement`] (`in_list` set), whose
+/// value is an element of the referenced document's list. Only
+/// [`DocumentPropertyReferenceTarget::as_document_reference`] promises the
+/// value is a document id.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct DocumentReferenceDeclaration<'a> {
     /// The contract the referenced document type lives in; `None` means
@@ -892,7 +913,8 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// The `{referring property: referenced property}` equalities
     pub property_agreement: &'a BTreeMap<String, String>,
     /// Whether the referenced document type must forbid deletion
-    /// (`permanentDocument`) or must allow it (`deletableDocument`)
+    /// (`permanentDocument`, by id or through a lookup, and `listElement`)
+    /// or must allow it (`deletableDocument`)
     pub permanent: bool,
     /// How the referenced document is found when the value is not its id
     /// ([`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]); `None`
@@ -900,23 +922,31 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
     /// returns a declaration carrying one.
     pub lookup: Option<&'a DocumentReferenceLookup>,
+    /// The typed array of identifiers the value must be an element of
+    /// ([`DocumentPropertyReferenceTarget::ListElement`]); `None` when the
+    /// value is the referenced document's id or a lookup key part. Only
+    /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
+    /// returns a declaration carrying one.
+    pub in_list: Option<&'a str>,
 }
 
 impl DocumentPropertyReferenceTarget {
     /// The declaration of a reference whose value is a DOCUMENT's id, of
-    /// either kind; `None` for every other target, a lookup reference
-    /// included, whose value is not a document id. This is the accessor for
-    /// code that treats the value as the referenced document's `$id` (by-id
-    /// joins); code that validates every kind of document reference uses
-    /// [`Self::as_any_document_reference`].
+    /// either kind; `None` for every other target, a lookup reference or a
+    /// list element included, whose value is not a document id. This is the
+    /// accessor for code that treats the value as the referenced document's
+    /// `$id` (by-id joins); code that validates every kind of document
+    /// reference uses [`Self::as_any_document_reference`].
     pub fn as_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
         self.as_any_document_reference()
-            .filter(|declaration| declaration.lookup.is_none())
+            .filter(|declaration| declaration.lookup.is_none() && declaration.in_list.is_none())
     }
 
     /// The declaration of any reference to a DOCUMENT: of either kind, and
-    /// found by its id or through a `lookup` (then `lookup` is `Some`, and
-    /// the value is not the document's id). `None` for every other target.
+    /// found by its id, through a `lookup` (then `lookup` is `Some`, and the
+    /// value is not the document's id) or by a `$id` agreement pair with the
+    /// value an element of its list (then `in_list` is `Some`). `None` for
+    /// every other target.
     pub fn as_any_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
         match self {
             DocumentPropertyReferenceTarget::PermanentDocument {
@@ -929,6 +959,7 @@ impl DocumentPropertyReferenceTarget {
                 property_agreement,
                 permanent: true,
                 lookup: None,
+                in_list: None,
             }),
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id,
@@ -941,6 +972,7 @@ impl DocumentPropertyReferenceTarget {
                 property_agreement,
                 permanent: true,
                 lookup: Some(lookup),
+                in_list: None,
             }),
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id,
@@ -952,13 +984,33 @@ impl DocumentPropertyReferenceTarget {
                 property_agreement,
                 permanent: false,
                 lookup: None,
+                in_list: None,
             }),
+            DocumentPropertyReferenceTarget::ListElement(reference) => {
+                Some(DocumentReferenceDeclaration {
+                    contract_id: reference.contract_id,
+                    document_type_name: &reference.document_type_name,
+                    property_agreement: &reference.property_agreement,
+                    permanent: true,
+                    lookup: None,
+                    in_list: Some(&reference.in_list),
+                })
+            }
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
             | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
             | DocumentPropertyReferenceTarget::AnyOf(_)
             | DocumentPropertyReferenceTarget::AllOf(_) => None,
+        }
+    }
+
+    /// The declaration of a `listElement` reference; `None` for every other
+    /// target.
+    pub fn as_list_element_reference(&self) -> Option<&ListElementReference> {
+        match self {
+            DocumentPropertyReferenceTarget::ListElement(reference) => Some(reference),
+            _ => None,
         }
     }
 
@@ -1159,12 +1211,14 @@ impl<'a> DocumentTypeRef<'a> {
 /// The system properties of a referenced document that the referenced side
 /// of a `propertyAgreement` pair may name, next to the referenced document
 /// type's schema properties: `$ownerId`, the current owner (which follows
-/// the document through transfers), and `$creatorId`, the original creator
+/// the document through transfers), `$creatorId`, the original creator
 /// (set once, and only recorded by transferable or tradeable document types
-/// of a format-1 contract). Both are identifiers, so the referring side must
-/// be an identifier property. The referring side is a schema property or
-/// the writer's own `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
-pub const REFERENCED_SYSTEM_AGREEMENT_PROPERTIES: [&str; 2] = [OWNER_ID, CREATOR_ID];
+/// of a format-1 contract), and `$id`, the document's own id, which never
+/// changes (a `listElement` reference finds its document by such a pair).
+/// All are identifiers, so the referring side must be an identifier
+/// property. The referring side is a schema property or the writer's own
+/// `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
+pub const REFERENCED_SYSTEM_AGREEMENT_PROPERTIES: [&str; 3] = [OWNER_ID, CREATOR_ID, ID];
 
 /// Whether `name` is one of [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referenced_system_agreement_property(name: &str) -> bool {
@@ -1274,6 +1328,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 document_type_name,
                 ..
             } => write_document_reference(f, "deletable", *contract_id, document_type_name, None),
+            DocumentPropertyReferenceTarget::ListElement(reference) => reference.fmt(f),
             DocumentPropertyReferenceTarget::AnyOf(operands)
             | DocumentPropertyReferenceTarget::AllOf(operands) => {
                 let (name, joiner) = match self {
@@ -10202,6 +10257,12 @@ mod tests {
                     property_agreement: Default::default(),
                 },
             ])),
+            DocumentPropertyReferenceTarget::ListElement(ListElementReference {
+                contract_id: None,
+                document_type_name: "electedCharter".to_string(),
+                property_agreement: [("electedCharterId".to_string(), "$id".to_string())].into(),
+                in_list: "members".to_string(),
+            }),
         ];
 
         for target in &targets {
@@ -10217,6 +10278,7 @@ mod tests {
                     "permanentDocument"
                 }
                 // Not a `type`: the schema declares them under their own keys
+                DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
                 DocumentPropertyReferenceTarget::AnyOf(_) => "anyOf",
                 DocumentPropertyReferenceTarget::AllOf(_) => "allOf",
             };

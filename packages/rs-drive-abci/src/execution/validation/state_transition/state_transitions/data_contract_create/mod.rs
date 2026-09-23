@@ -6081,6 +6081,29 @@ mod tests {
             );
         }
 
+        /// `$id`, the referenced document's own id, is an identifier like
+        /// `$ownerId` and `$creatorId`: an agreement pair facing it with a
+        /// string could never hold.
+        #[tokio::test]
+        async fn should_reject_an_id_agreement_facing_a_non_identifier_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-id-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referring_property() == "authorId"
+                    && e.referenced_property() == "$id"
+                    && e.reason().contains("$ownerId, $creatorId and $id are identifiers")
+            );
+        }
+
         /// `{ "$ownerId": "$ownerId" }` makes the writer the referring side:
         /// only the note's current owner may write a message on it.
         #[tokio::test]
@@ -6406,6 +6429,73 @@ mod tests {
                     )),
                     ..
                 } if message.contains("index \"byCharter\" of \"ballot\" is not unique")
+            );
+        }
+
+        /// The contract whose immutable, permanent `electedCharter` type holds the
+        /// `members` list the list element registration fixtures read from another
+        /// contract.
+        const LIST_ELEMENT_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element.json";
+
+        #[tokio::test]
+        async fn should_register_a_list_element_reading_a_list_of_another_contract() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-registration-foreign-valid.json",
+                LIST_ELEMENT_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_list_element_naming_a_property_of_another_contract_that_is_no_list(
+        ) {
+            // Only registration sees the other contract's document type: the
+            // contract parse cannot, so this is a state error
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-registration-foreign-not-a-list.json",
+                LIST_ELEMENT_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentListInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "ballot.voterId"
+                    && e.in_list() == "submittedCharterId"
+                    && e.reason().contains("is not a typed array of identifiers")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_list_element_reading_a_replaceable_list_of_the_same_contract() {
+            // The contract parse sees the list's document type of the same
+            // contract, and refuses the declaration before any state is read
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-registration-own-mutable.json",
+                LIST_ELEMENT_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains(
+                    "refersTo listElement: \"members\" of \"electedCharter\" can be changed by a replace"
+                )
             );
         }
     }

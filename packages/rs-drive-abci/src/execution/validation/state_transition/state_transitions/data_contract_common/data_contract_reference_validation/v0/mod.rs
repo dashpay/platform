@@ -9,6 +9,7 @@ use dpp::data_contract::document_type::{
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
+use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
@@ -53,6 +54,13 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// references are checked against the in-flight contract, so a contract may
 /// reference its own document types on creation; foreign contract fetches are
 /// billed.
+///
+/// `listElement`: a document reference like `permanentDocument` (same
+/// checks, the type must forbid deletion, `$id` admitted on the referenced
+/// side of a pair), plus, for a list in a document type of another contract,
+/// that `inList` is a stored typed array of identifiers fixed once a document
+/// is written. One in the declaring contract was checked by the contract
+/// parse.
 ///
 /// `identityPublicKey`: the declared key id property must exist in the same
 /// document type and be an integer.
@@ -316,6 +324,7 @@ fn validate_reference_target_declaration_v0(
         property_agreement,
         permanent,
         lookup,
+        in_list,
     }) = reference_target.as_any_document_reference()
     else {
         return Ok(SimpleConsensusValidationResult::new());
@@ -438,6 +447,28 @@ fn validate_reference_target_declaration_v0(
         }
     }
 
+    // A list element's list, in a document type of another contract: a
+    // stored typed array of identifiers fixed once a document is written (the
+    // type is permanent, checked above). The contract parse checks a list in
+    // the declaring contract under full validation, where it sees every
+    // document type; only here is another contract's document type in hand.
+    // The `$id` pair naming the list's document was checked by the parse, and
+    // the other pairs are checked below as every agreement is
+    if let (Some(_), Some(reference)) = (in_list, reference_target.as_list_element_reference()) {
+        if effective_contract_id != contract.id() {
+            if let Some(reason) = reference.referenced_side_error(referenced_document_type) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ReferencedDocumentListInvalidError::new(
+                        declaration_path,
+                        reference.in_list.clone(),
+                        reason,
+                    )
+                    .into(),
+                ));
+            }
+        }
+    }
+
     // propertyAgreement declarations: both sides must exist, be
     // plain values (not containers), and share one value kind — a
     // cross-kind equality could never be satisfied and would brick
@@ -494,7 +525,7 @@ fn validate_reference_target_declaration_v0(
         if referenced_property.starts_with('$') {
             if !is_referenced_system_agreement_property(referenced_property) {
                 return Ok(invalid(
-                    "only the referenced document's $ownerId and $creatorId system \
+                    "only the referenced document's $ownerId, $creatorId and $id system \
                      properties may be agreed with",
                 ));
             }
@@ -503,7 +534,7 @@ fn validate_reference_target_declaration_v0(
                 DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
             ) {
                 return Ok(invalid(
-                    "$ownerId and $creatorId are identifiers, so the referring \
+                    "$ownerId, $creatorId and $id are identifiers, so the referring \
                      property must be an identifier",
                 ));
             }

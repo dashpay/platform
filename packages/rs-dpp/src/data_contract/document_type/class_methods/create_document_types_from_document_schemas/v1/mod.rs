@@ -224,6 +224,62 @@ impl DocumentType {
             }
         }
 
+        // Protocol version 14 and later: a `refersTo: listElement` whose list lives in a
+        // document type of this contract must find a list there that holds identifiers and
+        // never changes: its documents cannot be deleted, `inList` is a stored typed array of
+        // identifiers of it, and the list is fixed once a document is written (see
+        // `ListElementReference::referenced_side_error`). The `$id` pair naming the list's
+        // document was checked by the document type parse under full validation, and the
+        // other agreement pairs are checked at registration as every agreement is; a list in
+        // another contract is checked against that contract's state at registration, and one
+        // in a document type this contract does not have is left to the reference validation,
+        // which reports it. A leaf of a reference expression is judged as it would be alone.
+        //
+        // Inert for every protocol version before 14 for the same reason as the checks above:
+        // a parsed reference is a `listElement` only where the tables carry
+        // `apply_property_reference: Some(_)`, so the loop below finds none there.
+        for (name, document_type) in &contract_document_types {
+            let declaring = document_type.as_ref();
+            // On the writer or the creator, on an identifier property or on the elements of
+            // a typed array
+            for (holder, declaration) in declaring.reference_declarations() {
+                let Some(declaration) = declaration.target() else {
+                    continue;
+                };
+                for (leaf_path, target) in declaration.leaves_with_paths() {
+                    let Some(reference) = target.as_list_element_reference() else {
+                        continue;
+                    };
+                    if reference
+                        .contract_id
+                        .is_some_and(|contract_id| contract_id != data_contract_id)
+                    {
+                        continue;
+                    }
+                    let Some(referenced_document_type) =
+                        contract_document_types.get(&reference.document_type_name)
+                    else {
+                        continue;
+                    };
+                    if let Some(reason) =
+                        reference.referenced_side_error(referenced_document_type.as_ref())
+                    {
+                        let at = if leaf_path.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {leaf_path}")
+                        };
+                        return Err(consensus_or_protocol_data_contract_error(
+                            DataContractError::InvalidContractStructure(format!(
+                                "document type \"{name}\" {}{at} listElement: {reason}",
+                                holder.describe()
+                            )),
+                        ));
+                    }
+                }
+            }
+        }
+
         Ok(contract_document_types)
     }
 }

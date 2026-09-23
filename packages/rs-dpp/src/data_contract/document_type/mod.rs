@@ -132,6 +132,10 @@ pub(crate) mod property_names {
     pub const LOOKUP_INDEX: &str = "index";
     /// `lookup`: every index property mapped to its referring-side source.
     pub const LOOKUP_KEYS: &str = "keys";
+    /// `refersTo: listElement`: the typed array of identifiers, on the
+    /// referenced document type, the value must be an element of.
+    /// Meta-schema v3+ (protocol version 14).
+    pub const IN_LIST: &str = "inList";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
