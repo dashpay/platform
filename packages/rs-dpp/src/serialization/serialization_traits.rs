@@ -99,6 +99,52 @@ pub trait PlatformDeserializableUntrusted {
         Self: Sized;
 }
 
+/// [`PlatformDeserializableUntrusted`] that also refuses bytes left over after the value.
+///
+/// The derived untrusted decoders discard how many bytes they consumed, so any suffix after a
+/// valid value is silently ignored. A caller that shows a user what the bytes contain and then
+/// signs them must know the value is all there is.
+///
+/// Decodes with the same configuration the derive emits for `unversioned` types without `into`,
+/// bounded by [`UNTRUSTED_EXACT_DECODE_LIMIT`] (the `StateTransition` wire limit) because the
+/// input is untrusted.
+pub trait PlatformDeserializableUntrustedExact: Sized {
+    fn deserialize_from_bytes_untrusted_exact(data: &[u8]) -> Result<Self, ProtocolError>;
+}
+
+/// Byte budget of [`PlatformDeserializableUntrustedExact`]; the `StateTransition` wire limit.
+pub const UNTRUSTED_EXACT_DECODE_LIMIT: usize = 100_000;
+
+impl<T: bincode::DecodeUntrusted<()>> PlatformDeserializableUntrustedExact for T {
+    fn deserialize_from_bytes_untrusted_exact(data: &[u8]) -> Result<Self, ProtocolError> {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_limit::<UNTRUSTED_EXACT_DECODE_LIMIT>();
+        let (value, consumed) =
+            bincode::decode_from_slice_untrusted(data, config).map_err(|e| match e {
+                bincode::error::DecodeError::Io { .. }
+                | bincode::error::DecodeError::LimitExceeded => {
+                    ProtocolError::MaxEncodedBytesReachedError {
+                        max_size_kbytes: UNTRUSTED_EXACT_DECODE_LIMIT,
+                        size_hit: data.len(),
+                    }
+                }
+                _ => ProtocolError::PlatformDeserializationError(format!(
+                    "unable to deserialize {}: {e}",
+                    std::any::type_name::<T>()
+                )),
+            })?;
+        if consumed != data.len() {
+            return Err(ProtocolError::PlatformDeserializationError(format!(
+                "unable to deserialize {}: {} bytes left over after the value",
+                std::any::type_name::<T>(),
+                data.len() - consumed
+            )));
+        }
+        Ok(value)
+    }
+}
+
 /// We will deserialize a versioned structure into a code structure
 /// For example we have DataContractV0 and DataContractV1
 /// The system version will tell which version to deserialize into
