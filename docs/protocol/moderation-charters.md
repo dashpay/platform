@@ -107,8 +107,11 @@ the member. A member with no such request refuses the create with
 Indexes: `byTargetContract`, the contested index below, and
 `bySubmittedCharter` (`submittedCharterId`), which lists the elected charters
 of a proposal. It is not unique: a type with a contested unique index may carry
-no other unique index, so a leader may enter one proposal more than once, each
-time with its own team and its own contest fee.
+no other unique index. None is needed: an identity may be a contestant once
+per contest (`DocumentContestIdentityAlreadyContestantError`), every entry of a
+proposal lands in its target's contest, and only the proposal's owner may
+enter, so a proposal has at most one contender at a time. Contenders live in
+the contest until it is awarded, so this index lists seated charters only.
 
 ## The contest
 

@@ -68,8 +68,10 @@ keyed by the target contract with resolution `1`, the vote without a Lock
 choice by masternodes (weight 1) and evonodes (weight 4): a create on it
 opens or joins the contest, a tie goes to the earliest applicant, and a
 single applicant is seated when the join window closes. `bySubmittedCharter`
-lists the elected charters of a proposal; it cannot be unique, since a type
-with a contested unique index may carry no other unique index. The seated
+lists the elected charters of a proposal. It is not unique: a type with a
+contested unique index may carry no other unique index, and none is needed,
+since an identity may contend once per contest and only the proposal's owner
+may enter it, so a proposal has at most one contender at a time. The seated
 leader and members act with the target's full mandate; there are no powers.
 
 | Property | Type | Meaning |
