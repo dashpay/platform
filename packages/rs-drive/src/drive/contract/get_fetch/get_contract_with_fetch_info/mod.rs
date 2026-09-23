@@ -185,6 +185,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::contract::tests::setup_reference_contract;
+    use crate::drive::contract::DataContractFetchInfo;
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -285,6 +286,53 @@ mod tests {
         );
 
         assert!(result.1.is_none());
+    }
+
+    #[test]
+    fn should_bill_a_cached_contract_from_its_cost_not_from_the_fee_it_carries() {
+        let (drive, contract) = setup_reference_contract();
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).expect("should create epoch");
+        let contract_id = contract.id().to_buffer();
+        let contracts = &drive.cache.data_contracts;
+
+        contracts.clear();
+        let (cold_fee, fetch_info) = drive
+            .get_contract_with_fetch_info_and_fee(
+                contract_id,
+                Some(&epoch),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("should get contract");
+        let cold_fee = cold_fee.expect("should have a fee");
+        let fetch_info = fetch_info.expect("should be present");
+
+        // An entry cached under another fee schedule carries a fee the read no longer costs.
+        let stale_fee = FeeResult::new_from_processing_fee(1);
+        assert_ne!(stale_fee, cold_fee);
+        contracts.insert_committed(
+            Arc::new(DataContractFetchInfo {
+                fee: Some(stale_fee.clone()),
+                ..(*fetch_info).clone()
+            }),
+            contracts.committed_generation(),
+        );
+        let cached = contracts.get(contract_id, false).expect("should be cached");
+        assert_eq!(cached.fee, Some(stale_fee));
+
+        let (warm_fee, _) = drive
+            .get_contract_with_fetch_info_and_fee(
+                contract_id,
+                Some(&epoch),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("should get contract");
+
+        assert_eq!(warm_fee, Some(cold_fee));
     }
 
     #[test]

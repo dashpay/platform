@@ -22,15 +22,23 @@ pub struct DataContractFetchInfo {
     /// The contract's potential storage flags
     pub storage_flags: Option<StorageFlags>,
     /// These are the operations that are used to fetch a contract
-    /// This is only used on epoch change
+    /// A read served from the cache is billed from this cost
     pub(crate) cost: OperationCost,
-    /// The fee is updated every epoch based on operation costs
-    /// Except if protocol version has changed in which case all the cache is cleared
-    pub fee: Option<FeeResult>,
+    /// The fee of the read that built this entry, when it was built with an epoch. It is never
+    /// billed once the entry is cached: entries are cached with and without one, and the cache
+    /// outlives a change of fee schedule. A read is billed from the fee
+    /// `Drive::get_contract_with_fetch_info_and_fee` returns.
+    pub(crate) fee: Option<FeeResult>,
 }
 
 #[cfg(feature = "fixtures-and-mocks")]
 impl DataContractFetchInfo {
+    /// This should ONLY be used for tests: whether this entry carries the fee of the read that
+    /// built it. Never bill it.
+    pub fn has_fee_for_tests(&self) -> bool {
+        self.fee.is_some()
+    }
+
     /// This should ONLY be used for tests
     pub fn dpns_contract_fixture(protocol_version: u32) -> Self {
         let dpns = get_dpns_data_contract_fixture(None, 0, protocol_version);

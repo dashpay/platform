@@ -382,14 +382,10 @@ fn claim_by(claimant: &Actor, epoch_index: EpochIndex) -> Option<ContractFeePotL
 }
 
 /// What `execution` was billed, whether it succeeded or was a paid refusal
-fn fees(execution: &StateTransitionExecutionResult) -> FeeResult {
+fn fees(execution: &StateTransitionExecutionResult) -> &FeeResult {
     match execution {
-        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
-            fee_result.clone()
-        }
-        StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => {
-            actual_fees.clone()
-        }
+        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => fee_result,
+        StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => actual_fees,
         other => panic!("expected a paid result, got {other:?}"),
     }
 }
@@ -665,9 +661,11 @@ async fn should_leave_the_moderators_pot_of_an_unmoderated_contract_to_nobody() 
 #[tokio::test]
 async fn should_refuse_a_claim_on_an_unknown_contract_and_charge_for_the_lookup() {
     let setup = Setup::new(Team::TwoModerators).await;
+    let unknown_contract_id = Identifier::from([0x55; 32]);
+    let nonce = setup.moderator_a.next_contract_nonce.get();
     let claim = claim_of(
         &setup.moderator_a,
-        Identifier::from([0x55; 32]),
+        unknown_contract_id,
         ContractFeePot::Moderators,
     )
     .await;
@@ -688,6 +686,21 @@ async fn should_refuse_a_claim_on_an_unknown_contract_and_charge_for_the_lookup(
         setup.credits(&setup.moderator_a, Some(&transaction)),
         credits_before - gas
     );
+    // The refusal used up the claimant's nonce for that contract id.
+    assert_eq!(
+        setup
+            .platform
+            .drive
+            .fetch_identity_contract_nonce(
+                setup.moderator_a.id().to_buffer(),
+                unknown_contract_id.to_buffer(),
+                true,
+                Some(&transaction),
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch the nonce"),
+        Some(nonce)
+    );
 }
 
 #[tokio::test]
@@ -703,7 +716,7 @@ async fn should_bill_a_claim_the_same_whether_its_contract_is_cached_or_not() {
         let transaction = setup.platform.drive.grove.start_transaction();
         let result = setup.process(&claim, 1, &transaction);
         assert_success(&result);
-        fees(&result)
+        fees(&result).clone()
     };
 
     // A node that executed the contract create: the cache refresh after the write stored the
@@ -711,7 +724,7 @@ async fn should_bill_a_claim_the_same_whether_its_contract_is_cached_or_not() {
     let cached = contracts
         .get(contract_id, true)
         .expect("expected the create to cache the contract");
-    assert_eq!(cached.fee, None);
+    assert!(!cached.has_fee_for_tests());
     let as_the_create_left_it = claim_fees();
 
     // A node whose committed cache a getDocuments query filled, also without a fee, which
@@ -722,8 +735,28 @@ async fn should_bill_a_claim_the_same_whether_its_contract_is_cached_or_not() {
     let cached = contracts
         .get(contract_id, true)
         .expect("expected the query to cache the contract");
-    assert_eq!(cached.fee, None);
+    assert!(!cached.has_fee_for_tests());
     let after_a_query = claim_fees();
+
+    // A node that cached the contract with the fee of its read, in an earlier epoch, as the
+    // validation of a contract update does.
+    contracts.clear();
+    setup
+        .platform
+        .drive
+        .get_contract_with_fetch_info_and_fee(
+            contract_id,
+            Some(&Epoch::new(0).expect("expected an epoch")),
+            true,
+            None,
+            PlatformVersion::latest(),
+        )
+        .expect("expected to read the contract");
+    let cached = contracts
+        .get(contract_id, true)
+        .expect("expected the read to cache the contract");
+    assert!(cached.has_fee_for_tests());
+    let with_a_fee = claim_fees();
 
     // A node that restarted, evicted the contract or joined late.
     contracts.clear();
@@ -732,6 +765,7 @@ async fn should_bill_a_claim_the_same_whether_its_contract_is_cached_or_not() {
 
     assert_eq!(as_the_create_left_it, cold);
     assert_eq!(after_a_query, cold);
+    assert_eq!(with_a_fee, cold);
 }
 
 #[tokio::test]
