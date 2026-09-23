@@ -893,6 +893,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     update.
 ///
 ///
+/// 33. **The DashPay contact request declares its checks**: DashPay v2's
+///     `contactRequest.toUserId` carries `distinctFrom: "$ownerId"` and an
+///     `identityPublicKey` `refersTo` naming `recipientKeyIndex`, and
+///     `encryptedPublicKey` and `encryptedAccountLabel` declare `encryptedFor`
+///     (`ecdh-secp256k1-aes256-cbc`, recipient `toUserId`, keys
+///     `recipientKeyIndex` and `senderKeyIndex`, which gain `maximum`
+///     4294967295). Data trigger bindings 2 (edited in place, only selected
+///     from this version) drop the contact request create trigger, whose two
+///     checks the declarations now make: a request to oneself is refused with
+///     `DocumentPropertyNotDistinctError` (10419) instead of a
+///     `DataTriggerConditionError`, and one to a missing identity with
+///     `ReferencedIdentityKeyNotFoundError` (40123). New from this version: the
+///     recipient must hold the named key (40123) and it must not be disabled
+///     (40124), and both encrypted fields must be an IV plus whole AES blocks
+///     (10420). No `keyRequirements`: most testnet contact requests use an
+///     unbound encryption key for both indexes. DashPay keeps
+///     `sizedIntegerTypes` off, so both key indexes stay stored as i64.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -981,7 +999,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33) and declares the contact request checks (item 33); withdrawals v2 admits the terminal FAILED status
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.

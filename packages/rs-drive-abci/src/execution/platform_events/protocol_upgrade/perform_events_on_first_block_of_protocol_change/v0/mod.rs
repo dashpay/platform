@@ -1551,7 +1551,7 @@ mod tests {
     /// payment address fields, and the legacy profile bytes must stay readable
     /// through normal Drive queries against the refreshed contract.
     #[tokio::test]
-    async fn test_protocol_change_v13_to_v14_upgrades_dashpay_and_keeps_v1_profiles_readable() {
+    async fn test_protocol_change_v13_to_v14_upgrades_dashpay_and_keeps_v1_documents_readable() {
         use crate::execution::validation::state_transition::tests::setup_identity;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
         use assert_matches::assert_matches;
@@ -1561,9 +1561,10 @@ mod tests {
         use dpp::data_contract::document_type::random_document::{
             CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
         };
-        use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+        use dpp::data_contract::DataContract;
+        use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
         use dpp::identity::accessors::IdentityGettersV0;
-        use dpp::platform_value::Bytes32;
+        use dpp::platform_value::{Bytes32, Value};
         use dpp::serialization::PlatformSerializable;
         use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
         use dpp::state_transition::batch_transition::BatchTransition;
@@ -1653,6 +1654,115 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit");
+
+        // A v1 contact request and a v1 contact info. DashPay stores integers as
+        // i64 (no sized integer types) and v2 replaces v1 in place without the
+        // contract update checks, so v2 must read both back unchanged
+        let (recipient, ..) = setup_identity(&mut platform, 495, dash_to_credits!(0.1));
+        let mut contact_transitions = vec![];
+        for (nonce, document_type_name) in [(3, "contactRequest"), (4, "contactInfo")] {
+            let document_type = dashpay_v1
+                .document_type_for_name(document_type_name)
+                .expect("expected the document type");
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let mut document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version_13,
+                )
+                .expect("expected a random v1 document");
+            document
+                .set_id_for_creation(document_type, &entropy.0, nonce, platform_version_13)
+                .expect("expected to set the document id");
+            // Random i64 integers ignore the schema's `minimum`, so the
+            // integers are set; `accountReference` takes all eight bytes
+            if document_type_name == "contactRequest" {
+                // the v1 contact request trigger requires an existing recipient
+                document.set("toUserId", Value::Identifier(recipient.id().to_buffer()));
+                document.set("senderKeyIndex", Value::I64(1));
+                document.set("recipientKeyIndex", Value::I64(0));
+                document.set("accountReference", Value::I64(1 << 40));
+            } else {
+                document.set("rootEncryptionKeyIndex", Value::I64(3));
+                document.set("derivationEncryptionKeyIndex", Value::I64(5));
+            }
+            contact_transitions.push(
+                BatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    document_type,
+                    entropy.0,
+                    &key,
+                    nonce,
+                    0,
+                    None,
+                    &signer,
+                    platform_version_13,
+                    None,
+                )
+                .await
+                .expect("expect to create documents batch transition")
+                .serialize_to_bytes()
+                .expect("expected serialized transition"),
+            );
+        }
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &contact_transitions,
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version_13,
+                false,
+                None,
+            )
+            .expect("expected to process state transitions");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let stored_documents = |contract: &DataContract,
+                                document_type_name: &str,
+                                platform_version: &PlatformVersion|
+         -> Vec<Document> {
+            let query = DriveDocumentQuery::from_sql_expr(
+                &format!("select * from {document_type_name}"),
+                contract,
+                Some(&platform.config.drive),
+                platform_version,
+            )
+            .expect("expected a document query");
+            platform
+                .drive
+                .query_documents(query, None, false, None, None)
+                .expect("expected to query documents")
+                .documents()
+                .to_vec()
+        };
+        let contact_documents_v1 = ["contactRequest", "contactInfo"].map(|document_type_name| {
+            let documents = stored_documents(&dashpay_v1, document_type_name, platform_version_13);
+            assert_eq!(
+                documents.len(),
+                1,
+                "expected one stored {document_type_name}"
+            );
+            documents
+        });
 
         // Warm the drive contract cache with the v1 contract and confirm the
         // payment address fields are absent pre-upgrade
@@ -1769,6 +1879,21 @@ mod tests {
             stored_profile_id,
             "the surviving profile must be the pre-upgrade document"
         );
+
+        for (document_type_name, documents_v1) in ["contactRequest", "contactInfo"]
+            .into_iter()
+            .zip(contact_documents_v1)
+        {
+            assert_eq!(
+                stored_documents(
+                    &dashpay_v2_fetch_info.contract,
+                    document_type_name,
+                    platform_version_14
+                ),
+                documents_v1,
+                "v2 must read the v1 {document_type_name} back unchanged"
+            );
+        }
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8

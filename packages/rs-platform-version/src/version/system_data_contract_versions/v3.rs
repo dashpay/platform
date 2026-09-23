@@ -3,7 +3,10 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // PROTOCOL_VERSION_14: DashPay contract v2 adds the optional public payment
 // address fields to the `profile` document type (`corePaymentAddress`,
 // `platformPaymentAddress`) per DIP-33 plus the optional 43-byte Orchard
-// `shieldedAddress`, and the withdrawals contract v2 admits
+// `shieldedAddress`; its `contactRequest` declares the checks the contact
+// request data trigger made (`distinctFrom` and an `identityPublicKey`
+// `refersTo` on `toUserId`) and `encryptedFor` on its two ECDH fields. The
+// withdrawals contract v2 admits
 // the terminal FAILED (5) value of the `status` property, written for
 // withdrawals whose asset unlock Core can never mine. The token history
 // contract v2 admits the value 2 (OncePerIdentity) of the claim document's

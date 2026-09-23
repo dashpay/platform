@@ -28,6 +28,22 @@ The current DashPay contract schema requires the system field
 `$createdAtCoreBlockHeight`. Older external references may use
 `coreHeightCreatedAt`; do not submit that name to the current contract.
 
+### What consensus checks
+
+From protocol version 14 the contract declares these checks itself, and a
+contact request that fails one is refused (and the fee charged):
+
+| Rule | Declared as | Error |
+| --- | --- | --- |
+| `toUserId` is not the sender | `distinctFrom: "$ownerId"` on `toUserId` | `DocumentPropertyNotDistinctError` (10419) |
+| The recipient identity exists and has the key `recipientKeyIndex` | `refersTo` of type `identityPublicKey` on `toUserId`, `keyIdProperty: "recipientKeyIndex"` | `ReferencedIdentityKeyNotFoundError` (40123) |
+| That key is not disabled | the same `refersTo` | `ReferencedIdentityKeyDisabledError` (40124) |
+| `encryptedPublicKey` and `encryptedAccountLabel` are a 16-byte IV plus whole 16-byte blocks | `encryptedFor` with scheme `ecdh-secp256k1-aes256-cbc` | `InvalidEncryptedPropertyShapeError` (10420) |
+
+Up to protocol version 13 a data trigger made only the first two checks and
+reported both as a `DataTriggerConditionError`. Neither version checks the
+purpose or contract bounds of either key, or that the bytes decrypt.
+
 `encryptedPublicKey` is exactly 96 bytes:
 
 - 16 bytes: AES-CBC initialization vector

@@ -1141,6 +1141,8 @@ mod replacement_tests {
         document.set("recipientKeyIndex", Value::U32(1));
         document.set("senderKeyIndex", Value::U32(1));
         document.set("accountReference", Value::U32(0));
+        // an IV plus whole AES blocks, as the label's `encryptedFor` requires
+        document.set("encryptedAccountLabel", Value::Bytes(vec![0u8; 48]));
 
         let mut altered_document = document.clone();
 
@@ -1252,7 +1254,7 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            460940, // v14: stamped documents (see happy-path baseline note)
+            460740, // v14: stamped documents (see happy-path baseline note)
         )
         .await;
     }
@@ -1263,7 +1265,7 @@ mod replacement_tests {
     /// v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_13() {
-        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(13, 460920)
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(13, 460720)
             .await;
     }
 

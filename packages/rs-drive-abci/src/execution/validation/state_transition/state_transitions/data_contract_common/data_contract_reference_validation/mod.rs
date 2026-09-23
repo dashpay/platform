@@ -48,3 +48,40 @@ pub(in crate::execution::validation::state_transition) fn validate_data_contract
         })),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::DefaultForPlatformVersion;
+
+    /// A system contract is stored without passing contract create validation,
+    /// so nothing else runs the registration checks on DashPay's `refersTo`
+    /// declarations (the `contactRequest.toUserId` key reference from v2).
+    #[test]
+    fn should_accept_the_references_the_dashpay_system_contract_declares() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let dashpay = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+            .expect("expected the dashpay system contract");
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("expected an execution context");
+
+        let result = validate_data_contract_references(
+            &dashpay,
+            &platform.drive,
+            &BlockInfo::default(),
+            &mut execution_context,
+            None,
+            platform_version,
+        )
+        .expect("expected the reference validation to run");
+
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+}

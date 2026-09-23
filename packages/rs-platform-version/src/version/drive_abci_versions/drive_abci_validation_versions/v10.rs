@@ -206,6 +206,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     // It keeps v1's PROTOCOL_VERSION_13 change: no reject
                     // bindings for Transfer, Purchase and UpdatePrice on
                     // DPNS `domain` documents (username transfers/sales).
+                    // v2 also drops the DashPay contactRequest create
+                    // binding: the DashPay v2 schema declares its checks.
                     bindings: 2,
                     triggers: DriveAbciValidationDataTriggerVersions {
                         // PROTOCOL_VERSION_12 (v3.1 hard fork): triggers
@@ -213,6 +215,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         // that bill the cost via add_operation on the
                         // outer execution_context. v0 versions remain
                         // byte-identical to PV11 (don't bill).
+                        // Unbound from PROTOCOL_VERSION_14 (bindings v2).
                         create_contact_request_data_trigger: 1,
                         validate_profile_payment_addresses_data_trigger: 0,
                         create_domain_data_trigger: 1,
