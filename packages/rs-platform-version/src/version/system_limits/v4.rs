@@ -59,6 +59,10 @@ use crate::version::system_limits::SystemLimits;
 ///   (`max_references_per_document`,
 ///   backfilled into the earlier tables, whose parsers never read it). Each reference is a
 ///   billed state read when the document is written.
+/// * Reference expressions (protocol version 14): a `refersTo` `anyOf` or `allOf` list holds at
+///   most 4 operands (`max_reference_operands`) and they nest at most 4 combinators deep
+///   (`max_reference_expression_depth`), both backfilled into the earlier tables, whose parsers
+///   never read them; every leaf counts against `max_references_per_document`.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -67,7 +71,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
-    max_state_transition_size: 20480, //20 KiB
+    max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
+    max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
+    max_state_transition_size: 20480,  //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,

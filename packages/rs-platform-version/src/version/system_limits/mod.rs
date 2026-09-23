@@ -29,6 +29,22 @@ pub struct SystemLimits {
     /// `max_typed_array_items`. Read by document type parser generation 3 (protocol version
     /// 14), the only generation that parses `refersTo`, and never reached before.
     pub max_references_per_document: u16,
+    /// Maximum number of operands one `anyOf` or `allOf` list of a `refersTo` reference
+    /// expression may hold (it holds at least two). Every leaf may be read for each value the
+    /// declaration covers when the document is written, and each counts against
+    /// `max_references_per_document`; this keeps one list from spending the whole budget on
+    /// alternatives. Refused under full validation only, like `max_typed_array_items`. Read by
+    /// document type parser generation 3 (protocol version 14), the only generation that parses
+    /// `refersTo`, and never reached before.
+    pub max_reference_operands: u16,
+    /// Maximum number of `anyOf` / `allOf` combinators on any path from a `refersTo` reference
+    /// expression to one of its leaves (a flat `anyOf` is 1). Refused under full validation
+    /// only, like `max_reference_operands`. Must stay at most
+    /// `dpp`'s `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH` (16), the nesting a decoder of a
+    /// consensus error carrying the declaration accepts; a test there holds every version to
+    /// it. Read by document type parser generation 3 (protocol version 14) and never reached
+    /// before.
+    pub max_reference_expression_depth: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config

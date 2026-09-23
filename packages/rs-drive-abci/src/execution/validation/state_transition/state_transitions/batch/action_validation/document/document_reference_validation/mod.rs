@@ -40,7 +40,11 @@ pub(crate) trait DocumentReferenceValidation {
     /// Validates the document's `refersTo` references against platform state:
     /// an identifier property's value, and each element of a typed array whose
     /// `items` declare one, which is refused with the error a single reference
-    /// would give and named by its list path (`reasons[2]`).
+    /// would give and named by its list path (`reasons[2]`). A value declared
+    /// by a reference expression is checked operand by operand in declared
+    /// order: an `anyOf` holds when one operand does and is otherwise refused
+    /// with the last operand's error, an `allOf` holds when every operand does
+    /// and is otherwise refused with the first failing operand's error.
     ///
     /// When `changed_fields` is provided (replace transitions), only references on
     /// those fields are validated. A reference also counts as changed when a

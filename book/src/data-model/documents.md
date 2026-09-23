@@ -270,7 +270,7 @@ Revision 0 is never used for active documents. This allows `0` to serve as a sen
 
 ## Document References (`refersTo`)
 
-From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument` and `identityPublicKey`. Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
+From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument` and `identityPublicKey`, or a reference expression combining several with `anyOf` and `allOf` (see [Reference expressions](#reference-expressions-anyof-allof)). Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
 
 An `identityPublicKey` reference names one key of one identity, and comes in two forms that differ in which property carries what:
 
@@ -335,6 +335,49 @@ When the referring document is created or replaced, the document reference valid
 
 Joins cannot go through a lookup reference: a chained query or a composite by-id join needs the join property's values to be the outer documents' ids, so both refuse such a property, and a `preallocated` index cannot be bound through one. In Rust the declaration is its own variant, `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, appended to the enum rather than a field of `PermanentDocument`: the enum is embedded in the reference errors, so an id reference keeps its encoding, and code matching `PermanentDocument` as "the value is a document id" cannot mistake a lookup for one. The rules are on `DocumentReferenceLookup`. `as_document_reference` returns only references whose value is a document id, the accessor for joins; the validators use `as_any_document_reference`, whose declaration carries the lookup.
 
+### Reference expressions (`anyOf`, `allOf`)
+
+A `refersTo` may combine targets in place of naming one. `{ "anyOf": [...] }` holds if at least one operand holds, `{ "allOf": [...] }` if every operand holds for the same value. An operand is a leaf, an ordinary target with its own keys, or an expression of the other combinator, so the two nest:
+
+```json
+"memberId": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "refersTo": {
+    "anyOf": [
+      {
+        "type": "permanentDocument", "documentType": "addedModerator",
+        "lookup": { "index": "byModerator", "keys": { "submittedCharterId": "submittedCharterId", "moderatorId": "." } }
+      },
+      {
+        "allOf": [
+          { "type": "identity" },
+          {
+            "type": "permanentDocument", "documentType": "joinRequest",
+            "lookup": { "index": "bySubmittedCharter", "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." } }
+          }
+        ]
+      }
+    ]
+  },
+  "position": 2
+}
+```
+
+reads: the member was added to the charter, or it is an identity that asked to join it. The same form sits on the `items` of a typed array, where each element meets the expression on its own.
+
+What is checked when the contract enters the chain:
+
+- On every parse (meta-schema v3 and the parser, `apply_property_reference` 0): a combinator is the declaration's one key (a `propertyAgreement` or a `lookup` belongs to a leaf, inside it), a list names at least two operands (a single one is declared on its own), and an `anyOf` directly inside an `anyOf` (or an `allOf` inside an `allOf`) is refused, since it says what one flat list says.
+- Every leaf is an `identity` or a `permanentDocument` (by id or with a `lookup`). Both are existence checks against entities that are never deleted, so an expression of them holds for good once it holds, as a single one of them does, and a replace re-validates it only when its value or a property one of its leaves binds changed. The other types do not compose with other operands and are refused, as is the key id form (`identityProperty`): `deletableDocument` is re-validated on every replace and may be cleared once its document is deleted (the immutable-property exception), which assumes the property refers to that one target; `identityPublicKey` pairs the value with a key id property no other operand reads; a `contract` target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. Admitting one later takes a new `apply_property_reference` generation.
+- Under full validation (registration): at most `SystemLimits::max_reference_operands` operands in one list and at most `max_reference_expression_depth` combinators on any path from the declaration to a leaf (4 and 4 at protocol version 14; the example above is 2 deep), no two alike operands in one list (a leaf naming the declaring contract explicitly is the same as one omitting it), and every leaf counted against `max_references_per_document`: an `anyOf` of two on a typed array of `maxItems` 15 counts 30, since each leaf may be read for each element.
+- Every leaf is checked exactly as the same target declared alone: the referenced document type, its permanence, the `propertyAgreement` sides and the `lookup` rules, at the same places (the contract parse for a type of the same contract, the registration state validation for another contract's). Every leaf must pass, since each has to be a declaration that could hold. An error names the failing leaf by where it sits, `refersTo anyOf[1].allOf[1] lookup: ...` from the parse and `resignation.memberId.anyOf[1].allOf[1]` from registration.
+- A changed expression (an operand added, removed, changed or moved, `anyOf` swapped for `allOf`, a single target turned into an expression or back) is an incompatible schema change on update, like the rest of a `refersTo`. Inside `refersTo`, `anyOf` and `allOf` are the declaration's data; the schema compatibility rules never read them as JSON Schema keywords.
+
+When the referring document is created or replaced, the document reference validation evaluates each value (each element) operand by operand in declared order, a nested expression the same way. An `anyOf` stops at the first operand that holds; when none does, the write is refused, paid, with the last operand's result. An `allOf` stops at the first operand that fails and refuses the write with its result. A refusal is therefore always the error a leaf declared alone would give (for the example, `ReferencedEntityNotFoundError` (40120) for a lookup that found nothing, naming the property or the element), and the author's order decides which one a writer sees: put the most general operand of an `anyOf` last, and the cheapest or most telling one of an `allOf` first. There is no error of its own for "no operand held": each leaf's failure already has a precise error, and a combined one would have to nest one per leaf or lose their reasons. Every read is billed as it is made, so a value the second operand of an `anyOf` holds for pays for the first operand's query too, while an `allOf` whose first operand fails reads nothing more. A `propertyAgreement` is checked only against its own leaf's document: a value whose first leaf fails its agreement is still accepted through a second leaf without one.
+
+Joins and preallocated indexes need one target: a chained query or a composite by-id join refuses an expression join property, and a `preallocated` index is never bound through one. In Rust the combinators are `DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands)` and `AllOf(ReferenceOperands)`, appended to the enum so every single target keeps its encoding. An expression is no document reference as a whole (`as_any_document_reference` is `None`); code that checks every declaration walks `DocumentPropertyReferenceTarget::leaves` (or `leaves_with_paths`), the leaves of an expression or the declaration itself. Since the enum is embedded in consensus errors, which clients decode from bytes a node sends, decoding refuses a nesting deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH` (16, above every protocol version's registration limit, which a test holds it to), so no bytes can drive the decoder into unbounded recursion. A reference error never carries a combinator: a refusal is a leaf's error.
+
 ### On the writer or the creator (`ownerRefersTo`, `creatorRefersTo`)
 
 A property's reference constrains a value the writer chose. Some rules constrain the writer instead: in the moderation charters, a `resignationRequest` may only come from a moderator of the team it resigns from. A document type states that with the doctype-level `ownerRefersTo` keyword, one `refersTo` declaration whose value is the document's `$ownerId`, the writer, rather than a property's value:
@@ -356,7 +399,7 @@ A property's reference constrains a value the writer chose. Some rules constrain
 
 reads: the writer must be the `memberId` of an `addedModerator` for this document's `electedCharterId`.
 
-- The declaration is the one an identifier property carries, read by the same code (`apply_property_reference` 0), but only two targets can hold a writer: `identity`, and a `permanentDocument` found through a `lookup`. The rest are refused. `contract`, `token` and a document by id would need the writer's identity id to be a contract, token or document id, which it never is, so a document type declaring one could never be written; `identityPublicKey` pairs the value with a key id the writer does not carry. Meta-schema v3 reuses the property declaration by `$ref` and admits only those two forms; the parser (generation 3, `parse_owner_reference`, which reads the stored schema once the core parse has run the meta-schema) refuses the others on the stored path too. The parsed declaration is `DocumentTypeV2::owner_reference`, read through `DocumentTypeV2Getters::owner_reference`, and the property types are unchanged.
+- The declaration is the one an identifier property carries, read by the same code (`apply_property_reference` 0), but only two targets can hold a writer: `identity`, and a `permanentDocument` found through a `lookup`, alone or as the leaves of a reference expression (above). The rest are refused, as a leaf of an expression too. `contract`, `token` and a document by id would need the writer's identity id to be a contract, token or document id, which it never is, so a document type declaring one could never be written; `identityPublicKey` pairs the value with a key id the writer does not carry. Meta-schema v3 reuses the property declaration by `$ref` and admits only those two forms; the parser (generation 3, `parse_owner_reference`, which reads the stored schema once the core parse has run the meta-schema) refuses the others on the stored path too. The parsed declaration is `DocumentTypeV2::owner_reference`, read through `DocumentTypeV2Getters::owner_reference`, and the property types are unchanged.
 - Only a document type whose documents can be neither transferred nor traded may declare it, checked on every parse. A transfer or a purchase is not a write, so it would hand the document to an owner the declaration never checked; with neither possible, the owner of every document is the writer that was checked.
 - In a `lookup`, `"."` is the writer, and a `"$ownerId"` key part is the writer as well. Every referring-side rule of a property's lookup applies unchanged (its `"$ownerId"` rule holds by the point above), and so does every referenced-side rule, for a type of the same contract at contract level and for one of another contract at registration.
 - A `propertyAgreement` works as on a property reference; its referring side may name `$ownerId`, which is then the same writer as the reference's value.
