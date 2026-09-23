@@ -552,11 +552,18 @@ impl MockDashPlatformSdk {
         let data = match self.from_proof_expectations.get(&key) {
             // Report the latest protocol version so the proof path's ratchet
             // (`maybe_update_protocol_version`) fires as it would against a real
-            // network; `default()` reports 0, which the ratchet ignores.
+            // network; `default()` reports 0, which the ratchet ignores. Report the
+            // expected chain id, if any, so that the chain id check passes.
             Some(d) => (
                 Option::<O>::mock_deserialize(self, d),
                 ResponseMetadata {
                     protocol_version: dpp::version::LATEST_VERSION,
+                    chain_id: self
+                        .sdk
+                        .load()
+                        .as_ref()
+                        .and_then(|sdk| sdk.expected_chain_id.clone())
+                        .unwrap_or_default(),
                     ..Default::default()
                 },
                 Proof::default(),

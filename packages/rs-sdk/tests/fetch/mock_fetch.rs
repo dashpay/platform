@@ -40,6 +40,31 @@ async fn test_mock_fetch_identity() {
 }
 
 #[tokio::test]
+/// Given a mock SDK that expects a chain id, when I fetch an expected identity, then the
+/// mocked response passes the chain id check
+async fn test_mock_fetch_identity_with_expected_chain_id() {
+    let mut sdk = SdkBuilder::new_mock()
+        .with_expected_chain_id("dash-testnet-51")
+        .build()
+        .expect("mock Sdk should be created");
+
+    let expected: Identity = Identity::from(IdentityV0::default());
+    let query = expected.id();
+
+    sdk.mock()
+        .expect_fetch(query, Some(expected.clone()))
+        .await
+        .unwrap();
+
+    let retrieved = Identity::fetch(&sdk, query)
+        .await
+        .unwrap()
+        .expect("object should exist");
+
+    assert_eq!(retrieved, expected);
+}
+
+#[tokio::test]
 /// When I define mock expectation twice for the same request, second call ends with error
 async fn test_mock_fetch_duplicate_expectation() {
     let mut sdk = Sdk::new_mock();

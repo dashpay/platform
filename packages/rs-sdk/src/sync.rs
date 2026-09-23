@@ -1,6 +1,6 @@
 pub use dash_async::{block_on, AsyncError};
 
-use crate::error::Error;
+use crate::error::{Error, StaleNodeError};
 use rs_dapi_client::{
     transport::sleep, update_address_ban_status, AddressList, CanRetry, ExecutionResult,
     RequestSettings,
@@ -80,7 +80,16 @@ where
     FutureFactoryFn: FnMut(RequestSettings) -> Fut,
     R: Send,
 {
-    retry_with_additional_error(address_list, settings, future_factory_fn, |_| false).await
+    // A server on another chain is not unhealthy, and the Sdk's own chain id may be
+    // the outdated one: fail over without the health-ban ladder, so that the caller
+    // keeps getting the mismatch instead of running out of addresses.
+    retry_with_additional_error(address_list, settings, future_factory_fn, |error| {
+        matches!(
+            error,
+            Error::StaleNode(StaleNodeError::ChainIdMismatch { .. })
+        )
+    })
+    .await
 }
 
 /// Retry an operation-specific rejection only when its responding node can be
@@ -181,7 +190,7 @@ where
                                 )
                         });
                     if !excluded || address_list.get_live_addresses().is_empty() {
-                        tracing::debug!(node = ?error.address, "DPNS failover stopped: no safely excluded alternative");
+                        tracing::debug!(node = ?error.address, "failover stopped: no safely excluded alternative");
                         let mut final_error = error;
                         final_error.retries = total_retries;
                         return Err(final_error);
@@ -216,7 +225,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use rs_dapi_client::ExecutionError;
+    use rs_dapi_client::{ExecutionError, ExecutionResponse};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -336,6 +345,68 @@ mod test {
             2,
             "should have called twice"
         );
+    }
+
+    /// A chain id mismatch fails over to another node without banning either one, so
+    /// a Sdk whose own chain id is outdated keeps getting the mismatch.
+    #[tokio::test]
+    async fn test_retry_chain_id_mismatch_does_not_ban() {
+        let address_list: AddressList = ["http://localhost:1", "http://localhost:2"]
+            .into_iter()
+            .map(|address| address.parse().expect("valid address"))
+            .collect();
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let mut settings = RequestSettings::default();
+        settings.retries = Some(5);
+
+        // The second call runs while the first node is still excluded, so it has no
+        // other node to fail over to.
+        for expected_calls in [2, 1] {
+            call_count.store(0, Ordering::Relaxed);
+            let closure = |_settings: RequestSettings| {
+                call_count.fetch_add(1, Ordering::Relaxed);
+                let address = address_list.get_live_address();
+                async move {
+                    Err::<ExecutionResponse<()>, _>(ExecutionError {
+                        inner: match address {
+                            Some(_) => Error::StaleNode(StaleNodeError::ChainIdMismatch {
+                                expected: "dash-testnet-51".to_string(),
+                                received: "dash-testnet-50".to_string(),
+                            }),
+                            None => Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+                        },
+                        retries: 0,
+                        address,
+                    })
+                }
+            };
+
+            let error = retry(&address_list, settings, closure)
+                .await
+                .expect_err("should fail");
+
+            assert!(
+                matches!(
+                    error.inner,
+                    Error::StaleNode(StaleNodeError::ChainIdMismatch { .. })
+                ),
+                "expected ChainIdMismatch, got: {:?}",
+                error.inner
+            );
+            assert_eq!(call_count.load(Ordering::Relaxed), expected_calls);
+        }
+
+        let max_banned_until = chrono::Utc::now() + Duration::from_secs(2);
+        for info in address_list.ban_info() {
+            assert!(
+                info.banned_until
+                    .is_none_or(|until| until <= max_banned_until),
+                "{} must not be on the health-ban ladder: {:?}",
+                info.uri,
+                info.banned_until
+            );
+        }
     }
 
     /// Test that if we get "no available addresses" on the first call (no previous error),

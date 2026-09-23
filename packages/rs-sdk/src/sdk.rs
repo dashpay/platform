@@ -252,6 +252,11 @@ pub struct Sdk {
     /// See [SdkBuilder::with_time_tolerance] for more information.
     metadata_time_tolerance_ms: Option<u64>,
 
+    /// Chain id that response metadata must carry.
+    ///
+    /// See [SdkBuilder::with_expected_chain_id] for more information.
+    pub(crate) expected_chain_id: Option<String>,
+
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
 
@@ -276,6 +281,7 @@ impl Clone for Sdk {
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+            expected_chain_id: self.expected_chain_id.clone(),
             dapi_client_settings: self.dapi_client_settings,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
@@ -368,6 +374,16 @@ impl Sdk {
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
+        // A response from another chain must not advance any state below.
+        if let Some(expected) = &self.expected_chain_id {
+            if metadata.chain_id != *expected {
+                return Err(StaleNodeError::ChainIdMismatch {
+                    expected: expected.clone(),
+                    received: metadata.chain_id.clone(),
+                }
+                .into());
+            }
+        }
         let (metadata_height_tolerance, metadata_time_tolerance_ms) =
             self.freshness_criteria(method_name);
         // Check the independent local-clock anchor before mutating the
@@ -863,6 +879,11 @@ pub struct SdkBuilder {
     /// monotonic freshness high-water mark.
     trusted_initial_height: Option<u64>,
 
+    /// Chain id that response metadata must carry.
+    ///
+    /// See [SdkBuilder::with_expected_chain_id] for more information.
+    expected_chain_id: Option<String>,
+
     /// directory where dump files will be stored
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -891,6 +912,7 @@ impl Default for SdkBuilder {
             metadata_height_tolerance: Some(1),
             metadata_time_tolerance_ms: None,
             trusted_initial_height: None,
+            expected_chain_id: None,
 
             #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
@@ -1168,6 +1190,22 @@ impl SdkBuilder {
         self
     }
 
+    /// Require response metadata to carry the given Tenderdash chain id.
+    ///
+    /// The chain id is covered by the quorum signature, but the quorums that sign it can be
+    /// the same on two Platform chains, e.g. before and after a testnet reset. A response
+    /// with another chain id fails with [`StaleNodeError::ChainIdMismatch`] before it can
+    /// advance the height high-water mark or the protocol version. The Sdk then tries
+    /// other servers without banning the one that answered, since the configured chain
+    /// id may be the outdated one.
+    ///
+    /// If not set, the chain id is not checked. An empty chain id is rejected by
+    /// [SdkBuilder::build].
+    pub fn with_expected_chain_id(mut self, chain_id: impl Into<String>) -> Self {
+        self.expected_chain_id = Some(chain_id.into());
+        self
+    }
+
     /// Configure directory where dumps of all requests and responses will be saved.
     /// Useful for debugging.
     ///
@@ -1207,6 +1245,11 @@ impl SdkBuilder {
             return Err(Error::Config(
                 "proof mode requires a trusted initial height or signed-time freshness policy"
                     .to_string(),
+            ));
+        }
+        if self.expected_chain_id.as_deref() == Some("") {
+            return Err(Error::Config(
+                "expected chain id must not be empty".to_string(),
             ));
         }
 
@@ -1252,6 +1295,7 @@ impl SdkBuilder {
                     )),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+                    expected_chain_id: self.expected_chain_id,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
@@ -1324,6 +1368,7 @@ impl SdkBuilder {
                     )),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+                    expected_chain_id: self.expected_chain_id,
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and cannot be reconfigured");
                 guard.set_sdk(sdk.clone());
@@ -1644,6 +1689,106 @@ mod test {
                 .load(std::sync::atomic::Ordering::Acquire),
             42
         );
+    }
+
+    fn chain_id_metadata(chain_id: &str) -> ResponseMetadata {
+        ResponseMetadata {
+            chain_id: chain_id.to_string(),
+            height: 10,
+            protocol_version: 2,
+            ..Default::default()
+        }
+    }
+
+    fn mock_sdk_with_chain_id(chain_id: &str) -> super::Sdk {
+        let sdk = SdkBuilder::new_mock()
+            .with_expected_chain_id(chain_id)
+            .build()
+            .expect("mock Sdk should be created");
+        sdk.protocol_version
+            .store(1, std::sync::atomic::Ordering::Relaxed);
+        sdk
+    }
+
+    #[test]
+    fn chain_id_mismatch_is_rejected_before_any_state_advances() {
+        use rs_dapi_client::CanRetry;
+
+        let sdk = mock_sdk_with_chain_id("dash-testnet-51");
+
+        let error = sdk
+            .verify_response_metadata("test", &chain_id_metadata("dash-testnet-50"))
+            .expect_err("a response from another chain must be rejected");
+
+        assert!(matches!(
+            &error,
+            crate::Error::StaleNode(super::StaleNodeError::ChainIdMismatch { expected, received })
+                if expected == "dash-testnet-51" && received == "dash-testnet-50"
+        ));
+        assert!(
+            !error.can_retry(),
+            "the server must not be banned for serving another chain"
+        );
+        assert_eq!(sdk.protocol_version_number(), 1);
+        assert_eq!(
+            sdk.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Acquire),
+            0
+        );
+    }
+
+    #[test]
+    fn matching_chain_id_is_accepted() {
+        let sdk = mock_sdk_with_chain_id("dash-testnet-51");
+
+        sdk.verify_response_metadata("test", &chain_id_metadata("dash-testnet-51"))
+            .expect("metadata should be valid");
+
+        assert_eq!(sdk.protocol_version_number(), 2);
+        assert_eq!(
+            sdk.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Acquire),
+            10
+        );
+    }
+
+    #[test]
+    fn chain_id_is_not_checked_when_not_configured() {
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+
+        sdk.verify_response_metadata("test", &chain_id_metadata("dash-testnet-50"))
+            .expect("metadata should be valid");
+    }
+
+    #[test]
+    fn chain_id_is_checked_before_time() {
+        let sdk = SdkBuilder::new_mock()
+            .with_expected_chain_id("dash-testnet-51")
+            .with_time_tolerance(Some(1000))
+            .build()
+            .expect("mock Sdk should be created");
+
+        // `chain_id_metadata` carries time 0, far outside the tolerance.
+        let error = sdk
+            .verify_response_metadata("test", &chain_id_metadata("dash-testnet-50"))
+            .expect_err("a response from another chain must be rejected");
+
+        assert!(matches!(
+            error,
+            crate::Error::StaleNode(super::StaleNodeError::ChainIdMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn empty_expected_chain_id_is_rejected() {
+        let error = SdkBuilder::new_mock()
+            .with_expected_chain_id("")
+            .build()
+            .expect_err("an empty chain id must be rejected");
+
+        assert!(matches!(error, crate::Error::Config(_)));
     }
 
     #[test_matrix(97..102, 100, 2, false; "valid height")]

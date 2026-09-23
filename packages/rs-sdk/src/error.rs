@@ -357,10 +357,13 @@ where
 
 impl CanRetry for Error {
     fn can_retry(&self) -> bool {
-        matches!(
-            self,
-            Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_)
-        )
+        match self {
+            // Not a node failure: the Sdk's own chain id may be the outdated one.
+            // `sync::retry` still fails over to another node, without a ban.
+            Error::StaleNode(StaleNodeError::ChainIdMismatch { .. }) => false,
+            Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_) => true,
+            _ => false,
+        }
     }
 
     fn is_no_available_addresses(&self) -> bool {
@@ -396,6 +399,23 @@ pub enum StaleNodeError {
         received_timestamp_ms: u64,
         /// Tolerance in milliseconds
         tolerance_ms: u64,
+    },
+    /// Server returned metadata of another chain than the one the Sdk expects
+    ///
+    /// The chain id is covered by the quorum signature, so this means the server
+    /// proved state of another Platform chain, e.g. one from before a network reset.
+    ///
+    /// Unlike the other variants, this error is not retryable: the Sdk fails over to
+    /// other servers without banning them, and returns this error if none of them
+    /// serves the expected chain.
+    ///
+    /// See [`SdkBuilder::with_expected_chain_id`](crate::SdkBuilder::with_expected_chain_id).
+    #[error("received chain id is different: expected {expected}, received {received}; try another server")]
+    ChainIdMismatch {
+        /// Chain id the Sdk was configured with
+        expected: String,
+        /// Chain id received from the server
+        received: String,
     },
     /// Server kept reporting a current epoch that its own proofs contradict
     ///
