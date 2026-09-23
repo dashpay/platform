@@ -15,7 +15,7 @@ a reference per element, a reference resolved through a unique index
 and the description's byte cap, is checked by `SubmittedCharter` in
 `rs-dpp` when a team is seated.
 
-### `reason`
+## `reason`
 
 A ground for a moderation action. Anyone may file one.
 
@@ -25,7 +25,7 @@ A ground for a moderation action. Anyone may file one.
 | `label` | string, 1 to 64 characters, required | The reason's name |
 | `description` | string, 1 to 1024 characters | What the reason covers and how the team applies it |
 
-### `submittedCharter`
+## `submittedCharter`
 
 A leader's proposal to moderate one contract, on the contract's own terms:
 the target's elected moderation declaration is the team's whole mandate, so
@@ -43,7 +43,7 @@ decryption key bound to this type so join requests can be encrypted to it.
 Indexes: `byTargetContract` (target, `$createdAt`) lists the proposals for a
 contract in filing order; `byOwner` lists a leader's proposals.
 
-### `joinRequest`
+## `joinRequest`
 
 An identity's offer to serve on the team of a proposal, one per identity per
 proposal (`bySubmittedCharter`, unique on the proposal and the owner), with a
@@ -58,7 +58,7 @@ to this type.
 | `senderKeyId` | integer, required | The owner's encryption key the shared secret is derived from |
 | `encryptedMessage` | bytes, 32 to 1040, required | Why the owner wants to join, encrypted for the leader (ECDH on secp256k1, AES-256-CBC) |
 
-### `electedCharter`
+## `electedCharter`
 
 A proposal put to the vote with its team: the only type that opens or joins
 the contest for a target. Only the proposal's leader may create one, for the
@@ -80,7 +80,7 @@ leader and members act with the target's full mandate; there are no powers.
 | `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` | The proposal the team runs on |
 | `members` | array of at most 15 unique identity ids, required, each the owner of a `joinRequest` for this proposal (`lookup`) and none the leader (`distinctFrom`) | The team besides the leader; may be empty |
 
-### After the election
+## After the election
 
 Once an elected charter is seated, its team can change without a new vote:
 
