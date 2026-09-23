@@ -60,7 +60,8 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyType, DocumentReferenceDeclaration, DocumentTypeRef,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
@@ -230,6 +231,20 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             _ => None,
         };
+        // A lookup reference is a document reference whose value is not the
+        // outer document's id, so `as_document_reference` leaves it out; it
+        // is named here so the refusal says why
+        if let DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. },
+        ) = &join_document_property.property_type
+        {
+            return Err(unsupported(format!(
+                "chained query join property \"{}\" refers to its document through the \
+                 unique index \"{}\", so its value is not the outer document's id: a join \
+                 needs a reference whose value is the referenced document's $id",
+                join_property, lookup.index,
+            )));
+        }
         match document_reference {
             Some(DocumentReferenceDeclaration {
                 contract_id,

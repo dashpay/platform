@@ -12,8 +12,9 @@ use dpp::data_contract::document_type::accessors::{
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentTypeRef, IdentityKeyReferenceRequirements,
-    KeyReferenceIdentityProperty, PropertyReference, ReferringWrite,
+    DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef,
+    IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, PropertyReference,
+    ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -51,7 +52,9 @@ use crate::execution::types::execution_operation::{RetrieveIdentityInfo, Validat
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
+use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
+    fetch_document_through_lookup, fetch_document_with_id,
+};
 use crate::platform_types::platform::PlatformStateRef;
 
 /// Versioned, stateful validation of document references using the v0 rules.
@@ -290,12 +293,17 @@ fn validate_document_type_references_v0(
             // - a propertyAgreement pair binds each referring property;
             // - an identityPublicKey reference binds the key id property,
             //   since the referenced key is the (identity id, key id) pair
-            //   and a freshly written key id must exist and not be disabled.
+            //   and a freshly written key id must exist and not be disabled;
+            // - a lookup binds every property its key reads, since the
+            //   referenced document is the one the whole key finds.
             // A writer gate (an agreement keyed by `$ownerId`) is re-checked
             // on EVERY replace: the writer is transition metadata that never
             // appears among the changed fields, and either document may have
             // been transferred since the last write, so a replace of an
-            // unrelated field by a now-unauthorized owner must still fail.
+            // unrelated field by a now-unauthorized owner must still fail. A
+            // lookup whose key reads `$ownerId` needs no such rule: its
+            // declaring type can be neither transferred nor traded
+            // (registration refuses it otherwise), so the writer never moves.
             // The same rules hold for the elements of a typed array, which
             // share one declaration: the array is one field, so a replace
             // that changes it re-validates the elements the stored list did
@@ -308,6 +316,16 @@ fn validate_document_type_references_v0(
                     is_referring_system_agreement_property(referring_property)
                         || is_changed_field(changed, referring_property)
                 }),
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                    property_agreement,
+                    lookup,
+                    ..
+                } => {
+                    property_agreement.keys().any(|referring_property| {
+                        is_referring_system_agreement_property(referring_property)
+                            || is_changed_field(changed, referring_property)
+                    }) || lookup_key_may_have_changed(lookup, changed)
+                }
                 // A deletableDocument reference is re-validated on EVERY
                 // replace, touched or not: its target may have been deleted
                 // since the last write, and a referring document is not
@@ -557,6 +575,12 @@ fn validate_reference_v0(
             document_type_name,
             property_agreement,
         }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            contract_id: referenced_contract_id,
+            document_type_name,
+            property_agreement,
+            ..
+        }
         | DocumentPropertyReferenceTarget::DeletableDocument {
             contract_id: referenced_contract_id,
             document_type_name,
@@ -565,6 +589,7 @@ fn validate_reference_v0(
             let permanent = matches!(
                 reference_target,
                 DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                    | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
             );
             // An absent contract id targets the declaring contract itself; the
             // declaring contract may also name its own id explicitly. Either
@@ -668,16 +693,41 @@ fn validate_reference_v0(
                 ));
             }
 
-            let referenced_document = fetch_document_with_id(
-                platform.drive,
-                referenced_contract,
-                referenced_document_type,
-                Identifier::from(referenced_id),
-                &block_info.epoch,
-                execution_context,
-                transaction,
-                platform_version,
-            )?;
+            // The value is the referenced document's id, unless the
+            // (permanentDocument) declaration looks the document up through a
+            // unique index of its type, with the value, or the element, as one
+            // part of the key
+            let lookup = match reference_target {
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. } => {
+                    Some(lookup)
+                }
+                _ => None,
+            };
+            let referenced_document = match lookup {
+                None => fetch_document_with_id(
+                    platform.drive,
+                    referenced_contract,
+                    referenced_document_type,
+                    Identifier::from(referenced_id),
+                    &block_info.epoch,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?,
+                Some(lookup) => fetch_document_through_lookup(
+                    platform.drive,
+                    referenced_contract,
+                    referenced_document_type,
+                    lookup,
+                    Identifier::from(referenced_id),
+                    document_data,
+                    owner_id,
+                    &block_info.epoch,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?,
+            };
 
             // Property agreement: the referenced document is already in
             // hand for the existence check, so comparing the declared
@@ -1001,6 +1051,19 @@ fn validate_referenced_identity_key_v0(
     }
 
     Ok(SimpleConsensusValidationResult::new())
+}
+
+/// Whether a replace may have changed the key of a lookup: a property the key
+/// reads changed. The reference's own value is covered by the changed-field
+/// check of the property itself, and a `$ownerId` part is fixed, since
+/// registration admits it only on a type that cannot be transferred or traded.
+fn lookup_key_may_have_changed(
+    lookup: &DocumentReferenceLookup,
+    changed_fields: &BTreeSet<String>,
+) -> bool {
+    lookup
+        .referring_properties()
+        .any(|path| is_changed_field(changed_fields, path))
 }
 
 /// A flattened property path counts as changed when the replace transition changed

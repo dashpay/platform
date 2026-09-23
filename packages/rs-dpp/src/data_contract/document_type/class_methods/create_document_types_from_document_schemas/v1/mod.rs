@@ -1,9 +1,12 @@
 use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
@@ -137,6 +140,68 @@ impl DocumentType {
                     return Err(consensus_or_protocol_data_contract_error(
                         DataContractError::InvalidContractStructure(format!(
                             "{name}.{path} refersTo keyRequirements requires a {purpose} key bound to document type {bound_to:?}, which no key can be: only authentication, encryption and decryption keys carry a document type bound, and an encryption or decryption key only where the type declares requiresIdentityEncryptionBoundedKey or requiresIdentityDecryptionBoundedKey"
+                        )),
+                    ));
+                }
+            }
+        }
+
+        // Protocol version 14 and later: a `refersTo` lookup into a document type of this
+        // contract must resolve in it: the named index exists and is unique, the keys cover
+        // its properties exactly, every source holds the kind of value its index property
+        // does, and the key cannot move off the document it found (see
+        // `DocumentReferenceLookup::referenced_side_error`). Like the check above it
+        // needs every document type of the contract, and runs under full validation only. A
+        // lookup into another contract is checked against that contract's state at
+        // registration, and a reference naming a document type this contract does not have
+        // is left to that validation too, which reports it.
+        //
+        // Inert for every protocol version before 14 for the same reason as the check above:
+        // a parsed reference carries a `lookup` only where the tables carry
+        // `apply_property_reference: Some(_)`, so the loop below finds none there.
+        for (name, document_type) in &contract_document_types {
+            for (path, property) in document_type.as_ref().flattened_properties() {
+                // On an identifier property or on the elements of a typed array
+                let Some(target) = property
+                    .property_type
+                    .reference()
+                    .and_then(|reference| reference.target())
+                else {
+                    continue;
+                };
+                let Some(DocumentReferenceDeclaration {
+                    contract_id,
+                    document_type_name,
+                    lookup: Some(lookup),
+                    ..
+                }) = target.as_any_document_reference()
+                else {
+                    continue;
+                };
+                if contract_id.is_some_and(|contract_id| contract_id != data_contract_id) {
+                    continue;
+                }
+                let Some(referenced_document_type) =
+                    contract_document_types.get(document_type_name)
+                else {
+                    continue;
+                };
+                // A lookup is only declared on a permanentDocument reference, and a
+                // deletable target fails that reference whatever its indexes say:
+                // registration reports it (ReferencedDocumentTypeDeletableError), so the
+                // lookup is not judged against a type it could never reference
+                let referenced = referenced_document_type.as_ref();
+                if referenced.documents_can_be_deleted()
+                    || referenced.documents_can_be_deleted_by_moderators()
+                {
+                    continue;
+                }
+                if let Some(reason) =
+                    lookup.referenced_side_error(document_type.as_ref(), referenced)
+                {
+                    return Err(consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "document type \"{name}\" property \"{path}\" refersTo lookup: {reason}"
                         )),
                     ));
                 }

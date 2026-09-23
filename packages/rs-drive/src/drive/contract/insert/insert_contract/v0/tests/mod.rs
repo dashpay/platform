@@ -31,6 +31,7 @@ mod composite_query_e2e_tests;
 mod countable_e2e_tests;
 mod index_only_e2e_tests;
 mod index_only_scalar_terminal_e2e_tests;
+mod lookup_reference_join_tests;
 mod noncounted_sibling_e2e_tests;
 mod preallocated_index_e2e_tests;
 mod prefix_ranked_index_e2e_tests;

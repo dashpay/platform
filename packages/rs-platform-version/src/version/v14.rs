@@ -721,6 +721,44 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a target is deleted. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
+/// 32. **Document references resolved through a unique index**: a
+///     `permanentDocument` `refersTo`, on an identifier property or on the
+///     elements of a typed array (item 31), may carry a `lookup`
+///     (meta-schema v3, `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, so an id
+///     reference keeps its variant and its encoding): the value is then
+///     not the referenced document's id, and the referenced document is the
+///     one the named unique index of the referenced document type finds for
+///     a key assembled from the referring document. `keys` maps every index
+///     property to a property path of the referring type, `$ownerId` or `.`
+///     (the value, or the element, exactly once). A `deletableDocument`
+///     reference takes none: a key into a deletable type could find a new
+///     document once the one it found is deleted. Generation 3 of the parser
+///     checks on every parse that each property a key reads is a stored,
+///     required, single value of the referring type;
+///     `create_document_types_from_document_schemas` 1, edited in place like
+///     for item 29 (inert before this version, where no parsed reference
+///     carries a lookup), checks a lookup into a document type of the same
+///     contract under full validation (the index exists, is unique, carries
+///     no `timeRange` and is not on an indexOnly type, the keys cover it
+///     exactly, every source shares its index property's value kind, and the
+///     key cannot move off the document it found: its schema properties are
+///     immutable, and `$ownerId` is only a part on a type that is neither
+///     transferable nor tradeable), and the contract reference validation
+///     checks one into another contract, refusing it with
+///     `ReferencedDocumentLookupInvalidError` (40137). The document
+///     reference validation (generation 0, reached only from this version)
+///     queries the index for each value's key, billed as a document fetch,
+///     refuses a write with no match with `ReferencedEntityNotFoundError`
+///     (40120, an element named by its list path), checks a
+///     `propertyAgreement` against the document found, and on replace
+///     re-validates when a property the key reads changed. A key may read
+///     `$ownerId` only on a referring type that is neither transferable nor
+///     tradeable, checked on every parse. A changed `lookup` is an
+///     incompatible schema change on update. Chained queries and composite
+///     by-id joins refuse a lookup reference as a join property, and
+///     preallocated indexes are never bound through one.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

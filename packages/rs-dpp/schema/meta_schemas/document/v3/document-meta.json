@@ -287,6 +287,47 @@
                   }
                 ]
               }
+            },
+            "lookup": {
+              "description": "permanentDocument references only (a key into a deletable type could find a new document once the one it found is deleted, where an id is produced at most once): the property's value is not the referenced document's id. The referenced document is the one the named unique index of the referenced document type finds for a key assembled from the referring document, and the reference holds if that document exists. index names an index of the referenced document type that is unique, carries no timeRange and does not belong to an indexOnly type; its key must stay with the document it found (every schema property of the index fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles; keys maps every property of that index (by its name on the referenced side, system ones such as $ownerId included), in any order, to where its value comes from: a property path of the referring document type, \"$ownerId\" for the referring document's owner, or \".\" for the value of the property carrying the reference (on an array element, the element), which must appear exactly once. A property a key reads must be required (and so must every object around it), not transient, and hold the same kind of value as its index property, so a lookup never runs with a missing key part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries the index for the assembled key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; propertyAgreement pairs are checked against the document found. A replace re-validates the reference when a property a key reads changed, and on every replace when a key reads $ownerId",
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                "keys": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 10,
+                  "propertyNames": {
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "const": "."
+                      },
+                      {
+                        "const": "$ownerId"
+                      },
+                      {
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "index",
+                "keys"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -350,6 +391,18 @@
               "else": {
                 "properties": {
                   "contractRequirements": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "type": { "const": "permanentDocument" } },
+                "required": ["type"]
+              },
+              "then": {},
+              "else": {
+                "properties": {
+                  "lookup": false
                 }
               }
             }

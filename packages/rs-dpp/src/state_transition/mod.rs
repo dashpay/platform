@@ -500,6 +500,10 @@ macro_rules! call_errorable_method_identity_signed {
     };
 }
 
+/// Byte budget of a serialized [`StateTransition`], as the `limit` of its `platform_serialize`
+/// attribute below declares it; the attribute takes a literal, so the number is repeated here.
+pub const STATE_TRANSITION_MAX_ENCODED_BYTES: usize = 100_000;
+
 #[derive(
     Debug,
     Clone,
@@ -897,6 +901,59 @@ mod json_convertible_tests {
             StateTransition::ShieldFromIdentity(inner),
             "shieldFromIdentity",
         );
+    }
+
+    /// Every kind decodes from its untagged bytes (the inner transition serialized on its own)
+    /// into the same transition, and from its tagged bytes exactly.
+    #[test]
+    fn every_kind_decodes_untagged_and_exactly() {
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+
+        let transitions = [
+            StateTransition::DataContractCreate(crate::state_transition::data_contract_create_transition::json_convertible_tests::fixture()),
+            StateTransition::DataContractUpdate(crate::state_transition::data_contract_update_transition::json_convertible_tests::fixture()),
+            StateTransition::Batch(crate::state_transition::batch_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreate(crate::state_transition::identity_create_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityTopUp(crate::state_transition::identity_topup_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreditWithdrawal(crate::state_transition::identity_credit_withdrawal_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityUpdate(crate::state_transition::identity_update_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityKeyLimitsUpdate(crate::state_transition::identity_key_limits_update_transition::json_convertible_tests::fixture()),
+            StateTransition::ContractUserModeration(crate::state_transition::contract_user_moderation_transition::json_convertible_tests::fixture()),
+            StateTransition::ContractFeeClaim(crate::state_transition::contract_fee_claim_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreditTransfer(crate::state_transition::identity_credit_transfer_transition::json_convertible_tests::fixture()),
+            StateTransition::MasternodeVote(crate::state_transition::masternode_vote_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreditTransferToAddresses(crate::state_transition::identity_credit_transfer_to_addresses_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreateFromAddresses(crate::state_transition::identity_create_from_addresses_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityTopUpFromAddresses(crate::state_transition::identity_topup_from_addresses_transition::json_convertible_tests::fixture()),
+            StateTransition::AddressFundsTransfer(crate::state_transition::address_funds_transfer_transition::json_convertible_tests::fixture()),
+            StateTransition::AddressFundingFromAssetLock(crate::state_transition::address_funding_from_asset_lock_transition::json_convertible_tests::fixture()),
+            StateTransition::AddressCreditWithdrawal(crate::state_transition::address_credit_withdrawal_transition::json_convertible_tests::fixture()),
+            StateTransition::Shield(crate::state_transition::shield_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldedTransfer(crate::state_transition::shielded_transfer_transition::json_convertible_tests::fixture()),
+            StateTransition::Unshield(crate::state_transition::unshield_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldFromAssetLock(crate::state_transition::shield_from_asset_lock_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldedWithdrawal(crate::state_transition::shielded_withdrawal_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreateFromShieldedPool(crate::state_transition::identity_create_from_shielded_pool_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityTopUpFromShieldedPool(crate::state_transition::identity_top_up_from_shielded_pool_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldFromIdentity(crate::state_transition::shield_from_identity_transition::json_convertible_tests::fixture()),
+        ];
+        for transition in transitions {
+            let tagged = transition.serialize_to_bytes().expect("serializes");
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_untrusted_exact(&tagged).expect("tagged"),
+                transition
+            );
+            // The variant tags are all below 251, so bincode's varint writes them in one byte.
+            let untagged = &tagged[1..];
+            assert_eq!(
+                StateTransition::deserialize_untagged_untrusted_exact(
+                    transition.state_transition_type(),
+                    untagged
+                )
+                .unwrap_or_else(|e| panic!("{} untagged: {e}", transition.name())),
+                transition
+            );
+        }
     }
 }
 

@@ -65,8 +65,10 @@ export interface CompositeBind {
    * permanentDocument`, where a missing document is a verification
    * error, or `refersTo: deletableDocument`, where a document deleted
    * since is proven absent and left out, targeting the sub-query's
-   * document type); otherwise `$ownerId` or an indexed property (a
-   * LOOKUP, where absence is a proven fact).
+   * document type, and whose `refersTo` carries no `lookup`: a reference
+   * resolved through a unique index holds no document ids); otherwise
+   * `$ownerId` or an indexed property (a LOOKUP, where absence is a proven
+   * fact).
    */
   field: string;
 }

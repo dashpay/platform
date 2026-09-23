@@ -109,6 +109,12 @@ export type DocumentPropertyReferenceTarget =
        * `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;
+      /**
+       * How the referenced document is found when the property's value is
+       * not its id. See {@link DocumentReferenceLookup}. Absent when the
+       * value is the referenced document's `$id`.
+       */
+      lookup?: DocumentReferenceLookup;
     }
   | {
       type: 'identityPublicKey';
@@ -186,6 +192,26 @@ export type DocumentPropertyReferenceTarget =
        */
       propertyAgreement?: Record<string, string>;
     };
+
+/**
+ * The `lookup` of a document reference: the referenced document is the one
+ * the unique index `index` of the referenced document type finds for a key
+ * assembled from the referring document, and the reference holds if that
+ * document exists (code 40120 when it does not).
+ *
+ * `keys` maps every property of the index, by its name on the referenced
+ * side (`$ownerId` among the system ones), to where its value comes from:
+ * a property path of the referring document type, `'$ownerId'` for the
+ * referring document's owner, or `'.'` for the value of the property that
+ * carries the reference (exactly once). To resolve a reference yourself,
+ * query the index with those values: at most one document matches. Only a
+ * `permanentDocument` reference carries a lookup, and its key cannot move
+ * off the document it found, so it keeps resolving.
+ */
+export type DocumentReferenceLookup = {
+  index: string;
+  keys: Record<string, string>;
+};
 
 /**
  * A single `refersTo` declaration on a document type.
@@ -325,7 +351,8 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::Identity => "identity",
         DocumentPropertyReferenceTarget::Contract { .. } => "contract",
         DocumentPropertyReferenceTarget::Token => "token",
-        DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
+        DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
         DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
     };
@@ -384,6 +411,12 @@ fn set_reference_target_fields(
             document_type_name,
             property_agreement,
         }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            contract_id,
+            document_type_name,
+            property_agreement,
+            ..
+        }
         | DocumentPropertyReferenceTarget::DeletableDocument {
             contract_id,
             document_type_name,
@@ -413,6 +446,30 @@ fn set_reference_target_fields(
                     set_field(&agreement, referring, &JsValue::from_str(referenced), path)?;
                 }
                 set_field(object, "propertyAgreement", &agreement, path)?;
+            }
+            // Present only on a lookup reference, absent when the value is
+            // the referenced document's id, as the schema omits it; the
+            // sources keep their schema spelling.
+            if let DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. } = target
+            {
+                let lookup_object = Object::new();
+                set_field(
+                    &lookup_object,
+                    "index",
+                    &JsValue::from_str(&lookup.index),
+                    path,
+                )?;
+                let keys = Object::new();
+                for (index_property, source) in &lookup.keys {
+                    set_field(
+                        &keys,
+                        index_property,
+                        &JsValue::from_str(source.as_str()),
+                        path,
+                    )?;
+                }
+                set_field(&lookup_object, "keys", &keys, path)?;
+                set_field(object, "lookup", &lookup_object, path)?;
             }
         }
         DocumentPropertyReferenceTarget::IdentityPublicKey {

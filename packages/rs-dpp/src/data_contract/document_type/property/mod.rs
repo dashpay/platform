@@ -40,8 +40,10 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
 
 #[cfg(test)]
 mod byte_array_encoding_flip_tests;
@@ -791,7 +793,9 @@ pub enum DocumentPropertyReferenceTarget {
     /// expect the reference to resolve to nothing. It can not come back
     /// pointing at something else: a document id commits to the nonce of
     /// its create transition, so an id is produced at most once and a
-    /// reference means that one document or nothing. A WRITER may not leave
+    /// reference means that one document or nothing (which is why there is
+    /// no lookup form of it: a key could find a new document once the one it
+    /// found is deleted). A WRITER may not leave
     /// it that way: every replace of the referring document re-validates
     /// the reference, so a dead one has to be repointed at a document that
     /// exists or cleared (on an `immutable` property, clearing is the only
@@ -807,6 +811,39 @@ pub enum DocumentPropertyReferenceTarget {
         /// See [`Self::PermanentDocument`]'s `property_agreement`.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
+    },
+    /// A `permanentDocument` reference declared with a `lookup`: the
+    /// property's value (or each element of a typed array) is NOT the
+    /// referenced document's id, but one part of a key; the referenced
+    /// document is the one the named unique index of the referenced document
+    /// type finds for the key the [`DocumentReferenceLookup`] assembles from
+    /// the referring document. Everything else is as for
+    /// [`Self::PermanentDocument`]: the referenced type must forbid deletion,
+    /// the agreement pairs are checked against the document found, and the
+    /// key must stay with that document (its parts cannot be changed by a
+    /// replace, a transfer or a purchase), so the reference can not dangle
+    /// either. There is no deletable form: a key into a deletable type could
+    /// find a new document once the one it found is deleted, where an id is
+    /// produced at most once.
+    ///
+    /// A variant of its own rather than a field of
+    /// [`Self::PermanentDocument`], appended as this enum's rule requires: an
+    /// id reference keeps its consensus encoding (the enum is embedded in
+    /// reference errors), and code matching `PermanentDocument` as "the value
+    /// is a document id" can not mistake a lookup for one. It serializes
+    /// under the same `permanentDocument` tag, with a `lookup` field (the
+    /// enum is serialize-only, so the shared tag is never read back).
+    #[serde(rename = "permanentDocument")]
+    PermanentDocumentLookup {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+        /// See [`Self::PermanentDocument`]'s `property_agreement`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
+        /// How the referenced document is found.
+        lookup: DocumentReferenceLookup,
     },
 }
 
@@ -825,12 +862,30 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// Whether the referenced document type must forbid deletion
     /// (`permanentDocument`) or must allow it (`deletableDocument`)
     pub permanent: bool,
+    /// How the referenced document is found when the value is not its id
+    /// ([`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]); `None`
+    /// when the value is the referenced document's id. Only
+    /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
+    /// returns a declaration carrying one.
+    pub lookup: Option<&'a DocumentReferenceLookup>,
 }
 
 impl DocumentPropertyReferenceTarget {
-    /// The declaration of a reference to a DOCUMENT, of either kind;
-    /// `None` for every other target.
+    /// The declaration of a reference whose value is a DOCUMENT's id, of
+    /// either kind; `None` for every other target, a lookup reference
+    /// included, whose value is not a document id. This is the accessor for
+    /// code that treats the value as the referenced document's `$id` (by-id
+    /// joins); code that validates every kind of document reference uses
+    /// [`Self::as_any_document_reference`].
     pub fn as_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
+        self.as_any_document_reference()
+            .filter(|declaration| declaration.lookup.is_none())
+    }
+
+    /// The declaration of any reference to a DOCUMENT: of either kind, and
+    /// found by its id or through a `lookup` (then `lookup` is `Some`, and
+    /// the value is not the document's id). `None` for every other target.
+    pub fn as_any_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
         match self {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id,
@@ -841,6 +896,19 @@ impl DocumentPropertyReferenceTarget {
                 document_type_name,
                 property_agreement,
                 permanent: true,
+                lookup: None,
+            }),
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id,
+                document_type_name,
+                property_agreement,
+                lookup,
+            } => Some(DocumentReferenceDeclaration {
+                contract_id: *contract_id,
+                document_type_name,
+                property_agreement,
+                permanent: true,
+                lookup: Some(lookup),
             }),
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id,
@@ -851,6 +919,7 @@ impl DocumentPropertyReferenceTarget {
                 document_type_name,
                 property_agreement,
                 permanent: false,
+                lookup: None,
             }),
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::Contract { .. }
@@ -979,20 +1048,21 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             }
             DocumentPropertyReferenceTarget::Token => write!(f, "token"),
             DocumentPropertyReferenceTarget::PermanentDocument {
-                contract_id: Some(contract_id),
+                contract_id,
                 document_type_name,
                 ..
-            } => write!(
-                f,
-                "permanent document (contract {contract_id}, document type {document_type_name})"
-            ),
-            DocumentPropertyReferenceTarget::PermanentDocument {
-                contract_id: None,
+            } => write_document_reference(f, "permanent", *contract_id, document_type_name, None),
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id,
                 document_type_name,
+                lookup,
                 ..
-            } => write!(
+            } => write_document_reference(
                 f,
-                "permanent document (own contract, document type {document_type_name})"
+                "permanent",
+                *contract_id,
+                document_type_name,
+                Some(lookup),
             ),
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property,
@@ -1008,21 +1078,10 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 Ok(())
             }
             DocumentPropertyReferenceTarget::DeletableDocument {
-                contract_id: Some(contract_id),
+                contract_id,
                 document_type_name,
                 ..
-            } => write!(
-                f,
-                "deletable document (contract {contract_id}, document type {document_type_name})"
-            ),
-            DocumentPropertyReferenceTarget::DeletableDocument {
-                contract_id: None,
-                document_type_name,
-                ..
-            } => write!(
-                f,
-                "deletable document (own contract, document type {document_type_name})"
-            ),
+            } => write_document_reference(f, "deletable", *contract_id, document_type_name, None),
         }
     }
 }
@@ -1119,6 +1178,32 @@ impl KeyIdReference {
     }
 }
 
+/// How the two document reference targets read: the kind, the contract, the
+/// document type and, for a lookup, the unique index the document is found
+/// through.
+fn write_document_reference(
+    f: &mut std::fmt::Formatter<'_>,
+    kind: &str,
+    contract_id: Option<Identifier>,
+    document_type_name: &str,
+    lookup: Option<&DocumentReferenceLookup>,
+) -> std::fmt::Result {
+    match contract_id {
+        Some(contract_id) => write!(
+            f,
+            "{kind} document (contract {contract_id}, document type {document_type_name}"
+        )?,
+        None => write!(
+            f,
+            "{kind} document (own contract, document type {document_type_name}"
+        )?,
+    }
+    if let Some(lookup) = lookup {
+        write!(f, ", found through unique index {}", lookup.index)?;
+    }
+    write!(f, ")")
+}
+
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
@@ -1194,6 +1279,23 @@ impl DocumentPropertyType {
                 "invalid type {}",
                 name
             ))),
+        }
+    }
+
+    /// The kind of value this type holds, for the rules that compare a value of
+    /// one property with a value of another (`propertyAgreement` pairs,
+    /// `lookup` key parts): two types of the same kind can hold equal values.
+    /// Sizes and other constraints do not count, and an identifier, or a `u32`
+    /// key id, is one kind whether or not it carries its own reference.
+    pub fn value_kind(&self) -> std::mem::Discriminant<DocumentPropertyType> {
+        match self {
+            DocumentPropertyType::IdentifierWithReference(_) => {
+                std::mem::discriminant(&DocumentPropertyType::Identifier)
+            }
+            DocumentPropertyType::KeyIdWithReference(_) => {
+                std::mem::discriminant(&DocumentPropertyType::U32)
+            }
+            other => std::mem::discriminant(other),
         }
     }
 
@@ -9490,6 +9592,20 @@ mod tests {
             .to_string(),
             "deletable document (own contract, document type note)"
         );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id: None,
+                document_type_name: "joinRequest".to_string(),
+                property_agreement: Default::default(),
+                lookup: DocumentReferenceLookup {
+                    index: "bySubmittedCharter".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            }
+            .to_string(),
+            "permanent document (own contract, document type joinRequest, found through unique \
+             index bySubmittedCharter)"
+        );
     }
 
     #[test]
@@ -9519,6 +9635,48 @@ mod tests {
         assert!(DocumentPropertyReferenceTarget::Identity
             .as_document_reference()
             .is_none());
+    }
+
+    /// A lookup reference is a document reference, but its value is not a
+    /// document id: only the accessor for every kind returns it, so code that
+    /// treats the value as an id can not take it for one.
+    #[test]
+    fn should_return_a_lookup_reference_only_from_the_accessor_for_every_kind() {
+        let lookup = DocumentReferenceLookup {
+            index: "bySubmittedCharter".to_string(),
+            keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+        };
+        let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            contract_id: None,
+            document_type_name: "joinRequest".to_string(),
+            property_agreement: Default::default(),
+            lookup: lookup.clone(),
+        };
+
+        assert_eq!(target.as_document_reference(), None);
+        let declaration = target
+            .as_any_document_reference()
+            .expect("a document reference");
+        assert!(declaration.permanent);
+        assert_eq!(declaration.document_type_name, "joinRequest");
+        assert_eq!(declaration.lookup, Some(&lookup));
+
+        // An id reference is returned by both, without a lookup
+        let id_reference = DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "joinRequest".to_string(),
+            property_agreement: Default::default(),
+        };
+        assert_eq!(
+            id_reference.as_document_reference(),
+            id_reference.as_any_document_reference()
+        );
+        assert_eq!(
+            id_reference
+                .as_document_reference()
+                .and_then(|declaration| declaration.lookup),
+            None
+        );
     }
 
     fn key_with(purpose: Purpose, contract_bounds: Option<ContractBounds>) -> IdentityPublicKey {
@@ -9672,8 +9830,8 @@ mod tests {
     /// notably by wasm-dpp2's `DocumentPropertyReference` TypeScript union
     /// and the conversion that builds it. Those live behind a `match` that
     /// a new variant would not break, because they can fall back to a
-    /// catch-all. This exhaustive `match` has no catch-all, so adding a
-    /// seventh variant fails to compile *here*, in the crate that owns the
+    /// catch-all. This exhaustive `match` has no catch-all, so adding an
+    /// eighth variant fails to compile *here*, in the crate that owns the
     /// enum, where whoever adds it will see it.
     #[test]
     fn reference_targets_are_exhaustively_mirrored() {
@@ -9697,6 +9855,15 @@ mod tests {
                 document_type_name: "note".to_string(),
                 property_agreement: Default::default(),
             },
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+                lookup: DocumentReferenceLookup {
+                    index: "byOwner".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            },
         ];
 
         for target in &targets {
@@ -9708,6 +9875,9 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
                 DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
                 DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => {
+                    "permanentDocument"
+                }
             };
 
             // The tag is the `refersTo` schema keyword's own `type` value,
