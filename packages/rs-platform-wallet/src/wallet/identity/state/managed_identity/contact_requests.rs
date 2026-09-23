@@ -109,6 +109,10 @@ impl ManagedIdentity {
             self.dashpay
                 .established_contacts
                 .insert(recipient_id, updated);
+            // Our receiving account's scan checkpoint is derived from this
+            // outgoing request alone, so a new one invalidates its rescan
+            // guard. Incoming-side changes never touch the guard: the contact
+            // must not be able to force rescans of our receiving account.
             self.dashpay.rescan_triggered.remove(&recipient_id);
             return Ok(());
         }
@@ -455,7 +459,6 @@ impl ManagedIdentity {
             persister.store(cs.into())?;
             self.dashpay.sent_contact_requests.remove(&sender_id);
             self.dashpay.established_contacts.insert(sender_id, contact);
-            self.dashpay.rescan_triggered.remove(&sender_id);
         } else {
             // No matching sent request, just add as incoming
             cs.incoming_requests.insert(
@@ -637,7 +640,6 @@ impl ManagedIdentity {
                 );
                 persister.store(cs.into())?;
                 self.dashpay.established_contacts.insert(sender_id, updated);
-                self.dashpay.rescan_triggered.remove(&sender_id);
                 true
             } else if tracked_pending {
                 // Pending (not-yet-accepted) incoming request — replace it so
@@ -655,7 +657,6 @@ impl ManagedIdentity {
                 self.dashpay
                     .incoming_contact_requests
                     .insert(sender_id, request);
-                self.dashpay.rescan_triggered.remove(&sender_id);
                 false
             } else {
                 return Ok(false);
@@ -720,7 +721,6 @@ impl ManagedIdentity {
         self.dashpay
             .established_contacts
             .insert(*sender_id, contact.clone());
-        self.dashpay.rescan_triggered.remove(sender_id);
 
         // Per the ContactChangeSet auto-establishment contract, `established`
         // implies the matching pending requests are dropped — no separate
@@ -1612,7 +1612,7 @@ mod tests {
         );
         assert!(
             !managed.dashpay.rescan_triggered.contains(&contact_id),
-            "a changed request height must become eligible for rescan"
+            "a new outgoing request must make the receiving account eligible for rescan"
         );
 
         // Rotation #2: re-send with another bumped reference R2.
