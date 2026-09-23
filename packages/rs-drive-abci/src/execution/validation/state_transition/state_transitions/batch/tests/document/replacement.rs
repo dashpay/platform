@@ -3492,22 +3492,42 @@ mod replacement_tests {
     const REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key.json";
 
-    /// Registers the owner-key fixture contract (`message.senderKeyId` is a
-    /// `u32` with `refersTo: identityPublicKey, identityProperty: $ownerId`),
-    /// creates a `message` document shaped by `create_mutator` (asserting
-    /// success), then, when `disable_master_key_between` is set, disables the
-    /// test identity's master key (key 0) in state, replaces the document
-    /// shaped by `replace_mutator` and returns the replace execution result.
-    /// Key 0 is enabled at create time, so a create may reference it; that
-    /// the replace refetches it is then observable.
-    async fn run_owner_key_reference_create_then_replace<C, R>(
+    /// Committed state the key id reference replace tests can point at: the
+    /// writer and a second identity, each with an enabled critical key and a
+    /// master key (key 0) that the helper may disable between the create and
+    /// the replace.
+    struct KeyIdReferenceTargets {
+        writer_id: Identifier,
+        enabled_key_id: KeyID,
+        master_key_id: KeyID,
+        other_id: Identifier,
+        other_enabled_key_id: KeyID,
+    }
+
+    /// Whose master key the helper disables between the create and the
+    /// replace, so that a replace refetching the key is observable.
+    enum DisableMasterKeyBetween {
+        Nobody,
+        Writer,
+        Other,
+    }
+
+    /// Registers the key id reference fixture at `contract_path` (a `message`
+    /// type whose key id property carries `refersTo: identityPublicKey` with
+    /// an `identityProperty`), creates a `message` document shaped by
+    /// `create_mutator` (asserting success), disables the chosen master key
+    /// in state, replaces the document shaped by `replace_mutator` and
+    /// returns the replace execution result. Master keys are enabled at
+    /// create time, so a create may reference one.
+    async fn run_key_id_reference_create_then_replace<C, R>(
+        contract_path: &str,
         create_mutator: C,
-        disable_master_key_between: bool,
+        disable_between: DisableMasterKeyBetween,
         replace_mutator: R,
     ) -> StateTransitionExecutionResult
     where
-        C: FnOnce(&mut Document, &IdentityKeyReferenceTargets),
-        R: FnOnce(&mut Document, &IdentityKeyReferenceTargets),
+        C: FnOnce(&mut Document, &KeyIdReferenceTargets),
+        R: FnOnce(&mut Document, &KeyIdReferenceTargets),
     {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -3520,16 +3540,19 @@ mod replacement_tests {
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+        let (other, _, other_key) = setup_identity(&mut platform, 452, dash_to_credits!(0.1));
 
-        let targets = IdentityKeyReferenceTargets {
-            identity_id: identity.id(),
+        let targets = KeyIdReferenceTargets {
+            writer_id: identity.id(),
             enabled_key_id: key.id(),
-            disabled_key_id: 0,
+            master_key_id: 0,
+            other_id: other.id(),
+            other_enabled_key_id: other_key.id(),
         };
 
         let contract = setup_contract(
             &platform.drive,
-            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            contract_path,
             None,
             None,
             None::<fn(&mut DataContract)>,
@@ -3608,13 +3631,18 @@ mod replacement_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        if disable_master_key_between {
+        let disabled_identity = match disable_between {
+            DisableMasterKeyBetween::Nobody => None,
+            DisableMasterKeyBetween::Writer => Some(identity.id()),
+            DisableMasterKeyBetween::Other => Some(other.id()),
+        };
+        if let Some(identity_id) = disabled_identity {
             // Documents are signed with the critical key, so the replace
             // below stays valid
             platform
                 .drive
                 .disable_identity_keys(
-                    identity.id().to_buffer(),
+                    identity_id.to_buffer(),
                     vec![0],
                     1,
                     &BlockInfo::default(),
@@ -3680,11 +3708,12 @@ mod replacement_tests {
     /// the owner's keys, the identity being the writer by construction.
     #[tokio::test]
     async fn should_document_replace_fail_when_owner_key_id_changed_to_a_missing_key() {
-        let result = run_owner_key_reference_create_then_replace(
+        let result = run_key_id_reference_create_then_replace(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
             |document, targets| {
                 document.set("senderKeyId", (targets.enabled_key_id as i64).into());
             },
-            false,
+            DisableMasterKeyBetween::Nobody,
             |document, _| {
                 document.set("senderKeyId", 99i64.into());
             },
@@ -3704,13 +3733,14 @@ mod replacement_tests {
 
     #[tokio::test]
     async fn should_document_replace_fail_when_owner_key_id_changed_to_a_disabled_key() {
-        let result = run_owner_key_reference_create_then_replace(
+        let result = run_key_id_reference_create_then_replace(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
             |document, targets| {
                 document.set("senderKeyId", (targets.enabled_key_id as i64).into());
             },
-            true,
+            DisableMasterKeyBetween::Writer,
             |document, targets| {
-                document.set("senderKeyId", (targets.disabled_key_id as i64).into());
+                document.set("senderKeyId", (targets.master_key_id as i64).into());
             },
         )
         .await;
@@ -3733,11 +3763,12 @@ mod replacement_tests {
     /// replace, and a replace of another property is refused.
     #[tokio::test]
     async fn should_document_replace_fail_when_untouched_owner_key_id_names_a_now_disabled_key() {
-        let result = run_owner_key_reference_create_then_replace(
+        let result = run_key_id_reference_create_then_replace(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
             |document, targets| {
-                document.set("senderKeyId", (targets.disabled_key_id as i64).into());
+                document.set("senderKeyId", (targets.master_key_id as i64).into());
             },
-            true,
+            DisableMasterKeyBetween::Writer,
             |document, _| {
                 document.set("note", "changed".into());
             },
@@ -3760,11 +3791,12 @@ mod replacement_tests {
     #[tokio::test]
     async fn should_document_replace_succeed_when_untouched_owner_key_id_still_names_an_enabled_key(
     ) {
-        let result = run_owner_key_reference_create_then_replace(
+        let result = run_key_id_reference_create_then_replace(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
             |document, targets| {
                 document.set("senderKeyId", (targets.enabled_key_id as i64).into());
             },
-            true,
+            DisableMasterKeyBetween::Writer,
             |document, _| {
                 document.set("note", "changed".into());
             },
@@ -3780,17 +3812,26 @@ mod replacement_tests {
     const REFERENCE_VALIDATION_OWNER_KEY_TRANSFERABLE_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key-transferable.json";
 
-    /// The owner-key fixture with `transferable: 1`: the writer creates a
-    /// `message` naming its own master key (key 0, enabled), transfers it to
-    /// a receiver whose master key was disabled in state beforehand, and the
-    /// receiver replaces it shaped by `replace_mutator`. Returns the replace
-    /// execution result. The receiver's enabled critical key id is passed to
-    /// the mutator.
-    async fn run_owner_key_reference_create_transfer_then_replace<R>(
+    /// The identities of a transfer: the writer (creator), whose master key
+    /// stays enabled, and the receiver, whose master key is disabled.
+    struct TransferTargets {
+        writer_id: Identifier,
+        receiver_id: Identifier,
+        receiver_key_id: KeyID,
+    }
+
+    /// A transferable key id reference fixture at `contract_path`: the writer
+    /// creates a `message` naming its own master key (key 0, enabled) as
+    /// `senderKeyId`, transfers it to a receiver whose master key was
+    /// disabled in state beforehand, and the receiver replaces it shaped by
+    /// `replace_mutator`. Returns the replace execution result and the
+    /// identities.
+    async fn run_key_id_reference_create_transfer_then_replace<R>(
+        contract_path: &str,
         replace_mutator: R,
-    ) -> StateTransitionExecutionResult
+    ) -> (StateTransitionExecutionResult, TransferTargets)
     where
-        R: FnOnce(&mut Document, KeyID),
+        R: FnOnce(&mut Document, &TransferTargets),
     {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -3823,13 +3864,19 @@ mod replacement_tests {
 
         let contract = setup_contract(
             &platform.drive,
-            REFERENCE_VALIDATION_OWNER_KEY_TRANSFERABLE_CONTRACT_PATH,
+            contract_path,
             None,
             None,
             None::<fn(&mut DataContract)>,
             None,
             None,
         );
+
+        let targets = TransferTargets {
+            writer_id: identity.id(),
+            receiver_id: receiver.id(),
+            receiver_key_id: receiver_key.id(),
+        };
 
         let message = contract
             .document_type_for_name("message")
@@ -3939,7 +3986,7 @@ mod replacement_tests {
 
         document.set_owner_id(receiver.id());
         document.set_revision(Some(3));
-        replace_mutator(&mut document, receiver_key.id());
+        replace_mutator(&mut document, &targets);
 
         let replace_transition =
             BatchTransition::new_document_replacement_transition_from_document(
@@ -3978,11 +4025,14 @@ mod replacement_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        processing_result
-            .execution_results()
-            .first()
-            .expect("expected one execution result")
-            .clone()
+        (
+            processing_result
+                .execution_results()
+                .first()
+                .expect("expected one execution result")
+                .clone(),
+            targets,
+        )
     }
 
     /// After a transfer the writer is the receiver, and the replace
@@ -3992,15 +4042,115 @@ mod replacement_tests {
     #[tokio::test]
     async fn should_document_replace_fail_after_transfer_when_untouched_owner_key_id_is_not_the_new_owners_key(
     ) {
-        let result = run_owner_key_reference_create_transfer_then_replace(|document, _| {
-            document.set("note", "changed by the receiver".into());
-        })
+        let (result, targets) = run_key_id_reference_create_transfer_then_replace(
+            REFERENCE_VALIDATION_OWNER_KEY_TRANSFERABLE_CONTRACT_PATH,
+            |document, _| {
+                document.set("note", "changed by the receiver".into());
+            },
+        )
         .await;
 
         assert_matches!(
             result,
             PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    e
+                )),
+                ..
+            } if *e.identity_id() == targets.receiver_id
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_succeed_after_transfer_when_owner_key_id_is_repointed_at_the_new_owners_key(
+    ) {
+        let (result, _) = run_key_id_reference_create_transfer_then_replace(
+            REFERENCE_VALIDATION_OWNER_KEY_TRANSFERABLE_CONTRACT_PATH,
+            |document, targets| {
+                document.set("senderKeyId", (targets.receiver_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    const REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key.json";
+    const REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key.json";
+
+    /// `$creatorId` follows the creator through a transfer: the receiver may
+    /// repoint the key id at the creator's master key (enabled on the
+    /// creator, disabled on the receiver), which the owner form would refuse.
+    #[tokio::test]
+    async fn should_document_replace_succeed_after_transfer_when_creator_key_id_names_the_creators_key(
+    ) {
+        let (result, _) = run_key_id_reference_create_transfer_then_replace(
+            REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("senderKeyId", 0i64.into());
+                document.set("note", "changed by the receiver".into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_fail_after_transfer_when_creator_key_id_names_a_key_the_creator_lacks(
+    ) {
+        let (result, targets) = run_key_id_reference_create_transfer_then_replace(
+            REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("senderKeyId", 99i64.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if *e.identity_id() == targets.writer_id && e.key_id() == 99
+        );
+    }
+
+    /// A property path binds both sides of the pair: changing only the
+    /// identity property re-validates the key id against the new identity.
+    #[tokio::test]
+    async fn should_document_replace_fail_when_only_the_identity_property_changed_to_an_identity_without_the_key(
+    ) {
+        let result = run_key_id_reference_create_then_replace(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set(
+                    "recipientKeyId",
+                    (targets.other_enabled_key_id as i64).into(),
+                );
+            },
+            DisableMasterKeyBetween::Nobody,
+            |document, _| {
+                document.set("toUserId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
                     _
                 )),
                 ..
@@ -4008,14 +4158,24 @@ mod replacement_tests {
         );
     }
 
+    /// An untouched pair is not refetched: the named identity's key is
+    /// disabled between the create and a replace of another property, and
+    /// the replace still passes.
     #[tokio::test]
-    async fn should_document_replace_succeed_after_transfer_when_owner_key_id_is_repointed_at_the_new_owners_key(
+    async fn should_document_replace_succeed_without_refetching_an_untouched_identity_property_pair(
     ) {
-        let result =
-            run_owner_key_reference_create_transfer_then_replace(|document, receiver_key_id| {
-                document.set("senderKeyId", (receiver_key_id as i64).into());
-            })
-            .await;
+        let result = run_key_id_reference_create_then_replace(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set("recipientKeyId", (targets.master_key_id as i64).into());
+            },
+            DisableMasterKeyBetween::Other,
+            |document, _| {
+                document.set("note", "changed".into());
+            },
+        )
+        .await;
 
         assert_matches!(
             result,

@@ -216,9 +216,20 @@
               "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
             },
             "identityProperty": {
-              "description": "identityPublicKey references on the key id property itself, the inverse form: the declaring property is an integer from 0 to 4294967295 (a key id) whose value must be the id of a key of the named identity that exists and is not disabled when the document is written (ReferencedIdentityKeyNotFoundError, 40123; ReferencedIdentityKeyDisabledError, 40124). \"$ownerId\" names the writer, the document's owner, whose existence the transition already proved, so only the key is fetched. Takes the place of keyIdProperty",
-              "enum": [
-                "$ownerId"
+              "description": "identityPublicKey references on the key id property itself, the inverse form: the declaring property is an integer from 0 to 4294967295 (a key id) whose value must be the id of a key of the named identity that exists and is not disabled when the document is written (ReferencedIdentityKeyNotFoundError, 40123; ReferencedIdentityKeyDisabledError, 40124). \"$ownerId\" names the writer, the document's owner, and \"$creatorId\" its creator (only on a document type that records creator ids, checked at contract registration), whose existence is already proven, so only the key is fetched; any other value is the path of an identifier property of the same document type (it must exist, be an identifier and not carry an identityPublicKey reference of its own, checked at registration), whose value is the identity, and a key id set while it is not is refused (ReferencedKeyIdPropertyInvalidError, 40125). Takes the place of keyIdProperty",
+              "anyOf": [
+                {
+                  "enum": [
+                    "$ownerId",
+                    "$creatorId"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+                }
               ]
             },
             "propertyAgreement": {

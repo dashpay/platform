@@ -634,25 +634,31 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     and testnet (2026-09-23) found no name carrying one, so nothing stored
 ///     is affected. Stored contracts are read as they are.
 ///
-/// 29. **Key references on the writer's own identity**: an `identityPublicKey`
+/// 29. **Key references on the key id property**: an `identityPublicKey`
 ///     `refersTo` declaration may sit on the key id property itself, an
 ///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
-///     `u32`), naming through `identityProperty` whose key the value is;
-///     `"$ownerId"`, the writer, is the one value for now (an enum, so a later
-///     version can admit a property path without a new reference type). The
+///     `u32`), naming through `identityProperty` whose key the value is:
+///     `"$ownerId"` (the writer), `"$creatorId"` (the document's creator,
+///     only on a document type that records creator ids) or the path of an
+///     identifier property of the same document type (which must exist, be
+///     an identifier and not carry an `identityPublicKey` reference of its
+///     own); the last two are checked at contract registration (40125). The
 ///     declaration takes no `keyIdProperty`; the identifier form is unchanged
 ///     and every other `refersTo` form stays identifier-only (meta-schema v3,
 ///     `apply_property_reference` 0, `DocumentPropertyType::KeyIdWithReference`
 ///     over `KeyReferenceIdentityProperty`). At document create and replace the
-///     reference validation reads the key id from the property and fetches
-///     that key of the transition's owner, whose existence the transition
-///     already proved, so the key fetch is the only read; a key that does not
-///     exist refuses the write, paid, with `ReferencedIdentityKeyNotFoundError`
-///     (40123) and a disabled one with `ReferencedIdentityKeyDisabledError`
-///     (40124), as for the identifier form. A replace re-validates it
-///     touched or not, as the `$ownerId` writer gate is, since the writer
-///     may not be the one who wrote the key id (a transfer itself is not
-///     checked: the reference governs writing, not holding). A
+///     reference validation reads the key id from the property, resolves the
+///     identity (the writer, the creator the action carries, or the named
+///     property's value, a key id set while it is unset being refused with
+///     40125) and fetches that key, so the key fetch is the only read; a key
+///     that does not exist refuses the write, paid, with
+///     `ReferencedIdentityKeyNotFoundError` (40123) and a disabled one with
+///     `ReferencedIdentityKeyDisabledError` (40124), as for the identifier
+///     form. A replace re-validates `$ownerId` touched or not, as the
+///     `$ownerId` writer gate is, since the writer may not be the one who
+///     wrote the key id; `$creatorId` when the key id changed; a property
+///     path when the key id or that property changed (a transfer itself is
+///     never checked: the reference governs writing, not holding). A
 ///     `keyIdProperty` may not name a property carrying this form (40125 at
 ///     registration). Adding, removing or changing it is an incompatible
 ///     schema change on update, like the rest of a `refersTo`.

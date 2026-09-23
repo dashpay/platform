@@ -6994,15 +6994,30 @@ mod creation_tests {
     const REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key.json";
 
-    /// Registers the owner-key fixture contract (`message.senderKeyId` is a
-    /// `u32` with `refersTo: identityPublicKey, identityProperty: $ownerId`),
-    /// disables the test identity's master key in state, then creates a
-    /// `message` document mutated by the test and returns the execution
-    /// result. The identity of the reference is the writer by construction,
-    /// so the tests only choose a key id.
-    async fn run_owner_key_reference_creation<F>(mutator: F) -> StateTransitionExecutionResult
+    /// Committed state the key id reference tests can point at: the writer
+    /// (its enabled critical key, its master key disabled in state) and a
+    /// second identity in the same state, for the form naming an identity
+    /// property.
+    struct KeyIdReferenceTargets {
+        writer_id: Identifier,
+        enabled_key_id: KeyID,
+        disabled_key_id: KeyID,
+        other_id: Identifier,
+        other_enabled_key_id: KeyID,
+        other_disabled_key_id: KeyID,
+    }
+
+    /// Registers the key id reference fixture at `contract_path` (a `message`
+    /// type whose key id property carries `refersTo: identityPublicKey` with
+    /// an `identityProperty`), disables the master key of the writer and of
+    /// a second identity in state, then creates a `message` document mutated
+    /// by the test and returns the execution result.
+    async fn run_key_id_reference_creation<F>(
+        contract_path: &str,
+        mutator: F,
+    ) -> StateTransitionExecutionResult
     where
-        F: FnOnce(&mut Document, &IdentityKeyReferenceTargets),
+        F: FnOnce(&mut Document, &KeyIdReferenceTargets),
     {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -7015,31 +7030,37 @@ mod creation_tests {
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+        let (other, _, other_key) = setup_identity(&mut platform, 452, dash_to_credits!(0.1));
 
         // Key 0 is the master key; documents are signed with the critical key,
         // so disabling it leaves the transition below valid
-        platform
-            .drive
-            .disable_identity_keys(
-                identity.id().to_buffer(),
-                vec![0],
-                1,
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to disable the master key");
+        for identity_id in [identity.id(), other.id()] {
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity_id.to_buffer(),
+                    vec![0],
+                    1,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to disable the master key");
+        }
 
-        let targets = IdentityKeyReferenceTargets {
-            identity_id: identity.id(),
+        let targets = KeyIdReferenceTargets {
+            writer_id: identity.id(),
             enabled_key_id: key.id(),
             disabled_key_id: 0,
+            other_id: other.id(),
+            other_enabled_key_id: other_key.id(),
+            other_disabled_key_id: 0,
         };
 
         let contract = setup_contract(
             &platform.drive,
-            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            contract_path,
             None,
             None,
             None::<fn(&mut DataContract)>,
@@ -7122,9 +7143,12 @@ mod creation_tests {
 
     #[tokio::test]
     async fn should_document_creation_succeed_when_owner_key_reference_names_an_existing_key() {
-        let result = run_owner_key_reference_creation(|document, targets| {
-            document.set("senderKeyId", (targets.enabled_key_id as i64).into());
-        })
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("senderKeyId", (targets.enabled_key_id as i64).into());
+            },
+        )
         .await;
 
         assert_matches!(
@@ -7140,9 +7164,12 @@ mod creation_tests {
     /// test of its own. Refused paid, the identity exists.
     #[tokio::test]
     async fn should_document_creation_fail_when_owner_key_reference_names_a_missing_key() {
-        let result = run_owner_key_reference_creation(|document, _| {
-            document.set("senderKeyId", 99i64.into());
-        })
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("senderKeyId", 99i64.into());
+            },
+        )
         .await;
 
         assert_matches!(
@@ -7158,9 +7185,12 @@ mod creation_tests {
 
     #[tokio::test]
     async fn should_document_creation_fail_when_owner_key_reference_names_a_disabled_key() {
-        let result = run_owner_key_reference_creation(|document, targets| {
-            document.set("senderKeyId", (targets.disabled_key_id as i64).into());
-        })
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("senderKeyId", (targets.disabled_key_id as i64).into());
+            },
+        )
         .await;
 
         assert_matches!(
@@ -7178,12 +7208,15 @@ mod creation_tests {
     /// same path the flattened properties and the error report.
     #[tokio::test]
     async fn should_document_creation_fail_when_nested_owner_key_reference_names_a_missing_key() {
-        let result = run_owner_key_reference_creation(|document, _| {
-            document.set(
-                "meta",
-                dpp::platform_value::platform_value!({ "senderKeyId": 99u32 }),
-            );
-        })
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set(
+                    "meta",
+                    dpp::platform_value::platform_value!({ "senderKeyId": 99u32 }),
+                );
+            },
+        )
         .await;
 
         assert_matches!(
@@ -7200,11 +7233,150 @@ mod creation_tests {
     /// An unset key id is not a reference to validate; whether the property
     /// may be absent is the document type's required list (it is optional
     /// in the fixture).
+    const REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key.json";
+    const REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key.json";
+
+    /// `$creatorId` on a create names the writer, the document's creator.
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_creator_key_reference_names_an_existing_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("senderKeyId", (targets.enabled_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_creator_key_reference_names_a_missing_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("senderKeyId", 99i64.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99 && e.path() == "senderKeyId"
+        );
+    }
+
+    /// A property path: `toUserId` carries the identity, `recipientKeyId` the
+    /// id of one of its keys.
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_key_reference_names_an_identity_property() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set(
+                    "recipientKeyId",
+                    (targets.other_enabled_key_id as i64).into(),
+                );
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// The key is looked up on the named identity, not the writer: the
+    /// writer's critical key id is enabled on the writer but names the other
+    /// identity's disabled master key when the ids coincide, and a missing
+    /// one is missing on the other identity.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_named_identity_lacks_or_disabled_the_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set(
+                    "recipientKeyId",
+                    (targets.other_disabled_key_id as i64).into(),
+                );
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    e
+                )),
+                ..
+            } if e.path() == "recipientKeyId"
+        );
+
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set("recipientKeyId", 99i64.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99
+        );
+    }
+
+    /// A key id without the identity it belongs to is refused: the pair is
+    /// the reference.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_key_reference_identity_property_is_not_set() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("recipientKeyId", (targets.enabled_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedKeyIdPropertyInvalidError(
+                    e
+                )),
+                ..
+            } if e.path() == "recipientKeyId"
+        );
+    }
+
     #[tokio::test]
     async fn should_document_creation_succeed_when_owner_key_reference_is_not_set() {
-        let result = run_owner_key_reference_creation(|document, _| {
-            document.set("note", "no key named".into());
-        })
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("note", "no key named".into());
+            },
+        )
         .await;
 
         assert_matches!(

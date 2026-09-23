@@ -4,7 +4,7 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentReferenceDeclaration,
+    DocumentReferenceDeclaration, KeyReferenceIdentityProperty,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
@@ -83,13 +83,90 @@ pub(super) fn validate_data_contract_references_v0(
 
     for (declaring_type_name, document_type) in contract.document_types() {
         for (path, property) in document_type.as_ref().flattened_properties() {
-            let DocumentPropertyType::IdentifierWithReference(reference_target) =
-                &property.property_type
-            else {
-                continue;
-            };
-
             let declaration_path = format!("{declaring_type_name}.{path}");
+
+            let reference_target = match &property.property_type {
+                DocumentPropertyType::IdentifierWithReference(reference_target) => reference_target,
+                // A key reference on the key id property: what `identityProperty`
+                // names must fit the document type; nothing else about the
+                // declaration is state-dependent
+                DocumentPropertyType::KeyIdWithReference(identity_property) => {
+                    let invalid = |message: &str| {
+                        SimpleConsensusValidationResult::new_with_error(
+                            ReferencedKeyIdPropertyInvalidError::new(
+                                path.to_string(),
+                                declaration_path.clone(),
+                                message.to_string(),
+                            )
+                            .into(),
+                        )
+                    };
+                    match identity_property {
+                        KeyReferenceIdentityProperty::OwnerId => {}
+                        KeyReferenceIdentityProperty::CreatorId => {
+                            if !document_type
+                                .as_ref()
+                                .should_use_creator_id(
+                                    contract.system_version_type(),
+                                    contract.config().version(),
+                                    platform_version,
+                                )
+                                .map_err(Error::Protocol)?
+                            {
+                                return Ok(invalid(
+                                    "identityProperty $creatorId needs a document type that \
+                                     records creator ids: only transferable or tradeable \
+                                     document types of a format-1 contract do",
+                                ));
+                            }
+                        }
+                        KeyReferenceIdentityProperty::Property(identity_path) => {
+                            match document_type
+                                .as_ref()
+                                .flattened_properties()
+                                .get(identity_path)
+                            {
+                                None => {
+                                    return Ok(invalid(&format!(
+                                        "the document type does not define the identity \
+                                         property {identity_path}"
+                                    )));
+                                }
+                                // The (identity, key id) pair is declared once
+                                Some(DocumentProperty {
+                                    property_type:
+                                        DocumentPropertyType::IdentifierWithReference(
+                                            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                                                ..
+                                            },
+                                        ),
+                                    ..
+                                }) => {
+                                    return Ok(invalid(&format!(
+                                        "the identity property {identity_path} carries its own \
+                                         identityPublicKey reference"
+                                    )));
+                                }
+                                Some(identity_property)
+                                    if !matches!(
+                                        identity_property.property_type,
+                                        DocumentPropertyType::Identifier
+                                            | DocumentPropertyType::IdentifierWithReference(_)
+                                    ) =>
+                                {
+                                    return Ok(invalid(&format!(
+                                        "the identity property {identity_path} must be an \
+                                         identifier"
+                                    )));
+                                }
+                                Some(_) => {}
+                            }
+                        }
+                    }
+                    continue;
+                }
+                _ => continue,
+            };
 
             // The key id property must exist in the same document type and be
             // an integer; nothing else about the declaration is state-dependent

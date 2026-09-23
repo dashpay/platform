@@ -46,13 +46,18 @@ pub(crate) trait DocumentReferenceValidation {
     /// keyed by `$ownerId`, is validated on every replace regardless.
     ///
     /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
-    /// whose referring side is `$ownerId` compares it, since it lives on the
-    /// transition rather than in `document_data`.
+    /// whose referring side is `$ownerId` compares it, and an `identityPublicKey`
+    /// reference on a key id property with `identityProperty: $ownerId` names
+    /// its key, since it lives on the transition rather than in `document_data`.
+    /// `creator_id` is the document's creator for the `$creatorId` form: the
+    /// writer on a create, the stored creator on a replace, `None` when the
+    /// document type records none (registration then admits no such form).
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
+        creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -102,6 +107,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
+        creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -119,6 +125,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
             0 => self.validate_document_references_v0(
                 document_data,
                 owner_id,
+                creator_id,
                 changed_fields,
                 platform,
                 block_info,

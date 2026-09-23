@@ -90,6 +90,15 @@ const schemas = {
         position: 8,
         refersTo: { type: 'identityPublicKey', identityProperty: '$ownerId' },
       },
+      // The same form naming an identifier property of this type: the key
+      // is one of `author`'s.
+      authorKeyId: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 4294967295,
+        position: 9,
+        refersTo: { type: 'identityPublicKey', identityProperty: 'author' },
+      },
     },
     additionalProperties: false,
   },
@@ -138,6 +147,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
         'signerKey',
         'meta.ownerRef',
         'senderKeyId',
+        'authorKeyId',
       ]);
     });
 
@@ -154,6 +164,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(byPath.get('signerKey')!.type).to.equal('identityPublicKey');
       expect(byPath.get('meta.ownerRef')!.type).to.equal('identity');
       expect(byPath.get('senderKeyId')!.type).to.equal('identityPublicKey');
+      expect(byPath.get('authorKeyId')!.type).to.equal('identityPublicKey');
     });
 
     it('should carry no target fields for the bare kinds', () => {
@@ -225,6 +236,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
 
       expect(senderKeyId.identityProperty).to.equal('$ownerId');
       expect(senderKeyId.keyIdProperty).to.equal(undefined);
+
+      const authorKeyId = references.find((reference) => reference.path === 'authorKeyId')!;
+      expect(authorKeyId.identityProperty).to.equal('author');
     });
 
     it('should return an empty array for a document type declaring none', () => {

@@ -115,13 +115,16 @@ export type DocumentPropertyReferenceTarget =
       /**
        * The inverse form, declared on the key id property itself: the
        * declaring property (an integer from 0 to 4294967295) carries the
-       * key id, and `identityProperty` names whose key it is. `'$ownerId'`
-       * is the writer, the document's owner, so consensus fetches only the
-       * key (codes 40123 when it does not exist, 40124 when it is
-       * disabled).
+       * key id, and `identityProperty` names whose key it is: `'$ownerId'`,
+       * the document's owner, `'$creatorId'`, its creator (only on a
+       * document type that records creator ids), or the dotted path of an
+       * identifier property of the same document type. Consensus fetches
+       * only the key (codes 40123 when it does not exist, 40124 when it is
+       * disabled; 40125 when a key id is set while the named property is
+       * not).
        */
       type: 'identityPublicKey';
-      identityProperty: '$ownerId';
+      identityProperty: '$ownerId' | '$creatorId' | (string & {});
       keyIdProperty?: never;
     }
   | {
@@ -192,7 +195,7 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
 /// the property's value is.
 fn key_id_reference_to_js(
     path: &str,
-    identity_property: KeyReferenceIdentityProperty,
+    identity_property: &KeyReferenceIdentityProperty,
 ) -> WasmDppResult<JsValue> {
     let object = Object::new();
     set_field(&object, "path", &JsValue::from_str(path), path)?;
@@ -351,7 +354,7 @@ pub(crate) fn references_for_document_type(
                 references.push(&reference_to_js(path, target, declaring_contract_id)?);
             }
             DocumentPropertyType::KeyIdWithReference(identity_property) => {
-                references.push(&key_id_reference_to_js(path, *identity_property)?);
+                references.push(&key_id_reference_to_js(path, identity_property)?);
             }
             _ => {}
         }

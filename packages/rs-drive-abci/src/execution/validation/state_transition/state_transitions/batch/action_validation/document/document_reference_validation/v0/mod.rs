@@ -74,6 +74,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
+        creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -162,6 +163,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
+        creator_id: Option<Identifier>,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -185,6 +187,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             document_type,
             document_data,
             owner_id,
+            creator_id,
             changed_fields,
             platform,
             block_info,
@@ -201,6 +204,7 @@ fn validate_document_type_references_v0(
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    creator_id: Option<Identifier>,
     changed_fields: Option<&BTreeSet<String>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
@@ -212,19 +216,37 @@ fn validate_document_type_references_v0(
         let reference_target = match &property.property_type {
             DocumentPropertyType::IdentifierWithReference(reference_target) => reference_target,
             // A key reference on the key id property itself: the value is the
-            // key id and the declaration names whose key it is, so no other
-            // property of the document binds it. The identity is the writer,
-            // transition metadata that never appears among the changed
-            // fields, and the document may have changed hands since the key
-            // id was written, so the reference is re-validated on EVERY
-            // replace, touched or not, as a writer gate is; a transfer itself
-            // is not checked, so the reference governs writing, not holding.
+            // key id and the declaration names whose key it is. A transfer
+            // itself is not checked, so the reference governs writing, not
+            // holding; which replaces re-validate it depends on where the
+            // identity comes from.
             DocumentPropertyType::KeyIdWithReference(identity_property) => {
+                if let Some(changed) = changed_fields {
+                    let must_revalidate = match identity_property {
+                        // The owner is transition metadata, never among the
+                        // changed fields, and may have changed since the key
+                        // id was written (a transfer or a purchase), so every
+                        // replace re-validates, as a writer gate is
+                        KeyReferenceIdentityProperty::OwnerId => true,
+                        // The creator never changes
+                        KeyReferenceIdentityProperty::CreatorId => is_changed_field(changed, path),
+                        // The identity is in the document: either side of the
+                        // (identity, key id) pair changing re-validates it
+                        KeyReferenceIdentityProperty::Property(identity_path) => {
+                            is_changed_field(changed, path)
+                                || is_changed_field(changed, identity_path)
+                        }
+                    };
+                    if !must_revalidate {
+                        continue;
+                    }
+                }
                 let result = validate_key_id_reference_v0(
                     path,
-                    *identity_property,
+                    identity_property,
                     document_data,
                     owner_id,
+                    creator_id,
                     platform,
                     transaction,
                     execution_context,
@@ -657,15 +679,19 @@ fn validate_document_type_references_v0(
 /// A key reference declared on the key id property at `path`
 /// (`DocumentPropertyType::KeyIdWithReference`): the value is the key id, and
 /// `identity_property` names whose key it is. For `$ownerId` that is the
-/// writer, `owner_id`, whose existence the transition already proved, so the
-/// key fetch is the only read. An unset property is not validated; whether it
-/// may be absent is the document type's required list.
+/// writer, `owner_id`, whose existence the transition already proved, and for
+/// `$creatorId` the document's creator, `creator_id` (the writer on a create,
+/// the stored creator on a replace), so the key fetch is the only read; for a
+/// property path the identity is read from the document, and a key id set
+/// while that property is not is refused. An unset key id is not validated;
+/// whether it may be absent is the document type's required list.
 #[allow(clippy::too_many_arguments)]
 fn validate_key_id_reference_v0(
     path: &str,
-    identity_property: KeyReferenceIdentityProperty,
+    identity_property: &KeyReferenceIdentityProperty,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    creator_id: Option<Identifier>,
     platform: &PlatformStateRef,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
@@ -689,6 +715,33 @@ fn validate_key_id_reference_v0(
 
     let identity_id = match identity_property {
         KeyReferenceIdentityProperty::OwnerId => owner_id,
+        // Contract registration admits `$creatorId` only on a document type
+        // that records creator ids, so a document of such a type has one
+        KeyReferenceIdentityProperty::CreatorId => {
+            creator_id.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a $creatorId key reference needs a document type that records creator ids",
+            )))?
+        }
+        KeyReferenceIdentityProperty::Property(identity_path) => {
+            match document_data.get_optional_identifier_at_path(identity_path) {
+                Ok(Some(identity_id)) => Identifier::from(identity_id),
+                Ok(None) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedKeyIdPropertyInvalidError::new(
+                            path.to_string(),
+                            path.to_string(),
+                            format!("the identity property {identity_path} is not set"),
+                        )
+                        .into(),
+                    ))
+                }
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidIdentifierError::new(identity_path.clone(), err.to_string()).into(),
+                    ))
+                }
+            }
+        }
     };
 
     validate_referenced_identity_key_v0(

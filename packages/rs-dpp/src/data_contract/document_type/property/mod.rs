@@ -802,39 +802,61 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
 /// Whose key a `refersTo: identityPublicKey` declaration on a KEY ID property
 /// names: its `identityProperty`. The declaring property carries the key id
 /// (a `u32`, so an integer property with `minimum` 0 and `maximum`
-/// 4294967295) and this names the identity the key belongs to. It is the
-/// inverse of [`DocumentPropertyReferenceTarget::IdentityPublicKey`], where
-/// the declaring property carries the identity id and `keyIdProperty` names
-/// the sibling carrying the key id; a declaration is one form or the other,
-/// never both. One value for now, an enum so a later version can admit a
-/// property path without a new reference type.
+/// 4294967295) and this names the identity the key belongs to: the document's
+/// owner, its creator, or an identifier property of the same document type.
+/// It is the inverse of [`DocumentPropertyReferenceTarget::IdentityPublicKey`],
+/// where the declaring property carries the identity id and `keyIdProperty`
+/// names the sibling carrying the key id; a declaration is one form or the
+/// other, never both.
 // @append_only
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
 pub enum KeyReferenceIdentityProperty {
     /// `"$ownerId"`: the writer's own identity. The document's owner signs
     /// the transition, which already proved the identity exists, so the
-    /// reference costs the key fetch alone.
+    /// reference costs the key fetch alone. The owner can change through a
+    /// transfer or a purchase, so every replace re-validates the reference.
     #[serde(rename = "$ownerId")]
     OwnerId,
+    /// `"$creatorId"`: the identity that created the document, the writer
+    /// of its create and the stored creator id after that. Only a document
+    /// type that records creator ids (a transferable or tradeable type of a
+    /// format-1 contract) may declare it, checked at contract registration.
+    /// The creator never changes, so a replace re-validates the reference
+    /// when the key id changed.
+    #[serde(rename = "$creatorId")]
+    CreatorId,
+    /// An identifier property of the same document type (a dotted path when
+    /// nested) whose value is the identity; it must exist, be an identifier
+    /// and not carry an `identityPublicKey` reference of its own, checked at
+    /// contract registration. The identity is read from the document, so a
+    /// replace re-validates the reference when the key id or that property
+    /// changed, and a key id set while the property is not is refused.
+    Property(String),
 }
 
 impl KeyReferenceIdentityProperty {
-    /// The `identityProperty` values the schema admits, as spelled there.
-    pub const WIRE_NAMES: [&'static str; 1] = [OWNER_ID];
+    /// The system `identityProperty` values the schema admits, as spelled
+    /// there; every other admitted value is a property path.
+    pub const SYSTEM_WIRE_NAMES: [&'static str; 2] = [OWNER_ID, CREATOR_ID];
 
-    /// The value for its schema spelling, `None` for a spelling the schema
-    /// does not admit.
+    /// The value for its schema spelling: a system name, or a property path
+    /// of 1 to 256 characters that does not start with `$`. `None` for a
+    /// spelling the schema does not admit.
     pub fn from_wire_name(name: &str) -> Option<Self> {
         match name {
             OWNER_ID => Some(KeyReferenceIdentityProperty::OwnerId),
-            _ => None,
+            CREATOR_ID => Some(KeyReferenceIdentityProperty::CreatorId),
+            path if path.starts_with('$') || path.is_empty() || path.len() > 256 => None,
+            path => Some(KeyReferenceIdentityProperty::Property(path.to_string())),
         }
     }
 
     /// The schema spelling.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             KeyReferenceIdentityProperty::OwnerId => OWNER_ID,
+            KeyReferenceIdentityProperty::CreatorId => CREATOR_ID,
+            KeyReferenceIdentityProperty::Property(path) => path,
         }
     }
 }
@@ -8628,17 +8650,38 @@ mod tests {
             "$ownerId"
         );
         assert_eq!(
+            KeyReferenceIdentityProperty::CreatorId.as_str(),
+            "$creatorId"
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::Property("meta.toUserId".to_string()).as_str(),
+            "meta.toUserId"
+        );
+        assert_eq!(
             KeyReferenceIdentityProperty::from_wire_name("$ownerId"),
             Some(KeyReferenceIdentityProperty::OwnerId)
         );
         assert_eq!(
             KeyReferenceIdentityProperty::from_wire_name("$creatorId"),
+            Some(KeyReferenceIdentityProperty::CreatorId)
+        );
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name("toUserId"),
+            Some(KeyReferenceIdentityProperty::Property(
+                "toUserId".to_string()
+            ))
+        );
+        // Other system names, the empty path and an overlong path are not admitted
+        assert_eq!(KeyReferenceIdentityProperty::from_wire_name("$id"), None);
+        assert_eq!(KeyReferenceIdentityProperty::from_wire_name(""), None);
+        assert_eq!(
+            KeyReferenceIdentityProperty::from_wire_name(&"a".repeat(257)),
             None
         );
-        for name in KeyReferenceIdentityProperty::WIRE_NAMES {
+        for name in KeyReferenceIdentityProperty::SYSTEM_WIRE_NAMES {
             assert_eq!(
-                KeyReferenceIdentityProperty::from_wire_name(name).map(|p| p.as_str()),
-                Some(name)
+                KeyReferenceIdentityProperty::from_wire_name(name).map(|p| p.as_str().to_string()),
+                Some(name.to_string())
             );
         }
     }

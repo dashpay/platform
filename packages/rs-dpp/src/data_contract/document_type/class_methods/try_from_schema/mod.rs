@@ -594,7 +594,7 @@ fn apply_property_reference_v0(
     // it is through `identityProperty`; it is the one form that sits on a
     // non-identifier property
     if let Some(identity_property_value) = refers_to_map.get(property_names::IDENTITY_PROPERTY) {
-        return apply_owner_key_reference_v0(
+        return apply_key_id_reference_v0(
             inner_properties,
             &refers_to_map,
             reference_type,
@@ -748,12 +748,14 @@ fn apply_property_reference_v0(
 }
 
 /// An `identityPublicKey` declaration on the KEY ID property: `identityProperty` names
-/// whose key the value is (`$ownerId`, the writer, for now), so the declaration takes
-/// no `keyIdProperty` and sits on an integer property declaring exactly the range of a
-/// key id (`minimum` 0, `maximum` 4294967295), the bounds the meta-schema pins, read
-/// from the schema rather than the inferred type so that the rule does not depend on
-/// the contract's sized integer types setting.
-fn apply_owner_key_reference_v0(
+/// whose key the value is (`$ownerId`, `$creatorId` or an identifier property of the
+/// same document type), so the declaration takes no `keyIdProperty` and sits on an
+/// integer property declaring exactly the range of a key id (`minimum` 0, `maximum`
+/// 4294967295), the bounds the meta-schema pins, read from the schema rather than the
+/// inferred type so that the rule does not depend on the contract's sized integer
+/// types setting. Whether a named property or `$creatorId` fits the document type is
+/// checked at contract registration.
+fn apply_key_id_reference_v0(
     inner_properties: &BTreeMap<String, &Value>,
     refers_to_map: &BTreeMap<String, &Value>,
     reference_type: &str,
@@ -781,8 +783,8 @@ fn apply_owner_key_reference_v0(
         .ok_or_else(|| {
             DataContractError::InvalidContractStructure(format!(
                 "identityPublicKey refersTo identityProperty {identity_property_name:?} is \
-                 unknown, expected one of {:?}",
-                KeyReferenceIdentityProperty::WIRE_NAMES
+                 invalid, expected one of {:?} or a property path of 1 to 256 characters",
+                KeyReferenceIdentityProperty::SYSTEM_WIRE_NAMES
             ))
         })?;
     let minimum = inner_properties.get_optional_integer::<i64>(property_names::MINIMUM)?;
@@ -2469,20 +2471,65 @@ mod tests {
             .expect_err("the meta-schema should refuse both keys on one declaration");
     }
 
+    /// `identityProperty` admits `$creatorId` and a property path beside
+    /// `$ownerId`; whether the path or the creator fits the document type is
+    /// a registration check, not a parse
     #[test]
-    fn should_reject_identity_property_values_other_than_owner_id() {
-        for identity_property in [json!("$creatorId"), json!("author"), json!(""), json!(5)] {
+    fn should_parse_identity_public_key_refers_to_naming_the_creator_or_a_property() {
+        for (identity_property, expected) in [
+            ("$creatorId", KeyReferenceIdentityProperty::CreatorId),
+            (
+                "note",
+                KeyReferenceIdentityProperty::Property("note".to_string()),
+            ),
+            (
+                "meta.toUserId",
+                KeyReferenceIdentityProperty::Property("meta.toUserId".to_string()),
+            ),
+        ] {
             let schema = key_id_reference_schema(
                 u32_key_id_schema(),
                 json!({ "type": "identityPublicKey", "identityProperty": identity_property }),
             );
-            let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
-            assert!(
-                err.to_string().contains("identityProperty"),
-                "{identity_property}: unexpected error: {err}"
+            for document_type in [
+                try_document_type_from_schema(schema.clone()).expect("should parse"),
+                try_document_type_from_schema_full_validation(schema)
+                    .expect("should parse under the meta-schema"),
+            ] {
+                assert_eq!(
+                    sender_key_id_type(&document_type),
+                    DocumentPropertyType::KeyIdWithReference(expected.clone()),
+                    "{identity_property}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_identity_property_values_that_are_neither_a_system_name_nor_a_path() {
+        for identity_property in [
+            json!("$id"),
+            json!("$creatorId2"),
+            json!(""),
+            json!("a".repeat(257)),
+            json!("with-dash"),
+            json!(5),
+        ] {
+            let schema = key_id_reference_schema(
+                u32_key_id_schema(),
+                json!({ "type": "identityPublicKey", "identityProperty": identity_property }),
             );
+            // A hyphenated path is the meta-schema's refusal alone: the parser
+            // reads stored contracts as they are
+            if identity_property != json!("with-dash") {
+                let err = try_document_type_from_schema(schema.clone()).expect_err("should fail");
+                assert!(
+                    err.to_string().contains("identityProperty"),
+                    "{identity_property}: unexpected error: {err}"
+                );
+            }
             try_document_type_from_schema_full_validation(schema)
-                .expect_err("the meta-schema should refuse any value but $ownerId");
+                .expect_err("the meta-schema should refuse the value");
         }
     }
 

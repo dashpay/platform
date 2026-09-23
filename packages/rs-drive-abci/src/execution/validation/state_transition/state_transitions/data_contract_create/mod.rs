@@ -5995,6 +5995,111 @@ mod tests {
             );
         }
 
+        /// `$creatorId` needs a document type that records creator ids: a
+        /// transferable type of a format-1 contract does, a plain one does not.
+        #[tokio::test]
+        async fn should_register_contract_with_creator_key_reference_on_a_type_recording_creators()
+        {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_creator_key_reference_on_a_type_not_recording_creators() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key-registration-not-recorded.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(e)
+                    ),
+                    ..
+                } if e.key_id_property() == "senderKeyId" && e.message().contains("$creatorId")
+            );
+        }
+
+        /// A property path names an identifier property of the same type that
+        /// carries the identity; it must exist, be an identifier, and not
+        /// declare the same (identity, key id) pair from its own side.
+        #[tokio::test]
+        async fn should_register_contract_with_key_reference_naming_an_identity_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_key_reference_naming_an_undefined_identity_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-registration-missing.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(e)
+                    ),
+                    ..
+                } if e.message().contains("does not define")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_key_reference_naming_a_non_identifier_identity_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-registration-non-identifier.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(e)
+                    ),
+                    ..
+                } if e.message().contains("must be an identifier")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_key_reference_naming_an_identity_property_with_its_own_key_reference(
+        ) {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-registration-double-reference.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
         #[tokio::test]
         async fn should_reject_contract_referencing_missing_contract() {
             let result = run_contract_create(
