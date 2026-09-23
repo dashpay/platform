@@ -743,3 +743,56 @@ fn should_round_trip_a_creator_reference_and_refuse_changing_it_on_update() {
         );
     }
 }
+
+/// With `anyOf` / `allOf` the writer or the creator may meet one of several
+/// targets: an expression whose every leaf can hold that identity is admitted,
+/// and a leaf by id is refused as it is alone, named by where it sits.
+#[test]
+fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_leaves() {
+    let owner_lookup = permanent_added_moderator(json!({
+        "index": "byOwnerMember",
+        "keys": { "$ownerId": "$ownerId", "memberId": "." }
+    }));
+    let expression = json!({
+        "anyOf": [permanent_added_moderator(added_moderator_lookup()), owner_lookup]
+    });
+    for full_validation in [true, false] {
+        let parsed = contract_on(
+            charter_contract(expression.clone()),
+            full_validation,
+            PlatformVersion::latest(),
+        )
+        .expect("an expression of lookups should parse");
+        let target = owner_reference(&parsed).expect("the owner reference");
+        assert!(matches!(target, DocumentPropertyReferenceTarget::AnyOf(_)));
+        assert_eq!(target.leaves().len(), 2);
+    }
+    let creator_expression = json!({
+        "allOf": [
+            { "type": "identity" },
+            permanent_added_moderator(added_moderator_lookup())
+        ]
+    });
+    let parsed = contract(creator_contract(creator_expression)).expect("parses");
+    assert!(matches!(
+        creator_reference(&parsed),
+        Some(DocumentPropertyReferenceTarget::AllOf(_))
+    ));
+
+    let with_leaf_by_id = json!({
+        "anyOf": [
+            permanent_added_moderator(added_moderator_lookup()),
+            { "type": "permanentDocument", "documentType": "addedModerator" }
+        ]
+    });
+    for full_validation in [true, false] {
+        assert_refused(
+            contract_on(
+                charter_contract(with_leaf_by_id.clone()),
+                full_validation,
+                PlatformVersion::latest(),
+            ),
+            "ownerRefersTo anyOf[1] takes a permanentDocument reference only with a lookup",
+        );
+    }
+}

@@ -8,6 +8,8 @@
 //! transferred or traded, so the writer stays the owner. `roleResignation`
 //! adds a `propertyAgreement` checked against the moderator the lookup finds,
 //! and `note` declares an identity target, which every writer meets.
+//! `stepDownNotice` composes with `anyOf`: its writer is an added moderator
+//! or the charter's founder (`founderSeat`).
 //! `moderatorBadge` can be transferred, so it declares `creatorRefersTo`
 //! instead: only a seated moderator may mint one, and whoever holds it later,
 //! the check is against that creator. `creatorNote` declares an identity
@@ -733,5 +735,70 @@ mod owner_reference_tests {
             assert!(result.is_valid(), "{:?}", result.errors);
             assert!(execution_context.operations_slice().is_empty());
         }
+    }
+
+    /// `anyOf` on the writer: either operand admits the writer, checked in
+    /// declared order, and a writer neither admits is refused with the last
+    /// operand's error, at `$ownerId`.
+    #[tokio::test]
+    async fn should_admit_a_writer_meeting_any_operand_of_an_owner_reference_expression() {
+        let mut fixture = OwnerReferenceFixture::new();
+        fixture.seat(Who::Member, charter_id(1), "chair").await;
+        let stranger = fixture.id(Who::Stranger);
+        let founder = fixture.id(Who::Founder);
+        let (_, result) = fixture
+            .create(
+                Who::Founder,
+                "founderSeat",
+                &[
+                    ("electedCharterId", id_value(charter_id(1))),
+                    ("founderId", id_value(stranger)),
+                ],
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // Through the first operand, an added moderator, and through the
+        // second, the founder's seat
+        for who in [Who::Member, Who::Stranger] {
+            let (_, result) = fixture
+                .create(
+                    who,
+                    "stepDownNotice",
+                    &[("electedCharterId", id_value(charter_id(1)))],
+                )
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        // The founder of the contract holds neither seat
+        let (_, result) = fixture
+            .create(
+                Who::Founder,
+                "stepDownNotice",
+                &[("electedCharterId", id_value(charter_id(1)))],
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
+                ..
+            } if e.path() == "$ownerId"
+                && *e.entity_id() == founder
+                && matches!(
+                    e.entity_type(),
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                        document_type_name, ..
+                    } if document_type_name == "founderSeat"
+                ),
+            "expected the last operand's 40120 at $ownerId"
+        );
     }
 }
