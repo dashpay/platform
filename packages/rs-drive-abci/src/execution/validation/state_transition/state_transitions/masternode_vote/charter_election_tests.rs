@@ -51,6 +51,8 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
 use drive::drive::contract::paths::contract_root_path;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+use drive::error::Error as DriveError;
+use drive::grovedb::Error as GroveError;
 use drive::query::VotePollsByEndDateDriveQuery;
 use drive::util::test_helpers::setup_contract;
 use platform_version::version::PlatformVersion;
@@ -560,18 +562,23 @@ fn balance_of(
         .expect("expected the identity")
 }
 
+/// The processing credits epoch 0 will distribute; the item is written by the first credit, so
+/// before any it is missing, which is none.
 fn processing_credits(
     platform: &TempPlatform<MockCoreRPCLike>,
     platform_version: &PlatformVersion,
 ) -> Credits {
-    platform
+    match platform
         .drive
         .get_epoch_processing_credits_for_distribution(
             &Epoch::new(0).expect("epoch"),
             None,
             platform_version,
-        )
-        .expect("expected the epoch's processing credits")
+        ) {
+        Ok(credits) => credits,
+        Err(DriveError::GroveDB(error)) if matches!(*error, GroveError::PathKeyNotFound(_)) => 0,
+        Err(error) => panic!("expected the epoch's processing credits: {error:?}"),
+    }
 }
 
 #[tokio::test]
