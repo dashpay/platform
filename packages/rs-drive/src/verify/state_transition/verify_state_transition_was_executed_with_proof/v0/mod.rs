@@ -1538,6 +1538,9 @@ impl Drive {
             StateTransition::MasternodeVote(masternode_vote) => {
                 let pro_tx_hash = masternode_vote.pro_tx_hash();
                 let vote = masternode_vote.vote();
+                // Shared by versions 0 and 1, and client side only. A resource vote on a
+                // contested poll verifies exactly as before; a vote naming a yes/no poll exists
+                // only from protocol version 14.
                 let (root_hash, vote) = match vote {
                     Vote::ResourceVote(resource_vote) => {
                         let contract = match resource_vote.vote_poll() {

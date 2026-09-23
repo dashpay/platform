@@ -182,6 +182,8 @@ use crate::state_transition::state_transitions::document::batch_transition::meth
 use crate::state_transition::unshield_transition::{
     UnshieldTransition, UnshieldTransitionSignable,
 };
+use crate::voting::vote_polls::VotePoll;
+use crate::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use crate::voting::votes::Vote;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
@@ -1049,11 +1051,15 @@ impl StateTransition {
             StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityCreditTransfer(_) => ALL_VERSIONS,
-            // A vote on a yes/no poll exists from protocol version 14. Binaries from before it
-            // cannot decode one, so an earlier version rejects it without charging, exactly as
-            // they do.
+            // A vote that names a yes/no poll, as a yes/no vote or as a resource vote, exists
+            // from protocol version 14. Binaries from before it cannot decode one, so an earlier
+            // version rejects it without charging, exactly as they do, and no masternode vote
+            // validator selected before 14 ever sees a yes/no poll.
             StateTransition::MasternodeVote(masternode_vote) => match masternode_vote.vote() {
-                Vote::ResourceVote(_) => ALL_VERSIONS,
+                Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
+                    VotePoll::ContestedDocumentResourceVotePoll(_) => ALL_VERSIONS,
+                    VotePoll::YesNoVotePoll(_) => 14..=LATEST_VERSION,
+                },
                 Vote::YesNoVote(_) => 14..=LATEST_VERSION,
             },
             StateTransition::IdentityCreditTransferToAddresses(_)
@@ -2551,49 +2557,67 @@ mod tests {
         assert_eq!(sample_withdrawal_st().active_version_range(), ALL_VERSIONS);
     }
 
+    /// Both vote kinds can name a yes/no poll: a yes/no vote, and a resource vote (which
+    /// protocol version 14 refuses as naming no contested poll). Before 14 neither decodes, so
+    /// the masternode vote validators selected there never meet a yes/no poll.
     #[test]
     fn test_active_version_range_masternode_vote_on_a_yes_no_poll_starts_at_14() {
         use crate::serialization::PlatformSerializable;
+        use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
         use crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+        use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
+        use crate::voting::votes::resource_vote::ResourceVote;
         use crate::voting::votes::yes_no_vote::v0::YesNoVoteV0;
         use crate::voting::votes::yes_no_vote::YesNoVote;
 
-        let v0 = MasternodeVoteTransitionV0 {
-            pro_tx_hash: Identifier::from([3u8; 32]),
-            voter_identity_id: Identifier::from([4u8; 32]),
-            vote: Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-                vote_poll: YesNoVotePoll {
-                    resource_path: vec![BinaryData::new(vec![7u8; 32])],
-                    supermajority_numerator: 2,
-                    supermajority_denominator: 3,
-                    minimum_voting_power: 400,
-                },
+        let vote_poll = YesNoVotePoll {
+            resource_path: vec![BinaryData::new(vec![7u8; 32])],
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: 400,
+        };
+        let votes = [
+            Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+                vote_poll: vote_poll.clone(),
                 vote_choice: YesNoAbstainVoteChoice::Yes,
             })),
-            nonce: 2,
-            signature_public_key_id: 5,
-            signature: BinaryData::new(vec![9u8; 10]),
-        };
-        let state_transition = StateTransition::MasternodeVote(MasternodeVoteTransition::V0(v0));
-        assert_eq!(state_transition.active_version_range(), 14..=LATEST_VERSION);
-
-        let bytes = state_transition
-            .serialize_to_bytes()
-            .expect("expected to serialize the vote");
+            Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                vote_poll: VotePoll::YesNoVotePoll(vote_poll),
+                resource_vote_choice: ResourceVoteChoice::Abstain,
+            })),
+        ];
         let version_13 = PlatformVersion::get(13).expect("protocol version 13");
-        assert!(matches!(
-            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13),
-            Err(ProtocolError::StateTransitionError(
-                StateTransitionIsNotActiveError { .. }
-            ))
-        ));
         let version_14 = PlatformVersion::get(14).expect("protocol version 14");
-        assert_eq!(
-            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
-                .expect("expected the vote to be active at 14"),
-            state_transition
-        );
+
+        for vote in votes {
+            let v0 = MasternodeVoteTransitionV0 {
+                pro_tx_hash: Identifier::from([3u8; 32]),
+                voter_identity_id: Identifier::from([4u8; 32]),
+                vote,
+                nonce: 2,
+                signature_public_key_id: 5,
+                signature: BinaryData::new(vec![9u8; 10]),
+            };
+            let state_transition =
+                StateTransition::MasternodeVote(MasternodeVoteTransition::V0(v0));
+            assert_eq!(state_transition.active_version_range(), 14..=LATEST_VERSION);
+
+            let bytes = state_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the vote");
+            assert!(matches!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13),
+                Err(ProtocolError::StateTransitionError(
+                    StateTransitionIsNotActiveError { .. }
+                ))
+            ));
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+                    .expect("expected the vote to be active at 14"),
+                state_transition
+            );
+        }
     }
 
     #[test]

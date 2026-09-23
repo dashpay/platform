@@ -432,6 +432,9 @@ impl Drive {
             StateTransition::MasternodeVote(st) => {
                 let pro_tx_hash = st.pro_tx_hash();
 
+                // Shared by versions 0 and 1, and off the block execution path (it answers
+                // proof queries). A resource vote on a contested poll gets the same path query
+                // as before; a vote naming a yes/no poll decodes only from protocol version 14.
                 let vote_poll = match st.vote() {
                     Vote::ResourceVote(resource_vote) => resource_vote.vote_poll().clone(),
                     Vote::YesNoVote(yes_no_vote) => {

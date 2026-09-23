@@ -313,6 +313,8 @@ impl<C> Platform<C> {
                     VotePoll::ContestedDocumentResourceVotePoll(contested) => {
                         contested.specialized_balance_id().map_err(Error::Protocol)
                     }
+                    // Unreachable: this runs once, on the block entering protocol version 8,
+                    // and yes/no polls exist from 14. The arm only keeps the match exhaustive.
                     VotePoll::YesNoVotePoll(yes_no) => {
                         yes_no.specialized_balance_id().map_err(Error::Protocol)
                     }
@@ -817,7 +819,8 @@ impl<C> Platform<C> {
 
         // Vote decisions trees: the active yes/no polls and the identity votes index of the
         // decisions branch. Fresh chains create them at genesis
-        // (`add_initial_vote_tree_main_structure_operations` v1).
+        // (`add_initial_vote_tree_main_structure_operations` v1). Like everything in this
+        // function it runs only on the block entering protocol version 14.
         self.drive
             .insert_vote_decisions_trees(Some(transaction), platform_version)?;
 

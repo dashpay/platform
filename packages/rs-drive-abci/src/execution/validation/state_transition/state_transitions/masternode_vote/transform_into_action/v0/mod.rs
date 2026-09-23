@@ -104,6 +104,9 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
                                 }
                             }
                         }
+                        // Unreachable: this v0 is selected up to protocol version 13, where a
+                        // masternode vote that names a yes/no poll does not decode
+                        // (`StateTransition::active_version_range`).
                         VotePoll::YesNoVotePoll(_) => {
                             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                                 "yes/no vote polls need transform_into_action version 1",
@@ -111,6 +114,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
                         }
                     }
                 }
+                // Unreachable for the same reason: no yes/no vote decodes before 14.
                 Vote::YesNoVote(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "yes/no votes need transform_into_action version 1",

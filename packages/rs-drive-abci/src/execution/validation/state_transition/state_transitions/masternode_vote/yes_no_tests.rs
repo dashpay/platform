@@ -1067,3 +1067,116 @@ async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_ti
             .passed
     );
 }
+
+/// Protocol version 13 selects the shipped (v0) masternode vote transform and state
+/// validation, vote registration, end of poll check and clean-up, which this change gave
+/// yes/no arms. A contest there runs as it did before: the vote counts, the poll ends, the
+/// contender is awarded and the end date index empties. A masternode vote naming a yes/no
+/// poll, of either kind, does not decode there, so it is stripped before any of them runs and
+/// consumes nothing.
+#[tokio::test]
+async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_version_13() {
+    use crate::execution::validation::state_transition::state_transitions::tests::{
+        create_dpns_identity_name_contest, dpns_name_vote_poll, get_vote_states,
+    };
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
+    use dpp::identity::accessors::IdentityGettersV0;
+
+    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(13)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let platform_state = platform.state.load();
+    let (contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        "quantum",
+        platform_version,
+    )
+    .await;
+    let (pro_tx_hash, signer, voting_key) =
+        setup_voter(&mut platform, 100, false, platform_version);
+
+    let yes_no_poll = two_thirds_poll(b"before 14", 1);
+    let votes_naming_a_yes_no_poll = [
+        Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+            vote_poll: yes_no_poll.clone(),
+            vote_choice: YesNoAbstainVoteChoice::Yes,
+        })),
+        Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::YesNoVotePoll(yes_no_poll),
+            resource_vote_choice: ResourceVoteChoice::Abstain,
+        })),
+    ];
+    for vote in votes_naming_a_yes_no_poll {
+        let result = perform_vote_transition(
+            &mut platform,
+            vote,
+            &signer,
+            pro_tx_hash,
+            &voting_key,
+            1,
+            platform_version,
+        )
+        .await
+        .expect_err("expected the vote to be stripped");
+        assert_matches!(result, InternalError(message) if message.contains("is not active"));
+    }
+
+    // Nonce 1 is still free: the stripped votes consumed nothing.
+    let contested_vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+        vote_poll: VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(
+            &dpns_contract,
+            "quantum",
+        )),
+        resource_vote_choice: ResourceVoteChoice::TowardsIdentity(contender_1.id()),
+    }));
+    perform_vote_transition(
+        &mut platform,
+        contested_vote,
+        &signer,
+        pro_tx_hash,
+        &voting_key,
+        1,
+        platform_version,
+    )
+    .await
+    .expect("expected the contested vote to be accepted");
+
+    close_ended_polls(&mut platform, platform_version);
+
+    let platform_state = platform.state.load();
+    let (_contenders, _abstaining, _locking, finished_vote_info) = get_vote_states(
+        &platform,
+        &platform_state,
+        &dpns_contract,
+        "quantum",
+        None,
+        true,
+        None,
+        ResultType::DocumentsAndVoteTally,
+        platform_version,
+    );
+    let finished_vote_info = finished_vote_info.expect("expected the contest to be finished");
+    assert_eq!(
+        finished_vote_info.finished_vote_outcome,
+        FinishedVoteOutcome::TowardsIdentity as i32
+    );
+    assert_eq!(
+        finished_vote_info.won_by_identity_id,
+        Some(contender_1.id().to_vec())
+    );
+    let end_dates = VotePollsByEndDateDriveQuery {
+        start_time: None,
+        end_time: None,
+        limit: None,
+        offset: None,
+        order_ascending: true,
+    }
+    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
+    .expect("end dates");
+    assert!(end_dates.is_empty());
+}
