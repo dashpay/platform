@@ -30,8 +30,11 @@ pub const TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE: u8 = 28;
 
 /// Domain tag an outputs-only token pool bundle commits to. Unlike the three constants above
 /// these are not `StateTransitionType` bytes — every one of these bundles rides inside a batch
-/// transition — so they are drawn from a high range the state transition type space cannot
-/// reach, keeping the two tag spaces from ever colliding as new transition types are added.
+/// transition — yet they share a preimage slot with them at the same length. They are drawn
+/// from a high range that space has not reached, which nothing in the type system enforces:
+/// `StateTransitionType` is `repr(u8)` and could be given one of these bytes. What holds the
+/// reservation is `outputs_only_token_pool_tags_cannot_collide_with_state_transition_types`,
+/// which asks the enum and fails the build's tests the day one is assigned here.
 pub const TOKEN_SHIELD_BUNDLE_TAG: u8 = 0x80;
 /// Domain tag of a `TokenMintToPool` bundle. See [`TOKEN_SHIELD_BUNDLE_TAG`].
 pub const TOKEN_MINT_TO_POOL_BUNDLE_TAG: u8 = 0x81;
@@ -51,9 +54,13 @@ pub const TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG: u8 = 0x83;
 /// replay attacks where an attacker substitutes transparent fields while reusing a
 /// valid Orchard bundle.
 ///
-/// The same computation must be used on both the signing (client) and verification
-/// (platform) sides. For transitions without transparent fields (shield and
-/// shielded_transfer), `extra_data` is empty.
+/// It also binds a bundle that has no transparent fields to the one context it was proved
+/// for, which an outputs-only bundle cannot do on its own: carrying no anchor, it verifies
+/// against every pool that shares the empty-tree anchor.
+///
+/// The same computation must be used on both the signing (client) and verification (platform)
+/// sides. `extra_data` is empty only for the credit pool's own `Shield` and `ShieldedTransfer`;
+/// each other transition has a builder in this module that spells out its layout.
 pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(SIGHASH_DOMAIN);
@@ -636,15 +643,25 @@ pub fn token_shielded_transfer_extra_sighash_data_v0(
 /// against any of them. Without this data the authorized bundle bytes are a free-standing,
 /// self-verifying object that anybody can lift out of the mempool into a transition of their
 /// own, funded by their own tokens, against a different pool or a different transition kind.
-/// The result is a second note with the same commitment and the same `rho`, hence the same
-/// nullifier: only one of the two can ever be spent. That is the Faerie Gold problem — the
-/// recipient's wallet is safe if it merges notes by nullifier, but any wallet or indexer that
-/// counts by commitment sees two payments where one is real.
 ///
-/// Binding the tag and the token id makes a copied bundle fail the sighash in any pool or kind
-/// but its own. A copy into the *same* pool and kind is not covered: catching that needs the
-/// bundle's dummy nullifiers to be recorded and checked, which no outputs-only path does yet,
-/// here or in the credit pool.
+/// What that copy costs depends on where it lands, because nullifiers are namespaced per pool:
+///
+/// - **Another kind, same pool.** The copy shares the original's nullifier tree, so it lands a
+///   second note with the same commitment and the same `rho`, hence the same nullifier: only
+///   one of the two can ever be spent. That is Faerie Gold. A wallet that merges notes by
+///   nullifier is safe, but any wallet or indexer counting by commitment sees two payments
+///   where one is real. Bundles of different kinds are otherwise indistinguishable to the
+///   proof — same flags, same empty-tree anchor, same value balance — so only the tag tells
+///   them apart.
+/// - **Another pool.** That pool has its own nullifier tree, so both notes stay spendable and
+///   nothing is Faerie Gold. The harm is that the recipient now holds notes derived from one
+///   `rho` in two pools, which links their spends across pools, and the copier burns their own
+///   tokens doing it.
+///
+/// Not covered: a copy into the same pool *and* the same kind, submitted by someone else. That
+/// is the larger Faerie Gold vector and this preimage does not reach it, because it binds no
+/// owner. Closing it needs the bundle's dummy nullifiers recorded and checked, which no
+/// outputs-only path does yet, here or in the credit pool.
 pub fn token_pool_output_only_extra_sighash_data(
     action_type: TokenTransitionActionType,
     token_id: &[u8; 32],
@@ -669,6 +686,10 @@ pub fn token_pool_output_only_extra_sighash_data(
 /// The bytes are written out here rather than derived from the variant's position, because
 /// `TokenTransitionActionType` is append-only for the sake of clients and nothing about it
 /// promises a stable ordering to consensus.
+///
+/// Every other kind is named rather than swept up by a catch-all: a kind added to the enum must
+/// fail to compile here, so that whoever adds it decides whether it carries a bundle. A
+/// catch-all would silently answer "no" and surface as a rejected block instead.
 fn outputs_only_bundle_tag_v0(action_type: TokenTransitionActionType) -> Result<u8, ProtocolError> {
     match action_type {
         TokenTransitionActionType::Shield => Ok(TOKEN_SHIELD_BUNDLE_TAG),
@@ -677,9 +698,24 @@ fn outputs_only_bundle_tag_v0(action_type: TokenTransitionActionType) -> Result<
         TokenTransitionActionType::DirectPurchaseToPool => {
             Ok(TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG)
         }
-        other => Err(ProtocolError::InvalidStateTransitionType(format!(
-            "{other} is not an outputs-only token pool transition and has no bundle tag"
-        ))),
+        other @ (TokenTransitionActionType::Burn
+        | TokenTransitionActionType::Mint
+        | TokenTransitionActionType::Transfer
+        | TokenTransitionActionType::Freeze
+        | TokenTransitionActionType::Unfreeze
+        | TokenTransitionActionType::DestroyFrozenFunds
+        | TokenTransitionActionType::Claim
+        | TokenTransitionActionType::EmergencyAction
+        | TokenTransitionActionType::ConfigUpdate
+        | TokenTransitionActionType::DirectPurchase
+        | TokenTransitionActionType::SetPriceForDirectPurchase
+        | TokenTransitionActionType::BurnFromPool
+        | TokenTransitionActionType::Unshield
+        | TokenTransitionActionType::ShieldedTransfer) => {
+            Err(ProtocolError::InvalidStateTransitionType(format!(
+                "{other} is not an outputs-only token pool transition and has no bundle tag"
+            )))
+        }
     }
 }
 
@@ -699,6 +735,7 @@ pub fn token_pool_output_only_extra_sighash_data_v0(
 mod tests {
     use super::*;
     use crate::identity::core_script::CoreScript;
+    use crate::state_transition::StateTransitionType;
     use crate::withdrawal::Pooling;
     // These tests pin the v0 preimage directly (they assert exact bytes), so resolve the bare helper
     // names to the `_v0` impls rather than the version-dispatching public wrappers.
@@ -1055,16 +1092,26 @@ mod tests {
 
     #[test]
     fn outputs_only_token_pool_sighash_data_pins_its_v0_layout() {
+        // Every byte here is consensus: a kind that changes its tag invalidates every bundle
+        // already proved for it, so the four are pinned literally, not to the constants.
         let token_id = [7u8; 32];
-        let data = token_pool_output_only_extra_sighash_data_v0(TOKEN_SHIELD_BUNDLE_TAG, &token_id);
-
-        let mut expected = Vec::with_capacity(33);
-        expected.push(0x80);
-        expected.extend_from_slice(&token_id);
-        assert_eq!(
-            data, expected,
-            "v0 layout is frozen: tag (1) || token_id (32)"
-        );
+        let version = PlatformVersion::latest();
+        for (action_type, tag) in [
+            (TokenTransitionActionType::Shield, 0x80u8),
+            (TokenTransitionActionType::MintToPool, 0x81),
+            (TokenTransitionActionType::ClaimToPool, 0x82),
+            (TokenTransitionActionType::DirectPurchaseToPool, 0x83),
+        ] {
+            let mut expected = Vec::with_capacity(33);
+            expected.push(tag);
+            expected.extend_from_slice(&token_id);
+            assert_eq!(
+                token_pool_output_only_extra_sighash_data(action_type, &token_id, version)
+                    .expect("outputs-only kind"),
+                expected,
+                "v0 layout is frozen for {action_type}: tag (1) || token_id (32)"
+            );
+        }
     }
 
     #[test]
@@ -1122,15 +1169,24 @@ mod tests {
         // variants. Handing one of those in is a caller bug, and it must be loud: silently
         // falling back to some default byte would hand two kinds the same preimage.
         let version = PlatformVersion::latest();
+        // All fourteen, not a sample: match exhaustiveness protects against a kind being
+        // *added* and forgotten, but nothing stops an existing arm being edited into the
+        // accepting half, and a sample would not notice.
         for action_type in [
-            TokenTransitionActionType::Mint,
             TokenTransitionActionType::Burn,
+            TokenTransitionActionType::Mint,
             TokenTransitionActionType::Transfer,
+            TokenTransitionActionType::Freeze,
+            TokenTransitionActionType::Unfreeze,
+            TokenTransitionActionType::DestroyFrozenFunds,
             TokenTransitionActionType::Claim,
+            TokenTransitionActionType::EmergencyAction,
+            TokenTransitionActionType::ConfigUpdate,
             TokenTransitionActionType::DirectPurchase,
+            TokenTransitionActionType::SetPriceForDirectPurchase,
+            TokenTransitionActionType::BurnFromPool,
             TokenTransitionActionType::Unshield,
             TokenTransitionActionType::ShieldedTransfer,
-            TokenTransitionActionType::BurnFromPool,
         ] {
             let error = token_pool_output_only_extra_sighash_data(action_type, &[1u8; 32], version)
                 .expect_err("only outputs-only pool bundles have a tag");
@@ -1143,8 +1199,10 @@ mod tests {
 
     #[test]
     fn outputs_only_token_pool_tags_cannot_collide_with_state_transition_types() {
-        // The tags share a preimage position with the `StateTransitionType` bytes used by the
-        // identity-less bundles, and that enum keeps growing. Keep the ranges disjoint.
+        // The tags share a preimage slot with the `StateTransitionType` byte the identity-less
+        // token bundles commit to, at the same 1 + 32 length. Asking the enum itself — rather
+        // than comparing against the three types that exist today — is what makes this break
+        // on the day someone assigns a transition type inside the tag range.
         for tag in [
             TOKEN_SHIELD_BUNDLE_TAG,
             TOKEN_MINT_TO_POOL_BUNDLE_TAG,
@@ -1152,16 +1210,9 @@ mod tests {
             TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG,
         ] {
             assert!(
-                tag >= 0x80,
-                "bundle tags live above the state transition type range, got {tag}"
+                StateTransitionType::try_from(tag).is_err(),
+                "state transition type {tag:#04x} now collides with an outputs-only bundle tag"
             );
-        }
-        for state_transition_type in [
-            TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
-            TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
-            TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
-        ] {
-            assert!(state_transition_type < 0x80);
         }
     }
 }

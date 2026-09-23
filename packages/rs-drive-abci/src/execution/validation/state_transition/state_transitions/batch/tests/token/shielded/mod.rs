@@ -78,8 +78,7 @@ mod token_shielded_pool_tests {
         )
     }
 
-    /// An outputs-only bundle paying `amount` to the test wallet: what a token shield carries.
-    /// The bundle has no spends, so no extra sighash data is bound.
+    /// An outputs-only bundle paying `amount` to the test wallet.
     /// Builds the outputs-only bundle of a token pool transition that only creates notes.
     /// `action_type` and `token_id` are what the bundle's sighash commits to, so a bundle built
     /// for one pool or one transition kind will not verify as another.
@@ -744,20 +743,13 @@ mod token_shielded_pool_tests {
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9004);
 
-        // The identity has to be funded before the contract exists, but the fee depends only on
-        // the action count, which does not depend on the token. Probe it with a throwaway pool
-        // id, then assert below that the real bundle has the same count.
-        let fee_probe = build_shield_bundle(
-            SHIELD_AMOUNT,
-            13,
-            TokenTransitionActionType::Shield,
-            Identifier::from([0u8; 32]),
-        );
-        let compute_fee = dpp::shielded::compute_shielded_verification_fee(
-            fee_probe.actions.len(),
-            platform_version,
-        )
-        .expect("shielded compute fee");
+        // The identity has to be funded before the contract exists, so the fee is computed from
+        // the action count Orchard pads a single-output bundle to, and the bundle built below
+        // is asserted to have exactly that many.
+        const PADDED_ACTIONS: usize = 2;
+        let compute_fee =
+            dpp::shielded::compute_shielded_verification_fee(PADDED_ACTIONS, platform_version)
+                .expect("shielded compute fee");
 
         // Funded well past the preliminary batch minimum — which has no Orchard component — so
         // the rejection has to come from the full fee estimate, and exactly one compute fee
@@ -781,7 +773,7 @@ mod token_shielded_pool_tests {
         );
         assert_eq!(
             bundle.actions.len(),
-            fee_probe.actions.len(),
+            PADDED_ACTIONS,
             "the funded figure must be this bundle's compute fee"
         );
 
@@ -1082,8 +1074,10 @@ mod token_shielded_pool_tests {
     /// which pool they were built for: the proof and the binding signature verify against every
     /// token pool, all of which start from the same empty-tree anchor. Only the sighash tells
     /// them apart. Without it anyone could lift a shield bundle out of the mempool into a shield
-    /// of their own, funded by their own tokens, and mint a second note with the same commitment
-    /// and the same nullifier as the original — of which only one can ever be spent.
+    /// of their own, funded by their own tokens, and land a copy of the note in a pool it was
+    /// never meant for. Nullifiers are per pool, so both copies stay spendable and this is not
+    /// Faerie Gold; the harm is that one `rho` now yields notes in two pools, which links the
+    /// recipient's spends across them.
     #[tokio::test]
     async fn test_token_shield_rejects_a_bundle_proved_for_another_tokens_pool() {
         let platform_version = PlatformVersion::latest();
@@ -1745,6 +1739,10 @@ mod token_pool_mint_burn_claim_purchase_tests {
         .await
         .expect("token mint to pool transition");
 
+        // CheckTx rebuilds the preimage independently of block execution, so a kind that
+        // reached for the wrong tag there would drop every honest transition of this kind
+        // at admission while block-level tests stayed green.
+        assert_check_tx_accepts(&platform, &mint);
         let result = process(&platform, &mint);
         assert_matches!(
             result.execution_results().as_slice(),
@@ -2782,6 +2780,10 @@ mod token_pool_mint_burn_claim_purchase_tests {
         )
         .await
         .expect("token direct purchase to pool transition");
+        // CheckTx rebuilds the preimage independently of block execution, so a kind that
+        // reached for the wrong tag there would drop every honest transition of this kind
+        // at admission while block-level tests stayed green.
+        assert_check_tx_accepts(&platform, &purchase);
         let result = process(&platform, &purchase);
         assert_matches!(
             result.execution_results().as_slice(),
@@ -3422,8 +3424,8 @@ mod document_shielded_token_payment_tests {
 /// both pools; the credit pool is funded directly in state, the token pool through a shield.
 mod token_pool_paid_transitions_tests {
     use super::token_shielded_pool_tests::{
-        assert_tokens_conserved, build_shield_bundle, dummy_bundle, enable_shielded_pool,
-        identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
+        assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle, dummy_bundle,
+        enable_shielded_pool, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
         platform_with_latest_version, pool_balance, process, spend_keys, spendable_note,
         OWNER_INITIAL_BALANCE,
     };
@@ -3443,12 +3445,29 @@ mod token_pool_paid_transitions_tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::shielded::builder::{
+        build_token_claim_to_pool_transition, build_token_direct_purchase_to_pool_transition,
+        build_token_mint_to_pool_transition, build_token_shield_transition,
+    };
+    use dpp::shielded::token_pool_output_only_extra_sighash_data;
+    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use crate::execution::validation::state_transition::state_transitions::shielded_common::{
+        reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY,
+    };
+    use dpp::state_transition::batch_transition::token_mint_to_pool_transition::v0::v0_methods::TokenMintToPoolTransitionV0Methods;
+    use dpp::state_transition::batch_transition::token_claim_to_pool_transition::v0::v0_methods::TokenClaimToPoolTransitionV0Methods;
+    use dpp::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
+    use dpp::shielded::builder::{
         build_token_purchase_from_shielded_pool_transition,
         build_token_shielded_transfer_with_shielded_fee_transition,
         build_token_unshield_with_shielded_fee_transition, OrchardProver, ShieldedFeePayer,
         SpendableNote, TokenPoolSpender,
     };
+    use dpp::shielded::OrchardBundleParams;
+    use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+    use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
     use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+    use dpp::state_transition::batch_transition::token_shield_transition::v0::v0_methods::TokenShieldTransitionV0Methods;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
     use dpp::state_transition::StateTransition;
@@ -3909,5 +3928,271 @@ mod token_pool_paid_transitions_tests {
             [StateTransitionExecutionResult::InternalError(message)]
                 if message.contains("TokenPurchaseFromShieldedPool") && message.contains("not active")
         );
+    }
+
+    /// The bundle a client actually ships must be the one consensus accepts. Every other test
+    /// here hand-builds its bundle through the same helper the verifier's preimage comes from,
+    /// so a mistake inside the public builder — the wrong kind, a missing field — would be
+    /// invisible: the suite would stay green while every real shield was rejected at every
+    /// node. This one goes through `build_token_shield_transition`, shows the bundle admitted
+    /// by CheckTx and executed, and only then replays that same proven bundle into another
+    /// pool. The positive half is what makes the negative half mean anything: the replay is
+    /// refused for the pool it landed in, not because the bundle was never valid anywhere.
+    #[tokio::test]
+    async fn test_a_builder_made_shield_is_accepted_and_its_bundle_cannot_be_replayed() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9210);
+        let amount = 4_200;
+
+        let (owner, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let shield = build_token_shield_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            &wallet_address(),
+            amount,
+            [0u8; 36],
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("client-built token shield");
+
+        // Admission and execution both rebuild the preimage; either disagreeing with the
+        // builder would reject this.
+        assert_check_tx_accepts(&platform, &shield);
+        assert_matches!(
+            process(&platform, &shield).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), amount);
+        assert_tokens_conserved(&platform);
+
+        // That exact bundle, proven valid above, is now offered to a second token's pool.
+        let StateTransition::Batch(batch) = &shield else {
+            panic!("expected a batch transition");
+        };
+        let BatchedTransitionRef::Token(TokenTransition::Shield(proven)) =
+            batch.transitions_iter().next().expect("one transition")
+        else {
+            panic!("expected a token shield transition");
+        };
+        let proven_bundle = OrchardBundleParams {
+            actions: proven.actions().to_vec(),
+            anchor: *proven.anchor(),
+            proof: proven.proof().to_vec(),
+            binding_signature: *proven.binding_signature(),
+        };
+
+        // A second owner, because a contract id derives from its owner: the same owner would
+        // give back the same contract and the same pool, and the test would prove nothing.
+        let (other_owner, other_signer, other_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (other_contract, other_token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            other_owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        assert_ne!(
+            token_id, other_token_id,
+            "the two tokens must own separate pools"
+        );
+
+        let replay = BatchTransition::new_token_shield_transition(
+            other_token_id,
+            other_owner.id(),
+            other_contract.id(),
+            0,
+            amount,
+            proven_bundle,
+            &other_key,
+            2,
+            0,
+            &other_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+
+        assert_matches!(
+            process(&platform, &replay).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
+        );
+        assert_eq!(pool_balance(&platform, other_token_id), 0);
+        assert_tokens_conserved(&platform);
+    }
+
+    /// Each of the four public builders must bind the preimage its own kind's verifier
+    /// rebuilds. Nothing in the types enforces that: the builders take a
+    /// `TokenTransitionActionType`, so they cannot pass a non-kind, but any one of them could
+    /// pass a *different* outputs-only kind and still compile. The failure is total and silent
+    /// — every honest transition of that kind rejected at every node, with the suite green —
+    /// so it is checked here directly, against the same verification consensus runs.
+    #[tokio::test]
+    async fn test_every_outputs_only_builder_binds_the_preimage_its_verifier_rebuilds() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let (owner, signer, key) = setup_identity(&mut platform, 4242, dash_to_credits!(0.5));
+
+        let token_id = Identifier::from([7u8; 32]);
+        let contract_id = Identifier::from([8u8; 32]);
+        let recipient = wallet_address();
+        let amount = 5_000u64;
+
+        let shield = build_token_shield_transition(
+            token_id,
+            owner.id(),
+            contract_id,
+            0,
+            &recipient,
+            amount,
+            [0u8; 36],
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("shield");
+        let mint = build_token_mint_to_pool_transition(
+            token_id,
+            owner.id(),
+            contract_id,
+            0,
+            &recipient,
+            amount,
+            [0u8; 36],
+            None,
+            None,
+            None,
+            &key,
+            3,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("mint to pool");
+        let claim = build_token_claim_to_pool_transition(
+            token_id,
+            owner.id(),
+            contract_id,
+            0,
+            &recipient,
+            amount,
+            TokenDistributionType::PreProgrammed,
+            None,
+            [0u8; 36],
+            None,
+            None,
+            &key,
+            4,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("claim to pool");
+        let purchase = build_token_direct_purchase_to_pool_transition(
+            token_id,
+            owner.id(),
+            contract_id,
+            0,
+            &recipient,
+            amount,
+            1_000,
+            [0u8; 36],
+            None,
+            &key,
+            5,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("direct purchase to pool");
+
+        for (built, action_type) in [
+            (&shield, TokenTransitionActionType::Shield),
+            (&mint, TokenTransitionActionType::MintToPool),
+            (&claim, TokenTransitionActionType::ClaimToPool),
+            (&purchase, TokenTransitionActionType::DirectPurchaseToPool),
+        ] {
+            let StateTransition::Batch(batch) = built else {
+                panic!("expected a batch transition");
+            };
+            let transition = batch.transitions_iter().next().expect("one transition");
+            // Every one of the four pays `amount` into the pool, so the bundle's value
+            // balance is the same. A claim states no amount of its own — consensus resolves
+            // it against state — so it has to come from what the builder was handed.
+            let value_balance = -(amount as i64);
+            let (actions, anchor, proof, binding_signature) = match transition {
+                BatchedTransitionRef::Token(TokenTransition::Shield(t)) => {
+                    (t.actions(), t.anchor(), t.proof(), t.binding_signature())
+                }
+                BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
+                    (t.actions(), t.anchor(), t.proof(), t.binding_signature())
+                }
+                BatchedTransitionRef::Token(TokenTransition::ClaimToPool(t)) => {
+                    (t.actions(), t.anchor(), t.proof(), t.binding_signature())
+                }
+                BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
+                    (t.actions(), t.anchor(), t.proof(), t.binding_signature())
+                }
+                other => panic!("unexpected transition {other:?}"),
+            };
+
+            // The preimage the verifier for this kind rebuilds, nothing the builder handed us.
+            let expected = token_pool_output_only_extra_sighash_data(
+                action_type,
+                &token_id.to_buffer(),
+                platform_version,
+            )
+            .expect("outputs-only kind");
+
+            reconstruct_and_verify_bundle(
+                actions,
+                FLAGS_OUTPUTS_ONLY,
+                value_balance,
+                anchor,
+                proof,
+                binding_signature,
+                &expected,
+            )
+            .unwrap_or_else(|error| {
+                panic!("{action_type} builder does not bind its verifier's preimage: {error:?}")
+            });
+        }
     }
 }

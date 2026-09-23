@@ -115,10 +115,8 @@ impl TokenShieldTransitionActionStateValidationV0 for TokenShieldTransitionActio
         }
 
         // Outputs-only bundle entering the pool: value balance is `-amount`.
-        // An outputs-only bundle carries no anchor pinning it to a pool — every token pool
-        // starts from the same empty-tree anchor — and the identity signature over the batch
-        // only binds it inside this batch. The extra sighash data is what stops the authorized
-        // bundle bytes from being lifted into another pool or another transition kind.
+        // An outputs-only bundle has no anchor of its own, so the sighash is what pins it to
+        // this pool and this kind — see `token_pool_output_only_extra_sighash_data`.
         let extra_sighash_data = token_pool_output_only_extra_sighash_data(
             TokenTransitionActionType::Shield,
             token_id.as_bytes(),

@@ -34,14 +34,21 @@ use wasm_bindgen::prelude::wasm_bindgen;
 ///
 /// `sighash = SHA-256("DashPlatformSighash" || bundleCommitment || extraData)`
 ///
-/// - For shield and shielded_transfer transitions, `extraData` should be empty.
-/// - For unshield transitions, `extraData` = serialized `outputAddress` bytes.
-/// - For shielded withdrawal transitions, `extraData` = `outputScript` bytes.
-/// - For token pool transitions, `extraData` is the layout that transition binds. An
-///   outputs-only one — token shield, and mint, claim or direct purchase into the pool —
-///   binds its one-byte kind tag followed by the 32-byte token id; leaving it empty is
-///   rejected, since all token pools share the empty-tree anchor such a bundle proves
-///   against and nothing else would say which pool it was built for.
+/// `extraData` is the exact preimage the transition's own layout defines; consensus rebuilds
+/// it and compares, so a byte out of place rejects an otherwise valid bundle. Integers are
+/// little endian.
+///
+/// - Credit pool `Shield` and `ShieldedTransfer`: empty.
+/// - `Unshield`: `outputAddress || amount (u64)`.
+/// - Shielded withdrawal: `outputScript || amount (u64) || coreFeePerByte (u32) ||
+///   pooling (1 byte)`.
+/// - Token pool transitions that only create notes — token shield, and mint, claim or direct
+///   purchase into the pool: `kind tag (1 byte) || tokenId (32 bytes)`, with the tag `0x80`,
+///   `0x81`, `0x82` and `0x83` in that order. Empty is rejected: such a bundle carries no
+///   anchor, every token pool shares the empty-tree anchor it proves against, and nothing
+///   else in the bundle says which pool or which kind it was built for.
+/// - Other token pool transitions bind their own fields; see the `extra_sighash_data`
+///   builders in `dpp::shielded`.
 #[wasm_bindgen(js_name = computePlatformSighash)]
 pub fn compute_platform_sighash_wasm(
     bundle_commitment: Vec<u8>,

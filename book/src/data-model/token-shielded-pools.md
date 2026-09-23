@@ -78,21 +78,24 @@ fees, so unlike the credit pool nothing is carved from the bundle's value balanc
 
 | Transition | Flags | Value balance | Extra sighash data | Effect |
 |---|---|---|---|---|
-| `TokenShield` | outputs only | `-amount` | none | `amount` leaves the owner's balance and enters the pool as new notes. |
+| `TokenShield` | outputs only | `-amount` | `tag(0x80), token_id` | `amount` leaves the owner's balance and enters the pool as new notes. |
 | `TokenUnshield` | spends and outputs | `+amount` | `token_id, owner_id, recipient_id, amount` | Notes are spent; `amount` is credited to `recipient_id`; change comes back as new notes. |
 | `TokenShieldedTransfer` | spends and outputs | `0` | `token_id, owner_id` | Notes are spent and recreated; the pool balance is unchanged. |
-| `TokenMintToPool` | outputs only | `-amount` | none | An authorized minter (manual minting rules, group actions supported) mints `amount` into new notes; the supply and the pool balance grow. Allowed only where `mintingAllowChoosingDestination` is set, since the notes' recipients are the minter's choice. |
+| `TokenMintToPool` | outputs only | `-amount` | `tag(0x81), token_id` | An authorized minter (manual minting rules, group actions supported) mints `amount` into new notes; the supply and the pool balance grow. Allowed only where `mintingAllowChoosingDestination` is set, since the notes' recipients are the minter's choice. |
 | `TokenBurnFromPool` | spends and outputs | `+amount` | `token_id, burner_id, amount` | An authorized burner (manual burning rules, group actions supported) spends notes and destroys `amount`; the supply and the pool balance shrink. `burner_id` is the batch owner, or the proposer of a group action. |
-| `TokenClaimToPool` | outputs only | `-amount` | none | A distribution claim released into new notes instead of the claimant's balance; a perpetual claim names the cycle-aligned moment it claims up to so the amount is predictable. |
-| `TokenDirectPurchaseToPool` | outputs only | `-token_count` | none | The buyer pays credits at the direct purchase price and the tokens are minted into new notes. |
+| `TokenClaimToPool` | outputs only | `-amount` | `tag(0x82), token_id` | A distribution claim released into new notes instead of the claimant's balance; a perpetual claim names the cycle-aligned moment it claims up to so the amount is predictable. |
+| `TokenDirectPurchaseToPool` | outputs only | `-token_count` | `tag(0x83), token_id` | The buyer pays credits at the direct purchase price and the tokens are minted into new notes. |
 
 Each transition carries the Orchard bundle (`actions`, `anchor`, `proof`, `binding_signature`)
 next to the token base transition (`token_id`, contract id, contract position, identity
 contract nonce). The extra sighash data is bound into the Orchard sighash by the client and
-recomputed by consensus from the transition's own fields, so a bundle proven for one token,
-owner, recipient or amount cannot be replayed with another. The layouts are in
+recomputed by consensus from the transition's own fields, so a bundle cannot be replayed
+against whatever its layout names. The layouts differ: the ones that spend bind the token, the
+owner and, where tokens leave the pool, the recipient and amount; the four that only create
+notes bind their kind and the token, and nothing about who submits them. The layouts are in
 `dpp::shielded::sighash` (`token_unshield_extra_sighash_data`,
-`token_shielded_transfer_extra_sighash_data`).
+`token_shielded_transfer_extra_sighash_data`, `token_burn_from_pool_extra_sighash_data` and
+`token_pool_output_only_extra_sighash_data`).
 
 Outputs-only bundles (shield, mint, claim, purchase) have no spends, so their anchor is not
 checked against the pool; the client builds them against the empty tree. Spending bundles must

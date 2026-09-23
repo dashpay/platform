@@ -151,8 +151,10 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// Creates a `StateTransition` moving `amount` of a token from `owner_id`'s identity token
     /// balance into the token's shielded pool.
     ///
-    /// `bundle` is the outputs-only Orchard bundle (value balance `-amount`) the client proved for
-    /// the token pool; the identity signature over the batch binds it.
+    /// `bundle` is the outputs-only Orchard bundle (value balance `-amount`) the client proved
+    /// for the token pool. Having no spends it carries no anchor, so its sighash must bind the
+    /// shield tag and the token id — see `token_pool_output_only_extra_sighash_data`; a bundle
+    /// proved without them is rejected.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     async fn new_token_shield_transition<S: Signer<IdentityPublicKey>>(
