@@ -14,7 +14,7 @@ use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, PropertyReference,
-    ReferringWrite,
+    ReferenceCombinator, ReferringWrite,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -60,8 +60,8 @@ use crate::platform_types::platform::PlatformStateRef;
 /// Versioned, stateful validation of document references using the v0 rules.
 ///
 /// This performs existence checks for the supported reference targets (identity,
-/// contract and token, documents, identity keys, and the targets of an `anyOf`,
-/// of which one must hold) and can be limited to changed fields for replace
+/// contract and token, documents, identity keys, and the leaves of a reference
+/// expression combined by `anyOf` and `allOf`) and can be limited to changed fields for replace
 /// transitions. It is intended to be called via the higher-level
 /// `DocumentReferenceValidation` dispatcher that selects the version.
 pub(crate) trait DocumentReferenceValidationV0 {
@@ -443,9 +443,9 @@ fn validate_document_type_references_v0(
 /// last write, so a replace of an unrelated field by a now-unauthorized owner
 /// must still fail. A lookup whose key reads `$ownerId` needs no such rule:
 /// its declaring type can be neither transferred nor traded (registration
-/// refuses it otherwise), so the writer never moves. An `anyOf` is
-/// re-validated when any of its targets would be, and then as a whole, in
-/// declared order: which target holds may have changed.
+/// refuses it otherwise), so the writer never moves. A reference expression
+/// (`anyOf` / `allOf`) is re-validated when any of its leaves would be, and
+/// then as a whole: which operands hold may have changed.
 fn binds_a_changed_property(
     reference_target: &DocumentPropertyReferenceTarget,
     changed_fields: &BTreeSet<String>,
@@ -483,24 +483,35 @@ fn binds_a_changed_property(
         DocumentPropertyReferenceTarget::Identity
         | DocumentPropertyReferenceTarget::Contract { .. }
         | DocumentPropertyReferenceTarget::Token => false,
-        DocumentPropertyReferenceTarget::AnyOf(any_of) => any_of
-            .targets()
+        // In place in generation 0, reached from protocol version 14 only,
+        // the only version whose parser produces an expression
+        DocumentPropertyReferenceTarget::AnyOf(operands)
+        | DocumentPropertyReferenceTarget::AllOf(operands) => operands
+            .operands()
             .iter()
-            .any(|target| binds_a_changed_property(target, changed_fields)),
+            .any(|operand| binds_a_changed_property(operand, changed_fields)),
     }
 }
 
 /// Checks one referenced value against its declaration `reference_target`:
 /// the value `referenced_id` is an identifier property's value or one
 /// element of a typed array of them, and `path` is how the errors name it
-/// (the property path, or the element's list path). A single target is
-/// checked by [`validate_reference_target_v0`]. The targets of an `anyOf` are
-/// checked the same way, one after the other in declared order, and the
-/// first that holds ends the check; when none holds, the result is the last
-/// target's, its error the one a declaration of that target alone would
-/// give, so the author's order decides which failure a writer is shown.
-/// Every read is billed as it is made, so the reads of the targets that
-/// failed are paid for too.
+/// (the property path, or the element's list path). A single target (a leaf)
+/// is checked by [`validate_reference_target_v0`]. A reference expression is
+/// evaluated operand by operand in declared order, each operand a leaf or a
+/// nested expression evaluated the same way: an `anyOf` stops at the first
+/// operand that holds, and when none does the result is the last operand's;
+/// an `allOf` stops at the first operand that fails, with that operand's
+/// result. So a refusal is always the error a leaf declared alone would
+/// give, and the author's order decides which one a writer is shown. Every
+/// read is billed as it is made, those of the operands that failed included.
+/// The recursion is as deep as the expression, which registration keeps
+/// within `SystemLimits::max_reference_expression_depth`.
+///
+/// In place in generation 0, which every table selects: its callers, the
+/// document create and replace state validations, reach it from protocol
+/// version 14 only, and only that version's parser produces an expression, so
+/// every earlier write goes straight to the leaf check it always ran.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_v0(
     contract: &DataContract,
@@ -517,7 +528,7 @@ fn validate_reference_v0(
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let DocumentPropertyReferenceTarget::AnyOf(any_of) = reference_target else {
+    let Some((combinator, operands)) = reference_target.combinator() else {
         return validate_reference_target_v0(
             contract,
             document_type,
@@ -534,18 +545,21 @@ fn validate_reference_v0(
             platform_version,
         );
     };
-    let Some((last_target, earlier_targets)) = any_of.targets().split_last() else {
+    // An empty list would hold vacuously as an allOf
+    if operands.operands().is_empty() {
         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "a refersTo anyOf declares at least two targets, which the parser enforces",
+            "a refersTo reference expression lists at least two operands, which the parser \
+             enforces",
         )));
-    };
-    for target in earlier_targets {
-        let result = validate_reference_target_v0(
+    }
+    let mut result = SimpleConsensusValidationResult::new();
+    for operand in operands.operands() {
+        result = validate_reference_v0(
             contract,
             document_type,
             document_data,
             owner_id,
-            target,
+            operand,
             referenced_id,
             path,
             referenced_contracts,
@@ -555,25 +569,17 @@ fn validate_reference_v0(
             execution_context,
             platform_version,
         )?;
-        if result.is_valid() {
+        let decided = match combinator {
+            ReferenceCombinator::AnyOf => result.is_valid(),
+            ReferenceCombinator::AllOf => !result.is_valid(),
+        };
+        if decided {
             return Ok(result);
         }
     }
-    validate_reference_target_v0(
-        contract,
-        document_type,
-        document_data,
-        owner_id,
-        last_target,
-        referenced_id,
-        path,
-        referenced_contracts,
-        platform,
-        block_info,
-        transaction,
-        execution_context,
-        platform_version,
-    )
+    // Every operand was checked: for an anyOf none held and this is the last
+    // one's refusal, for an allOf all held
+    Ok(result)
 }
 
 /// Checks one reference against platform state for a single target: the
@@ -586,8 +592,8 @@ fn validate_reference_v0(
 /// `document_data` (or the writer `owner_id`) and the referenced document.
 /// Every read is billed to `execution_context`; a foreign contract holding a
 /// referenced document type is resolved through `referenced_contracts`,
-/// which the caller shares among the elements of one array and the targets
-/// of one `anyOf`.
+/// which the caller shares among the elements of one array and the leaves
+/// of one reference expression.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_target_v0(
     contract: &DataContract,
@@ -989,11 +995,11 @@ fn validate_reference_target_v0(
 
             true
         }
-        // `validate_reference_v0` walks the targets of an `anyOf`, and the
-        // parser refuses an `anyOf` among them
-        DocumentPropertyReferenceTarget::AnyOf(_) => {
+        // `validate_reference_v0` evaluates reference expressions and passes
+        // only their leaves here
+        DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "a refersTo anyOf target cannot itself be an anyOf, which the parser enforces",
+                "a reference expression reached the leaf check, which only its evaluator calls",
             )))
         }
     };

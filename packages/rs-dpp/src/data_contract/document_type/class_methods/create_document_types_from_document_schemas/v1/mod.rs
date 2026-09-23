@@ -159,9 +159,10 @@ impl DocumentType {
         // Inert for every protocol version before 14 for the same reason as the check above:
         // a parsed reference carries a `lookup` only where the tables carry
         // `apply_property_reference: Some(_)`, so the loop below finds none there. The same
-        // holds for the targets of an `anyOf`, walked through `targets()`, which parse from
-        // the same version only (for a single declaration `targets()` is the declaration
-        // itself, so the walk is unchanged where no `anyOf` exists).
+        // holds for the leaves of a reference expression (`anyOf` / `allOf`), walked through
+        // `leaves_with_paths()`, which parse from the same version only (for a single
+        // declaration it is the declaration itself, at an empty path, so the walk and the
+        // error are unchanged where no expression exists).
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
                 // On an identifier property or on the elements of a typed array
@@ -172,8 +173,9 @@ impl DocumentType {
                 else {
                     continue;
                 };
-                // Each target of an `anyOf` is judged as it would be alone
-                for target in declaration.targets() {
+                // Each leaf of a reference expression is judged as it would be alone,
+                // and the error names the leaf (`refersTo anyOf[1] lookup`)
+                for (leaf_path, target) in declaration.leaves_with_paths() {
                     let Some(DocumentReferenceDeclaration {
                         contract_id,
                         document_type_name,
@@ -204,9 +206,14 @@ impl DocumentType {
                     if let Some(reason) =
                         lookup.referenced_side_error(document_type.as_ref(), referenced)
                     {
+                        let at = if leaf_path.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {leaf_path}")
+                        };
                         return Err(consensus_or_protocol_data_contract_error(
                             DataContractError::InvalidContractStructure(format!(
-                                "document type \"{name}\" property \"{path}\" refersTo lookup: {reason}"
+                                "document type \"{name}\" property \"{path}\" refersTo{at} lookup: {reason}"
                             )),
                         ));
                     }

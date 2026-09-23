@@ -122,10 +122,6 @@ pub(crate) mod property_names {
     pub const LOOKUP_INDEX: &str = "index";
     /// `lookup`: every index property mapped to its referring-side source.
     pub const LOOKUP_KEYS: &str = "keys";
-    /// `refersTo` holding two or more targets, of which at least one must
-    /// hold, in place of a single target. Meta-schema v3+ (protocol version
-    /// 14).
-    pub const ANY_OF: &str = "anyOf";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";

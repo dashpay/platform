@@ -1,10 +1,10 @@
-//! Joins through an `anyOf` reference (`refersTo: { "anyOf": [...] }`,
-//! protocol version 14): a value may be the id of a document of any of its
-//! targets' types, or no document at all, so it names no single type the join
-//! resolves in, and neither a chained query nor a composite by-id join may take
-//! it as a join property, even when one target is the joined type. Both
-//! surfaces refuse it while validating the shape, on the server and in the
-//! verifier alike.
+//! Joins through a reference expression (`refersTo: { "anyOf": [...] }` or
+//! `{ "allOf": [...] }`, protocol version 14): an `anyOf` value may be the id
+//! of a document of any of its leaves' types, or no document at all, and an
+//! `allOf` names no one type to join through either, so neither a chained
+//! query nor a composite by-id join may take such a property as a join
+//! property, even when a leaf is the joined type. Both surfaces refuse it
+//! while validating the shape, on the server and in the verifier alike.
 
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -25,21 +25,24 @@ fn identifier(position: u32) -> Value {
     })
 }
 
-/// A permanent `profile` type, and two types whose `authorId` is the id of a
-/// profile or of an identity: the indexOnly `like` a chained query starts from
-/// and the plain `note` a composite page starts from.
-fn any_of_join_contract() -> DataContract {
+/// A permanent `profile` type, and two types whose `authorId` declares the
+/// expression `combinator` of a profile and an identity: the indexOnly `like`
+/// a chained query starts from and the plain `note` a composite page starts
+/// from.
+fn expression_join_contract(combinator: &str) -> DataContract {
     let mut author_id = identifier(0);
-    author_id
+    let mut refers_to = platform_value!({});
+    refers_to
         .insert(
-            "refersTo".to_string(),
-            platform_value!({
-                "anyOf": [
-                    { "type": "permanentDocument", "documentType": "profile" },
-                    { "type": "identity" }
-                ]
-            }),
+            combinator.to_string(),
+            platform_value!([
+                { "type": "permanentDocument", "documentType": "profile" },
+                { "type": "identity" }
+            ]),
         )
+        .expect("the combinator inserts");
+    author_id
+        .insert("refersTo".to_string(), refers_to)
         .expect("refersTo inserts");
     let referring_type = |index_only: bool| {
         let mut schema = platform_value!({
@@ -82,7 +85,7 @@ fn any_of_join_contract() -> DataContract {
         true,
         PlatformVersion::latest(),
     )
-    .expect("the anyOf join contract parses")
+    .expect("the expression join contract parses")
 }
 
 fn by_author<'a>(contract: &'a DataContract, type_name: &str) -> DriveDocumentQuery<'a> {
@@ -117,28 +120,34 @@ fn by_author<'a>(contract: &'a DataContract, type_name: &str) -> DriveDocumentQu
     )
 }
 
-fn assert_refused_as_an_any_of(result: Result<(), Error>) {
+fn assert_refused_as_an_expression(result: Result<(), Error>) {
     match result {
         Err(Error::Query(error)) => assert!(
-            error.to_string().contains("declares a refersTo anyOf"),
-            "the refusal should name the anyOf: {error}"
+            error
+                .to_string()
+                .contains("declares a refersTo anyOf or allOf expression"),
+            "the refusal should name the expression: {error}"
         ),
         other => panic!("expected the join to be refused, got {other:?}"),
     }
 }
 
 #[test]
-fn should_refuse_a_chained_join_through_an_any_of_reference() {
-    let contract = any_of_join_contract();
-    assert_refused_as_an_any_of(
-        by_author(&contract, "like").validate_chained(PlatformVersion::latest()),
-    );
+fn should_refuse_a_chained_join_through_a_reference_expression() {
+    for combinator in ["anyOf", "allOf"] {
+        let contract = expression_join_contract(combinator);
+        assert_refused_as_an_expression(
+            by_author(&contract, "like").validate_chained(PlatformVersion::latest()),
+        );
+    }
 }
 
 #[test]
-fn should_refuse_a_composite_by_id_join_through_an_any_of_reference() {
-    let contract = any_of_join_contract();
-    assert_refused_as_an_any_of(
-        by_author(&contract, "note").validate_composite(PlatformVersion::latest()),
-    );
+fn should_refuse_a_composite_by_id_join_through_a_reference_expression() {
+    for combinator in ["anyOf", "allOf"] {
+        let contract = expression_join_contract(combinator);
+        assert_refused_as_an_expression(
+            by_author(&contract, "note").validate_composite(PlatformVersion::latest()),
+        );
+    }
 }

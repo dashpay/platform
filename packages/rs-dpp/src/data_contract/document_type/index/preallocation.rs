@@ -110,9 +110,10 @@ impl Index {
             // typed array, so element references never reach an index. A
             // lookup reference (`PermanentDocumentLookup`) never matches
             // either: its value is not the referenced document's `$id`. Nor
-            // does an `anyOf`, even of permanentDocument targets only: a value
-            // may be the id of a document of any of them, so creating one of
-            // them determines no entry's path
+            // does a reference expression (`anyOf` / `allOf`), even of
+            // permanentDocument leaves only: an `anyOf` value may be the id of
+            // a document of any of them, and binding an `allOf` would have to
+            // pick one leaf's agreement over the others'
             let DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
@@ -171,7 +172,7 @@ impl Index {
 mod tests {
     use super::*;
     use crate::data_contract::document_type::{
-        AnyOfReferenceTargets, DocumentReferenceLookup, IndexProperty, LookupKeySource,
+        DocumentReferenceLookup, IndexProperty, LookupKeySource, ReferenceOperands,
     };
     use std::collections::BTreeMap;
 
@@ -392,29 +393,37 @@ mod tests {
     }
 
     #[test]
-    fn should_not_bind_through_an_any_of_reference() {
+    fn should_not_bind_through_a_reference_expression() {
         let own_contract_id = Identifier::from([1u8; 32]);
         let post = |document_type_name: &str| DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: document_type_name.to_string(),
             property_agreement: BTreeMap::new(),
         };
-        let mut property = identifier_reference_property("post", None, &[]);
-        property.property_type =
-            DocumentPropertyType::IdentifierWithReference(DocumentPropertyReferenceTarget::AnyOf(
-                AnyOfReferenceTargets::new(vec![post("post"), post("repost")]),
-            ));
-        let mut properties = IndexMap::new();
-        properties.insert("postId".to_string(), property);
-
-        // A value may name a repost as well as a post, so creating a post
-        // determines no entry's path
         let index = index_on(&["postId"]);
-        assert!(index
-            .preallocation_bindings(&properties, own_contract_id)
-            .is_empty());
-        assert!(index
-            .preallocation_bindings_for_target(&properties, own_contract_id, "post")
-            .is_empty());
+        for expression in [
+            DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+                post("post"),
+                post("repost"),
+            ])),
+            DocumentPropertyReferenceTarget::AllOf(ReferenceOperands::new(vec![
+                post("post"),
+                DocumentPropertyReferenceTarget::Identity,
+            ])),
+        ] {
+            let mut property = identifier_reference_property("post", None, &[]);
+            property.property_type = DocumentPropertyType::IdentifierWithReference(expression);
+            let mut properties = IndexMap::new();
+            properties.insert("postId".to_string(), property);
+
+            // An anyOf value may name a repost as well as a post, and an
+            // allOf is refused alike: no single leaf determines the path
+            assert!(index
+                .preallocation_bindings(&properties, own_contract_id)
+                .is_empty());
+            assert!(index
+                .preallocation_bindings_for_target(&properties, own_contract_id, "post")
+                .is_empty());
+        }
     }
 }

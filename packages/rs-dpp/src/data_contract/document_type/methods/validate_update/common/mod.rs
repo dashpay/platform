@@ -2282,18 +2282,20 @@ mod tests {
             }
         }
 
-        /// An `anyOf` is frozen like a single target: documents were checked against
-        /// the targets they were written under, so turning a target into an `anyOf` or
-        /// back, adding, removing or reordering a target (the order decides which error a
-        /// writer sees), or changing one is an incompatible schema change. `anyOf` inside
-        /// `refersTo` is the declaration's data, never read as the JSON Schema keyword.
+        /// A reference expression is frozen like a single target: documents were checked
+        /// against the expression they were written under, so turning a target into an
+        /// expression or back, adding, removing or reordering an operand (the order decides
+        /// which error a writer sees), swapping `anyOf` for `allOf`, nesting deeper, or
+        /// changing a leaf is an incompatible schema change. `anyOf` and `allOf` inside
+        /// `refersTo` are the declaration's data, never read as the JSON Schema keywords.
         #[test]
-        fn should_return_invalid_result_when_an_any_of_reference_changes() {
+        fn should_return_invalid_result_when_a_reference_expression_changes() {
             let platform_version = PlatformVersion::latest();
             let identity = platform_value!({ "type": "identity" });
             let note = platform_value!({ "type": "permanentDocument", "documentType": "note" });
             let memo = platform_value!({ "type": "permanentDocument", "documentType": "memo" });
             let any_of = |targets: Vec<platform_value::Value>| platform_value!({ "anyOf": platform_value::Value::Array(targets) });
+            let all_of = |targets: Vec<platform_value::Value>| platform_value!({ "allOf": platform_value::Value::Array(targets) });
 
             for (old_refers_to, new_refers_to) in [
                 (
@@ -2316,6 +2318,27 @@ mod tests {
                 (
                     any_of(vec![identity.clone(), note.clone()]),
                     any_of(vec![identity.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    all_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![
+                        identity.clone(),
+                        all_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                ),
+                (
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![memo.clone(), note.clone()]),
+                    ]),
                 ),
             ] {
                 let old_document_type =
@@ -2343,9 +2366,11 @@ mod tests {
                 }
             }
 
-            // An unchanged anyOf is no change
-            let document_type =
-                identifier_document_type(Some(any_of(vec![identity, note])), platform_version);
+            // An unchanged expression is no change
+            let document_type = identifier_document_type(
+                Some(any_of(vec![identity, all_of(vec![note, memo])])),
+                platform_version,
+            );
             let result = document_type
                 .as_ref()
                 .validate_schema(document_type.as_ref(), platform_version)
@@ -2355,16 +2380,20 @@ mod tests {
 
         /// The same holds on the elements of a typed array.
         #[test]
-        fn should_refuse_a_contract_update_that_changes_an_element_any_of() {
+        fn should_refuse_a_contract_update_that_changes_an_element_reference_expression() {
             let platform_version = PlatformVersion::latest();
             let reason = platform_value!({ "type": "permanentDocument", "documentType": "reason" });
             let any_of = platform_value!({
                 "anyOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
             });
 
+            let all_of = platform_value!({
+                "allOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
             for (old_refers_to, new_refers_to) in [
                 (reason.clone(), any_of.clone()),
                 (any_of.clone(), reason.clone()),
+                (any_of.clone(), all_of.clone()),
             ] {
                 let old_document_type =
                     element_reference_document_type(Some(old_refers_to), platform_version);

@@ -1,5 +1,4 @@
 mod action_fees;
-mod any_of_reference;
 mod creation;
 mod deletable_document_reference;
 mod deletion;
@@ -15,6 +14,7 @@ mod lookup_reference;
 mod nft;
 mod owner_balance_proof;
 mod ranked_group_drain;
+mod reference_expression;
 mod reference_test_setup;
 mod replacement;
 mod required_since;

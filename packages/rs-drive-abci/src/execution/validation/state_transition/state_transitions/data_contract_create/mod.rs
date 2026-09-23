@@ -5703,13 +5703,14 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn should_register_contract_with_any_of_references() {
+        async fn should_register_contract_with_reference_expressions() {
             // `anyOf`s of two lookups on a property and on the elements of a
             // typed array, of an identity and a document id, and of two lookups
-            // one of which carries a propertyAgreement: every target is checked
-            // as it would be declared alone
+            // one of which carries a propertyAgreement, an `allOf`, and nested
+            // expressions down to the depth limit: every leaf is checked as it
+            // would be declared alone
             let result = run_contract_create(
-                "tests/supporting_files/contract/reference-validation/reference-validation-contract-any-of.json",
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-reference-expression.json",
             )
             .await;
 
@@ -5720,12 +5721,13 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn should_reject_contract_whose_any_of_target_names_an_unknown_document_type() {
-            // The second target names `removedModerator`, which the contract
-            // does not define: every target of an anyOf must be a declaration
-            // that could hold, and the error names it by its place in the list
+        async fn should_reject_contract_whose_expression_leaf_names_an_unknown_document_type() {
+            // A leaf nested in `anyOf[1].allOf[1]` names `removedModerator`,
+            // which the contract does not define: every leaf must be a
+            // declaration that could hold, and the error names it by where it
+            // sits
             let result = run_contract_create(
-                "tests/supporting_files/contract/reference-validation/reference-validation-contract-any-of-registration-unknown-type.json",
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-reference-expression-registration-unknown-type.json",
             )
             .await;
 
@@ -5736,7 +5738,7 @@ mod tests {
                         StateError::ReferencedDocumentTypeNotFoundError(e)
                     ),
                     ..
-                } if e.path() == "resignation.memberId.anyOf[1]"
+                } if e.path() == "resignation.memberId.anyOf[1].allOf[1]"
                     && e.document_type_name() == "removedModerator"
             );
         }

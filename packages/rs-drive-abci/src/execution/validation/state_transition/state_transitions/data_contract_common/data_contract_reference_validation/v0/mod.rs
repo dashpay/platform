@@ -63,17 +63,17 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// referenced document type. `identityPublicKey` never reaches here on
 /// elements: the parser refuses it there.
 ///
-/// Each target of an `anyOf` is checked exactly as the same target declared
-/// alone, in declared order, and every one of them must pass: an `anyOf` lets
-/// a WRITE satisfy one target, but each target has to be a declaration that
-/// could hold. A `propertyAgreement` belongs to its own target and is checked
-/// against that target's document type only.
+/// Each leaf of a reference expression (`anyOf` / `allOf`) is checked exactly
+/// as the same target declared alone, in declared order, and every one of them
+/// must pass: an `anyOf` lets a WRITE satisfy one operand, but each leaf has to
+/// be a declaration that could hold. A `propertyAgreement` belongs to its own
+/// leaf and is checked against that leaf's document type only.
 ///
 /// The error paths name the failing declaration as
 /// `documentTypeName.propertyPath`, an element declaration by its list
-/// path, `documentTypeName.propertyPath[]`, and a target of an `anyOf` by its
-/// place in the list, `documentTypeName.propertyPath.anyOf[1]` (or
-/// `documentTypeName.propertyPath[].anyOf[1]`). Validation stops at the first invalid
+/// path, `documentTypeName.propertyPath[]`, and a leaf of a reference
+/// expression by where it sits, `documentTypeName.propertyPath.anyOf[1]` or
+/// `documentTypeName.propertyPath[].anyOf[1].allOf[0]`. Validation stops at the first invalid
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -184,15 +184,18 @@ pub(super) fn validate_data_contract_references_v0(
                 None => continue,
             };
 
-            // Each target of an `anyOf` is checked as it would be declared
-            // alone, its errors naming it by its place in the list
-            // (`documentTypeName.propertyPath.anyOf[1]`)
-            let is_any_of = matches!(reference_target, DocumentPropertyReferenceTarget::AnyOf(_));
-            for (index, target) in reference_target.targets().iter().enumerate() {
-                let target_path = if is_any_of {
-                    format!("{declaration_path}.anyOf[{index}]")
-                } else {
+            // Each leaf of a reference expression is checked as it would be
+            // declared alone, its errors naming it by where it sits
+            // (`documentTypeName.propertyPath.anyOf[1].allOf[0]`). In place in
+            // generation 0, which every table selects: contract create and
+            // update state validation call it from protocol version 14 only,
+            // and a single declaration is its own one leaf at an empty path, so
+            // it is checked exactly as before expressions existed
+            for (leaf_path, target) in reference_target.leaves_with_paths() {
+                let target_path = if leaf_path.is_empty() {
                     declaration_path.clone()
+                } else {
+                    format!("{declaration_path}.{leaf_path}")
                 };
                 let result = validate_reference_target_declaration_v0(
                     contract,
@@ -218,7 +221,7 @@ pub(super) fn validate_data_contract_references_v0(
 }
 
 /// Checks one single target declaration of the property at `path` of
-/// `document_type`, a declaration of its own or one target of an `anyOf`,
+/// `document_type`, a declaration of its own or one leaf of a reference expression,
 /// against the contract and state: see [`validate_data_contract_references_v0`].
 /// `declaration_path` is how the errors name it; foreign contract resolutions
 /// are shared through `fetched_contracts`.

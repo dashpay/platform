@@ -10,12 +10,12 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    property_names, AnyOfReferenceTargets, ContractReferenceModeration, ContractReferenceOwner,
+    property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    LookupKeySource, ANY_OF_REFERENCE_TARGET_TYPES,
+    LookupKeySource, ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -588,27 +588,21 @@ fn apply_property_reference_v0(
 
     let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
 
-    // Two or more targets of which one must hold, in place of a single one:
-    // the wrapper declares nothing else, and it sits on an identifier, as
-    // every target it admits does
-    if let Some(any_of_value) = refers_to_map.get(property_names::ANY_OF) {
-        if refers_to_map.len() != 1 {
-            return Err(DataContractError::InvalidContractStructure(
-                "a refersTo anyOf declares nothing beside anyOf: every other key belongs to one \
-                 of its targets"
-                    .to_string(),
-            ));
-        }
+    // A reference expression in place of a single target: `anyOf` or `allOf`
+    // as the declaration's one key. It sits on an identifier, as every leaf
+    // it admits does
+    if let Some((combinator, operands_value)) = reference_combinator_of(&refers_to_map) {
         if !matches!(
             property_type,
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
         ) {
-            return Err(DataContractError::InvalidContractStructure(
-                "refersTo anyOf is only allowed on identifier properties".to_string(),
-            ));
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo {} is only allowed on identifier properties",
+                combinator.wire_name()
+            )));
         }
         return Ok(DocumentPropertyType::IdentifierWithReference(
-            DocumentPropertyReferenceTarget::AnyOf(parse_any_of_reference_targets(any_of_value)?),
+            parse_reference_expression(&refers_to_map, combinator, operands_value, "")?,
         ));
     }
 
@@ -647,86 +641,134 @@ fn apply_property_reference_v0(
     ))
 }
 
-/// The targets of a `refersTo` `anyOf`, each parsed as a single declaration
-/// is: a list of at least two (a single target is declared without `anyOf`),
-/// none an `anyOf` itself, each of a type in [`ANY_OF_REFERENCE_TARGET_TYPES`]
-/// and never the key id form, and no two alike, which would bill the same
-/// read twice for nothing. The most a list may hold,
-/// `SystemLimits::max_any_of_reference_targets`, is a registration limit,
-/// checked under full validation with the other reference limits.
-fn parse_any_of_reference_targets(
-    any_of_value: &Value,
-) -> Result<AnyOfReferenceTargets, DataContractError> {
-    let Some(target_values) = any_of_value.as_array() else {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo anyOf must be a list of targets".to_string(),
-        ));
-    };
-    if target_values.len() < 2 {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo anyOf must list at least two targets: a single target is declared \
-             without anyOf"
-                .to_string(),
-        ));
-    }
-
-    let mut targets: Vec<DocumentPropertyReferenceTarget> = Vec::with_capacity(target_values.len());
-    for (index, target_value) in target_values.iter().enumerate() {
-        let target_map = target_value.to_btree_ref_string_map()?;
-        if target_map.contains_key(property_names::ANY_OF) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "refersTo anyOf[{index}] is itself an anyOf: the targets of an anyOf do not nest"
-            )));
-        }
-        let reference_type = target_map
-            .get_str(property_names::TYPE)
-            .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-        if let Some(reason) = any_of_refusal_reason(reference_type) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "refersTo anyOf[{index}] is a reference of type {reference_type}, which anyOf \
-                 does not take: {reason}"
-            )));
-        }
-        if target_map.contains_key(property_names::IDENTITY_PROPERTY) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "refersTo anyOf[{index}]: {reference_type} refersTo does not take identityProperty"
-            )));
-        }
-        validate_reference_target_keys(&target_map, reference_type)?;
-        let target = parse_reference_target(&target_map, reference_type)?;
-        if targets.contains(&target) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "refersTo anyOf[{index}] repeats an earlier target"
-            )));
-        }
-        targets.push(target);
-    }
-    Ok(AnyOfReferenceTargets::new(targets))
+/// The combinator a `refersTo` declaration (or one operand of an expression)
+/// names through its key, `anyOf` or `allOf`, with the key's value; `None` for a
+/// single target.
+fn reference_combinator_of<'a>(
+    declaration: &BTreeMap<String, &'a Value>,
+) -> Option<(ReferenceCombinator, &'a Value)> {
+    ReferenceCombinator::ALL.into_iter().find_map(|combinator| {
+        declaration
+            .get(combinator.wire_name())
+            .map(|operands| (combinator, *operands))
+    })
 }
 
-/// Why an `anyOf` does not take a target of `reference_type`, `None` for the
-/// types it takes ([`ANY_OF_REFERENCE_TARGET_TYPES`]). Those are existence
-/// checks, with a `propertyAgreement` on a document, against entities that
-/// can never be deleted, so an `anyOf` of them holds for good once it holds
-/// and a replace re-validates it only when the value or a property bound to
-/// a target changed, as it does a single target. The others carry semantics
-/// that do not compose with an alternative.
-fn any_of_refusal_reason(reference_type: &str) -> Option<&'static str> {
+/// A reference expression: `declaration` names `combinator` and holds nothing
+/// else, and `operands_value` lists two or more operands, each a leaf (see
+/// [`parse_reference_expression_leaf`]) or an expression of the other
+/// combinator (an `anyOf` directly inside an `anyOf` says what one flat list
+/// says, and so does an `allOf` inside an `allOf`). `path` is where the
+/// expression sits in the declaration (`anyOf[1]`, empty at the top), for the
+/// errors.
+///
+/// These are rules of the declaration's shape, checked on every parse. The
+/// limits on it (`SystemLimits::max_reference_operands` per list,
+/// `max_reference_expression_depth` for the nesting) and that no two operands
+/// of a list are alike, which needs the declaring contract's id to see a
+/// target naming it explicitly as the one that omits it, are checked under
+/// full validation with the other reference limits.
+fn parse_reference_expression(
+    declaration: &BTreeMap<String, &Value>,
+    combinator: ReferenceCombinator,
+    operands_value: &Value,
+    path: &str,
+) -> Result<DocumentPropertyReferenceTarget, DataContractError> {
+    let name = combinator.wire_name();
+    let here = if path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{path}.{name}")
+    };
+    if declaration.len() != 1 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {here} declares nothing beside {name}: every other key belongs to one of \
+             its operands"
+        )));
+    }
+    let Some(operand_values) = operands_value.as_array() else {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {here} must be a list of operands"
+        )));
+    };
+    if operand_values.len() < 2 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {here} must list at least two operands: a single one is declared on its own"
+        )));
+    }
+
+    let mut operands = Vec::with_capacity(operand_values.len());
+    for (index, operand_value) in operand_values.iter().enumerate() {
+        let operand_path = format!("{here}[{index}]");
+        let operand_map = operand_value.to_btree_ref_string_map()?;
+        let operand = match reference_combinator_of(&operand_map) {
+            Some((inner, _)) if inner == combinator => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "refersTo {operand_path} is an {name} directly inside an {name}, which says \
+                     what one flat list says: list its operands in the outer {name}"
+                )));
+            }
+            Some((inner, inner_operands)) => {
+                parse_reference_expression(&operand_map, inner, inner_operands, &operand_path)?
+            }
+            None => parse_reference_expression_leaf(&operand_map, &operand_path)?,
+        };
+        operands.push(operand);
+    }
+    let operands = ReferenceOperands::new(operands);
+    Ok(match combinator {
+        ReferenceCombinator::AnyOf => DocumentPropertyReferenceTarget::AnyOf(operands),
+        ReferenceCombinator::AllOf => DocumentPropertyReferenceTarget::AllOf(operands),
+    })
+}
+
+/// A leaf of a reference expression, at `path`: an ordinary target declaration
+/// of a type in [`COMBINABLE_REFERENCE_TARGET_TYPES`], never the key id form,
+/// parsed and checked exactly as the same declaration on its own.
+fn parse_reference_expression_leaf(
+    declaration: &BTreeMap<String, &Value>,
+    path: &str,
+) -> Result<DocumentPropertyReferenceTarget, DataContractError> {
+    let reference_type = declaration
+        .get_str(property_names::TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+    if let Some(reason) = expression_leaf_refusal_reason(reference_type) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {path} is a reference of type {reference_type}, which a reference \
+             expression does not take: {reason}"
+        )));
+    }
+    if declaration.contains_key(property_names::IDENTITY_PROPERTY) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {path}: {reference_type} refersTo does not take identityProperty"
+        )));
+    }
+    validate_reference_target_keys(declaration, reference_type)?;
+    parse_reference_target(declaration, reference_type)
+}
+
+/// Why a reference expression does not take a leaf of `reference_type`, `None`
+/// for the types it takes ([`COMBINABLE_REFERENCE_TARGET_TYPES`]). Those are
+/// existence checks, with a `propertyAgreement` on a document, against
+/// entities that can never be deleted, so an expression of them holds for good
+/// once it holds and a replace re-validates it only when the value or a
+/// property bound to a leaf changed, as it does a single target. The others
+/// carry semantics that do not compose with other operands.
+fn expression_leaf_refusal_reason(reference_type: &str) -> Option<&'static str> {
     match reference_type {
-        _ if ANY_OF_REFERENCE_TARGET_TYPES.contains(&reference_type) => None,
+        _ if COMBINABLE_REFERENCE_TARGET_TYPES.contains(&reference_type) => None,
         "deletableDocument" => Some(
             "it is re-validated on every replace and may be cleared once its document is \
              deleted, which assumes the property refers to that one target",
         ),
         "identityPublicKey" => {
-            Some("it pairs the value with a key id property, which no other target reads")
+            Some("it pairs the value with a key id property, which no other operand reads")
         }
         "contract" => Some(
-            "its requirements are judged against the block time and the writer, a gate rather \
-             than an existence check, and no identity or document target stands in for a \
-             contract",
+            "its requirements are gates judged against the block time and the writer rather \
+             than an existence check, and a contract id is never also an identity or document id",
         ),
-        "token" => Some("no identity or document target stands in for a token"),
+        "token" => Some("a token id is never also an identity or document id"),
         _ => Some("it is not a refersTo type"),
     }
 }
@@ -1167,16 +1209,23 @@ pub(super) fn validate_reference_lookup_sources(
         else {
             continue;
         };
-        // Each target of an `anyOf` reads its key as it would alone
-        let lookups = target
-            .targets()
-            .iter()
-            .filter_map(|target| target.as_any_document_reference())
-            .filter_map(|declaration| declaration.lookup);
-        for lookup in lookups {
+        // Each leaf of a reference expression reads its key as it would
+        // alone, and the error names the leaf (`refersTo anyOf[1] lookup`)
+        for (leaf_path, leaf) in target.leaves_with_paths() {
+            let Some(lookup) = leaf
+                .as_any_document_reference()
+                .and_then(|declaration| declaration.lookup)
+            else {
+                continue;
+            };
             if let Some(reason) = lookup.referring_side_error(document_type, path) {
+                let at = if leaf_path.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {leaf_path}")
+                };
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "document type \"{document_type_name}\" property \"{path}\" refersTo \
+                    "document type \"{document_type_name}\" property \"{path}\" refersTo{at} \
                      lookup: {reason}"
                 )));
             }

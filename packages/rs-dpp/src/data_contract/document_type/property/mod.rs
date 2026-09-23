@@ -40,11 +40,14 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
-pub mod reference_any_of;
+pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
-pub use reference_any_of::{AnyOfReferenceTargets, ANY_OF_REFERENCE_TARGET_TYPES};
+pub use reference_expression::{
+    ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
+    MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
+};
 pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
 
 #[cfg(test)]
@@ -847,24 +850,32 @@ pub enum DocumentPropertyReferenceTarget {
         /// How the referenced document is found.
         lookup: DocumentReferenceLookup,
     },
-    /// Two or more targets, declared as `{ "anyOf": [target, ...] }`: the
-    /// reference holds if at least one of them holds. Each target is an
-    /// ordinary declaration, an `identity` or a `permanentDocument` (by id or
-    /// through a lookup), never an `anyOf` itself (see
-    /// [`AnyOfReferenceTargets`] for the rules and why the other kinds are
-    /// left out). At write time the targets are checked in declared order
-    /// and the first that holds ends the check; every read is billed, and
-    /// when none holds the write is refused with the error of the last
-    /// target, so a reference error never carries this variant. A
-    /// `propertyAgreement` belongs to its target and is checked only against
-    /// that target's document.
+    /// Two or more operands, declared as `{ "anyOf": [operand, ...] }`: the
+    /// reference holds if at least one of them holds. An operand is a leaf,
+    /// an ordinary declaration of an `identity` or a `permanentDocument` (by
+    /// id or through a lookup), or an [`Self::AllOf`] (see
+    /// [`ReferenceOperands`] for the rules and why the other kinds are left
+    /// out). At write time the operands are checked in declared order and
+    /// the first that holds ends the check; every read is billed, and when
+    /// none holds the write is refused with the error of the last operand,
+    /// so a reference error never carries this variant. A
+    /// `propertyAgreement` belongs to its leaf and is checked only against
+    /// that leaf's document.
     ///
     /// Not a document reference as a whole
     /// ([`Self::as_any_document_reference`] is `None`): code that checks
-    /// each declaration walks [`Self::targets`], and code that needs one
+    /// each declaration walks [`Self::leaves`], and code that needs one
     /// target (joins, preallocated indexes) refuses it.
     #[serde(rename = "anyOf")]
-    AnyOf(AnyOfReferenceTargets),
+    AnyOf(ReferenceOperands),
+    /// Two or more operands, declared as `{ "allOf": [operand, ...] }`: the
+    /// reference holds if every one of them holds for the same value. An
+    /// operand is a leaf, as for [`Self::AnyOf`], or an [`Self::AnyOf`]. At
+    /// write time the operands are checked in declared order and the first
+    /// that fails ends the check, refusing the write with its error; every
+    /// read is billed. Otherwise as [`Self::AnyOf`].
+    #[serde(rename = "allOf")]
+    AllOf(ReferenceOperands),
 }
 
 /// The declaration content the two document reference targets,
@@ -945,19 +956,77 @@ impl DocumentPropertyReferenceTarget {
             | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
             | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
-            | DocumentPropertyReferenceTarget::AnyOf(_) => None,
+            | DocumentPropertyReferenceTarget::AnyOf(_)
+            | DocumentPropertyReferenceTarget::AllOf(_) => None,
         }
     }
 
-    /// The single targets this declaration is made of: the alternatives of an
-    /// `anyOf`, in declared order, or the declaration itself. Code that
-    /// checks every declaration (registration, the lookup sources, the write
-    /// time validation) walks these, so a target inside an `anyOf` is
-    /// checked exactly as the same target declared alone.
-    pub fn targets(&self) -> &[DocumentPropertyReferenceTarget] {
+    /// The combinator and operands of a reference expression, `None` for a
+    /// single target (a leaf).
+    pub fn combinator(&self) -> Option<(ReferenceCombinator, &ReferenceOperands)> {
         match self {
-            DocumentPropertyReferenceTarget::AnyOf(any_of) => any_of.targets(),
-            target => std::slice::from_ref(target),
+            DocumentPropertyReferenceTarget::AnyOf(operands) => {
+                Some((ReferenceCombinator::AnyOf, operands))
+            }
+            DocumentPropertyReferenceTarget::AllOf(operands) => {
+                Some((ReferenceCombinator::AllOf, operands))
+            }
+            _ => None,
+        }
+    }
+
+    /// The single targets this declaration is made of, in declared order,
+    /// depth first: the leaves of a reference expression, or the declaration
+    /// itself. Code that checks every declaration (registration, the lookup
+    /// sources) walks these, so a leaf of an expression is checked exactly as
+    /// the same target declared alone. A leaf appearing twice is listed twice.
+    pub fn leaves(&self) -> Vec<&DocumentPropertyReferenceTarget> {
+        self.leaves_with_paths()
+            .into_iter()
+            .map(|(_, leaf)| leaf)
+            .collect()
+    }
+
+    /// [`Self::leaves`] with where each sits in the expression, as an error
+    /// names it: `anyOf[1].allOf[0]`, the empty string for a single target.
+    pub fn leaves_with_paths(&self) -> Vec<(String, &DocumentPropertyReferenceTarget)> {
+        fn walk<'a>(
+            target: &'a DocumentPropertyReferenceTarget,
+            path: String,
+            leaves: &mut Vec<(String, &'a DocumentPropertyReferenceTarget)>,
+        ) {
+            match target.combinator() {
+                None => leaves.push((path, target)),
+                Some((combinator, operands)) => {
+                    for (index, operand) in operands.operands().iter().enumerate() {
+                        let separator = if path.is_empty() { "" } else { "." };
+                        walk(
+                            operand,
+                            format!("{path}{separator}{}[{index}]", combinator.wire_name()),
+                            leaves,
+                        );
+                    }
+                }
+            }
+        }
+        let mut leaves = Vec::new();
+        walk(self, String::new(), &mut leaves);
+        leaves
+    }
+
+    /// How many combinators the deepest leaf sits under: 0 for a single
+    /// target, 1 for a flat `anyOf` or `allOf`.
+    pub fn expression_depth(&self) -> usize {
+        match self.combinator() {
+            None => 0,
+            Some((_, operands)) => {
+                1 + operands
+                    .operands()
+                    .iter()
+                    .map(DocumentPropertyReferenceTarget::expression_depth)
+                    .max()
+                    .unwrap_or(0)
+            }
         }
     }
 }
@@ -1001,15 +1070,15 @@ impl<'a> PropertyReference<'a> {
 
     /// How many references one document can carry through this declaration,
     /// each a billed state read when the document is written: `max_items`
-    /// for a typed array, one otherwise, times the number of targets of an
-    /// `anyOf`, every one of which may be read for one value.
+    /// for a typed array, one otherwise, times the number of leaves of a
+    /// reference expression, every one of which may be read for one value.
     pub fn max_references(&self) -> u32 {
         let values = match self {
             PropertyReference::Elements { max_items, .. } => u32::from(*max_items),
             PropertyReference::Value(_) | PropertyReference::KeyId(_) => 1,
         };
-        let targets = self.target().map_or(1, |target| target.targets().len());
-        values.saturating_mul(u32::try_from(targets).unwrap_or(u32::MAX))
+        let leaves = self.target().map_or(1, |target| target.leaves().len());
+        values.saturating_mul(u32::try_from(leaves).unwrap_or(u32::MAX))
     }
 }
 
@@ -1119,15 +1188,20 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 document_type_name,
                 ..
             } => write_document_reference(f, "deletable", *contract_id, document_type_name, None),
-            DocumentPropertyReferenceTarget::AnyOf(any_of) => {
-                write!(f, "any of: ")?;
-                for (index, target) in any_of.targets().iter().enumerate() {
+            DocumentPropertyReferenceTarget::AnyOf(operands)
+            | DocumentPropertyReferenceTarget::AllOf(operands) => {
+                let (name, joiner) = match self {
+                    DocumentPropertyReferenceTarget::AnyOf(_) => ("any of", " or "),
+                    _ => ("all of", " and "),
+                };
+                write!(f, "{name} (")?;
+                for (index, operand) in operands.operands().iter().enumerate() {
                     if index > 0 {
-                        write!(f, " or ")?;
+                        write!(f, "{joiner}")?;
                     }
-                    write!(f, "{target}")?;
+                    write!(f, "{operand}")?;
                 }
-                Ok(())
+                write!(f, ")")
             }
         }
     }
@@ -9726,52 +9800,97 @@ mod tests {
         );
     }
 
+    fn note() -> DocumentPropertyReferenceTarget {
+        DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: Default::default(),
+        }
+    }
+
     fn identity_or_note() -> DocumentPropertyReferenceTarget {
-        DocumentPropertyReferenceTarget::AnyOf(AnyOfReferenceTargets::new(vec![
+        DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
             DocumentPropertyReferenceTarget::Identity,
-            DocumentPropertyReferenceTarget::PermanentDocument {
-                contract_id: None,
-                document_type_name: "note".to_string(),
-                property_agreement: Default::default(),
-            },
+            note(),
         ]))
     }
 
-    /// An `anyOf` is no document reference as a whole: code that needs one
+    /// `anyOf(note, allOf(identity, anyOf(note, identity)))`: depth 3, four
+    /// leaves.
+    fn nested_expression() -> DocumentPropertyReferenceTarget {
+        DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+            note(),
+            DocumentPropertyReferenceTarget::AllOf(ReferenceOperands::new(vec![
+                DocumentPropertyReferenceTarget::Identity,
+                DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+                    note(),
+                    DocumentPropertyReferenceTarget::Identity,
+                ])),
+            ])),
+        ]))
+    }
+
+    /// An expression is no document reference as a whole: code that needs one
     /// target sees none, and code that checks every declaration walks its
-    /// targets, which for a single declaration is the declaration itself.
+    /// leaves, depth first, each with where it sits; a single declaration is
+    /// its own one leaf.
     #[test]
-    fn should_walk_the_targets_of_an_any_of_and_expose_no_single_document_reference() {
-        let any_of = identity_or_note();
-        assert_eq!(any_of.as_document_reference(), None);
-        assert_eq!(any_of.as_any_document_reference(), None);
-        let DocumentPropertyReferenceTarget::AnyOf(targets) = &any_of else {
-            panic!("expected an anyOf");
-        };
-        assert_eq!(any_of.targets(), targets.targets());
+    fn should_walk_the_leaves_of_an_expression_and_expose_no_single_document_reference() {
+        let expression = nested_expression();
+        assert_eq!(expression.as_document_reference(), None);
+        assert_eq!(expression.as_any_document_reference(), None);
+        assert_eq!(expression.expression_depth(), 3);
         assert_eq!(
-            any_of.targets()[1]
-                .as_document_reference()
-                .map(|declaration| declaration.document_type_name),
-            Some("note")
+            expression
+                .leaves_with_paths()
+                .into_iter()
+                .map(|(path, leaf)| (path, leaf.clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("anyOf[0]".to_string(), note()),
+                (
+                    "anyOf[1].allOf[0]".to_string(),
+                    DocumentPropertyReferenceTarget::Identity
+                ),
+                ("anyOf[1].allOf[1].anyOf[0]".to_string(), note()),
+                (
+                    "anyOf[1].allOf[1].anyOf[1]".to_string(),
+                    DocumentPropertyReferenceTarget::Identity
+                ),
+            ]
+        );
+        assert_eq!(expression.leaves().len(), 4);
+        assert_eq!(
+            expression
+                .combinator()
+                .map(|(combinator, operands)| (combinator, operands.operands().len())),
+            Some((ReferenceCombinator::AnyOf, 2))
         );
 
         let single = DocumentPropertyReferenceTarget::Identity;
-        assert_eq!(single.targets(), std::slice::from_ref(&single));
+        assert_eq!(single.leaves(), vec![&single]);
+        assert_eq!(single.leaves_with_paths(), vec![(String::new(), &single)]);
+        assert_eq!(single.expression_depth(), 0);
+        assert_eq!(single.combinator(), None);
     }
 
     #[test]
-    fn should_display_the_targets_of_an_any_of_in_declared_order() {
+    fn should_display_an_expression_in_declared_order() {
         assert_eq!(
             identity_or_note().to_string(),
-            "any of: identity or permanent document (own contract, document type note)"
+            "any of (identity or permanent document (own contract, document type note))"
+        );
+        assert_eq!(
+            nested_expression().to_string(),
+            "any of (permanent document (own contract, document type note) or all of (identity \
+             and any of (permanent document (own contract, document type note) or identity)))"
         );
     }
 
-    /// Registration counts every target of an `anyOf`: each may be read for
+    /// Registration counts every leaf of an expression: each may be read for
     /// one value when the document is written.
     #[test]
-    fn should_count_every_target_of_an_any_of_as_a_reference() {
+    fn should_count_every_leaf_of_an_expression_as_a_reference() {
         let any_of = identity_or_note();
         assert_eq!(PropertyReference::Value(&any_of).max_references(), 2);
         assert_eq!(
@@ -9782,6 +9901,8 @@ mod tests {
             .max_references(),
             30
         );
+        let nested = nested_expression();
+        assert_eq!(PropertyReference::Value(&nested).max_references(), 4);
         let single = DocumentPropertyReferenceTarget::Identity;
         assert_eq!(PropertyReference::Value(&single).max_references(), 1);
         assert_eq!(
@@ -9946,7 +10067,7 @@ mod tests {
     /// and the conversion that builds it. Those live behind a `match` that
     /// a new variant would not break, because they can fall back to a
     /// catch-all. This exhaustive `match` has no catch-all, so adding a
-    /// ninth variant fails to compile *here*, in the crate that owns the
+    /// tenth variant fails to compile *here*, in the crate that owns the
     /// enum, where whoever adds it will see it.
     #[test]
     fn reference_targets_are_exhaustively_mirrored() {
@@ -9979,7 +10100,15 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                 },
             },
-            DocumentPropertyReferenceTarget::AnyOf(AnyOfReferenceTargets::new(vec![
+            DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+                DocumentPropertyReferenceTarget::Identity,
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: None,
+                    document_type_name: "note".to_string(),
+                    property_agreement: Default::default(),
+                },
+            ])),
+            DocumentPropertyReferenceTarget::AllOf(ReferenceOperands::new(vec![
                 DocumentPropertyReferenceTarget::Identity,
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id: None,
@@ -10001,12 +10130,14 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => {
                     "permanentDocument"
                 }
-                // Not a `type`: the schema declares it under its own key
+                // Not a `type`: the schema declares them under their own keys
                 DocumentPropertyReferenceTarget::AnyOf(_) => "anyOf",
+                DocumentPropertyReferenceTarget::AllOf(_) => "allOf",
             };
 
             // The tag is the `refersTo` schema keyword's own `type` value
-            // (or `anyOf`), which is what the JS surface reports verbatim.
+            // (or `anyOf` / `allOf`), which is what the JS surface reports
+            // verbatim.
             assert!(!json_tag.is_empty());
             assert!(!target.to_string().is_empty());
         }

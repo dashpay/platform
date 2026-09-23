@@ -1,6 +1,6 @@
 {
   "$formatVersion": "1",
-  "id": "FpTuZJTZijnZjYD6gsmFRhxnavZMSVR4CS7azzu3HoY6",
+  "id": "6oNWBfpK67vSDUSQoEiSyCfBKaaS63LV5iYnyvx43yfR",
   "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
   "version": 1,
   "documentSchemas": {
@@ -123,110 +123,15 @@
                 }
               },
               {
-                "type": "permanentDocument",
-                "documentType": "addedModerator",
-                "lookup": {
-                  "index": "byModerator",
-                  "keys": {
-                    "submittedCharterId": "submittedCharterId",
-                    "moderatorId": "."
+                "allOf": [
+                  {
+                    "type": "identity"
+                  },
+                  {
+                    "type": "permanentDocument",
+                    "documentType": "removedModerator"
                   }
-                }
-              }
-            ]
-          }
-        },
-        "members": {
-          "type": "array",
-          "minItems": 0,
-          "maxItems": 15,
-          "items": {
-            "type": "array",
-            "byteArray": true,
-            "minItems": 32,
-            "maxItems": 32,
-            "contentMediaType": "application/x.dash.dpp.identifier",
-            "refersTo": {
-              "anyOf": [
-                {
-                  "type": "permanentDocument",
-                  "documentType": "joinRequest",
-                  "lookup": {
-                    "index": "bySubmittedCharter",
-                    "keys": {
-                      "submittedCharterId": "submittedCharterId",
-                      "$ownerId": "."
-                    }
-                  }
-                },
-                {
-                  "type": "permanentDocument",
-                  "documentType": "addedModerator",
-                  "lookup": {
-                    "index": "byModerator",
-                    "keys": {
-                      "submittedCharterId": "submittedCharterId",
-                      "moderatorId": "."
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          "position": 3
-        },
-        "signerOrRequestId": {
-          "type": "array",
-          "byteArray": true,
-          "minItems": 32,
-          "maxItems": 32,
-          "contentMediaType": "application/x.dash.dpp.identifier",
-          "position": 4,
-          "refersTo": {
-            "anyOf": [
-              {
-                "type": "identity"
-              },
-              {
-                "type": "permanentDocument",
-                "documentType": "joinRequest"
-              }
-            ]
-          }
-        },
-        "agreedMemberId": {
-          "type": "array",
-          "byteArray": true,
-          "minItems": 32,
-          "maxItems": 32,
-          "contentMediaType": "application/x.dash.dpp.identifier",
-          "position": 5,
-          "refersTo": {
-            "anyOf": [
-              {
-                "type": "permanentDocument",
-                "documentType": "joinRequest",
-                "propertyAgreement": {
-                  "title": "message"
-                },
-                "lookup": {
-                  "index": "bySubmittedCharter",
-                  "keys": {
-                    "submittedCharterId": "submittedCharterId",
-                    "$ownerId": "."
-                  }
-                }
-              },
-              {
-                "type": "permanentDocument",
-                "documentType": "addedModerator",
-                "lookup": {
-                  "index": "byModerator",
-                  "keys": {
-                    "submittedCharterId": "submittedCharterId",
-                    "moderatorId": "."
-                  }
-                }
+                ]
               }
             ]
           }

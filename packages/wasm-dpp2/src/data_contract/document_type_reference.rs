@@ -192,20 +192,31 @@ export type DocumentPropertyReferenceTarget =
        */
       propertyAgreement?: Record<string, string>;
     }
-  | {
-      /**
-       * Two or more targets, of which at least one must hold, declared as
-       * `refersTo: { anyOf: [...] }`. There is no `type`: test for
-       * `'anyOf' in reference`. Each target is an `identity` or a
-       * `permanentDocument` (by id or with a `lookup`) with its own fields,
-       * a `propertyAgreement` belonging to its own target. When a document
-       * is written, consensus checks the targets in this order and stops at
-       * the first that holds; when none holds, the write is refused with the
-       * error the last target gives.
-       */
-      type?: never;
-      anyOf: Array<Extract<DocumentPropertyReferenceTarget, { type: 'identity' | 'permanentDocument' }>>;
-    };
+  | DocumentPropertyReferenceExpression;
+
+/**
+ * A reference expression, declared as `refersTo: { anyOf: [...] }` or
+ * `refersTo: { allOf: [...] }`, the schema's own shape. There is no `type`:
+ * test for `'anyOf' in reference` or `'allOf' in reference`. An `anyOf`
+ * holds when at least one operand holds: consensus checks the operands in
+ * this order, stops at the first that holds, and when none does refuses the
+ * write with the error of the last. An `allOf` holds when every operand holds
+ * for the same value: consensus stops at the first that fails and refuses the
+ * write with its error. Operands nest, the other combinator inside, up to the
+ * protocol's depth limit (4 from protocol version 14).
+ */
+export type DocumentPropertyReferenceExpression =
+  | { type?: never; anyOf: Array<DocumentPropertyReferenceOperand> }
+  | { type?: never; allOf: Array<DocumentPropertyReferenceOperand> };
+
+/**
+ * One operand of a reference expression: a leaf, an `identity` or a
+ * `permanentDocument` (by id or with a `lookup`) with its own fields, a
+ * `propertyAgreement` belonging to its own leaf, or a nested expression.
+ */
+export type DocumentPropertyReferenceOperand =
+  | Extract<DocumentPropertyReferenceTarget, { type: 'identity' | 'permanentDocument' }>
+  | DocumentPropertyReferenceExpression;
 
 /**
  * The `lookup` of a document reference: the referenced document is the one
@@ -245,9 +256,9 @@ export type DocumentPropertyReference = {
    * index (`"reasons[2]"` for
    * the third). Note that contract *registration* errors prefix it with the
    * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
-   * and name one target of an `anyOf` by its place in the list
-   * (`"<documentType>.<path>.anyOf[1]"`), while document *write* errors do
-   * neither.
+   * and name one leaf of a reference expression by where it sits
+   * (`"<documentType>.<path>.anyOf[1].allOf[0]"`), while document *write*
+   * errors do neither.
    */
   path: string;
 } & DocumentPropertyReferenceTarget;
@@ -363,6 +374,20 @@ fn set_reference_target_fields(
     declaring_contract_id: Identifier,
     path: &str,
 ) -> WasmDppResult<()> {
+    // No `type`, as the schema declares none: the operands sit under the
+    // combinator's own key, each an object of its own
+    if let Some((combinator, operands)) = target.combinator() {
+        let objects = Array::new();
+        for operand in operands.operands() {
+            objects.push(&reference_target_to_js(
+                operand,
+                declaring_contract_id,
+                path,
+            )?);
+        }
+        return set_field(object, combinator.wire_name(), &objects, path);
+    }
+
     let kind = match target {
         DocumentPropertyReferenceTarget::Identity => "identity",
         DocumentPropertyReferenceTarget::Contract { .. } => "contract",
@@ -371,26 +396,18 @@ fn set_reference_target_fields(
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
         DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
-        // No `type`, as the schema declares none: the targets sit under
-        // `anyOf`, each an object of its own
-        DocumentPropertyReferenceTarget::AnyOf(any_of) => {
-            let targets = Array::new();
-            for any_of_target in any_of.targets() {
-                targets.push(&reference_target_to_js(
-                    any_of_target,
-                    declaring_contract_id,
-                    path,
-                )?);
-            }
-            return set_field(object, "anyOf", &targets, path);
+        DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
+            return Err(WasmDppError::generic(format!(
+                "the reference expression declared at '{path}' has no single target kind"
+            )));
         }
     };
     set_field(object, "type", &JsValue::from_str(kind), path)?;
 
     match target {
-        DocumentPropertyReferenceTarget::Identity
-        | DocumentPropertyReferenceTarget::Token
-        | DocumentPropertyReferenceTarget::AnyOf(_) => {}
+        DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
+        // Handled above, before the kind
+        DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {}
         DocumentPropertyReferenceTarget::Contract {
             contract_requirements,
         } => {

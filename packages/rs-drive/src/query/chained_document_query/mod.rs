@@ -245,17 +245,16 @@ impl<'a> DriveDocumentQuery<'a> {
                 join_property, lookup.index,
             )));
         }
-        // An `anyOf` reference is no single document reference either: a
-        // value may be the id of any of its targets, so it names no one outer
-        // document type
+        // A reference expression is no single document reference either: an
+        // `anyOf` value may be the id of any of its leaves, and an `allOf`
+        // names no one outer document type to join through
         if let DocumentPropertyType::IdentifierWithReference(
-            DocumentPropertyReferenceTarget::AnyOf(_),
+            DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_),
         ) = &join_document_property.property_type
         {
             return Err(unsupported(format!(
-                "chained query join property \"{}\" declares a refersTo anyOf, so its value \
-                 may name any of several targets: a join needs a reference to one document \
-                 type",
+                "chained query join property \"{}\" declares a refersTo anyOf or allOf \
+                 expression: a join needs a reference to one document type",
                 join_property,
             )));
         }
