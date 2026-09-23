@@ -368,6 +368,37 @@ fn should_refuse_an_optional_transient_or_missing_lookup_source_property() {
     contract(nested).expect("a required leaf of a required object is a valid source");
 }
 
+/// `transient` names the object, not the leaf the key reads, and the whole
+/// object is stripped before storage, so a reader could never reassemble the
+/// key from the stored document.
+#[test]
+fn should_refuse_a_lookup_source_inside_a_transient_required_object() {
+    let mut schema = charter_contract(permanent_join_request(json!({
+        "index": "bySubmittedCharter",
+        "keys": { "submittedCharterId": "meta.charterId", "$ownerId": "." }
+    })));
+    let elected_charter = &mut schema["documentSchemas"]["electedCharter"];
+    elected_charter["properties"]["meta"] = json!({
+        "type": "object",
+        "position": 4,
+        "properties": { "charterId": identifier(0) },
+        "required": ["charterId"],
+        "additionalProperties": false
+    });
+    elected_charter["required"] = json!(["submittedCharterId", "title", "meta"]);
+    contract(schema.clone()).expect("a stored, required leaf of a required object is a source");
+
+    schema["documentSchemas"]["electedCharter"]["transient"] = json!(["meta"]);
+    for full_validation in [true, false] {
+        assert_refused(
+            contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+            "document type \"electedCharter\" property \"memberId\" refersTo lookup: key \
+             \"submittedCharterId\" reads \"meta.charterId\", which is transient or inside a \
+             transient object",
+        );
+    }
+}
+
 #[test]
 fn should_refuse_a_lookup_into_a_document_type_that_can_move_the_key() {
     let mutable = |schema: &mut serde_json::Value| {
