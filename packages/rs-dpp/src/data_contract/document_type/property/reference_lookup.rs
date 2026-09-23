@@ -26,7 +26,7 @@
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::{is_transient, DocumentPropertyType};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -406,18 +406,6 @@ impl DocumentReferenceLookup {
 pub(crate) fn owner_can_change(document_type: DocumentTypeRef) -> bool {
     document_type.documents_transferable().is_transferable()
         || document_type.trade_mode() != TradeMode::None
-}
-
-/// Whether the property at `path` of `document_type`, or an object around it,
-/// is transient: either way its value is never stored. `transient_fields()`
-/// holds the paths as declared, so a leaf of a transient object is found only
-/// through the object's path, a prefix of its own.
-fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
-    let transient_fields = document_type.transient_fields();
-    path.match_indices('.')
-        .map(|(end, _)| &path[..end])
-        .chain(std::iter::once(path))
-        .any(|prefix| transient_fields.contains(prefix))
 }
 
 /// The kind of value an index property of `document_type` holds: a system
