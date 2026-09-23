@@ -92,6 +92,8 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+# `tests::fixtures` for the state transition summary tests.
+dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 # In-process Signer<IdentityPublicKey> for the manual testnet
 # verification example (`examples/dpns_marketplace_testnet.rs`).
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }

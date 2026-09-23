@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
 import java.nio.ByteBuffer
+import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.TransactionsNative
@@ -18,6 +19,19 @@ import org.dashfoundation.dashsdk.ffi.TransactionsNative
 sealed class ParsedBatchedTransition {
     abstract val dataContractId: ByteArray
     abstract val action: String
+    /**
+     * Whether the typed fields describe every material field of the
+     * transition. **A row with `complete == false` must not be approved from
+     * the typed fields alone; the wallet must render [details].**
+     */
+    abstract val complete: Boolean
+    /**
+     * The material fields the typed fields do not cover (document data, a
+     * token config change and who it grants or revokes, an emergency action,
+     * a price schedule, a distribution type, notes, group-action info),
+     * rendered for display. Null when [complete].
+     */
+    abstract val details: String?
     /** Credits or tokens the transition moves, when it moves any. */
     abstract val amount: Long?
     /**
@@ -39,6 +53,8 @@ sealed class ParsedBatchedTransition {
         override val action: String,
         override val amount: Long?,
         override val recipientId: ByteArray?,
+        override val complete: Boolean,
+        override val details: String?,
     ) : ParsedBatchedTransition() {
         override fun equals(other: Any?): Boolean =
             other is Document &&
@@ -47,7 +63,9 @@ sealed class ParsedBatchedTransition {
                 documentId.contentEquals(other.documentId) &&
                 action == other.action &&
                 amount == other.amount &&
-                recipientId.contentEqualsNullable(other.recipientId)
+                recipientId.contentEqualsNullable(other.recipientId) &&
+                complete == other.complete &&
+                details == other.details
 
         override fun hashCode(): Int =
             listOf(dataContractId.contentHashCode(), documentType, documentId.contentHashCode(), action)
@@ -70,6 +88,10 @@ sealed class ParsedBatchedTransition {
         override val action: String,
         override val amount: Long?,
         override val recipientId: ByteArray?,
+        /** A `DirectPurchase`'s token count ([amount] is its total agreed price). */
+        val tokenCount: Long?,
+        override val complete: Boolean,
+        override val details: String?,
     ) : ParsedBatchedTransition() {
         override fun equals(other: Any?): Boolean =
             other is Token &&
@@ -78,7 +100,10 @@ sealed class ParsedBatchedTransition {
                 tokenContractPosition == other.tokenContractPosition &&
                 action == other.action &&
                 amount == other.amount &&
-                recipientId.contentEqualsNullable(other.recipientId)
+                recipientId.contentEqualsNullable(other.recipientId) &&
+                tokenCount == other.tokenCount &&
+                complete == other.complete &&
+                details == other.details
 
         override fun hashCode(): Int =
             listOf(dataContractId.contentHashCode(), tokenId.contentHashCode(), tokenContractPosition, action)
@@ -134,10 +159,10 @@ class ParsedDataContract(
  * `sign` request), decoded whatever its kind — the Kotlin mirror of Swift's
  * `ManagedPlatformWallet.ParsedStateTransition`.
  *
- * [serialized] holds the bytes that actually decoded, always in tagged DPP
- * framing (the variant tag is prepended when the input arrived tagless);
- * after approval, sign these rather than the input so what was shown is
- * what is signed. A `sign` request must arrive with `isSigned == false`
+ * [serialized] holds the decoded transition re-serialized in tagged DPP
+ * framing; after approval, sign these rather than the input so what was
+ * shown is what is signed. When [complete] is false, [details] (or the
+ * batch rows' details) must be shown before approval. A `sign` request must arrive with `isSigned == false`
  * and [ownerId] equal to the wallet's own identity; both checks are the
  * caller's.
  */
@@ -148,8 +173,23 @@ class ParsedStateTransition(
     val ownerId: ByteArray?,
     /** Whether the transition already carries a signature. */
     val isSigned: Boolean,
+    /**
+     * Percentage added to the processing fee Platform charges (0 = none;
+     * 65535 is about 656 times the base processing fee). Part of the signed
+     * bytes: show a non-zero value on the sheet and refuse values above what
+     * the wallet is willing to pay.
+     */
+    val userFeeIncrease: Int,
+    /** Whether [kind] shows every material field; computed in Rust. */
+    val complete: Boolean,
     /** The decoded bytes, tagged. */
     val serialized: ByteArray,
+    /**
+     * A structured multi-line dump: of the whole transition for
+     * [ParsedStateTransitionKind.Other], of the whole contract for a data
+     * contract create / update. Null otherwise.
+     */
+    val details: String?,
     val kind: ParsedStateTransitionKind,
 )
 
@@ -180,6 +220,11 @@ object StateTransitionParser {
      */
     fun parse(transitionBytes: ByteArray): ParsedStateTransition {
         require(transitionBytes.isNotEmpty()) { "transitionBytes must not be empty" }
+        // This is a handle-free utility, so it may well be the first SDK
+        // call in the process; load the native library and run dash_sdk_init
+        // before touching JNI (as TransactionDecoder.decode does), otherwise
+        // the external fun resolves to UnsatisfiedLinkError.
+        Sdk.initialize()
         val blob = mapNativeErrors { TransactionsNative.parseStateTransition(transitionBytes) }
         return try {
             parseBlob(blob)
@@ -206,10 +251,13 @@ object StateTransitionParser {
     internal fun parseBlob(blob: ByteArray): ParsedStateTransition {
         val buf = ByteBuffer.wrap(blob) // big-endian by default
         val kindTag = buf.get().toInt() and 0xFF
-        val kindName = readString16(buf)
+        val kindName = readString32(buf)
         val ownerId = if (readBool(buf)) readId32(buf) else null
         val isSigned = readBool(buf)
+        val userFeeIncrease = buf.short.toInt() and 0xFFFF
+        val complete = readBool(buf)
         val serialized = readBytes32Len(buf)
+        val details = readString32(buf).ifEmpty { null }
 
         val kind: ParsedStateTransitionKind = when (kindTag) {
             KIND_IDENTITY_UPDATE -> {
@@ -234,7 +282,9 @@ object StateTransitionParser {
         }
 
         require(!buf.hasRemaining()) { "malformed parse blob: trailing bytes" }
-        return ParsedStateTransition(kindName, ownerId, isSigned, serialized, kind)
+        return ParsedStateTransition(
+            kindName, ownerId, isSigned, userFeeIncrease, complete, serialized, details, kind,
+        )
     }
 
     private fun readPublicKey(buf: ByteBuffer): IdentityPubkey {
@@ -285,14 +335,25 @@ object StateTransitionParser {
                 val documentId = readId32(buf)
                 val amount = if (readBool(buf)) buf.long else null
                 val recipient = if (readBool(buf)) readId32(buf) else null
-                ParsedBatchedTransition.Document(dataContractId, documentType, documentId, action, amount, recipient)
+                val tokenCount = if (readBool(buf)) buf.long else null
+                require(tokenCount == null) { "malformed parse blob: token count on a document row" }
+                val complete = readBool(buf)
+                val details = readString32(buf).ifEmpty { null }
+                ParsedBatchedTransition.Document(
+                    dataContractId, documentType, documentId, action, amount, recipient, complete, details,
+                )
             }
             FAMILY_TOKEN -> {
                 val position = buf.short.toInt() and 0xFFFF
                 val tokenId = readId32(buf)
                 val amount = if (readBool(buf)) buf.long else null
                 val recipient = if (readBool(buf)) readId32(buf) else null
-                ParsedBatchedTransition.Token(dataContractId, tokenId, position, action, amount, recipient)
+                val tokenCount = if (readBool(buf)) buf.long else null
+                val complete = readBool(buf)
+                val details = readString32(buf).ifEmpty { null }
+                ParsedBatchedTransition.Token(
+                    dataContractId, tokenId, position, action, amount, recipient, tokenCount, complete, details,
+                )
             }
             else -> throw IllegalArgumentException("malformed parse blob: batched family $family")
         }
@@ -321,6 +382,9 @@ object StateTransitionParser {
         val bytes = ByteArray(len).also { buf.get(it) }
         return String(bytes, Charsets.UTF_8)
     }
+
+    /** `u32 len + UTF-8 bytes`; an empty string encodes "none". */
+    private fun readString32(buf: ByteBuffer): String = String(readBytes32Len(buf), Charsets.UTF_8)
 
     /** `u32 len + bytes`. */
     private fun readBytes32Len(buf: ByteBuffer): ByteArray {

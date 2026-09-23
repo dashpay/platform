@@ -32,6 +32,7 @@ mod key_selection;
 mod loading;
 mod register_from_addresses;
 mod registration;
+mod state_transition_summary;
 mod top_up;
 mod top_up_from_addresses;
 mod transfer;
@@ -92,6 +93,11 @@ pub use identity_handle::{
     derive_identity_auth_keypair, identity_auth_derivation_path_for_type, DerivedIdentityAuthKey,
     IdentityWallet, CONNECT_SUB_FEATURE_APP_ENCRYPTION, CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
     IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
+pub use state_transition_summary::{
+    decode_state_transition, summarize_state_transition, BatchedTransitionSummary,
+    BatchedTransitionTarget, DataContractSummary, StateTransitionSummary,
+    StateTransitionSummaryKind,
 };
 
 // Helpers declared on `identity_handle.rs` that siblings reach

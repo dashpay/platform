@@ -687,7 +687,12 @@ class PlatformWalletManager(
         identityId: ByteArray,
         leaf: ByteArray,
         purpose: ConnectKeyPurpose? = null,
-    ): Pair<ByteArray, ByteArray> = teardownGate.op {
+    ): Pair<ByteArray, ByteArray> = teardownGate.opWithCleanupOnCancellation(
+        // withContext's prompt cancellation can discard a completed derive
+        // before the caller receives the pair it is documented to wipe; scrub
+        // the private half on that handoff failure.
+        cleanup = { pair -> pair.first.fill(0) },
+    ) {
         require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
         require(leaf.size == 32) { "leaf must be 32 bytes, got ${leaf.size}" }
         val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors {

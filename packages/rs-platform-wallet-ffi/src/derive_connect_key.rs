@@ -18,32 +18,23 @@
 //! mnemonic is pulled through the Swift/Kotlin-owned `MnemonicResolver`
 //! for the duration of the call only, in a zeroized buffer.
 
-use std::ffi::c_void;
-use std::os::raw::c_char;
-
-use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::wallet::identity::network::derive_connect_keypair_from_master;
-use zeroize::Zeroizing;
 
 use crate::error::*;
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
 use crate::types::{read_identifier, FFINetwork, Network};
 use crate::{check_ptr, unwrap_result_or_return};
-use rs_sdk_ffi::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
+use rs_sdk_ffi::MnemonicResolverHandle;
 
 /// `sub_feature` for the DashPay Connect session authentication key. The
 /// leaf is the connect request id (`hash256` of the app's ephemeral public
 /// key); `purpose` is `0`.
-pub const CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION: u32 =
-    platform_wallet::wallet::identity::network::CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION;
+pub const CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION: u32 = 6;
 
 /// `sub_feature` for the DashPay Connect app encryption key pair. The leaf
 /// is the id of the data contract the key is bound to; `purpose` is the
 /// DPP purpose discriminant, `1` ENCRYPTION or `2` DECRYPTION.
-pub const CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION: u32 =
-    platform_wallet::wallet::identity::network::CONNECT_SUB_FEATURE_APP_ENCRYPTION;
+pub const CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION: u32 = 7;
 
 /// `purpose` for the ENCRYPTION half of an app encryption pair (the DPP
 /// `Purpose::ENCRYPTION` discriminant).
@@ -52,6 +43,17 @@ pub const CONNECT_KEY_PURPOSE_ENCRYPTION: u32 = 1;
 /// `purpose` for the DECRYPTION half of an app encryption pair (the DPP
 /// `Purpose::DECRYPTION` discriminant).
 pub const CONNECT_KEY_PURPOSE_DECRYPTION: u32 = 2;
+
+// cbindgen only exports literal constants; these pin the literals above to the
+// values the derivation actually uses.
+const _: () = assert!(
+    CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION
+        == platform_wallet::wallet::identity::network::CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION
+);
+const _: () = assert!(
+    CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION
+        == platform_wallet::wallet::identity::network::CONNECT_SUB_FEATURE_APP_ENCRYPTION
+);
 
 /// A derived DashPay Connect keypair. Plain old data: the caller copies
 /// what it needs and calls [`dash_sdk_derive_connect_key_free`] to wipe
@@ -145,62 +147,27 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
         .try_into()
         .expect("from_raw_parts(_, 32) always yields exactly 32 bytes");
 
-    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
-        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
-    let mut mnemonic_len: usize = 0;
-
-    let resolver = &*mnemonic_resolver_handle;
-    let resolver_vtable = &*resolver.vtable;
-    let rc = (resolver_vtable.resolve)(
-        resolver.ctx as *const c_void,
-        wallet_id_bytes,
-        mnemonic_buf.as_mut_ptr() as *mut c_char,
-        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-        &mut mnemonic_len,
-    );
-    match rc {
-        x if x == mnemonic_resolver_result::SUCCESS => {}
-        x if x == mnemonic_resolver_result::NOT_FOUND => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
-            );
-        }
-        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
-            );
-        }
-        _ => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: failed (other / Keychain access error)",
-            );
-        }
-    }
-    if mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "mnemonic resolver: reported length exceeds the FFI buffer capacity",
-        );
-    }
-
-    let mnemonic_str = unwrap_result_or_return!(std::str::from_utf8(&mnemonic_buf[..mnemonic_len]));
-    let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-
     let kw_network: Network = network.into();
-    let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .expect("from_raw_parts(_, 32) always yields exactly 32 bytes");
+    let mut master = unwrap_result_or_return!(resolve_master_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+        kw_network,
+    ));
 
-    let derived = unwrap_result_or_return!(derive_connect_keypair_from_master(
+    let derived = derive_connect_keypair_from_master(
         &master,
         kw_network,
         sub_feature,
         &identity_id,
         leaf,
         purpose,
-    ));
+    );
+    // `ExtendedPrivKey` does not wipe itself; erase before any return.
+    master.private_key.non_secure_erase();
+    let derived = unwrap_result_or_return!(derived);
 
     (*out_key).private_key_bytes = *derived.private_key;
     (*out_key).public_key_bytes = derived.public_key;
@@ -226,9 +193,13 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_free(out_key: *mut ConnectD
 mod tests {
     use super::*;
     use dpp::prelude::Identifier;
+    use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::mnemonic::Mnemonic;
+    use rs_sdk_ffi::mnemonic_resolver_result;
     use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
+    use std::ffi::c_void;
     use std::ffi::CStr;
+    use std::os::raw::c_char;
 
     /// English BIP-39 test vector (all-zero entropy); the same fixture the
     /// platform-wallet derivation tests pin vectors for.

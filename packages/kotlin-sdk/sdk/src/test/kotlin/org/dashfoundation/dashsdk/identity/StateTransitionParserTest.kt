@@ -30,14 +30,31 @@ class StateTransitionParserTest {
         assertEquals("IdentityUpdate", parsed.kindName)
         assertArrayEquals(ByteArray(32) { 0x11 }, parsed.ownerId)
         assertFalse(parsed.isSigned)
+        assertEquals(0, parsed.userFeeIncrease)
+        assertTrue(parsed.complete)
+        assertNull("described kinds carry no common details", parsed.details)
         assertEquals("IdentityUpdate variant tag", 6, parsed.serialized.first().toInt())
 
         val update = parsed.kind as ParsedStateTransitionKind.IdentityUpdate
         assertArrayEquals(ByteArray(32) { 0x11 }, update.identityId)
         assertEquals(listOf(4), update.disablePublicKeyIds)
-        assertEquals(1, update.addPublicKeys.size)
+        assertEquals(2, update.addPublicKeys.size)
 
-        val session = update.addPublicKeys.single()
+        // The document-type-bound key: its bounds carry a variable-length
+        // name before the limits flags, so the fields after it are pinned.
+        val bound = update.addPublicKeys[1]
+        assertEquals(19, bound.keyId)
+        assertEquals(KeyPurpose.ENCRYPTION, bound.purpose)
+        assertEquals(SecurityLevel.MEDIUM, bound.securityLevel)
+        assertTrue(bound.readOnly)
+        assertEquals(
+            ContractBounds.SingleContractDocumentType(ByteArray(32) { 0x44 }, "profile"),
+            bound.contractBounds,
+        )
+        assertNull(bound.totalBudget)
+        assertNull(bound.expiresAt)
+
+        val session = update.addPublicKeys[0]
         assertEquals(18, session.keyId)
         assertEquals(KeyType.ECDSA_SECP256K1, session.keyType)
         assertEquals(KeyPurpose.AUTHENTICATION, session.purpose)
@@ -70,6 +87,9 @@ class StateTransitionParserTest {
                     action = "Transfer",
                     amount = 250L,
                     recipientId = ByteArray(32) { 0x22 },
+                    tokenCount = null,
+                    complete = true,
+                    details = null,
                 ),
             ),
             batch.transitions,
@@ -77,17 +97,100 @@ class StateTransitionParserTest {
     }
 
     @Test
-    fun `decodes the other kind with only the common fields`() {
-        // kind 255, name "MasternodeVote", no owner, signed, empty serialized.
+    fun `decodes a mixed document and token batch with completeness and details`() {
+        val parsed = StateTransitionParser.parseBlob(golden("parsed_mixed_batch_v1.bin"))
+
+        assertEquals("DocumentsBatch([Create, Transfer, TokenDirectPurchase])", parsed.kindName)
+        assertEquals(7, parsed.userFeeIncrease)
+        assertFalse(parsed.complete)
+        assertNull(parsed.details)
+
+        val batch = parsed.kind as ParsedStateTransitionKind.Batch
+        assertEquals(3, batch.transitions.size)
+
+        // Document create: incomplete, its data rendered in details; the
+        // fields after the two variable-length strings still line up.
+        val create = batch.transitions[0] as ParsedBatchedTransition.Document
+        assertEquals("Create", create.action)
+        assertEquals("post", create.documentType)
+        assertArrayEquals(ByteArray(32) { 0x0D }, create.documentId)
+        assertNull(create.amount)
+        assertNull(create.recipientId)
+        assertFalse(create.complete)
+        assertTrue(create.details!!.contains("\"message\""))
+
+        assertEquals(
+            ParsedBatchedTransition.Document(
+                dataContractId = ByteArray(32) { 0x42 },
+                documentType = "profile",
+                documentId = ByteArray(32) { 0x0D },
+                action = "Transfer",
+                amount = null,
+                recipientId = ByteArray(32) { 0x22 },
+                complete = true,
+                details = null,
+            ),
+            batch.transitions[1],
+        )
+        assertEquals(
+            ParsedBatchedTransition.Token(
+                dataContractId = ByteArray(32) { 0x42 },
+                tokenId = ByteArray(32) { 0x77 },
+                tokenContractPosition = 3,
+                action = "DirectPurchase",
+                amount = 100_000_000L,
+                recipientId = null,
+                tokenCount = 100L,
+                complete = true,
+                details = null,
+            ),
+            batch.transitions[2],
+        )
+    }
+
+    /**
+     * [StateTransitionParser.parse] is a handle-free utility and may be the
+     * first SDK call in a process. Without the native library it must fail
+     * inside [org.dashfoundation.dashsdk.Sdk.initialize] (the load step) and
+     * not with an [UnsatisfiedLinkError] from the external fun itself, which
+     * is what a forgotten initialize looks like. This host JVM has no
+     * `libdash_sdk_jni.so`, so the load is what fails here; on a device the
+     * same call path loads the library and parses.
+     */
+    @Test
+    fun `parse initializes the native library before entering JNI`() {
+        val error = assertThrows(Throwable::class.java) {
+            StateTransitionParser.parse(byteArrayOf(0x07, 0x00))
+        }
+        // System.loadLibrary failing is an UnsatisfiedLinkError whose message
+        // names the library; a missing native method names the method.
+        assertTrue(
+            "expected the library load to fail, got ${error::class.simpleName}: ${error.message}",
+            error is UnsatisfiedLinkError && error.message?.contains("dash_sdk_jni") == true,
+        )
+        assertFalse(
+            "parse reached the external fun before loading the library",
+            error.message?.contains("parseStateTransition") == true,
+        )
+    }
+
+    @Test
+    fun `decodes the other kind with the common fields and details`() {
+        // kind 255, name "MasternodeVote", no owner, signed, fee increase 3,
+        // incomplete, empty serialized, details "vote".
         val name = "MasternodeVote".toByteArray()
-        val blob = byteArrayOf(0xFF.toByte(), 0, name.size.toByte()) + name +
-            byteArrayOf(0, 1, 0, 0, 0, 0)
+        val details = "vote".toByteArray()
+        val blob = byteArrayOf(0xFF.toByte(), 0, 0, 0, name.size.toByte()) + name +
+            byteArrayOf(0, 1, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, details.size.toByte()) + details
         val parsed = StateTransitionParser.parseBlob(blob)
 
         assertEquals("MasternodeVote", parsed.kindName)
         assertNull(parsed.ownerId)
         assertTrue(parsed.isSigned)
+        assertEquals(3, parsed.userFeeIncrease)
+        assertFalse(parsed.complete)
         assertEquals(0, parsed.serialized.size)
+        assertEquals("vote", parsed.details)
         assertTrue(parsed.kind is ParsedStateTransitionKind.Other)
     }
 
@@ -106,7 +209,8 @@ class StateTransitionParserTest {
     @Test
     fun `unknown kind tag throws rather than decoding as other`() {
         val name = "Whatever".toByteArray()
-        val blob = byteArrayOf(77, 0, name.size.toByte()) + name + byteArrayOf(0, 0, 0, 0, 0, 0)
+        val blob = byteArrayOf(77, 0, name.size.toByte()) + name +
+            byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         val error = assertThrows(IllegalArgumentException::class.java) {
             StateTransitionParser.parseBlob(blob)
         }

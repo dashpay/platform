@@ -508,12 +508,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
             throw_sdk_exception(env, 1, "subFeature must be non-negative");
             return ptr::null_mut();
         }
-        if !(0..=2).contains(&purpose) {
-            throw_sdk_exception(
-                env,
-                1,
-                "purpose must be 0 (none), 1 (ENCRYPTION) or 2 (DECRYPTION)",
-            );
+        // The FFI refuses a purpose other than 0, 1 or 2.
+        if purpose < 0 {
+            throw_sdk_exception(env, 1, "purpose must be non-negative");
             return ptr::null_mut();
         }
         if resolver_handle == 0 {
@@ -1218,4 +1215,40 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use platform_wallet_ffi::derive_connect_key::{
+        CONNECT_KEY_PURPOSE_DECRYPTION, CONNECT_KEY_PURPOSE_ENCRYPTION,
+        CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
+    };
+
+    const PLATFORM_WALLET_MANAGER_KT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/wallet/PlatformWalletManager.kt"
+    ));
+
+    /// Kotlin's `ConnectSubFeature` / `ConnectKeyPurpose` literals are the
+    /// FFI's constants; a drift would derive keys at paths nothing looks for.
+    #[test]
+    fn kotlin_connect_key_constants_match_the_ffi() {
+        for (entry, value) in [
+            (
+                "SESSION_AUTHENTICATION",
+                CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
+            ),
+            ("APP_ENCRYPTION", CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION),
+            ("ENCRYPTION", CONNECT_KEY_PURPOSE_ENCRYPTION),
+            ("DECRYPTION", CONNECT_KEY_PURPOSE_DECRYPTION),
+        ] {
+            let needle = format!("{entry}({value}),");
+            assert!(
+                PLATFORM_WALLET_MANAGER_KT
+                    .lines()
+                    .any(|line| line.trim() == needle),
+                "PlatformWalletManager.kt no longer declares `{needle}`"
+            );
+        }
+    }
 }

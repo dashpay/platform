@@ -21,10 +21,15 @@
 //!
 //! ```text
 //! u8     kind                 (PARSED_STATE_TRANSITION_KIND_*)
-//! u16    kind_name_len, u8[kind_name_len] kind_name (UTF-8)
+//! u32    kind_name_len, u8[kind_name_len] kind_name (UTF-8)
 //! u8     has_owner_id;  if 1: u8[32] owner_id
 //! u8     is_signed
+//! u16    user_fee_increase   (percentage added to the processing fee)
+//! u8     complete            (0 = render details / the rows' details before approval)
 //! u32    serialized_len, u8[serialized_len] serialized (tagged DPP bytes)
+//! u32    details_len, u8[details_len] details (UTF-8; the Debug dump of the
+//!        whole transition for kind 255, of the contract for kinds 4 / 5,
+//!        empty otherwise)
 //! kind 1 (IdentityUpdate):
 //!   u8[32] identity_id
 //!   u32    add_count; repeat add_count times (same field order as
@@ -44,6 +49,11 @@
 //!     family 1: u16 token_contract_position, u8[32] token_id
 //!     u8  has_amount;    if 1: u64 amount
 //!     u8  has_recipient; if 1: u8[32] recipient_id
+//!     u8  has_token_count; if 1: u64 token_count (DirectPurchase)
+//!     u8  complete       (0 = the typed fields do not cover every material
+//!                         field; the row must not be approved without
+//!                         rendering details)
+//!     u32 details_len, u8[details_len] details (UTF-8; empty when complete)
 //! kind 3 (IdentityCreditTransfer):
 //!   u8[32] identity_id, u8[32] recipient_id, u64 amount
 //! kind 4 / 5 (DataContractCreate / DataContractUpdate):
@@ -85,6 +95,52 @@ unsafe fn push_cstr(blob: &mut Vec<u8>, ptr: *const c_char, what: &str) -> Resul
     blob.extend_from_slice(&len.to_be_bytes());
     blob.extend_from_slice(bytes);
     Ok(())
+}
+
+/// Append `u32 len + bytes` for an optional C string; null encodes as
+/// length 0 (`details` is null exactly when there is nothing to render).
+///
+/// # Safety
+/// `ptr` must be null or a valid NUL-terminated C string.
+unsafe fn push_cstr32_opt(
+    blob: &mut Vec<u8>,
+    ptr: *const c_char,
+    what: &str,
+) -> Result<(), String> {
+    let bytes: &[u8] = if ptr.is_null() {
+        &[]
+    } else {
+        CStr::from_ptr(ptr).to_bytes()
+    };
+    push_count(blob, bytes.len(), what)?;
+    blob.extend_from_slice(bytes);
+    Ok(())
+}
+
+/// Append `u32 len + bytes` for a required C string.
+///
+/// # Safety
+/// `ptr` must be null or a valid NUL-terminated C string.
+unsafe fn push_cstr32(blob: &mut Vec<u8>, ptr: *const c_char, what: &str) -> Result<(), String> {
+    if ptr.is_null() {
+        return Err(format!("{what} is null"));
+    }
+    push_cstr32_opt(blob, ptr, what)
+}
+
+/// The `len` elements at `ptr`; a null pointer with a non-zero length is a
+/// bug in the producing FFI.
+///
+/// # Safety
+/// `ptr` must be null or point to `len` initialized elements that outlive `'a`.
+unsafe fn ffi_slice<'a, T>(ptr: *const T, len: usize, what: &str) -> Result<&'a [T], String> {
+    if len == 0 {
+        return Ok(&[]);
+    }
+    if ptr.is_null() {
+        return Err(format!("{what} pointer is null"));
+    }
+    Ok(std::slice::from_raw_parts(ptr, len))
 }
 
 /// # Safety
@@ -152,6 +208,12 @@ unsafe fn push_batched_transition(
     if row.has_recipient {
         blob.extend_from_slice(&row.recipient_id);
     }
+    blob.push(u8::from(row.has_token_count));
+    if row.has_token_count {
+        blob.extend_from_slice(&row.token_count.to_be_bytes());
+    }
+    blob.push(u8::from(row.complete));
+    push_cstr32_opt(blob, row.details, "batched transition details")?;
     Ok(())
 }
 
@@ -171,66 +233,54 @@ pub(crate) unsafe fn encode_parsed_state_transition(
 ) -> Result<Vec<u8>, String> {
     let mut blob = Vec::with_capacity(256 + parsed.serialized_len);
     blob.push(parsed.kind);
-    push_cstr(&mut blob, parsed.kind_name, "kind name")?;
+    // u32: a batch's name lists every transition in it.
+    push_cstr32(&mut blob, parsed.kind_name, "kind name")?;
     blob.push(u8::from(parsed.has_owner_id));
     if parsed.has_owner_id {
         blob.extend_from_slice(&parsed.owner_id);
     }
     blob.push(u8::from(parsed.is_signed));
-    push_count(&mut blob, parsed.serialized_len, "serialized")?;
-    if parsed.serialized_len > 0 {
-        if parsed.serialized.is_null() {
-            return Err("serialized pointer is null".to_string());
-        }
-        blob.extend_from_slice(std::slice::from_raw_parts(
-            parsed.serialized,
-            parsed.serialized_len,
-        ));
-    }
+    blob.extend_from_slice(&parsed.user_fee_increase.to_be_bytes());
+    blob.push(u8::from(parsed.complete));
+    let serialized = ffi_slice(parsed.serialized, parsed.serialized_len, "serialized")?;
+    push_count(&mut blob, serialized.len(), "serialized")?;
+    blob.extend_from_slice(serialized);
+    push_cstr32_opt(&mut blob, parsed.details, "details")?;
 
     match parsed.kind {
         PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE => {
             let update = &parsed.identity_update;
             blob.extend_from_slice(&update.identity_id);
-            push_count(&mut blob, update.add_public_keys_count, "added keys")?;
-            if update.add_public_keys_count > 0 {
-                if update.add_public_keys.is_null() {
-                    return Err("added keys pointer is null".to_string());
-                }
-                for key in
-                    std::slice::from_raw_parts(update.add_public_keys, update.add_public_keys_count)
-                {
-                    push_parsed_public_key(&mut blob, key)?;
-                }
-            }
-            push_count(
-                &mut blob,
-                update.disable_public_key_ids_count,
-                "disabled keys",
+            let keys = ffi_slice(
+                update.add_public_keys,
+                update.add_public_keys_count,
+                "added keys",
             )?;
-            if update.disable_public_key_ids_count > 0 {
-                if update.disable_public_key_ids.is_null() {
-                    return Err("disabled key ids pointer is null".to_string());
-                }
-                for id in std::slice::from_raw_parts(
-                    update.disable_public_key_ids,
-                    update.disable_public_key_ids_count,
-                ) {
-                    blob.extend_from_slice(&id.to_be_bytes());
-                }
+            push_count(&mut blob, keys.len(), "added keys")?;
+            for key in keys {
+                push_parsed_public_key(&mut blob, key)?;
+            }
+            let disabled = ffi_slice(
+                update.disable_public_key_ids,
+                update.disable_public_key_ids_count,
+                "disabled key ids",
+            )?;
+            push_count(&mut blob, disabled.len(), "disabled keys")?;
+            for id in disabled {
+                blob.extend_from_slice(&id.to_be_bytes());
             }
         }
         PARSED_STATE_TRANSITION_KIND_BATCH => {
             let batch = &parsed.batch;
             blob.extend_from_slice(&batch.owner_id);
-            push_count(&mut blob, batch.transitions_count, "batched transitions")?;
-            if batch.transitions_count > 0 {
-                if batch.transitions.is_null() {
-                    return Err("batched transitions pointer is null".to_string());
-                }
-                for row in std::slice::from_raw_parts(batch.transitions, batch.transitions_count) {
-                    push_batched_transition(&mut blob, row)?;
-                }
+            let rows = ffi_slice(
+                batch.transitions,
+                batch.transitions_count,
+                "batched transitions",
+            )?;
+            push_count(&mut blob, rows.len(), "batched transitions")?;
+            for row in rows {
+                push_batched_transition(&mut blob, row)?;
             }
         }
         PARSED_STATE_TRANSITION_KIND_CREDIT_TRANSFER => {
@@ -244,21 +294,14 @@ pub(crate) unsafe fn encode_parsed_state_transition(
             let contract = &parsed.data_contract;
             blob.extend_from_slice(&contract.contract_id);
             blob.extend_from_slice(&contract.owner_id);
-            push_count(
-                &mut blob,
+            let names = ffi_slice(
+                contract.document_type_names,
                 contract.document_type_names_count,
                 "document type names",
             )?;
-            if contract.document_type_names_count > 0 {
-                if contract.document_type_names.is_null() {
-                    return Err("document type names pointer is null".to_string());
-                }
-                for name in std::slice::from_raw_parts(
-                    contract.document_type_names,
-                    contract.document_type_names_count,
-                ) {
-                    push_cstr(&mut blob, *name, "document type name")?;
-                }
+            push_count(&mut blob, names.len(), "document type names")?;
+            for name in names {
+                push_cstr(&mut blob, *name, "document type name")?;
             }
         }
         _ => {}
@@ -326,7 +369,21 @@ mod tests {
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
+    use dpp::platform_value::platform_value;
+    use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::DocumentTransferTransitionV0;
     use dpp::state_transition::batch_transition::batched_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::{
+        DocumentTransferTransition, DocumentTransition,
+    };
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+    use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::TokenDirectPurchaseTransitionV0;
+    use dpp::state_transition::batch_transition::{
+        DocumentCreateTransition, TokenDirectPurchaseTransition,
+    };
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use std::collections::BTreeMap;
     use dpp::state_transition::batch_transition::batched_transition::{
         BatchedTransition, TokenTransition,
     };
@@ -351,21 +408,40 @@ mod tests {
                 identity_id: Identifier::from([0x11; 32]),
                 revision: 7,
                 nonce: 9,
-                add_public_keys: vec![IdentityPublicKeyInCreationV1 {
-                    id: 18,
-                    key_type: KeyType::ECDSA_SECP256K1,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_level: SecurityLevel::HIGH,
-                    read_only: false,
-                    data: BinaryData::new(vec![0x03; 33]),
-                    signature: BinaryData::new(vec![]),
-                    contract_bounds: Some(ContractBounds::ContractGroup {
-                        id: Identifier::from([0x66; 32]),
-                    }),
-                    total_budget: Some(10_000_000_000),
-                    expires_at: Some(1_800_000_000_000),
-                }
-                .into()],
+                add_public_keys: vec![
+                    IdentityPublicKeyInCreationV1 {
+                        id: 18,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::HIGH,
+                        read_only: false,
+                        data: BinaryData::new(vec![0x03; 33]),
+                        signature: BinaryData::new(vec![]),
+                        contract_bounds: Some(ContractBounds::ContractGroup {
+                            id: Identifier::from([0x66; 32]),
+                        }),
+                        total_budget: Some(10_000_000_000),
+                        expires_at: Some(1_800_000_000_000),
+                    }
+                    .into(),
+                    // A document-type-bound ENCRYPTION key: the bounds carry a
+                    // variable-length document type name before the limits
+                    // flags, so the field order after the string is pinned.
+                    IdentityPublicKeyInCreationV0 {
+                        id: 19,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        purpose: Purpose::ENCRYPTION,
+                        security_level: SecurityLevel::MEDIUM,
+                        read_only: true,
+                        data: BinaryData::new(vec![0x02; 33]),
+                        signature: BinaryData::new(vec![]),
+                        contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                            id: Identifier::from([0x44; 32]),
+                            document_type_name: "profile".to_string(),
+                        }),
+                    }
+                    .into(),
+                ],
                 disable_public_keys: vec![4],
                 user_fee_increase: 0,
             }
@@ -435,6 +511,10 @@ mod tests {
         fn u64(&mut self) -> u64 {
             u64::from_be_bytes(self.take(8).try_into().unwrap())
         }
+        fn str32(&mut self) -> String {
+            let len = self.u32() as usize;
+            String::from_utf8(self.take(len).to_vec()).unwrap()
+        }
         fn str16(&mut self) -> String {
             let len = self.u16() as usize;
             String::from_utf8(self.take(len).to_vec()).unwrap()
@@ -448,14 +528,17 @@ mod tests {
 
         let mut r = Reader(&blob);
         assert_eq!(r.u8(), PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE);
-        assert_eq!(r.str16(), "IdentityUpdate");
+        assert_eq!(r.str32(), "IdentityUpdate");
         assert_eq!(r.u8(), 1);
         assert_eq!(r.take(32), &[0x11; 32]);
         assert_eq!(r.u8(), 0, "unsigned");
+        assert_eq!(r.u16(), 0, "user fee increase");
+        assert_eq!(r.u8(), 1, "complete");
         let serialized_len = r.u32() as usize;
         assert_eq!(r.take(serialized_len), bytes.as_slice());
+        assert_eq!(r.u32(), 0, "no details for a described kind");
         assert_eq!(r.take(32), &[0x11; 32]);
-        assert_eq!(r.u32(), 1);
+        assert_eq!(r.u32(), 2);
         assert_eq!(r.u32(), 18);
         assert_eq!(r.u8(), 0); // key type
         assert_eq!(r.u8(), 0); // purpose
@@ -468,6 +551,19 @@ mod tests {
         assert_eq!(r.u8(), 0b11);
         assert_eq!(r.u64(), 10_000_000_000);
         assert_eq!(r.u64(), 1_800_000_000_000);
+        // Second key: SingleContractDocumentType, whose document type name
+        // sits between the bounds id and the limits flags.
+        assert_eq!(r.u32(), 19);
+        assert_eq!(r.u8(), 0); // key type
+        assert_eq!(r.u8(), 1); // ENCRYPTION
+        assert_eq!(r.u8(), 3); // MEDIUM
+        assert_eq!(r.u8(), 1); // read only
+        assert_eq!(r.u8(), 2); // SingleContractDocumentType
+        assert_eq!(r.u16(), 33);
+        assert_eq!(r.take(33), &[0x02; 33]);
+        assert_eq!(r.take(32), &[0x44; 32]);
+        assert_eq!(r.str16(), "profile");
+        assert_eq!(r.u8(), 0, "no limits after the document type name");
         assert_eq!(r.u32(), 1);
         assert_eq!(r.u32(), 4);
         assert!(r.0.is_empty(), "trailing bytes");
@@ -485,12 +581,15 @@ mod tests {
 
         let mut r = Reader(&blob);
         assert_eq!(r.u8(), PARSED_STATE_TRANSITION_KIND_BATCH);
-        assert_eq!(r.str16(), "DocumentsBatch([TokenTransfer])");
+        assert_eq!(r.str32(), "DocumentsBatch([TokenTransfer])");
         assert_eq!(r.u8(), 1);
         assert_eq!(r.take(32), &[0x21; 32]);
         assert_eq!(r.u8(), 0);
+        assert_eq!(r.u16(), 0, "user fee increase");
+        assert_eq!(r.u8(), 1, "complete");
         let serialized_len = r.u32() as usize;
         assert_eq!(r.take(serialized_len), bytes.as_slice());
+        assert_eq!(r.u32(), 0, "no details for a described kind");
         assert_eq!(r.take(32), &[0x21; 32]);
         assert_eq!(r.u32(), 1);
         assert_eq!(r.u8(), 1); // token family
@@ -502,11 +601,137 @@ mod tests {
         assert_eq!(r.u64(), 250);
         assert_eq!(r.u8(), 1);
         assert_eq!(r.take(32), &[0x22; 32]);
+        assert_eq!(r.u8(), 0, "no token count");
+        assert_eq!(r.u8(), 1, "complete");
+        assert_eq!(r.u32(), 0, "no details");
         assert!(r.0.is_empty(), "trailing bytes");
 
         assert_eq!(
             blob, TOKEN_TRANSFER_GOLDEN,
             "token-transfer blob drifted from the golden shared with StateTransitionParserTest"
+        );
+    }
+
+    /// A document create (incomplete: its data renders in details), a
+    /// document transfer and a token direct purchase, so the blob exercises
+    /// both row families, the variable-length document type name and the
+    /// details string before the fields that follow them.
+    fn mixed_batch_bytes() -> Vec<u8> {
+        let base = |document_type_name: &str| {
+            DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::from([0x0D; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: document_type_name.to_string(),
+                data_contract_id: Identifier::from([0x42; 32]),
+            })
+        };
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([0x21; 32]),
+            transitions: vec![
+                BatchedTransition::Document(DocumentTransition::Create(
+                    DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                        base: base("post"),
+                        entropy: [0xEE; 32],
+                        data: BTreeMap::from([("message".to_string(), platform_value!("hi"))]),
+                        prefunded_voting_balance: None,
+                    }),
+                )),
+                BatchedTransition::Document(DocumentTransition::Transfer(
+                    DocumentTransferTransition::V0(DocumentTransferTransitionV0 {
+                        base: base("profile"),
+                        revision: 2,
+                        recipient_owner_id: Identifier::from([0x22; 32]),
+                    }),
+                )),
+                BatchedTransition::Token(TokenTransition::DirectPurchase(
+                    TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
+                        base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                            identity_contract_nonce: 4,
+                            token_contract_position: 3,
+                            data_contract_id: Identifier::from([0x42; 32]),
+                            token_id: Identifier::from([0x77; 32]),
+                            using_group_info: None,
+                        }),
+                        token_count: 100,
+                        total_agreed_price: 100_000_000,
+                    }),
+                )),
+            ],
+            user_fee_increase: 7,
+            signature_public_key_id: 0,
+            signature: BinaryData::new(vec![]),
+        }))
+        .serialize_to_bytes()
+        .expect("fixture mixed batch serializes")
+    }
+
+    #[test]
+    fn mixed_batch_blob_round_trips_and_is_pinned_for_kotlin() {
+        let bytes = mixed_batch_bytes();
+        let blob = parse_to_blob(&bytes);
+
+        let mut r = Reader(&blob);
+        assert_eq!(r.u8(), PARSED_STATE_TRANSITION_KIND_BATCH);
+        assert_eq!(
+            r.str32(),
+            "DocumentsBatch([Create, Transfer, TokenDirectPurchase])"
+        );
+        assert_eq!(r.u8(), 1);
+        assert_eq!(r.take(32), &[0x21; 32]);
+        assert_eq!(r.u8(), 0);
+        assert_eq!(r.u16(), 7, "user fee increase");
+        assert_eq!(r.u8(), 0, "incomplete: the create row renders its data");
+        let serialized_len = r.u32() as usize;
+        assert_eq!(r.take(serialized_len), bytes.as_slice());
+        assert_eq!(r.u32(), 0, "no common details for a described kind");
+        assert_eq!(r.take(32), &[0x21; 32]);
+        assert_eq!(r.u32(), 3);
+
+        // Document create: incomplete, data in details.
+        assert_eq!(r.u8(), 0);
+        assert_eq!(r.take(32), &[0x42; 32]);
+        assert_eq!(r.str16(), "Create");
+        assert_eq!(r.str16(), "post");
+        assert_eq!(r.take(32), &[0x0D; 32]);
+        assert_eq!(r.u8(), 0, "no amount");
+        assert_eq!(r.u8(), 0, "no recipient");
+        assert_eq!(r.u8(), 0, "no token count");
+        assert_eq!(r.u8(), 0, "incomplete");
+        let details_len = r.u32() as usize;
+        let details = String::from_utf8(r.take(details_len).to_vec()).unwrap();
+        assert!(details.contains("\"message\""), "{details}");
+
+        // Document transfer: complete, recipient after the strings.
+        assert_eq!(r.u8(), 0);
+        assert_eq!(r.take(32), &[0x42; 32]);
+        assert_eq!(r.str16(), "Transfer");
+        assert_eq!(r.str16(), "profile");
+        assert_eq!(r.take(32), &[0x0D; 32]);
+        assert_eq!(r.u8(), 0, "no amount");
+        assert_eq!(r.u8(), 1);
+        assert_eq!(r.take(32), &[0x22; 32]);
+        assert_eq!(r.u8(), 0, "no token count");
+        assert_eq!(r.u8(), 1, "complete");
+        assert_eq!(r.u32(), 0, "no details");
+
+        // Direct purchase: amount, token count, complete.
+        assert_eq!(r.u8(), 1);
+        assert_eq!(r.take(32), &[0x42; 32]);
+        assert_eq!(r.str16(), "DirectPurchase");
+        assert_eq!(r.u16(), 3);
+        assert_eq!(r.take(32), &[0x77; 32]);
+        assert_eq!(r.u8(), 1);
+        assert_eq!(r.u64(), 100_000_000);
+        assert_eq!(r.u8(), 0, "no recipient");
+        assert_eq!(r.u8(), 1);
+        assert_eq!(r.u64(), 100);
+        assert_eq!(r.u8(), 1, "complete");
+        assert_eq!(r.u32(), 0, "no details");
+        assert!(r.0.is_empty(), "trailing bytes");
+
+        assert_eq!(
+            blob, MIXED_BATCH_GOLDEN,
+            "mixed-batch blob drifted from the golden shared with StateTransitionParserTest"
         );
     }
 
@@ -521,5 +746,9 @@ mod tests {
     const TOKEN_TRANSFER_GOLDEN: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../kotlin-sdk/sdk/src/test/resources/golden/parsed_token_transfer_batch_v1.bin"
+    ));
+    const MIXED_BATCH_GOLDEN: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/test/resources/golden/parsed_mixed_batch_v1.bin"
     ));
 }

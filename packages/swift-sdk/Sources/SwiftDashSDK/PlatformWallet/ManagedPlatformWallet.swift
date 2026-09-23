@@ -279,45 +279,121 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// `DirectPurchase`, `SetPriceForDirectPurchase` for tokens).
     public enum ParsedBatchedTransition: Sendable, Equatable {
         /// A document transition within `dataContractId` / `documentType`.
-        /// `amount` is a purchase price or an update-price value;
-        /// `recipientId` is a transfer's new owner.
-        case document(
-            dataContractId: Identifier,
-            documentType: String,
-            documentId: Identifier,
-            action: String,
-            amount: UInt64?,
-            recipientId: Identifier?
-        )
+        case document(Document)
         /// A token transition on `tokenId` at `tokenContractPosition` of
-        /// `dataContractId`. `amount` is the transferred / minted / burned
-        /// token count or a direct purchase's total agreed price;
+        /// `dataContractId`.
+        case token(Token)
+
+        /// A document transition. `amount` is a purchase price or an
+        /// update-price value; `recipientId` is a transfer's new owner.
+        public struct Document: Sendable, Equatable {
+            public let dataContractId: Identifier
+            public let documentType: String
+            public let documentId: Identifier
+            public let action: String
+            public let amount: UInt64?
+            public let recipientId: Identifier?
+            /// Whether the fields above describe every material field. A
+            /// `Create`, `Replace` or `IndexOnlyDelete` carries document
+            /// data that has no typed projection, so it is never complete.
+            public let complete: Bool
+            /// The material fields not covered above (the document data, a
+            /// prefunded voting balance), rendered for display; `nil` when
+            /// `complete`. **A row with `complete == false` must not be
+            /// approved from the typed fields alone; render `details`.**
+            public let details: String?
+
+            public init(
+                dataContractId: Identifier, documentType: String, documentId: Identifier,
+                action: String, amount: UInt64?, recipientId: Identifier?,
+                complete: Bool, details: String?
+            ) {
+                self.dataContractId = dataContractId
+                self.documentType = documentType
+                self.documentId = documentId
+                self.action = action
+                self.amount = amount
+                self.recipientId = recipientId
+                self.complete = complete
+                self.details = details
+            }
+        }
+
+        /// A token transition. `amount` is the transferred / minted /
+        /// burned token count or a direct purchase's total agreed price;
         /// `recipientId` is a transfer's recipient, a mint's issued-to
         /// identity, or the frozen identity of a freeze / unfreeze /
         /// destroy. Interpret both against `action`: a `Freeze` sheet
-        /// says "freeze the tokens of X", not "send to X".
-        case token(
-            dataContractId: Identifier,
-            tokenId: Identifier,
-            tokenContractPosition: UInt16,
-            action: String,
-            amount: UInt64?,
-            recipientId: Identifier?
-        )
+        /// says "freeze the tokens of X", not "send to X". `tokenCount`
+        /// is a `DirectPurchase`'s token count.
+        public struct Token: Sendable, Equatable {
+            public let dataContractId: Identifier
+            public let tokenId: Identifier
+            public let tokenContractPosition: UInt16
+            public let action: String
+            public let amount: UInt64?
+            public let recipientId: Identifier?
+            public let tokenCount: UInt64?
+            /// Whether the fields above describe every material field.
+            /// `ConfigUpdate`, `EmergencyAction`, `SetPriceForDirectPurchase`
+            /// and `Claim` never are, nor is any transition carrying a note
+            /// or group-action info.
+            public let complete: Bool
+            /// The material fields not covered above (the config change and
+            /// who it grants or revokes, the emergency action, the price
+            /// schedule, the distribution type, notes, group action),
+            /// rendered for display; `nil` when `complete`. **A row with
+            /// `complete == false` must not be approved from the typed
+            /// fields alone; render `details`.**
+            public let details: String?
+
+            public init(
+                dataContractId: Identifier, tokenId: Identifier, tokenContractPosition: UInt16,
+                action: String, amount: UInt64?, recipientId: Identifier?, tokenCount: UInt64?,
+                complete: Bool, details: String?
+            ) {
+                self.dataContractId = dataContractId
+                self.tokenId = tokenId
+                self.tokenContractPosition = tokenContractPosition
+                self.action = action
+                self.amount = amount
+                self.recipientId = recipientId
+                self.tokenCount = tokenCount
+                self.complete = complete
+                self.details = details
+            }
+        }
 
         /// The data contract the transition acts within.
         public var dataContractId: Identifier {
             switch self {
-            case .document(let id, _, _, _, _, _), .token(let id, _, _, _, _, _):
-                return id
+            case .document(let row): return row.dataContractId
+            case .token(let row): return row.dataContractId
             }
         }
 
         /// The rs-dpp action name.
         public var action: String {
             switch self {
-            case .document(_, _, _, let action, _, _), .token(_, _, _, let action, _, _):
-                return action
+            case .document(let row): return row.action
+            case .token(let row): return row.action
+            }
+        }
+
+        /// Whether the typed fields describe every material field. When
+        /// `false`, `details` must be rendered before approval.
+        public var complete: Bool {
+            switch self {
+            case .document(let row): return row.complete
+            case .token(let row): return row.complete
+            }
+        }
+
+        /// The rendered material fields the typed fields do not cover.
+        public var details: String? {
+            switch self {
+            case .document(let row): return row.details
+            case .token(let row): return row.details
             }
         }
     }
@@ -366,7 +442,12 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
     /// The typed summary of one parsed state transition, discriminated
     /// by kind so callers branch on the payload instead of on thrown
-    /// errors. Kinds this SDK has no describer for arrive as `.other`.
+    /// errors. Kinds this SDK has no describer for arrive as `.other` with
+    /// the decoded transition in `ParsedStateTransition.details`.
+    ///
+    /// Nothing here may be treated as ready to sign unless
+    /// `ParsedStateTransition.complete` is `true`; otherwise render its
+    /// `details` and each `.batch` row's `details`.
     public enum ParsedStateTransitionKind: Sendable, Equatable {
         /// Key registration / revocation (`IdentityUpdateTransition`).
         case identityUpdate(ParsedIdentityUpdateTransition)
@@ -385,10 +466,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// One parsed state transition (a `dash-st:` payload or a DashPay
     /// Connect `sign` request), decoded whatever its kind.
     ///
-    /// `serialized` holds the bytes that actually decoded, always in
-    /// tagged DPP framing (the variant tag is prepended when the input
-    /// arrived tagless); after approval, sign these rather than the
-    /// input so what was shown is what is signed. A `sign` request must
+    /// `serialized` holds the decoded transition re-serialized in tagged
+    /// DPP framing; after approval, sign these rather than the input so
+    /// what was shown is what is signed. A `sign` request must
     /// arrive with `isSigned == false` and `ownerId` equal to the
     /// wallet's own identity; both checks are the caller's.
     public struct ParsedStateTransition: Sendable, Equatable {
@@ -400,8 +480,20 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         public let ownerId: Identifier?
         /// Whether the transition already carries a signature.
         public let isSigned: Bool
+        /// Percentage added to the processing fee Platform charges (`0` =
+        /// none; `65535` is about 656 times the base processing fee). Part
+        /// of the signed bytes: show a non-zero value on the sheet, and
+        /// refuse values above what the wallet is willing to pay.
+        public let userFeeIncrease: UInt16
+        /// Whether `kind` shows every material field (computed in Rust).
+        /// When `false`, render `details` and the batch rows' `details`.
+        public let complete: Bool
         /// The decoded bytes, tagged.
         public let serialized: Data
+        /// A structured (multi-line) dump: of the whole transition for
+        /// `.other`, of the whole contract for a data contract create or
+        /// update. `nil` otherwise.
+        public let details: String?
         /// The typed summary.
         public let kind: ParsedStateTransitionKind
 
@@ -409,13 +501,19 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             kindName: String,
             ownerId: Identifier?,
             isSigned: Bool,
+            userFeeIncrease: UInt16,
+            complete: Bool,
             serialized: Data,
+            details: String?,
             kind: ParsedStateTransitionKind
         ) {
             self.kindName = kindName
             self.ownerId = ownerId
             self.isSigned = isSigned
+            self.userFeeIncrease = userFeeIncrease
+            self.complete = complete
             self.serialized = serialized
+            self.details = details
             self.kind = kind
         }
     }
@@ -1446,14 +1544,22 @@ extension ManagedPlatformWallet {
     /// DIP-13 sub-features DashPay Connect v2 keys live under
     /// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose']`).
     /// Registered by the DIP-13 amendment dashpay/dips#191.
-    public enum ConnectSubFeature: UInt32, Sendable {
+    public enum ConnectSubFeature: Sendable {
         /// Session authentication key: the leaf is the connect request id
         /// (`hash256` of the app's ephemeral public key); no purpose level.
-        case sessionAuthentication = 6
+        case sessionAuthentication
         /// App encryption key pair: the leaf is the id of the data
         /// contract the key is bound to; the purpose level is
-        /// `ConnectKeyPurpose.encryption` (1') or `.decryption` (2').
-        case appEncryption = 7
+        /// `ConnectKeyPurpose.encryption` or `.decryption`.
+        case appEncryption
+
+        /// The DIP-13 sub-feature index the FFI derives under.
+        var ffiValue: UInt32 {
+            switch self {
+            case .sessionAuthentication: return UInt32(CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION)
+            case .appEncryption: return UInt32(CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION)
+            }
+        }
     }
 
     /// The trailing `purpose'` level of the app-encryption path: the DPP
@@ -1461,15 +1567,23 @@ extension ManagedPlatformWallet {
     /// exist in the DIP-13 amendment, so the type makes any other value
     /// (in particular `0`, which would collide with the FFI's "no purpose
     /// level") unrepresentable.
-    public enum ConnectKeyPurpose: UInt32, Sendable {
-        case encryption = 1
-        case decryption = 2
+    public enum ConnectKeyPurpose: Sendable {
+        case encryption
+        case decryption
 
         /// The DPP `KeyPurpose` the derived half is registered under.
         public var keyPurpose: KeyPurpose {
             switch self {
             case .encryption: return .encryption
             case .decryption: return .decryption
+            }
+        }
+
+        /// The trailing `purpose'` level the FFI appends.
+        var ffiValue: UInt32 {
+            switch self {
+            case .encryption: return UInt32(CONNECT_KEY_PURPOSE_ENCRYPTION)
+            case .decryption: return UInt32(CONNECT_KEY_PURPOSE_DECRYPTION)
             }
         }
     }
@@ -1535,10 +1649,10 @@ extension ManagedPlatformWallet {
                             network.ffiValue,
                             walletBytes.bindMemory(to: UInt8.self).baseAddress!,
                             resolver.handle,
-                            subFeature.rawValue,
+                            subFeature.ffiValue,
                             identityBytes.bindMemory(to: UInt8.self).baseAddress!,
                             leafBytes.bindMemory(to: UInt8.self).baseAddress!,
-                            purpose?.rawValue ?? 0,
+                            purpose?.ffiValue ?? 0,
                             &out
                         )
                     }
@@ -3691,13 +3805,13 @@ extension ManagedPlatformWallet {
     ) throws -> ParsedStateTransition {
         let kind: ParsedStateTransitionKind
         switch ffi.kind {
-        case 1: // PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE
+        case UInt8(PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE):
             kind = .identityUpdate(
                 try makeParsedIdentityUpdateTransition(from: ffi.identity_update)
             )
-        case 2: // PARSED_STATE_TRANSITION_KIND_BATCH
+        case UInt8(PARSED_STATE_TRANSITION_KIND_BATCH):
             kind = .batch(try makeParsedBatchTransition(from: ffi.batch))
-        case 3: // PARSED_STATE_TRANSITION_KIND_CREDIT_TRANSFER
+        case UInt8(PARSED_STATE_TRANSITION_KIND_CREDIT_TRANSFER):
             kind = .creditTransfer(
                 ParsedCreditTransferTransition(
                     identityId: tupleData(ffi.credit_transfer.identity_id),
@@ -3705,15 +3819,15 @@ extension ManagedPlatformWallet {
                     amount: ffi.credit_transfer.amount
                 )
             )
-        case 4: // PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE
+        case UInt8(PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE):
             kind = .dataContractCreate(
                 try makeParsedDataContractTransition(from: ffi.data_contract)
             )
-        case 5: // PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_UPDATE
+        case UInt8(PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_UPDATE):
             kind = .dataContractUpdate(
                 try makeParsedDataContractTransition(from: ffi.data_contract)
             )
-        case 255: // PARSED_STATE_TRANSITION_KIND_OTHER
+        case UInt8(PARSED_STATE_TRANSITION_KIND_OTHER):
             kind = .other
         default:
             throw PlatformWalletError.deserialization(
@@ -3737,11 +3851,26 @@ extension ManagedPlatformWallet {
             serialized = Data()
         }
 
+        let details: String?
+        if let detailsPtr = ffi.details {
+            guard let rendered = String(validatingCString: detailsPtr) else {
+                throw PlatformWalletError.deserialization(
+                    "Parsed state transition details are not valid UTF-8"
+                )
+            }
+            details = rendered
+        } else {
+            details = nil
+        }
+
         return ParsedStateTransition(
             kindName: kindName,
             ownerId: ownerId,
             isSigned: ffi.is_signed,
+            userFeeIncrease: ffi.user_fee_increase,
+            complete: ffi.complete,
             serialized: serialized,
+            details: details,
             kind: kind
         )
     }
@@ -3774,9 +3903,20 @@ extension ManagedPlatformWallet {
         let dataContractId = tupleData(entry.data_contract_id)
         let amount: UInt64? = entry.has_amount ? entry.amount : nil
         let recipientId: Identifier? = entry.has_recipient ? tupleData(entry.recipient_id) : nil
+        let details: String?
+        if let detailsPtr = entry.details {
+            guard let rendered = String(validatingCString: detailsPtr) else {
+                throw PlatformWalletError.deserialization(
+                    "Batched transition \(index) details are not valid UTF-8"
+                )
+            }
+            details = rendered
+        } else {
+            details = nil
+        }
 
         switch entry.family {
-        case 0: // PARSED_BATCHED_TRANSITION_FAMILY_DOCUMENT
+        case UInt8(PARSED_BATCHED_TRANSITION_FAMILY_DOCUMENT):
             guard let documentTypePtr = entry.document_type,
                   let documentType = String(validatingCString: documentTypePtr) else {
                 throw PlatformWalletError.deserialization(
@@ -3784,22 +3924,29 @@ extension ManagedPlatformWallet {
                 )
             }
             return .document(
-                dataContractId: dataContractId,
-                documentType: documentType,
-                documentId: tupleData(entry.document_id),
-                action: action,
-                amount: amount,
-                recipientId: recipientId
-            )
-        case 1: // PARSED_BATCHED_TRANSITION_FAMILY_TOKEN
+                .init(
+                    dataContractId: dataContractId,
+                    documentType: documentType,
+                    documentId: tupleData(entry.document_id),
+                    action: action,
+                    amount: amount,
+                    recipientId: recipientId,
+                    complete: entry.complete,
+                    details: details
+                ))
+        case UInt8(PARSED_BATCHED_TRANSITION_FAMILY_TOKEN):
             return .token(
-                dataContractId: dataContractId,
-                tokenId: tupleData(entry.token_id),
-                tokenContractPosition: entry.token_contract_position,
-                action: action,
-                amount: amount,
-                recipientId: recipientId
-            )
+                .init(
+                    dataContractId: dataContractId,
+                    tokenId: tupleData(entry.token_id),
+                    tokenContractPosition: entry.token_contract_position,
+                    action: action,
+                    amount: amount,
+                    recipientId: recipientId,
+                    tokenCount: entry.has_token_count ? entry.token_count : nil,
+                    complete: entry.complete,
+                    details: details
+                ))
         default:
             throw PlatformWalletError.deserialization(
                 "Unknown batched transition family \(entry.family) at index \(index)"
