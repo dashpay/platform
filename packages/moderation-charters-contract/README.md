@@ -14,7 +14,8 @@ a reference per element, a reference resolved through a unique index
 (`lookup`), `distinctFrom`, key requirements on key references and the
 `encryptedFor` envelope. What it cannot say is checked elsewhere: the cap on
 additions by the batch's state validation, and the reward split summing to 100
-and the description's byte cap by `SubmittedCharter` in `rs-dpp`.
+and the description's byte cap by `SubmittedCharter` in `rs-dpp`, when a
+proposal is filed.
 
 Seating writes nothing. Awarding the contest for a target writes the winning
 `electedCharter` here, the only one ever written for that target, and the

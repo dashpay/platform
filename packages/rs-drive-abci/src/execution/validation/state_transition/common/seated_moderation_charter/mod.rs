@@ -30,10 +30,11 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::moderation_charter::{
-    property_names, ElectedCharter, SubmittedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
-    ELECTED_CHARTER_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
-    SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+    property_names, ElectedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+    ELECTED_CHARTER_DOCUMENT_TYPE_NAME, FULL_MODERATORS_SHARE,
+    REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
@@ -165,14 +166,17 @@ impl SeatedModerationCharter {
         .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
             "the proposal of a seated charter is not stored",
         )))?;
-        let proposal = SubmittedCharter::from_document_properties(proposal.properties())
-            .into_data()
+        // The share alone is read: nothing else of the proposal decides the discount. The
+        // schema bounds it to 0 to 100 and leaves it out for the full amount.
+        let share = proposal
+            .properties()
+            .get_optional_integer::<u8>(property_names::MODERATORS_SHARE)
             .map_err(|_| {
                 Error::Execution(ExecutionError::DriveIncoherence(
-                    "a stored moderation charter proposal does not read as one",
+                    "a stored moderation charter proposal's share is not a percentage",
                 ))
             })?;
-        Ok(proposal.moderators_share_or_full())
+        Ok(share.unwrap_or(FULL_MODERATORS_SHARE))
     }
 }
 

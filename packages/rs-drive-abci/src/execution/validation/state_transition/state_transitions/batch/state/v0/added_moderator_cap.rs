@@ -8,6 +8,10 @@
 //! judged here once the create's own state validation passed: its references then proved the
 //! charter is seated, that its leader is the writer, and that the member asked to join.
 //!
+//! It is state validation, which check tx does not run for a batch, so an addition over the
+//! cap is admitted to the mempool and refused, paid, in the block, as a unique index conflict
+//! is: counting the additions takes reads the batch transformer does not make.
+//!
 //! The additions are counted in committed state, plus those an earlier create of the same batch
 //! was accepted for: the batch applies as one grove batch, so none of its creates is in state
 //! yet. That second half is dormant while `max_transitions_in_documents_batch` is 1, as it is at

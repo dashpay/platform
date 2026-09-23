@@ -969,8 +969,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
 ///     (`moderation_charters: 1`), and
 ///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
-///     on the pure-data rules the seating path will run on a proposal: its
-///     reward split sums to 100 and its description fits
+///     on the pure-data rules a proposal is judged by when it is filed (item
+///     38): its reward split sums to 100 and its description fits
 ///     `SystemLimits::max_moderation_charter_description_length` bytes (basic
 ///     errors 11000 to 11002). Genesis registers it on chains born at this
 ///     version (`create_genesis_state` v1, behind the app-connect branch),
@@ -1008,7 +1008,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     and every recheck judge it (`DocumentActionFeeModeratorsShareMismatchError`,
 ///     40139, for any other lower amount or with no seated charter). The
 ///     interim team's claim of the moderators pot is refused once a charter is
-///     seated (41113). No table moves: every generation involved is unreleased,
+///     seated (41113). With no seating step left to run them, a
+///     `submittedCharter` create is judged by the proposal's own rules (reward
+///     split sums to 100, description byte cap; 11000 to 11002) in document
+///     create structure validation 1. No table moves: every generation involved is unreleased,
 ///     but for the shipped batch `validate_state` v0, which no batch of an
 ///     earlier version reaches through the new hook.
 ///

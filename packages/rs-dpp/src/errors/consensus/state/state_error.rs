@@ -653,7 +653,8 @@ mod tests {
     /// clients, which would then decode an existing error as a different one.
     /// These are the frozen discriminants of the first variant, of the variant
     /// that follows the document contest block (the one an insertion there
-    /// would shift first), and of the last four.
+    /// would shift first), and of the variants appended since, down to the
+    /// last one, which the test's final assertion pins.
     fn discriminant_of(error: StateError) -> u8 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");

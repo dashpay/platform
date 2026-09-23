@@ -148,6 +148,11 @@ impl ContractModerators {
     ///
     /// The team is about earnings, not authority: an owner who is not on it still may
     /// moderate ([`Self::may_moderate`]).
+    ///
+    /// Like [`Self::may_moderate`] and [`Self::protects`], this reads the config alone, so for
+    /// an elected contract it describes the interim only. Once a charter is seated its claim of
+    /// the moderators pot is refused and its moderations too; who is on the seated team is read
+    /// from the moderation charters contract, which a client asks rather than this.
     pub fn team(&self, owner_id: &Identifier) -> BTreeSet<Identifier> {
         match self {
             ContractModerators::ContractOwner => BTreeSet::from([*owner_id]),

@@ -16,6 +16,10 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::common::seated_moderation_charter::fetch_seated_moderation_charter;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use crate::execution::validation::state_transition::ValidationMode;
+use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::data_contract::document_type::action_fees::agreement::{
     AgreedFeeMultiplier, DocumentActionFeeAgreement,
@@ -31,11 +35,21 @@ use dpp::moderation_charter::{
     JOIN_REQUEST_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
     SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use dpp::state_transition::batch_transition::BatchTransitionV0;
 use dpp::state_transition::contract_fee_claim_transition::methods::ContractFeeClaimTransitionMethodsV0;
 use dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
 use dpp::version::DefaultForPlatformVersion;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use drive::query::VotePollsByEndDateDriveQuery;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::GroveDbOpBatch;
 use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use std::sync::Arc;
@@ -44,6 +58,8 @@ const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
 const MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED: u32 = 41202;
 const DOCUMENT_ACTION_FEE_MODERATORS_SHARE_MISMATCH: u32 = 40139;
 const CONTRACT_FEE_CLAIM_NOT_ALLOWED: u32 = 41113;
+const DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH: u32 = 40133;
+const MODERATION_CHARTER_REWARD_SPLIT_NOT_ONE_HUNDRED: u32 = 11001;
 
 /// What creating a post costs on top of the gas: 0.0001 Dash for the contract owner and 0.001
 /// Dash for the moderation team.
@@ -57,11 +73,19 @@ const MAX_ADDED_MODERATORS: u16 = 2;
 /// against, the award's block time being the last committed one.
 const LATER: TimestampMillis = 4_000_000_000_000;
 
-/// An elected declaration keeping all three lists, moderating `post` with `abilities`, with
-/// `interim` until a team is seated and room for `MAX_ADDED_MODERATORS` additions
+/// A document type whose creation charges a fee priced by the fee multiplier, moderated with
+/// bans only.
+const REPLY: &str = "reply";
+/// A document type whose creation charges a fixed fee, not moderated.
+const NOTE: &str = "note";
+
+/// An elected declaration keeping all three lists, moderating `post` with `abilities` and
+/// `reply` with bans, with `interim` until a team is seated, room for `MAX_ADDED_MODERATORS`
+/// additions and the owner protected from the team when `owner_protected`
 fn elected_posts(
     interim: InterimModerators,
     abilities: &[ModerationAbility],
+    owner_protected: bool,
 ) -> ContractModerationConfig {
     ContractModerationConfig {
         banlist: true,
@@ -73,12 +97,12 @@ fn elected_posts(
             challenge_cool_down: 1_209_600,
             election_delay: None,
             max_added_moderators: MAX_ADDED_MODERATORS,
-            moderated_document_types: BTreeMap::from([(
-                POST.to_string(),
-                abilities.iter().copied().collect(),
-            )]),
+            moderated_document_types: BTreeMap::from([
+                (POST.to_string(), abilities.iter().copied().collect()),
+                (REPLY.to_string(), BTreeSet::from([ModerationAbility::Ban])),
+            ]),
             interim,
-            owner_protected: false,
+            owner_protected,
         })),
     }
 }
@@ -130,21 +154,32 @@ impl Team {
     }
 
     async fn with_abilities(interim: InterimModerators, abilities: &[ModerationAbility]) -> Self {
+        Self::build(interim, abilities, false).await
+    }
+
+    async fn build(
+        interim: InterimModerators,
+        abilities: &[ModerationAbility],
+        owner_protected: bool,
+    ) -> Self {
         let platform_version = PlatformVersion::latest();
         let mut setup = Setup::new_at_with(
-            Some(elected_posts(interim, abilities)),
+            Some(elected_posts(interim, abilities, owner_protected)),
             platform_version,
             |c| {
-                add_document_type(
-                    c,
-                    POST,
-                    post_schema_with(platform_value!({
-                        "actionFees": {
-                            "pricing": "fixed",
-                            "create": { "owner": OWNER_PART, "moderators": MODERATORS_PART },
-                        },
-                    })),
-                )
+                for (name, pricing) in [(POST, "fixed"), (REPLY, "feeMultiplier"), (NOTE, "fixed")]
+                {
+                    add_document_type(
+                        c,
+                        name,
+                        post_schema_with(platform_value!({
+                            "actionFees": {
+                                "pricing": pricing,
+                                "create": { "owner": OWNER_PART, "moderators": MODERATORS_PART },
+                            },
+                        })),
+                    )
+                }
             },
         )
         .await;
@@ -455,24 +490,26 @@ impl Team {
         actor: &Actor,
         agreement: Option<DocumentActionFeeAgreement>,
     ) -> (Document, StateTransition) {
-        let (document, mut transitions) = self.one_post_by(actor, &[agreement]).await;
+        let (document, mut transitions) = self.one_document_by(actor, POST, &[agreement]).await;
         let transition = transitions.pop().expect("expected the post creation");
         (document, transition)
     }
 
-    /// One post by `actor`, the same document under the same nonce, created once for each of
-    /// `agreements`: transitions that differ in their agreement alone
-    async fn one_post_by(
+    /// One document of `document_type_name` by `actor`, the same document under the same
+    /// nonce, created once for each of `agreements`: transitions that differ in their agreement
+    /// alone
+    async fn one_document_by(
         &self,
         actor: &Actor,
+        document_type_name: &str,
         agreements: &[Option<DocumentActionFeeAgreement>],
     ) -> (Document, Vec<StateTransition>) {
         let platform_version = PlatformVersion::latest();
         let document_type = self
             .setup
             .contract
-            .document_type_for_name(POST)
-            .expect("expected the post type");
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type");
         let nonce = actor.contract_nonce();
         let (entropy, document) = {
             let mut rng = self.setup.rng.borrow_mut();
@@ -627,10 +664,25 @@ async fn should_seat_the_winner_of_the_contest_and_let_its_team_moderate_instead
         .moderate(&team.member, unsuspend_action(setup.stranger.id()))
         .await;
     assert_success(&setup.process(&unsuspend, &transaction));
+    let stored = setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .expect("expected the post to be stored");
     let delete = setup
         .moderate(&team.member, delete_action(POST, post.id()))
         .await;
     assert_success(&setup.process(&delete, &transaction));
+    // The leader undoes the member's deletion: a restore needs the same ability.
+    let restore = setup
+        .moderate(
+            &team.leader,
+            restore_action(POST, setup.document_bytes(POST, &stored)),
+        )
+        .await;
+    assert_success(&setup.process(&restore, &transaction));
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        Some(stored)
+    );
     // What the interim did stands, and the team may undo it.
     assert_eq!(
         setup.status(setup.user.id(), Some(&transaction)).ban,
@@ -801,6 +853,8 @@ async fn should_refuse_a_seated_team_an_ability_the_declaration_does_not_give_it
         warn_action(setup.stranger.id(), "no"),
         clear_warnings_action(setup.stranger.id()),
         delete_action(POST, post.id()),
+        // Refused before the bytes are even decoded.
+        restore_action(POST, vec![]),
     ] {
         let refused = setup.moderate(&team.member, action.clone()).await;
         assert_paid_with_code(
@@ -849,8 +903,9 @@ async fn should_charge_the_declared_moderators_part_without_a_read_and_a_discoun
     let platform_version = PlatformVersion::latest();
     // The same post, agreeing to the declared part or to the charter's share.
     let (_, posts) = team
-        .one_post_by(
+        .one_document_by(
             &setup.user,
+            POST,
             &[
                 Some(agreeing_to(MODERATORS_PART)),
                 Some(agreeing_to(discounted())),
@@ -1026,4 +1081,290 @@ async fn should_stop_the_interim_team_claiming_the_moderators_pot_once_a_charter
         CONTRACT_FEE_CLAIM_NOT_ALLOWED,
     );
     assert_eq!(team.moderators_pot(&transaction), MODERATORS_PART);
+}
+
+/// With `ownerProtected`, a seated team protects the contract owner as it protects its own
+/// members, though the owner is not one: it can not be banned and its documents can not be
+/// deleted, and it does not moderate.
+#[tokio::test]
+async fn should_protect_the_owner_from_a_seated_team_when_the_declaration_says_so() {
+    let team = Team::build(InterimModerators::ContractOwner, &ALL_ABILITIES, true).await;
+    let setup = &team.setup;
+    let owner_post = team.posted_by(&setup.owner).await;
+    team.award();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let ban = setup
+        .moderate(&team.leader, ban_action(setup.owner.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+    let delete = setup
+        .moderate(&team.member, delete_action(POST, owner_post.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&delete, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.user.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+}
+
+/// A discount is the seated charter's to give on the types the contract moderates, and only
+/// there: on a type it does not moderate an agreement to less is the plain mismatch. On a fee
+/// priced by the fee multiplier the share applies to the declared part, and the epoch's
+/// multiplier to the share.
+#[tokio::test]
+async fn should_discount_only_a_moderated_type_and_scale_the_share_by_the_fee_multiplier() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    team.award();
+
+    let (_, note) = team
+        .one_document_by(&setup.user, NOTE, &[Some(agreeing_to(discounted()))])
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_paid_with_code(
+        &setup.process(&note[0], &transaction),
+        DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH,
+    );
+    drop(transaction);
+
+    // The epoch's fee multiplier is 1.5.
+    let mut batch = GroveDbOpBatch::new();
+    batch.push(
+        Epoch::new(0)
+            .expect("expected epoch 0")
+            .update_fee_multiplier_operation(1_500),
+    );
+    setup
+        .platform
+        .drive
+        .grove_apply_batch(batch, false, None, &PlatformVersion::latest().drive)
+        .expect("expected to set the fee multiplier of epoch 0");
+    let agreement = DocumentActionFeeAgreement::for_declared_fee(
+        ActionFeePricing::FeeMultiplier,
+        DocumentActionFee {
+            owner: OWNER_PART,
+            moderators: discounted(),
+        },
+        AgreedFeeMultiplier {
+            known_permille: 1_500,
+            increase_tolerance_percent: 0,
+        },
+    );
+    let (_, reply) = team
+        .one_document_by(&setup.user, REPLY, &[Some(agreement)])
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let pot_before = team.moderators_pot(&transaction);
+    assert_success(&setup.process(&reply[0], &transaction));
+    assert_eq!(
+        team.moderators_pot(&transaction) - pot_before,
+        discounted() * 3 / 2
+    );
+}
+
+/// The document transition a single-transition batch carries
+fn document_transition_of(transition: &StateTransition) -> DocumentTransition {
+    let StateTransition::Batch(batch) = transition else {
+        panic!("expected a batch");
+    };
+    match batch.transitions_iter().next() {
+        Some(BatchedTransitionRef::Document(document_transition)) => document_transition.clone(),
+        _ => panic!("expected a document transition"),
+    }
+}
+
+/// Two additions in one batch are counted together: with one slot left, the first is accepted
+/// and the second refused, though neither is in state when the other is judged. Driven through
+/// the transformer and the batch state validation directly: `max_transitions_in_documents_batch`
+/// is 1 at every protocol version, so no such batch reaches them from the network today.
+#[tokio::test]
+async fn should_count_the_additions_an_earlier_create_of_the_same_batch_was_accepted_for() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    team.award();
+    let [first, second, third] = &team.joiners;
+    team.process_and_commit(&team.addition_of(first).await);
+
+    let batch: StateTransition = BatchTransition::from(BatchTransitionV0 {
+        owner_id: team.leader.id(),
+        transitions: vec![
+            document_transition_of(&team.addition_of(second).await),
+            document_transition_of(&team.addition_of(third).await),
+        ],
+        user_fee_increase: 0,
+        signature_public_key_id: 0,
+        signature: Default::default(),
+    })
+    .into();
+
+    let platform_version = PlatformVersion::latest();
+    let state = setup.platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &setup.platform.drive,
+        state: &state,
+        config: &setup.platform.config,
+        core_rpc: &setup.platform.core_rpc,
+    };
+    let mut execution_context =
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .expect("expected an execution context");
+    let transformed = batch
+        .transform_into_action(
+            &platform_ref,
+            &BlockInfo::default(),
+            &None,
+            ValidationMode::Validator,
+            &mut execution_context,
+            None,
+        )
+        .expect("expected to transform the batch");
+    assert!(transformed.errors.is_empty(), "{:?}", transformed.errors);
+    let validated = batch
+        .validate_state(
+            transformed.data,
+            &platform_ref,
+            ValidationMode::Validator,
+            &BlockInfo::default(),
+            &mut execution_context,
+            None,
+        )
+        .expect("expected to validate the batch against state");
+    assert_eq!(
+        validated
+            .errors
+            .iter()
+            .map(|error| error.code())
+            .collect::<Vec<_>>(),
+        vec![MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED]
+    );
+    let Some(StateTransitionAction::BatchAction(action)) = validated.data else {
+        panic!("expected a batch action back from state validation");
+    };
+    let survived_as_creates: Vec<bool> = action
+        .transitions()
+        .iter()
+        .map(|transition| {
+            matches!(
+                transition,
+                BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(_))
+            )
+        })
+        .collect();
+    assert_eq!(survived_as_creates, vec![true, false]);
+}
+
+/// The addition cap hooks into the batch's state validation that protocol version 13 runs too,
+/// but no batch of that version reaches it: the moderation charters contract is not in state
+/// before protocol version 14, so an `addedModerator` create is refused when its contract is
+/// fetched, before state validation, as any document create on a missing contract always was.
+#[tokio::test]
+async fn should_refuse_an_addition_before_protocol_version_14_before_the_cap_is_judged() {
+    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+    let setup = Setup::new_at(None, platform_version).await;
+    let charters = setup
+        .platform
+        .drive
+        .cache
+        .system_data_contracts
+        .load_moderation_charters(PlatformVersion::latest())
+        .expect("expected the moderation charters contract");
+    let document_type = charters
+        .document_type_for_name(ADDED_MODERATOR_DOCUMENT_TYPE_NAME)
+        .expect("expected the addedModerator type");
+    let nonce = setup.owner.contract_nonce();
+    let (entropy, document) = {
+        let mut rng = setup.rng.borrow_mut();
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                setup.owner.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::MinDocumentFillSize,
+                PlatformVersion::latest(),
+            )
+            .expect("expected a random document");
+        document.set_properties(BTreeMap::from([
+            ("electedCharterId".to_string(), Value::Identifier([1; 32])),
+            ("submittedCharterId".to_string(), Value::Identifier([2; 32])),
+            (
+                "memberId".to_string(),
+                Value::Identifier(setup.user.id().to_buffer()),
+            ),
+        ]));
+        document
+            .set_id_for_creation(document_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
+        (entropy, document)
+    };
+    let addition = BatchTransition::new_document_creation_transition_from_document(
+        document,
+        document_type,
+        entropy.0,
+        &setup.owner.key,
+        nonce,
+        0,
+        None,
+        &setup.owner.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected to build the addition");
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let execution = setup.process(&addition, &transaction);
+    let code = match &execution {
+        StateTransitionExecutionResult::PaidConsensusError { error, .. }
+        | StateTransitionExecutionResult::UnpaidConsensusError(error) => error.code(),
+        other => panic!("expected the addition to be refused, got {other:?}"),
+    };
+    assert_eq!(code, DATA_CONTRACT_NOT_PRESENT);
+}
+
+/// Seating writes nothing, so a proposal is judged by the rules its schema can not express when
+/// it is filed: a reward split that does not sum to 100 is refused, in the mempool and, paid, in
+/// a block.
+#[tokio::test]
+async fn should_refuse_a_proposal_whose_reward_split_does_not_sum_to_one_hundred() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let proposal = SubmittedCharter {
+        target_contract_id: setup.contract.id(),
+        description: "Everyone takes everything".to_string(),
+        reasons: vec![],
+        moderators_share: None,
+        reward_split: ModerationCharterRewardSplit {
+            leader: 100,
+            equal: 100,
+            actions: 100,
+        },
+    };
+    let (_, filing) = team
+        .charter_document(
+            &team.leader,
+            SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+            proposal.to_document_properties(),
+        )
+        .await;
+    assert_eq!(
+        team.check_tx_codes(&filing, CheckTxLevel::FirstTimeCheck),
+        vec![MODERATION_CHARTER_REWARD_SPLIT_NOT_ONE_HUNDRED]
+    );
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_paid_with_code(
+        &setup.process(&filing, &transaction),
+        MODERATION_CHARTER_REWARD_SPLIT_NOT_ONE_HUNDRED,
+    );
 }

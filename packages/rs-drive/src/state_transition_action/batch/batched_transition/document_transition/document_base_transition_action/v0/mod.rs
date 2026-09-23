@@ -105,8 +105,6 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// Who the document type's token cost offers to pay the gas (`DocumentOwner` without a
     /// token cost)
     fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy;
-    /// The fee the document type declares for this action and how it is priced
-    fn declared_action_fee(&self) -> Option<(ActionFeePricing, DocumentActionFee)>;
     /// The fee the document type declares for this action, with what the transition agreed
     /// to pay
     fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee>;

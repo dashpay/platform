@@ -182,7 +182,13 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
         // charter lookup through the charter contract's `byTargetContract` index and a fetch of
         // the proposal it runs on, which carries the share. The agreement is judged against it
         // by advanced structure validation, and again on every recheck, which transforms anew.
-        if let Some(action) = validation_result.data.as_mut() {
+        // A result that already carries errors never reaches that judgement, so it reads
+        // nothing for it.
+        if let Some(action) = validation_result
+            .data
+            .as_mut()
+            .filter(|_| validation_result.errors.is_empty())
+        {
             let contract_ids = action.contracts_with_moderators_discounts();
             if !contract_ids.is_empty() {
                 let platform_version = platform.state.current_platform_version()?;

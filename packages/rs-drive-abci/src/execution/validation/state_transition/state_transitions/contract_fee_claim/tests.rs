@@ -406,6 +406,30 @@ async fn should_split_the_moderators_pot_equally_and_leave_the_remainder() {
     assert_eq!(credits_before - setup.credits_in_trees(&transaction), gas);
 }
 
+/// The contract fetch of a claim is billed from what the fetch returns, never from the fee a
+/// cached entry happens to carry, which depends on how the contract got into the cache: a node
+/// that cached it without a fee (after its creation, or through a query) and one that fetches it
+/// cold charge the claimant the same.
+#[tokio::test]
+async fn should_bill_the_contract_fetch_the_same_with_a_warm_or_a_cold_contract_cache() {
+    let setup = Setup::new(Team::TwoModerators).await;
+    setup.fill(ContractFeePot::Moderators, 1_001);
+    let claim = setup
+        .claim(&setup.moderator_a, ContractFeePot::Moderators)
+        .await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let warm = setup.process(&claim, 3, &transaction);
+    assert_success(&warm);
+    drop(transaction);
+
+    setup.platform.drive.cache.data_contracts.clear();
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let cold = setup.process(&claim, 3, &transaction);
+    assert_success(&cold);
+    assert_eq!(gas(&warm), gas(&cold));
+}
+
 #[tokio::test]
 async fn should_pay_an_appointed_owner_a_share_of_the_moderators_pot() {
     let setup = Setup::new(Team::TwoModeratorsAndTheOwner).await;

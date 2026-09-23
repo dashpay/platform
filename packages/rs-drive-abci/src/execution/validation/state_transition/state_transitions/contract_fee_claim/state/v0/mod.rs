@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
@@ -62,24 +63,30 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
         let claimant_id = self.owner_id();
         let pot = self.pot();
 
-        let Some(contract_fetch_info) = platform
-            .drive
-            .get_contract_with_fetch_info_and_fee(
+        let (contract_fetch_fee, maybe_contract_fetch_info) =
+            platform.drive.get_contract_with_fetch_info_and_fee(
                 contract_id.to_buffer(),
                 Some(&block_info.epoch),
                 false,
                 tx,
                 platform_version,
-            )?
-            .1
-        else {
+            )?;
+        // The read is billed from the fee this call returns, whether the contract was pulled
+        // from disk, was in the cache or does not exist. The fee a cached fetch info carries is
+        // only there when that entry was built with an epoch, which differs from node to node,
+        // so billing it would make the fee, and the app hash, depend on the cache.
+        let contract_fetch_fee =
+            contract_fetch_fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "fee must exist for the contract fetch of a contract fee claim",
+            )))?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+            contract_fetch_fee,
+        ));
+        let Some(contract_fetch_info) = maybe_contract_fetch_info else {
             return Ok(ConsensusValidationResult::new_with_error(
                 DataContractNotPresentError::new(contract_id).into(),
             ));
         };
-        if let Some(fee) = contract_fetch_info.fee.clone() {
-            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-        }
 
         let bump_action = || {
             StateTransitionAction::BumpIdentityDataContractNonceAction(

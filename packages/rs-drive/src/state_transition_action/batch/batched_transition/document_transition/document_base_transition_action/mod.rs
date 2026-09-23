@@ -5,7 +5,7 @@ use dpp::platform_value::Identifier;
 
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
+
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -96,15 +96,6 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
     fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.contract_gas_fees_paid_by,
-        }
-    }
-
-    fn declared_action_fee(&self) -> Option<(ActionFeePricing, DocumentActionFee)> {
-        match self {
-            DocumentBaseTransitionAction::V0(v0) => v0
-                .declared_action_fee
-                .as_deref()
-                .map(|declared| (declared.pricing, declared.fee)),
         }
     }
 

@@ -153,7 +153,9 @@ slot. The schema cannot count documents, so a consensus rule refuses an
 addition over the cap, paid, with `ModerationCharterAddedModeratorLimitReachedError`
 (41202): the batch's state validation reads the charter, its target and at most
 the cap's number of additions, all billed, once the addition's own references
-passed.
+passed. Like a unique index conflict, it is judged in the block and not in the
+mempool, which runs no state validation for a batch: an addition over the cap
+is admitted and then refused, paid.
 
 ## The contest
 
@@ -220,9 +222,10 @@ replaced). The moderation paths of the target read it:
 Every rule above is enforced by the schema's keywords when a document is
 written, except the cap on additions (see above). Two rules of a proposal are
 not expressible there, and `validate_submitted_charter` in `rs-dpp`
-(`packages/rs-dpp/src/moderation_charter/`) checks them without reading state.
-Seating writes nothing, so no path runs them yet: the reward split they guard
-is first read by the seated team's claim of the moderators pot.
+(`packages/rs-dpp/src/moderation_charter/`) checks them without reading state,
+when a `submittedCharter` is filed (the document create's structure
+validation, so the mempool refuses them too). Seating writes nothing, so a
+proposal is judged before it can ever be seated, and a refusal is paid.
 
 | Rule | Error | Code |
 | --- | --- | --- |
