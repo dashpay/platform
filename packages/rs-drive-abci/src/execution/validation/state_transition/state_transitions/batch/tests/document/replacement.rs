@@ -550,6 +550,171 @@ mod replacement_tests {
             .await;
     }
 
+    const TRANSIENT_NOTE_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/transient/transient-note-contract.json";
+
+    /// A transient value is judged on the transition and dropped before its
+    /// document is stored; from protocol version 14 a replace drops it too.
+    #[tokio::test]
+    async fn should_store_a_replaced_document_without_its_transient_values() {
+        assert_eq!(
+            run_replace_carrying_a_transient_value(PlatformVersion::latest()).await,
+            None
+        );
+    }
+
+    /// Protocol version 13 stored whatever a replace carried, transient values
+    /// included: pinned so its chain history stays reproducible.
+    #[tokio::test]
+    async fn should_store_the_transient_values_of_a_replace_at_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert_eq!(
+            run_replace_carrying_a_transient_value(platform_version).await,
+            Some(Value::Text("y".to_string()))
+        );
+    }
+
+    /// Creates a `note` whose transient `code` is `x`, checks the stored
+    /// document has no `code`, replaces it with `code` `y`, and returns the
+    /// `code` the stored document holds after the replace.
+    async fn run_replace_carrying_a_transient_value(
+        platform_version: &PlatformVersion,
+    ) -> Option<Value> {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            TRANSIENT_NOTE_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let note = contract
+            .document_type_for_name("note")
+            .expect("expected a note document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = note
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+        document
+            .set_id_for_creation(note, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+        document.set("body", "a".into());
+        document.set("code", "x".into());
+        let document_id = document.id();
+
+        let stored_code = || {
+            let query =
+                DriveDocumentQuery::new_primary_key_single_item_query(&contract, note, document_id);
+            platform
+                .drive
+                .query_documents(
+                    query,
+                    None,
+                    false,
+                    None,
+                    Some(platform_version.protocol_version),
+                )
+                .expect("expected to query the note")
+                .documents_owned()
+                .pop()
+                .expect("expected the stored note")
+                .properties()
+                .get("code")
+                .cloned()
+        };
+        let process_and_commit = |transition: Vec<u8>| {
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            assert_eq!(processing_result.valid_count(), 1);
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        };
+
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            note,
+            entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create documents batch transition");
+        process_and_commit(
+            create
+                .serialize_to_bytes()
+                .expect("expected serialized create"),
+        );
+        assert_eq!(
+            stored_code(),
+            None,
+            "a create never stores a transient value"
+        );
+
+        document.increment_revision().unwrap();
+        document.set("body", "b".into());
+        document.set("code", "y".into());
+        let replace = BatchTransition::new_document_replacement_transition_from_document(
+            document,
+            note,
+            &key,
+            3,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create documents batch transition");
+        process_and_commit(
+            replace
+                .serialize_to_bytes()
+                .expect("expected serialized replace"),
+        );
+
+        stored_code()
+    }
+
     async fn run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
         expected_processing_fee: dpp::fee::Credits,

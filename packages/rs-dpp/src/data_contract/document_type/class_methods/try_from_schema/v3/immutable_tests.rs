@@ -48,7 +48,7 @@ fn parse_with(
 /// Parse through the real dispatcher, which picks the parser generation out
 /// of the platform version's `try_from_schema` table value (generation 2 at
 /// PV13, generation 3 at PV14).
-fn parse_dispatched(
+pub(super) fn parse_dispatched(
     schema: Value,
     platform_version: &PlatformVersion,
     full_validation: bool,
@@ -108,7 +108,10 @@ fn names(entries: &[&str]) -> BTreeSet<String> {
 
 /// The lints surface as `InvalidContractStructure` either directly or, with
 /// the `validation` feature on, wrapped as the basic `ContractError`.
-fn expect_structure_error<T: std::fmt::Debug>(result: Result<T, ProtocolError>, needle: &str) {
+pub(super) fn expect_structure_error<T: std::fmt::Debug>(
+    result: Result<T, ProtocolError>,
+    needle: &str,
+) {
     let message = match result {
         Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
             message,
