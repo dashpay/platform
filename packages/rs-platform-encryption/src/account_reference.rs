@@ -31,21 +31,6 @@ fn extract_ask28(ask_bytes: &[u8; 32]) -> u32 {
     u32::from_be_bytes([ask_bytes[28], ask_bytes[29], ask_bytes[30], ask_bytes[31]]) >> 4
 }
 
-/// Bit position of the rotation `version` nibble in a DIP-15 `accountReference`
-/// (`version << 28 | masked_index`).
-pub const ACCOUNT_REFERENCE_VERSION_SHIFT: u32 = 28;
-
-/// Mask of the low 28 bits carrying the masked account index.
-const ACCOUNT_REFERENCE_INDEX_MASK: u32 = (1 << ACCOUNT_REFERENCE_VERSION_SHIFT) - 1;
-
-/// Rotation `version` of a DIP-15 `accountReference` (its top 4 bits).
-///
-/// Readable without the sender's secret: the version is not masked, so a
-/// recipient can tell a re-keyed (rotated) request from a first-generation one.
-pub fn account_reference_version(account_reference: u32) -> u32 {
-    account_reference >> ACCOUNT_REFERENCE_VERSION_SHIFT
-}
-
 /// Calculate the masked DIP-15 `accountReference`:
 /// `result = (version << 28) | (ASK28 ^ (account_index & 0x0FFF_FFFF))`.
 ///
@@ -60,8 +45,8 @@ pub fn calculate_account_reference(
     version: u32,
 ) -> u32 {
     let ask28 = account_secret_key_28(sender_secret_key, compact_xpub);
-    let shortened_account_bits = account_index & ACCOUNT_REFERENCE_INDEX_MASK;
-    let version_bits = version << ACCOUNT_REFERENCE_VERSION_SHIFT;
+    let shortened_account_bits = account_index & 0x0FFF_FFFF;
+    let version_bits = version << 28;
     version_bits | (ask28 ^ shortened_account_bits)
 }
 
@@ -75,8 +60,8 @@ pub fn unmask_account_reference(
     compact_xpub: &[u8],
 ) -> (u32, u32) {
     let ask28 = account_secret_key_28(sender_secret_key, compact_xpub);
-    let version = account_reference_version(account_reference);
-    let account_index = (account_reference & ACCOUNT_REFERENCE_INDEX_MASK) ^ ask28;
+    let version = account_reference >> 28;
+    let account_index = (account_reference & 0x0FFF_FFFF) ^ ask28;
     (version, account_index)
 }
 
@@ -96,11 +81,11 @@ mod tests {
         let secret_key = [1u8; 32];
         let compact = test_compact_xpub();
         assert_eq!(
-            account_reference_version(calculate_account_reference(&secret_key, &compact, 0, 0)),
+            calculate_account_reference(&secret_key, &compact, 0, 0) >> 28,
             0
         );
         assert_eq!(
-            account_reference_version(calculate_account_reference(&secret_key, &compact, 0, 1)),
+            calculate_account_reference(&secret_key, &compact, 0, 1) >> 28,
             1
         );
         assert_eq!(

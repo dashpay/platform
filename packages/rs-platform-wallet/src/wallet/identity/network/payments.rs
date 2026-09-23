@@ -1652,11 +1652,11 @@ mod tests {
     };
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::identity::network::contacts::ACCOUNT_REFERENCE_VERSION_SHIFT;
     use crate::wallet::identity::{ContactRequest, EstablishedContact};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletManager;
-    use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
 
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
