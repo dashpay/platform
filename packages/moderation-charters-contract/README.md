@@ -6,7 +6,7 @@ moderation team. It activates at protocol version 14, registered at genesis by
 chains born at 14 and inserted by the upgrade to 14, and has the same ID on
 every network: `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
 
-It has seven document types. All are immutable and undeletable, so
+It has seven document types. All are immutable, and all but `resignationRequest` are undeletable, so
 everything a charter points at, and the charter itself, is a fixed text.
 
 The schema carries almost every rule through its keywords: typed arrays with
@@ -89,12 +89,11 @@ Once an elected charter is seated, its team can change without a new vote:
 | --- | --- | --- | --- |
 | `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter, a consensus rule that comes with seating |
 | `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is not the leader |
-| `resignationRequest` | the member leaving | `electedCharterId` | Takes effect when filed; a leader's resignation changes nothing |
+| `resignationRequest` | a member of the team | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The writer is in the charter's `members` or was added (`ownerRefersTo` with `anyOf`); a message only the leader can read; deletable, which withdraws it; the leader acts on it with a removal |
 
-Each is written once per member and charter (unique indexes), and a removal or
-a resignation is final. The team that acts is the leader plus the elected
-members and the additions, less the removals and the resignations
-(`ElectedCharter::active_members` in `rs-dpp`).
+Each is written once per member and charter (unique indexes), and a removal is
+final. The team that acts is the leader plus the elected members and the
+additions, less the removals (`ElectedCharter::active_members` in `rs-dpp`).
 
 See [the protocol guide](../../docs/protocol/moderation-charters.md) for
 details.

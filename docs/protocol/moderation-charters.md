@@ -20,9 +20,9 @@ both come with the seating pull request.
 - Document types: `reason`, `submittedCharter`, `joinRequest`, `electedCharter`,
   `addedModerator`, `removedModerator`, `resignationRequest`
 
-Every type is immutable and undeletable, so each document another one refers
-to stays exactly as it was when it was referred to. Additional properties are
-rejected on every type.
+Every type is immutable, and every type but `resignationRequest` is
+undeletable, so each document another one refers to stays exactly as it was
+when it was referred to. Additional properties are rejected on every type.
 
 ## The flow
 
@@ -37,8 +37,9 @@ rejected on every type.
    asked to join. That create opens or joins the contest for the target.
 
 5. After the election the leader may add members from the same join requests,
-   up to the target's `maxAddedModerators`, and remove members, and a member
-   may resign.
+   up to the target's `maxAddedModerators`, and remove members. A member asks
+   to leave with a resignation request, which the leader acts on with a
+   removal.
 
 The seated team acts with the target contract's whole elected moderation
 declaration: every document type and ability it lists. A team narrows what it
@@ -47,7 +48,7 @@ one. There are no powers: any one member acts alone. The team that acts is:
 
 ```
 leader + (electedCharter.members + addedModerator.memberId)
-       - removedModerator.memberId - resignationRequest.$ownerId
+       - removedModerator.memberId
 ```
 
 ## `reason`
@@ -133,20 +134,20 @@ the contest until it is awarded, so this index lists seated charters only.
 All three types refer to an `electedCharter`. A reference finds a document in the
 type's own storage, and only a winner is ever written there (contenders live in
 the contest), so these documents can only name a seated charter. Each is
-unique on the charter and the member, so it is written at most once per member,
-and a removal or a resignation is final.
+unique on the charter and the member, so it is written at most once per member
+at a time, and a removal is final.
 
 | Type | Properties | Rules |
 | --- | --- | --- |
 | `addedModerator` | `electedCharterId`, `submittedCharterId`, `memberId` | `electedCharterId` carries `propertyAgreement: { "$ownerId": "$ownerId", "submittedCharterId": "submittedCharterId" }`: only the leader adds, and `submittedCharterId` is the charter's proposal. `memberId` refers to a `joinRequest` through the same `lookup` as `members` and is `distinctFrom: "$ownerId"`: an addition needs the member's consent, disclosed on the proposal |
 | `removedModerator` | `electedCharterId`, `memberId` | Only the leader removes (`propertyAgreement: { "$ownerId": "$ownerId" }`); no resignation is needed; `memberId` is `distinctFrom: "$ownerId"` |
-| `resignationRequest` | `electedCharterId` | The owner is the member leaving; it takes effect when filed, whatever the leader does. A resignation by someone not on the team changes nothing, and neither does the leader's own: leader succession is not a resignation |
+| `resignationRequest` | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The owner is the member asking to leave, and must be on the team: `ownerRefersTo: { "anyOf": [...] }` requires the writer to be an element of the elected charter's `members` (`listElement`, the charter found by `electedCharterId` through `propertyAgreement: { "electedCharterId": "$id" }`) or the `memberId` of an `addedModerator` for that charter (a `lookup` through `byElectedCharterMember`, `"."` the writer). The leader is in neither list, so it cannot file one. The message is encrypted to the leader (`propertyAgreement: { "recipientId": "$ownerId" }` on `electedCharterId`) with the leader's decryption key bound to `submittedCharter` and the member's encryption key bound to `joinRequest`, the keys join requests use. A request changes nothing by itself: the leader acts on it with a `removedModerator`. It is the only deletable type: deleting it withdraws the request, and nothing refers to it |
 
 **The cap on additions.** The target contract's elected declaration carries
 `maxAddedModerators`: how many members a seated team's leader may add, 0 when
 left out and at most `SystemLimits::max_contract_moderation_added_moderators`
-(15). It counts additions ever filed against a charter, so a removal or a
-resignation frees no slot. The schema cannot count documents, so a consensus
+(15). It counts additions ever filed against a charter, so a removal frees no
+slot. The schema cannot count documents, so a consensus
 rule refuses an addition over the cap; it comes with the seating pull request.
 
 ## The contest

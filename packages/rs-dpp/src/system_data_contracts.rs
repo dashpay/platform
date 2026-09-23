@@ -311,7 +311,9 @@ mod moderation_charters_tests {
     use super::*;
     use crate::consensus::ConsensusError;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::data_contract::document_type::{
         ContestedIndexResolution, ContractReferenceModeration, DistinctFrom,
@@ -436,9 +438,11 @@ mod moderation_charters_tests {
                 MODERATION_CHARTERS_CONTRACT_ID
             );
             assert!(!document_type.documents_mutable(), "{name} is immutable");
-            assert!(
-                !document_type.documents_can_be_deleted(),
-                "{name} is undeletable"
+            // A resignation request is withdrawn by deleting it; nothing refers to it
+            assert_eq!(
+                document_type.documents_can_be_deleted(),
+                name == RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+                "{name}: only a resignation request can be deleted"
             );
         }
     }
@@ -842,9 +846,11 @@ mod moderation_charters_tests {
             removed.get("$ownerId").map(String::as_str),
             Some("$ownerId")
         );
-        assert!(
-            charter_agreement(RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME).is_empty(),
-            "anyone may resign; only a member's resignation changes the team"
+        let resignation = charter_agreement(RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME);
+        assert_eq!(
+            resignation.get("recipientId").map(String::as_str),
+            Some("$ownerId"),
+            "a resignation is addressed to the charter's leader"
         );
 
         match reference(
@@ -913,6 +919,72 @@ mod moderation_charters_tests {
                     .collect::<Vec<_>>(),
                 vec![property_names::ELECTED_CHARTER_ID, member_property]
             );
+        }
+    }
+
+    /// Only a member of the seated team may ask to leave: the writer is listed in the elected
+    /// charter's `members`, or the leader added it after the election. The request is
+    /// deletable, which withdraws it, and carries a message only the leader can read.
+    #[test]
+    fn should_let_only_a_team_member_ask_to_leave() {
+        let contract = contract();
+        let resignation = document_type(&contract, RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME);
+        assert!(resignation.documents_can_be_deleted());
+
+        let Some(DocumentPropertyReferenceTarget::AnyOf(operands)) = resignation.owner_reference()
+        else {
+            panic!(
+                "the writer must meet any of the membership targets: {:?}",
+                resignation.owner_reference()
+            );
+        };
+        match operands.operands() {
+            [DocumentPropertyReferenceTarget::ListElement(listed), DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                document_type_name,
+                lookup,
+                ..
+            }] => {
+                assert_eq!(
+                    listed.document_type_name,
+                    ELECTED_CHARTER_DOCUMENT_TYPE_NAME
+                );
+                assert_eq!(listed.in_list, property_names::MEMBERS);
+                assert_eq!(
+                    listed.document_id_property(),
+                    Some(property_names::ELECTED_CHARTER_ID)
+                );
+                assert_eq!(document_type_name, ADDED_MODERATOR_DOCUMENT_TYPE_NAME);
+                assert_eq!(lookup.index, "byElectedCharterMember");
+                assert_eq!(
+                    lookup.keys.get(property_names::MEMBER_ID),
+                    Some(&LookupKeySource::ReferenceValue)
+                );
+            }
+            other => panic!("resignation membership operands: {other:?}"),
+        }
+
+        let encrypted_for = resignation
+            .flattened_properties()
+            .get("encryptedMessage")
+            .and_then(|property| property.encrypted_for.clone())
+            .expect("the message declares its envelope");
+        assert_eq!(
+            encrypted_for.recipient,
+            EncryptedForRecipient::Property("recipientId".to_string())
+        );
+        match reference(
+            &contract,
+            RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+            "senderKeyId",
+        ) {
+            PropertyReference::KeyId(key_reference) => {
+                assert_eq!(
+                    key_reference.key_requirements.bound_to.as_deref(),
+                    Some(JOIN_REQUEST_DOCUMENT_TYPE_NAME),
+                    "the member's encryption key is the one its join request used"
+                );
+            }
+            other => panic!("senderKeyId: {other:?}"),
         }
     }
 }

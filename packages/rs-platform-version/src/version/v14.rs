@@ -896,10 +896,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     update.
 ///
 ///
-/// 33. **The moderation charters system contract**
+/// 36. **The moderation charters system contract**
 ///     (`SystemDataContract::ModerationCharters`, schema v1, the first piece of
 ///     decentralized moderation teams) carries seven document types, all
-///     immutable and undeletable. A `reason` is a ground for a moderation
+///     immutable and all but `resignationRequest` undeletable. A `reason` is a ground for a moderation
 ///     action, keyed by its owner and a three-letter `code` unique among the
 ///     owner's reasons. A `submittedCharter` is a leader's proposal to
 ///     moderate one contract on that contract's own terms: its
@@ -921,11 +921,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the join request's unique index) and none of which is the leader
 ///     (item 26). Once a charter is seated, its leader adds members from the
 ///     same join requests (`addedModerator`, the same lookup) and removes
-///     members (`removedModerator`), and a member leaves on its own
-///     (`resignationRequest`): each once per member and charter (unique
-///     indexes), removals and resignations final, so the team that acts is the
-///     leader plus the elected members and the additions less the removals and
-///     the resignations (`ElectedCharter::active_members`). The cap on
+///     members (`removedModerator`), each once per member and charter (unique
+///     indexes), removals final, so the team that acts is the leader plus the
+///     elected members and the additions less the removals
+///     (`ElectedCharter::active_members`). A member asks to leave with a
+///     deletable `resignationRequest`, which only a member may file
+///     (`ownerRefersTo` with an `anyOf` of a `listElement` into the elected
+///     charter's `members` and a lookup of an `addedModerator`, items 33 to
+///     35) and which carries a message encrypted to the leader; the leader acts
+///     on it with a removal. The cap on
 ///     additions, the target's `maxAddedModerators`, is a consensus rule of the
 ///     seating pull request.
 ///     Its `byTargetContract` index is a contested unique index

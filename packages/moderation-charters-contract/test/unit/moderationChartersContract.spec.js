@@ -398,13 +398,40 @@ describe('Moderation Charters Contract', () => {
   describe('resignationRequest', () => {
     const rawResignation = async () => ({
       electedCharterId: await generateRandomIdentifier(),
+      recipientId: await generateRandomIdentifier(),
+      recipientKeyId: 3,
+      senderKeyId: 2,
+      // A 16-byte IV and two AES blocks.
+      encryptedMessage: crypto.randomBytes(48),
     });
 
     it('should be valid', async () => {
       expect(validate('resignationRequest', await rawResignation()).isValid()).to.be.true();
     });
 
-    expectRequired('resignationRequest', rawResignation, ['electedCharterId']);
+    it('should be deletable, which withdraws it', () => {
+      expect(moderationChartersContractDocumentsSchema.resignationRequest.canBeDeleted).to.be.true();
+    });
+
+    it('should let only a team member ask to leave', () => {
+      const { anyOf } = moderationChartersContractDocumentsSchema.resignationRequest.ownerRefersTo;
+
+      expect(anyOf.map(({ type, documentType }) => [type, documentType])).to.deep.equal([
+        ['listElement', 'electedCharter'],
+        ['permanentDocument', 'addedModerator'],
+      ]);
+    });
+
+    expectRequired('resignationRequest', rawResignation, ['electedCharterId', 'recipientId', 'recipientKeyId', 'senderKeyId', 'encryptedMessage']);
     expectNoAdditionalProperties('resignationRequest', rawResignation, 'memberId');
+
+    it('should refuse a message shorter than an IV and a block', async () => {
+      const raw = await rawResignation();
+      raw.encryptedMessage = crypto.randomBytes(31);
+
+      const error = expectJsonSchemaError(validate('resignationRequest', raw));
+
+      expect(error.keyword).to.equal('minItems');
+    });
   });
 });

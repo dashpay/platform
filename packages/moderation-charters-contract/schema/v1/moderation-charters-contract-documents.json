@@ -497,7 +497,30 @@
   "resignationRequest": {
     "type": "object",
     "documentsMutable": false,
-    "canBeDeleted": false,
+    "canBeDeleted": true,
+    "ownerRefersTo": {
+      "anyOf": [
+        {
+          "type": "listElement",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "electedCharterId": "$id"
+          },
+          "inList": "members"
+        },
+        {
+          "type": "permanentDocument",
+          "documentType": "addedModerator",
+          "lookup": {
+            "index": "byElectedCharterMember",
+            "keys": {
+              "electedCharterId": "electedCharterId",
+              "memberId": "."
+            }
+          }
+        }
+      ]
+    },
     "indices": [
       {
         "name": "byElectedCharterOwner",
@@ -521,16 +544,74 @@
         "contentMediaType": "application/x.dash.dpp.identifier",
         "refersTo": {
           "type": "permanentDocument",
-          "documentType": "electedCharter"
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "recipientId": "$ownerId"
+          }
         },
         "position": 0
+      },
+      "recipientId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "identityPublicKey",
+          "keyIdProperty": "recipientKeyId",
+          "keyRequirements": {
+            "purpose": "decryption",
+            "boundTo": "submittedCharter"
+          }
+        },
+        "description": "The leader",
+        "position": 1
+      },
+      "recipientKeyId": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295,
+        "position": 2
+      },
+      "senderKeyId": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295,
+        "refersTo": {
+          "type": "identityPublicKey",
+          "identityProperty": "$ownerId",
+          "keyRequirements": {
+            "purpose": "encryption",
+            "boundTo": "joinRequest"
+          }
+        },
+        "position": 3
+      },
+      "encryptedMessage": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 1040,
+        "encryptedFor": {
+          "recipient": "recipientId",
+          "recipientKey": "recipientKeyId",
+          "senderKey": "senderKeyId",
+          "scheme": "ecdh-secp256k1-aes256-cbc"
+        },
+        "description": "Why the member leaves, readable by the leader only",
+        "position": 4
       }
     },
     "required": [
       "$createdAt",
-      "electedCharterId"
+      "electedCharterId",
+      "recipientId",
+      "recipientKeyId",
+      "senderKeyId",
+      "encryptedMessage"
     ],
     "additionalProperties": false,
-    "description": "A member leaving the team; takes effect when filed"
+    "description": "A member asking to leave; the leader removes them, and deleting it withdraws the request"
   }
 }

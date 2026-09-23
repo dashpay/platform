@@ -14,10 +14,11 @@
 //!   that asked to join it. Creating one opens or joins the contest for the target contract;
 //! - once a charter is seated, its leader may add members from the same join requests, up to
 //!   the target's `maxAddedModerators` (`addedModerator`), and remove members
-//!   (`removedModerator`), and a member may leave on its own (`resignationRequest`).
+//!   (`removedModerator`); a member asks to leave with a `resignationRequest`, which the
+//!   leader acts on with a removal and the member withdraws by deleting it.
 //!
 //! The team that acts is the leader plus [`ElectedCharter::active_members`]: the elected
-//! members and the additions, less the removals and the resignations.
+//! members and the additions, less the removals.
 //!
 //! The schema carries almost every rule through its keywords (references, lookups, key
 //! requirements, `distinctFrom`). What it cannot say is here: [`SubmittedCharter`] and
@@ -55,7 +56,7 @@ pub const ELECTED_CHARTER_DOCUMENT_TYPE_NAME: &str = "electedCharter";
 pub const ADDED_MODERATOR_DOCUMENT_TYPE_NAME: &str = "addedModerator";
 /// The name of the document type of a member the leader removes.
 pub const REMOVED_MODERATOR_DOCUMENT_TYPE_NAME: &str = "removedModerator";
-/// The name of the document type of a member leaving the team on its own.
+/// The name of the document type of a member asking to leave the team.
 pub const RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME: &str = "resignationRequest";
 
 /// The moderators share a proposal takes when it declares none: the full declared fee.
@@ -306,23 +307,21 @@ impl SubmittedCharter {
 
 impl ElectedCharter {
     /// The members a seated team acts with besides its leader, `leader_id`: the elected
-    /// members and those the leader added after the election, less those the leader removed
-    /// and those who resigned. `added`, `removed` and `resigned` are the `memberId`s of the
-    /// charter's `addedModerator` and `removedModerator` documents and the owners of its
-    /// `resignationRequest` documents. A removal and a resignation are final, so the order
-    /// the documents were filed in does not matter. The leader is never among the result:
-    /// neither list may name it, and its own resignation does not remove it (leader
-    /// succession is not a resignation).
+    /// members and those the leader added after the election, less those the leader removed.
+    /// `added` and `removed` are the `memberId`s of the charter's `addedModerator` and
+    /// `removedModerator` documents. A removal is final, so the order the documents were
+    /// filed in does not matter. A `resignationRequest` changes nothing by itself: the leader
+    /// acts on it with a removal. The leader is never among the result: neither list may
+    /// name it.
     pub fn active_members<'a>(
         &self,
         leader_id: Identifier,
         added: impl IntoIterator<Item = &'a Identifier>,
         removed: impl IntoIterator<Item = &'a Identifier>,
-        resigned: impl IntoIterator<Item = &'a Identifier>,
     ) -> BTreeSet<Identifier> {
         let mut active: BTreeSet<Identifier> = self.members.iter().copied().collect();
         active.extend(added.into_iter().copied());
-        for gone in removed.into_iter().chain(resigned) {
+        for gone in removed {
             active.remove(gone);
         }
         active.remove(&leader_id);
