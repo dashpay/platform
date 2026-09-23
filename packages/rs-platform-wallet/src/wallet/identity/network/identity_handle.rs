@@ -116,13 +116,14 @@ pub fn identity_auth_derivation_path_for_type(
     ]))
 }
 
-/// A DashPay Connect key: the DIP-13 application sub-features (dashpay/dips#191), whose paths
-/// key-wallet builds. Identity, request and contract ids are DIP-14 256-bit children, so two
-/// devices restored from one seed derive the same key without coordination.
+/// A DashPay Connect key: the DIP-13 application sub-features
+/// (dashpay/dips#191), whose paths key-wallet builds. Identity, request and
+/// contract ids are DIP-14 256-bit children, so two devices restored from
+/// one seed derive the same key without coordination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectKey {
     /// `m/9'/coin'/5'/6'/0'/identity_id'/request_id'`; `request_id` is
-    /// `hash256` of the app's request public key.
+    /// `hash256` of the app's ephemeral public key.
     SessionAuthentication {
         identity_id: Identifier,
         request_id: [u8; 32],
@@ -162,9 +163,9 @@ impl ConnectKey {
     }
 }
 
-/// Derive the ECDSA secp256k1 keypair of `key` from a master xpriv. Pure, like
-/// [`derive_ecdsa_identity_auth_keypair_from_master`], so it works for watch-only wallets whose
-/// seed the FFI resolves on demand.
+/// Derive the ECDSA secp256k1 keypair of `key` from a master xpriv. Pure,
+/// like [`derive_ecdsa_identity_auth_keypair_from_master`], so it works for
+/// watch-only wallets whose seed the FFI resolves on demand.
 pub fn derive_connect_keypair_from_master(
     master: &ExtendedPrivKey,
     network: key_wallet::Network,

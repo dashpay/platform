@@ -674,10 +674,10 @@ class PlatformWalletManager(
      * from the wallet's seed, resolved through the mnemonic resolver — the
      * Android analog of Swift's `deriveConnectKey(subFeature:identityId:leaf:purpose:)`.
      * [identityId] and [leaf] are DIP-14 256-bit hardened children, so no
-     * wallet-local counter is an input; [purpose], when given, appends one
-     * more hardened child (the encryption sub-feature splits its pair with
-     * [ConnectKeyPurpose.ENCRYPTION] / [ConnectKeyPurpose.DECRYPTION]; the
-     * authentication sub-feature passes null, meaning no purpose level).
+     * wallet-local counter is an input. [ConnectSubFeature.APP_ENCRYPTION]
+     * requires a [purpose], which picks the half of its pair;
+     * [ConnectSubFeature.SESSION_AUTHENTICATION] requires null. Any other
+     * combination throws.
      *
      * @return `(privateKey(32), publicKey(33))`. Caller zeroes the private half.
      */
