@@ -735,6 +735,38 @@ mod tests {
         );
     }
 
+    /// A direct purchase whose agreed price ceiling is `u64::MAX`: the blob carries the full
+    /// unsigned value, which the Kotlin reader must not see as a negative `Long`.
+    #[test]
+    fn max_price_purchase_blob_carries_the_unsigned_price() {
+        let bytes = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([0x21; 32]),
+            transitions: vec![BatchedTransition::Token(TokenTransition::DirectPurchase(
+                TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
+                    base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                        identity_contract_nonce: 4,
+                        token_contract_position: 3,
+                        data_contract_id: Identifier::from([0x42; 32]),
+                        token_id: Identifier::from([0x77; 32]),
+                        using_group_info: None,
+                    }),
+                    token_count: u64::MAX,
+                    total_agreed_price: u64::MAX,
+                }),
+            ))],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::new(vec![]),
+        }))
+        .serialize_to_bytes()
+        .expect("fixture batch serializes");
+        let blob = parse_to_blob(&bytes);
+        assert_eq!(
+            blob, MAX_PRICE_PURCHASE_GOLDEN,
+            "max-price blob drifted from the golden shared with StateTransitionParserTest"
+        );
+    }
+
     /// The checked-in golden blobs, shared byte-for-byte with the Kotlin
     /// decoder test (`StateTransitionParserTest`). Referenced from the single
     /// canonical copy in the Kotlin SDK's test resources so the two cannot
@@ -750,5 +782,9 @@ mod tests {
     const MIXED_BATCH_GOLDEN: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../kotlin-sdk/sdk/src/test/resources/golden/parsed_mixed_batch_v1.bin"
+    ));
+    const MAX_PRICE_PURCHASE_GOLDEN: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/test/resources/golden/parsed_max_price_purchase_v1.bin"
     ));
 }
