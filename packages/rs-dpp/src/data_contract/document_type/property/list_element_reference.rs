@@ -29,17 +29,16 @@
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
+use crate::data_contract::document_type::property::{
+    DocumentPropertyType, DocumentReferenceDeclaration,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::{Identifier, Value};
 use serde::Serialize;
-use std::collections::BTreeMap;
-
-/// The longest `documentProperty` or `list` path a declaration may name, the
-/// bound meta-schema v3 puts on property paths.
-pub const MAX_LIST_ELEMENT_PATH_LENGTH: usize = 256;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A `refersTo: listElement` declaration: the value (or each element of a
 /// typed array) must be an element of the typed array `list` of the
@@ -60,40 +59,21 @@ pub struct ListElementReference {
 }
 
 impl ListElementReference {
-    /// The contract holding the list's document type: the one
-    /// `document_property`'s `permanentDocument` reference in `declaring`
-    /// names, `declaring_contract_id` when it names none. `None` when that
-    /// property carries no such reference, which registration refuses (see
-    /// [`Self::referring_side_error`]).
-    pub fn list_contract_id(
+    /// The `permanentDocument` reference `document_property` carries in
+    /// `declaring`, the one whose document holds the list, or why it carries
+    /// none that can: `document_property` must be an identifier property of
+    /// the declaring type (not a typed array: one document holds the list)
+    /// carrying a `permanentDocument` reference, by id or through a `lookup`,
+    /// to `document_type_name`. Registration refuses a declaration for which
+    /// this is an error (see [`Self::referring_side_error`]); write-time
+    /// validation reads the reference through it.
+    pub fn document_property_declaration<'a>(
         &self,
-        declaring: DocumentTypeRef,
-        declaring_contract_id: Identifier,
-    ) -> Option<Identifier> {
-        let property = declaring
-            .flattened_properties()
-            .get(&self.document_property)?;
-        let DocumentPropertyType::IdentifierWithReference(target) = &property.property_type else {
-            return None;
-        };
-        let declaration = target.as_any_document_reference()?;
-        (declaration.permanent && declaration.document_type_name == self.document_type_name)
-            .then(|| declaration.contract_id.unwrap_or(declaring_contract_id))
-    }
-
-    /// Why the referring side of this declaration, on a property of
-    /// `declaring`, cannot name the document holding the list; `None` when
-    /// it can. `document_property` must be an identifier property of the
-    /// declaring type (not a typed array: one document holds the list)
-    /// carrying a `permanentDocument` reference, by id or through a
-    /// `lookup`, to `document_type_name`, and it must be stored (not
-    /// transient), so a reader can tell from the stored document which list
-    /// the value was checked against. It may be optional: a value set while
-    /// it is not is refused when the document is written.
-    pub fn referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
+        declaring: &'a DocumentTypeRef<'_>,
+    ) -> Result<DocumentReferenceDeclaration<'a>, String> {
         let document_property = &self.document_property;
         let Some(property) = declaring.flattened_properties().get(document_property) else {
-            return Some(format!(
+            return Err(format!(
                 "documentProperty \"{document_property}\" is not a property of the referring \
                  document type"
             ));
@@ -105,20 +85,51 @@ impl ListElementReference {
             _ => None,
         };
         let Some(declaration) = declaration.filter(|declaration| declaration.permanent) else {
-            return Some(format!(
+            return Err(format!(
                 "documentProperty \"{document_property}\" must be an identifier property \
                  carrying a permanentDocument refersTo: the list is read from the document it \
                  refers to, which must never be deleted"
             ));
         };
         if declaration.document_type_name != self.document_type_name {
-            return Some(format!(
+            return Err(format!(
                 "documentProperty \"{document_property}\" refers to document type \"{}\", not \
                  \"{}\"",
                 declaration.document_type_name, self.document_type_name
             ));
         }
-        if declaring.transient_fields().contains(document_property) {
+        Ok(declaration)
+    }
+
+    /// The contract holding the list's document type: the one
+    /// `document_property`'s `permanentDocument` reference in `declaring`
+    /// names, `declaring_contract_id` when it names none. `None` when that
+    /// property carries no such reference (see
+    /// [`Self::document_property_declaration`]).
+    pub fn list_contract_id(
+        &self,
+        declaring: DocumentTypeRef,
+        declaring_contract_id: Identifier,
+    ) -> Option<Identifier> {
+        self.document_property_declaration(&declaring)
+            .ok()
+            .map(|declaration| declaration.contract_id.unwrap_or(declaring_contract_id))
+    }
+
+    /// Why the referring side of this declaration, on a property of
+    /// `declaring`, cannot name the document holding the list; `None` when
+    /// it can. `document_property` must carry the reference
+    /// [`Self::document_property_declaration`] describes, and be stored (it
+    /// and every object around it not transient), so a reader can tell from
+    /// the stored document which list the value was checked against. It may
+    /// be optional: a value set while it is not is refused when the document
+    /// is written.
+    pub fn referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
+        if let Err(reason) = self.document_property_declaration(&declaring) {
+            return Some(reason);
+        }
+        let document_property = &self.document_property;
+        if is_transient(declaring, document_property) {
             return Some(format!(
                 "documentProperty \"{document_property}\" is transient: the stored document must \
                  name the document whose list the value was checked against"
@@ -129,14 +140,11 @@ impl ListElementReference {
 
     /// Why `referenced`, the document type `document_property` refers to,
     /// cannot hold the list; `None` when it can. Its documents must never be
-    /// deleted, `list` must be a stored typed array of identifiers of it,
-    /// and the list must be fixed once a document is written: the type is
-    /// immutable (`documentsMutable: false`) or lists the list's top-level
-    /// property under `immutable` (an `immutableAllowSetting` entry can only
-    /// be set on a document that has no value for it, against which no
-    /// value was ever accepted). Every flag read here is immutable on
-    /// contract update and the `immutable` list may only grow, so the answer
-    /// holds for good, and a value accepted once stays an element.
+    /// deleted, `list` must be a stored typed array of identifiers of it (it
+    /// and every object around it not transient), and the list must be fixed
+    /// once a document is written (see `schema_property_is_fixed_once_written`,
+    /// the rule a lookup's key parts are judged by), so a value accepted once
+    /// stays an element.
     pub fn referenced_side_error(&self, referenced: DocumentTypeRef) -> Option<String> {
         let referenced_name = referenced.name();
         let list = &self.list;
@@ -163,13 +171,13 @@ impl ListElementReference {
                 "\"{list}\" of \"{referenced_name}\" is not a typed array of identifiers"
             ));
         }
-        if referenced.transient_fields().contains(list) {
+        if is_transient(referenced, list) {
             return Some(format!(
                 "\"{list}\" of \"{referenced_name}\" is transient, so no stored document holds it"
             ));
         }
-        let top_level = list.split('.').next().unwrap_or(list);
-        if referenced.documents_mutable() && !referenced.immutable_fields().contains(top_level) {
+        if !schema_property_is_fixed_once_written(referenced, list) {
+            let top_level = list.split('.').next().unwrap_or(list);
             return Some(format!(
                 "\"{list}\" of \"{referenced_name}\" can be changed by a replace: the list must \
                  be fixed once the document is written, so a value accepted as an element stays \
@@ -179,21 +187,32 @@ impl ListElementReference {
         None
     }
 
-    /// Whether `value` is an element of the list held by the referenced
-    /// document whose properties are `referenced_properties`. An absent
-    /// list holds nothing. A scan of at most the list's `maxItems` elements.
-    pub fn is_listed_in(
+    /// The identifiers the list holds on the referenced document whose
+    /// properties are `referenced_properties`, collected once so each value
+    /// checked against them is a set lookup rather than a scan of the list.
+    /// An absent list holds nothing.
+    pub fn listed_values(
         &self,
         referenced_properties: &BTreeMap<String, Value>,
-        value: &[u8; 32],
-    ) -> bool {
+    ) -> BTreeSet<[u8; 32]> {
         match referenced_properties.get_optional_at_path(&self.list) {
             Ok(Some(Value::Array(elements))) => elements
                 .iter()
-                .any(|element| element.to_hash256().is_ok_and(|element| &element == value)),
-            _ => false,
+                .filter_map(|element| element.to_hash256().ok())
+                .collect(),
+            _ => BTreeSet::new(),
         }
     }
+}
+
+/// Whether the property at `path` of `document_type`, or an object around it,
+/// is transient: either way its value is never stored.
+fn is_transient(document_type: DocumentTypeRef, path: &str) -> bool {
+    let transient_fields = document_type.transient_fields();
+    path.match_indices('.')
+        .map(|(end, _)| &path[..end])
+        .chain(std::iter::once(path))
+        .any(|prefix| transient_fields.contains(prefix))
 }
 
 impl std::fmt::Display for ListElementReference {

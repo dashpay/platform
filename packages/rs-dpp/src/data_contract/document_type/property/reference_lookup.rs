@@ -358,11 +358,8 @@ impl DocumentReferenceLookup {
                 TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
                     changes_owner.then_some("a transfer or a purchase changes")
                 }
-                property => {
-                    let top_level = property.split('.').next().unwrap_or(property);
-                    (replaceable && !referenced.immutable_fields().contains(top_level))
-                        .then_some("a replace can change")
-                }
+                property => (!schema_property_is_fixed_once_written(referenced, property))
+                    .then_some("a replace can change"),
             };
             why.map(|why| (index_property.as_str(), why))
         })
@@ -398,6 +395,22 @@ impl DocumentReferenceLookup {
             })
             .collect()
     }
+}
+
+/// Whether the schema property at `path` of a document of `document_type` can
+/// never change once the document is written: the type is immutable
+/// (`documentsMutable: false`), or the property's top-level property is listed
+/// under `immutable`. An `immutableAllowSetting` entry can only be set on a
+/// document that has no value for it yet, so a value read once stays. Both
+/// flags are immutable on contract update and the `immutable` list may only
+/// grow, so the answer holds for good. The one rule both a lookup's key parts
+/// and a list element's list are judged by.
+pub(crate) fn schema_property_is_fixed_once_written(
+    document_type: DocumentTypeRef,
+    path: &str,
+) -> bool {
+    let top_level = path.split('.').next().unwrap_or(path);
+    !document_type.documents_mutable() || document_type.immutable_fields().contains(top_level)
 }
 
 /// The kind of value an index property of `document_type` holds: a system

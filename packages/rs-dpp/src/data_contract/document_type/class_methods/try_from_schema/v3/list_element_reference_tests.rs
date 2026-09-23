@@ -324,6 +324,57 @@ fn should_refuse_a_transient_document_property() {
     );
 }
 
+/// An object listed as transient is never stored, and neither is anything in
+/// it, on either side of the declaration.
+#[test]
+fn should_refuse_a_document_property_or_a_list_inside_a_transient_object() {
+    let seats = json!({
+        "type": "object",
+        "properties": { "members": identifier_list(0, 15, None) },
+        "additionalProperties": false,
+        "position": 4
+    });
+    let meta = json!({
+        "type": "object",
+        "properties": {
+            "charterId": identifier_referring_to(
+                0,
+                json!({ "type": "permanentDocument", "documentType": "electedCharter" })
+            )
+        },
+        "additionalProperties": false,
+        "position": 7
+    });
+    let with_objects = |refers_to: serde_json::Value| {
+        let mut schema = charter_contract(refers_to);
+        schema["documentSchemas"]["electedCharter"]["properties"]["seats"] = seats.clone();
+        schema["documentSchemas"]["resignation"]["properties"]["meta"] = meta.clone();
+        schema
+    };
+
+    // Stored, the nested paths are accepted
+    contract(with_objects(list_element(
+        "meta.charterId",
+        "seats.members",
+    )))
+    .expect("nested stored paths are accepted");
+
+    let mut transient_document_property =
+        with_objects(list_element("meta.charterId", "seats.members"));
+    transient_document_property["documentSchemas"]["resignation"]["transient"] = json!(["meta"]);
+    assert_refused(
+        contract(transient_document_property),
+        "documentProperty \"meta.charterId\" is transient",
+    );
+
+    let mut transient_list = with_objects(list_element("meta.charterId", "seats.members"));
+    transient_list["documentSchemas"]["electedCharter"]["transient"] = json!(["seats"]);
+    assert_refused(
+        contract(transient_list),
+        "\"seats.members\" of \"electedCharter\" is transient",
+    );
+}
+
 #[test]
 fn should_refuse_a_list_that_is_missing_or_not_a_typed_array_of_identifiers() {
     for (list, fragment) in [
@@ -564,16 +615,19 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
     .into_btree_string_map()
     .expect("a map");
 
-    assert!(reference.is_listed_in(&properties, &listed));
-    assert!(!reference.is_listed_in(&properties, &unlisted));
+    let listed_values = reference.listed_values(&properties);
+    assert!(listed_values.contains(&listed));
+    assert!(!listed_values.contains(&unlisted));
+    assert_eq!(listed_values.len(), 2);
     // An absent list holds nothing
-    assert!(!reference.is_listed_in(&Default::default(), &listed));
-    assert!(!reference.is_listed_in(
-        &platform_value::platform_value!({ "seats": {} })
-            .into_btree_string_map()
-            .expect("a map"),
-        &listed
-    ));
+    assert!(reference.listed_values(&Default::default()).is_empty());
+    assert!(reference
+        .listed_values(
+            &platform_value::platform_value!({ "seats": {} })
+                .into_btree_string_map()
+                .expect("a map")
+        )
+        .is_empty());
     assert_eq!(
         DocumentPropertyReferenceTarget::ListElement(reference).to_string(),
         "list element (seats.members of the electedCharter document electedCharterId refers to)"

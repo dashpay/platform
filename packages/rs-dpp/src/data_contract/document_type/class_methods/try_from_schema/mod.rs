@@ -2,7 +2,6 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
-use crate::data_contract::document_type::list_element_reference::MAX_LIST_ELEMENT_PATH_LENGTH;
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
@@ -1064,10 +1063,10 @@ fn parse_list_element_reference(
         let path = refers_to_map
             .get_str(keyword)
             .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-        if path.is_empty() || path.len() > MAX_LIST_ELEMENT_PATH_LENGTH || path.starts_with('$') {
+        if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH || path.starts_with('$') {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "listElement refersTo {keyword} must be a property path of 1 to \
-                 {MAX_LIST_ELEMENT_PATH_LENGTH} characters"
+                 {MAX_PROPERTY_PATH_LENGTH} characters"
             )));
         }
         Ok(path.to_string())
@@ -1085,11 +1084,11 @@ fn parse_list_element_reference(
 /// stored identifier property carrying a `permanentDocument` reference to the
 /// declared document type. See [`ListElementReference::referring_side_error`].
 ///
-/// Full validation only (registration), like the meta-schema: a contract read
-/// back from state passed it when it was written, and the write-time check
-/// refuses a value whose `documentProperty` finds no document rather than
-/// relying on it. Generation 3 is the only parser admitting `refersTo` at all.
-#[cfg(feature = "validation")]
+/// Full validation only (registration), like the meta-schema, but in every
+/// build: a contract read back from state passed it when it was written, and
+/// the write-time check refuses a value whose `documentProperty` finds no
+/// document rather than relying on it. Generation 3 is the only parser
+/// admitting `refersTo` at all.
 pub(super) fn validate_list_element_sources(
     document_type: DocumentTypeRef,
     document_type_name: &str,

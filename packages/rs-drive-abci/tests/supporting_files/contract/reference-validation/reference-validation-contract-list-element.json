@@ -35,6 +35,27 @@
           "type": "string",
           "maxLength": 63,
           "position": 2
+        },
+        "seats": {
+          "type": "object",
+          "properties": {
+            "members": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 15,
+              "uniqueItems": true,
+              "items": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+              },
+              "position": 0
+            }
+          },
+          "additionalProperties": false,
+          "position": 3
         }
       },
       "indices": [
@@ -43,6 +64,18 @@
           "properties": [
             {
               "submittedCharterId": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "bySubmittedCharterOwner",
+          "properties": [
+            {
+              "submittedCharterId": "asc"
+            },
+            {
+              "$ownerId": "asc"
             }
           ],
           "unique": true
@@ -140,9 +173,86 @@
           "type": "string",
           "maxLength": 63,
           "position": 5
+        },
+        "charterKey": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 6
+        },
+        "ownedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 7,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "electedCharter",
+            "lookup": {
+              "index": "bySubmittedCharterOwner",
+              "keys": {
+                "submittedCharterId": "charterKey",
+                "$ownerId": "."
+              }
+            }
+          }
+        },
+        "ownedCharterMemberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 8,
+          "refersTo": {
+            "type": "listElement",
+            "documentType": "electedCharter",
+            "documentProperty": "ownedCharterId",
+            "list": "members"
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "charterId": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "contentMediaType": "application/x.dash.dpp.identifier",
+              "position": 0,
+              "refersTo": {
+                "type": "permanentDocument",
+                "documentType": "electedCharter"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "position": 9
+        },
+        "metaMemberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 10,
+          "refersTo": {
+            "type": "listElement",
+            "documentType": "electedCharter",
+            "documentProperty": "meta.charterId",
+            "list": "seats.members"
+          }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "required": [
+        "charterKey"
+      ]
     }
   }
 }

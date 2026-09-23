@@ -783,13 +783,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validation (generation 0, reached only from this version) checks every
 ///     list element once the other references are validated, against the
 ///     document `documentProperty`'s own reference fetched, so it adds no
-///     read (a scan of at most the list's `maxItems` identifiers); a value
+///     read (the list is collected once, each value a set lookup); a value
 ///     the list does not hold, or one set while `documentProperty` is not,
 ///     refuses the write with `ReferencedEntityNotFoundError` (40120, the
 ///     list element declaration as its entity type, an element named by its
-///     list path). A replace re-validates a list element when its value or
-///     `documentProperty` changed, and validates `documentProperty`'s
-///     reference with it. Each value counts against
+///     list path). A replace checks a list element again when its value
+///     changed, or when `documentProperty` may find another document (it, or
+///     a property its lookup key reads, changed), then every value; when
+///     `documentProperty`'s reference is left alone the list's document is
+///     fetched without judging that reference again. Each value counts against
 ///     `SystemLimits::max_references_per_document` like every other
 ///     reference. A changed `listElement` is an incompatible schema change on
 ///     update.

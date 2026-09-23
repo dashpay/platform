@@ -5,8 +5,11 @@
 //! (`electedCharterId`), and `memberId` must be one of that charter's
 //! members; each of `witnesses`, a typed array, must be too. `lookedUpMemberId`
 //! reads its list through `lookedUpCharterId`, which finds the charter through a
-//! unique index rather than by id. The second contract's `ballot` does the
-//! same with a charter of the first contract.
+//! unique index rather than by id, and `ownedCharterMemberId` through
+//! `ownedCharterId`, a lookup keyed by the charter's owner and the
+//! resignation's `charterKey`. `metaMemberId` reads the charter's nested
+//! `seats.members` through the nested `meta.charterId`. The second contract's
+//! `ballot` does the same with a charter of the first contract.
 //!
 //! A value the list does not hold is refused, paid, with
 //! `ReferencedEntityNotFoundError` (40120) naming the property, or the element
@@ -291,6 +294,10 @@ mod list_element_reference_tests {
                     &[
                         ("submittedCharterId", id_value(submitted_charter_id)),
                         ("members", ids(members)),
+                        (
+                            "seats",
+                            Value::Map(vec![(Value::Text("members".to_string()), ids(members))]),
+                        ),
                     ],
                 )
                 .await;
@@ -520,6 +527,82 @@ mod list_element_reference_tests {
             ])
             .await;
         assert_not_listed(unlisted, "lookedUpMemberId", stranger);
+    }
+
+    /// A replace that moves `ownedCharterId`'s lookup onto another charter
+    /// (its key reads `charterKey`, which the replace changes) checks the list
+    /// element again against the other charter's list, though neither the
+    /// value nor `ownedCharterId` itself changed.
+    #[tokio::test]
+    async fn should_check_a_list_element_again_when_a_lookup_key_moves_its_charter() {
+        let mut fixture = ListElementFixture::new();
+        let founder = fixture.id(Who::Founder);
+        let member = fixture.id(Who::Member);
+        let stranger = fixture.id(Who::Stranger);
+        fixture
+            .seat_charter(submitted_charter_id(1), &[member])
+            .await;
+        fixture
+            .seat_charter(submitted_charter_id(2), &[stranger])
+            .await;
+
+        // Both charters are the founder's: `charterKey` picks one
+        let (resignation, result) = fixture
+            .resign(&[
+                ("charterKey", id_value(submitted_charter_id(1))),
+                ("ownedCharterId", id_value(founder)),
+                ("ownedCharterMemberId", id_value(member)),
+            ])
+            .await;
+        assert_succeeded(result);
+
+        let (_, moved) = fixture
+            .replace("resignation", &resignation, |resignation| {
+                resignation.set("charterKey", id_value(submitted_charter_id(2)));
+            })
+            .await;
+        assert_not_listed(moved, "ownedCharterMemberId", member);
+    }
+
+    /// `metaMemberId` reads `seats.members` through `meta.charterId`: nested
+    /// paths on both sides, and a replace of the whole `meta` object moves it.
+    #[tokio::test]
+    async fn should_read_a_nested_list_through_a_nested_document_property() {
+        let mut fixture = ListElementFixture::new();
+        let member = fixture.id(Who::Member);
+        let stranger = fixture.id(Who::Stranger);
+        let charter = fixture
+            .seat_charter(submitted_charter_id(1), &[member])
+            .await;
+        let other_charter = fixture
+            .seat_charter(submitted_charter_id(2), &[stranger])
+            .await;
+        let meta = |charter: Identifier| {
+            Value::Map(vec![(
+                Value::Text("charterId".to_string()),
+                id_value(charter),
+            )])
+        };
+
+        let (_, unlisted) = fixture
+            .resign(&[
+                ("meta", meta(charter)),
+                ("metaMemberId", id_value(stranger)),
+            ])
+            .await;
+        assert_not_listed(unlisted, "metaMemberId", stranger);
+
+        let (resignation, listed) = fixture
+            .resign(&[("meta", meta(charter)), ("metaMemberId", id_value(member))])
+            .await;
+        assert_succeeded(listed);
+
+        let (_, moved) = fixture
+            .replace("resignation", &resignation, |resignation| {
+                resignation.set("meta", meta(other_charter));
+            })
+            .await;
+        assert_not_listed(moved, "metaMemberId", member);
     }
 
     /// A list in another contract is read from that contract's document.
