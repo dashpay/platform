@@ -103,6 +103,10 @@ impl ContractModerators {
     /// Whether `identity_id` may moderate a contract owned by `owner_id`. Under an elected
     /// declaration, whether it may during the interim: the owner alone, the owner and the
     /// appointed interim set, or nobody, the moderated types unusable or unmoderated meanwhile.
+    ///
+    /// Once a charter is seated on an elected contract its team moderates instead, and the
+    /// interim moderators no longer may. Who is on the team is read from the moderation
+    /// charters contract, so that is decided where state is read, not here.
     pub fn may_moderate(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
         match self {
             ContractModerators::ContractOwner | ContractModerators::AppointedModerators(_) => {
@@ -117,6 +121,9 @@ impl ContractModerators {
     /// Whether `identity_id` is protected from moderation on a contract owned by `owner_id`:
     /// it can be neither banned nor suspended, and its documents can not be deleted. Whoever
     /// may moderate is, and so is the owner of an elected contract whose declaration says so.
+    /// Under an elected declaration this is the interim's protection; once a charter is
+    /// seated, the leader and the active members of its team are protected instead, with the
+    /// owner when the declaration says so, as state says.
     pub fn protects(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
         self.may_moderate(owner_id, identity_id)
             || (owner_id == identity_id
@@ -125,9 +132,9 @@ impl ContractModerators {
                     .is_some_and(|elected| elected.owner_protected))
     }
 
-    /// Whether every document transition of the document type is refused: an elected
-    /// declaration in its interim with nobody moderating blocks its moderated types until a
-    /// team is seated.
+    /// Whether every document transition of the document type is refused while no team is
+    /// seated: an elected declaration in its interim with nobody moderating blocks its
+    /// moderated types until one is. Whether one is, is state's to say.
     pub fn interim_blocks_document_type(&self, document_type_name: &str) -> bool {
         self.elected()
             .is_some_and(|elected| elected.interim_blocks_document_type(document_type_name))

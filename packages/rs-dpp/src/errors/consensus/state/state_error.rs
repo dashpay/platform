@@ -12,7 +12,8 @@ use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
-    ContractModeratedDocumentTypeNotYetUsableError,
+    ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
+    ModerationCharterAddedModeratorLimitReachedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
@@ -35,6 +36,7 @@ use crate::consensus::state::data_contract::data_contract_config_update_error::D
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use crate::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
 use crate::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use crate::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -602,6 +604,18 @@ pub enum StateError {
     // References to an element of a list of a referenced document (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentListInvalidError(ReferencedDocumentListInvalidError),
+
+    // Elected moderation teams moderating from their seated charter (protocol version 14).
+    #[error(transparent)]
+    ContractModerationAbilityNotGrantedError(ContractModerationAbilityNotGrantedError),
+
+    #[error(transparent)]
+    ModerationCharterAddedModeratorLimitReachedError(
+        ModerationCharterAddedModeratorLimitReachedError,
+    ),
+
+    #[error(transparent)]
+    DocumentActionFeeModeratorsShareMismatchError(DocumentActionFeeModeratorsShareMismatchError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -615,7 +629,7 @@ mod tests {
     use super::*;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
-    use crate::data_contract::config::moderation::ContractModerationList;
+    use crate::data_contract::config::moderation::{ContractModerationList, ModerationAbility};
     use crate::data_contract::document_type::action_fees::agreement::{
         AgreedFeeMultiplier, DocumentActionFeeAgreement,
     };
@@ -1213,8 +1227,7 @@ mod tests {
             )),
             145
         );
-        // References to an element of a list of a referenced document (protocol version
-        // 14): the tail of the enum.
+        // References to an element of a list of a referenced document (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentListInvalidError(
                 ReferencedDocumentListInvalidError::new(
@@ -1224,6 +1237,38 @@ mod tests {
                 )
             )),
             146
+        );
+        // Elected moderation teams moderating from their seated charter (protocol version
+        // 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationAbilityNotGrantedError(
+                ContractModerationAbilityNotGrantedError::new(
+                    group_id,
+                    ModerationAbility::DeleteDocuments,
+                    Some("post".to_string()),
+                )
+            )),
+            147
+        );
+        assert_eq!(
+            discriminant_of(
+                StateError::ModerationCharterAddedModeratorLimitReachedError(
+                    ModerationCharterAddedModeratorLimitReachedError::new(group_id, identity_id, 2)
+                )
+            ),
+            148
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeModeratorsShareMismatchError(
+                DocumentActionFeeModeratorsShareMismatchError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    100,
+                    50,
+                    Some(60),
+                )
+            )),
+            149
         );
     }
 }

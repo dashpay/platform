@@ -1,7 +1,8 @@
 use super::{
-    property_names, validate_submitted_charter, ElectedCharter, ModerationCharterRewardSplit,
-    SubmittedCharter, FULL_MODERATORS_SHARE,
+    moderators_share_of, property_names, validate_submitted_charter, ElectedCharter,
+    ModerationCharterRewardSplit, SubmittedCharter, FULL_MODERATORS_SHARE,
 };
+use crate::balances::credits::MAX_CREDITS;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use platform_value::{Identifier, Value};
@@ -238,4 +239,25 @@ fn should_combine_the_elected_members_the_additions_and_the_removals() {
         charter.active_members(leader, &[leader], &[]),
         [id(2), id(3), id(4)].into()
     );
+}
+
+#[test]
+fn should_take_the_share_of_the_declared_moderators_part_rounded_down() {
+    assert_eq!(moderators_share_of(100_000_000, 60), 60_000_000);
+    assert_eq!(
+        moderators_share_of(100_000_000, FULL_MODERATORS_SHARE),
+        100_000_000
+    );
+    assert_eq!(moderators_share_of(100_000_000, 0), 0);
+    // 33% of 1001 credits is 330.33 credits: the team charges 330, never a fraction.
+    assert_eq!(moderators_share_of(1_001, 33), 330);
+    assert_eq!(moderators_share_of(1, 99), 0);
+    // The largest declarable amount does not overflow.
+    assert_eq!(
+        moderators_share_of(MAX_CREDITS, FULL_MODERATORS_SHARE),
+        MAX_CREDITS
+    );
+    assert_eq!(moderators_share_of(MAX_CREDITS, 50), MAX_CREDITS / 2);
+    // A share over 100 is refused by the schema; one that got through never raises the amount.
+    assert_eq!(moderators_share_of(1_000, 150), 1_000);
 }

@@ -22,6 +22,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::seated_moderation_charter::fetch_seated_moderation_charter;
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
 use crate::platform_types::platform::PlatformStateRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -170,6 +171,41 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
                 )?;
                 execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
                 action.set_action_fee_multiplier_permille(Some(multiplier));
+            }
+        }
+
+        // A discounted moderators part (decentralized moderation teams): a transition on a
+        // document type an elected contract moderates may agree to less than the declared
+        // moderators part, and is judged against the share of the contract's seated charter.
+        // That share is read here, billed, once per contract, only for a transition that asks
+        // for less: an agreement to the declared amounts reads nothing. What is read is a
+        // charter lookup through the charter contract's `byTargetContract` index and a fetch of
+        // the proposal it runs on, which carries the share. The agreement is judged against it
+        // by advanced structure validation, and again on every recheck, which transforms anew.
+        if let Some(action) = validation_result.data.as_mut() {
+            let contract_ids = action.contracts_with_moderators_discounts();
+            if !contract_ids.is_empty() {
+                let platform_version = platform.state.current_platform_version()?;
+                for contract_id in contract_ids {
+                    let share = match fetch_seated_moderation_charter(
+                        platform.drive,
+                        contract_id,
+                        &block_info.epoch,
+                        execution_context,
+                        tx,
+                        platform_version,
+                    )? {
+                        None => None,
+                        Some(charter) => Some(charter.fetch_moderators_share(
+                            platform.drive,
+                            &block_info.epoch,
+                            execution_context,
+                            tx,
+                            platform_version,
+                        )?),
+                    };
+                    action.set_seated_moderators_share(contract_id, share);
+                }
             }
         }
 
