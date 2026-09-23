@@ -10,6 +10,8 @@
 //!
 //! This module does not sign and does not broadcast.
 
+use std::fmt;
+
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, UserFeeIncrease};
@@ -46,7 +48,9 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionType};
+use dpp::state_transition::{
+    StateTransition, StateTransitionOwned, StateTransitionType, STATE_TRANSITION_MAX_ENCODED_BYTES,
+};
 
 use crate::error::PlatformWalletError;
 
@@ -191,7 +195,7 @@ pub fn summarize_state_transition(
     bytes: &[u8],
 ) -> Result<StateTransitionSummary, PlatformWalletError> {
     let (transition, serialized) = decode_state_transition(bytes, UNTAGGED_STATE_TRANSITION_KINDS)?;
-    Ok(summarize(&transition, serialized))
+    summarize(&transition, serialized)
 }
 
 /// Decodes `bytes` as a tagged `StateTransition` or as one of `untagged_kinds`
@@ -240,7 +244,27 @@ pub fn decode_state_transition(
     }
 }
 
-fn summarize(transition: &StateTransition, serialized: Vec<u8>) -> StateTransitionSummary {
+/// Document type names reach the approval sheet as their own field, unescaped. Consensus only
+/// accepts `^[a-zA-Z0-9-_]{1,64}$`, so anything else is refused here rather than shown.
+fn check_document_type_name(name: &str) -> Result<(), PlatformWalletError> {
+    let valid = (1..=64).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if valid {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::InvalidParameter(format!(
+            "Invalid document type name {name:?}"
+        )))
+    }
+}
+
+fn summarize(
+    transition: &StateTransition,
+    serialized: Vec<u8>,
+) -> Result<StateTransitionSummary, PlatformWalletError> {
+    let mut budget = DetailsBudget::default();
     let kind = match transition {
         StateTransition::IdentityUpdate(update) => StateTransitionSummaryKind::IdentityUpdate {
             identity_id: update.identity_id(),
@@ -249,7 +273,7 @@ fn summarize(transition: &StateTransition, serialized: Vec<u8>) -> StateTransiti
         },
         StateTransition::Batch(batch) => StateTransitionSummaryKind::Batch {
             owner_id: batch.owner_id(),
-            transitions: summarize_batch(batch),
+            transitions: summarize_batch(batch, &mut budget)?,
         },
         StateTransition::IdentityCreditTransfer(transfer) => {
             StateTransitionSummaryKind::CreditTransfer {
@@ -261,28 +285,121 @@ fn summarize(transition: &StateTransition, serialized: Vec<u8>) -> StateTransiti
         StateTransition::DataContractCreate(create) => {
             StateTransitionSummaryKind::DataContractCreate(summarize_contract(
                 create.data_contract(),
-                format!("{create:#?}"),
-            ))
+                budget.render(create)?,
+            )?)
         }
         StateTransition::DataContractUpdate(update) => {
             StateTransitionSummaryKind::DataContractUpdate(summarize_contract(
                 update.data_contract(),
-                format!("{update:#?}"),
-            ))
+                budget.render(update)?,
+            )?)
         }
         other => StateTransitionSummaryKind::Other {
-            details: format!("{other:#?}"),
+            details: budget.render(other)?,
         },
     };
 
-    StateTransitionSummary {
+    Ok(StateTransitionSummary {
         kind_name: transition.name(),
         owner_id: transition.owner_id(),
         is_signed: transition.signature().is_some_and(|sig| !sig.is_empty()),
         user_fee_increase: transition.user_fee_increase(),
         serialized,
         kind,
+    })
+}
+
+/// Total bytes of `details` one summary may render: 64 times the largest transition the decoder
+/// accepts. Compact `Debug` of the densest values measured (a minimal token configuration) is
+/// about 42 times its encoding, so a valid request fits; nested values cannot grow past the bound.
+pub const MAX_DETAILS_BYTES: usize = 64 * STATE_TRANSITION_MAX_ENCODED_BYTES;
+
+/// Renders `details` with compact `Debug`, which quotes and escapes every string a dApp controls,
+/// under one byte budget for the whole summary. Formatting stops as soon as the budget is spent,
+/// and the summary is refused rather than shown truncated.
+struct DetailsBudget {
+    limit: usize,
+    used: usize,
+}
+
+impl Default for DetailsBudget {
+    fn default() -> Self {
+        Self {
+            limit: MAX_DETAILS_BYTES,
+            used: 0,
+        }
     }
+}
+
+impl DetailsBudget {
+    fn render(&mut self, value: &dyn fmt::Debug) -> Result<String, PlatformWalletError> {
+        struct Bounded<'a> {
+            out: String,
+            remaining: &'a mut usize,
+        }
+        impl fmt::Write for Bounded<'_> {
+            fn write_str(&mut self, s: &str) -> fmt::Result {
+                *self.remaining = self.remaining.checked_sub(s.len()).ok_or(fmt::Error)?;
+                self.out.push_str(s);
+                Ok(())
+            }
+        }
+
+        let mut remaining = self.limit - self.used;
+        let mut sink = Bounded {
+            out: String::new(),
+            remaining: &mut remaining,
+        };
+        fmt::write(&mut sink, format_args!("{value:?}")).map_err(|_| {
+            PlatformWalletError::InvalidParameter(format!(
+                "State transition details exceed {} bytes; refusing to summarize it",
+                self.limit
+            ))
+        })?;
+        let out = base58_identifiers(&sink.out);
+        self.used = self.limit - remaining;
+        Ok(out)
+    }
+
+    /// `label: <Debug of value>`.
+    fn line(&mut self, label: &str, value: &dyn fmt::Debug) -> Result<String, PlatformWalletError> {
+        Ok(format!("{label}: {}", self.render(value)?))
+    }
+}
+
+/// Rewrites every `Identifier(IdentifierBytes32([b0, .., b31]))` that `Debug` produces as
+/// `Identifier(<base58>)`, the form a user can compare with other tools. Only exact 32-byte runs
+/// are rewritten, and the output is never longer than the input.
+fn base58_identifiers(rendered: &str) -> String {
+    const PREFIX: &str = "Identifier(IdentifierBytes32([";
+    const SUFFIX: &str = "]))";
+    let mut out = String::with_capacity(rendered.len());
+    let mut rest = rendered;
+    while let Some(start) = rest.find(PREFIX) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + PREFIX.len()..];
+        let parsed = after.find(SUFFIX).and_then(|end| {
+            let bytes: Vec<u8> = after[..end]
+                .split(", ")
+                .map(str::parse)
+                .collect::<Result<_, _>>()
+                .ok()?;
+            let bytes: [u8; 32] = bytes.try_into().ok()?;
+            Some((Identifier::from(bytes), end))
+        });
+        match parsed {
+            Some((id, end)) => {
+                out.push_str(&format!("Identifier({id})"));
+                rest = &after[end + SUFFIX.len()..];
+            }
+            None => {
+                out.push_str(PREFIX);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `details` is the whole transition, not only its contract: a create transition also carries
@@ -290,21 +407,30 @@ fn summarize(transition: &StateTransition, serialized: Vec<u8>) -> StateTransiti
 fn summarize_contract(
     contract: &DataContractInSerializationFormat,
     details: String,
-) -> DataContractSummary {
-    DataContractSummary {
+) -> Result<DataContractSummary, PlatformWalletError> {
+    let document_type_names: Vec<String> = contract.document_schemas().keys().cloned().collect();
+    for name in &document_type_names {
+        check_document_type_name(name)?;
+    }
+    Ok(DataContractSummary {
         contract_id: contract.id(),
         owner_id: contract.owner_id(),
-        document_type_names: contract.document_schemas().keys().cloned().collect(),
+        document_type_names,
         details,
-    }
+    })
 }
 
-fn summarize_batch(batch: &BatchTransition) -> Vec<BatchedTransitionSummary> {
+fn summarize_batch(
+    batch: &BatchTransition,
+    budget: &mut DetailsBudget,
+) -> Result<Vec<BatchedTransitionSummary>, PlatformWalletError> {
     batch
         .transitions_iter()
         .map(|transition| match transition {
-            BatchedTransitionRef::Document(document) => summarize_document_transition(document),
-            BatchedTransitionRef::Token(token) => summarize_token_transition(token),
+            BatchedTransitionRef::Document(document) => {
+                summarize_document_transition(document, budget)
+            }
+            BatchedTransitionRef::Token(token) => summarize_token_transition(token, budget),
         })
         .collect()
 }
@@ -313,7 +439,11 @@ fn join_details(lines: Vec<String>) -> Option<String> {
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
-fn summarize_document_transition(transition: &DocumentTransition) -> BatchedTransitionSummary {
+fn summarize_document_transition(
+    transition: &DocumentTransition,
+    budget: &mut DetailsBudget,
+) -> Result<BatchedTransitionSummary, PlatformWalletError> {
+    check_document_type_name(transition.document_type_name())?;
     let (amount, recipient_id) = match transition {
         DocumentTransition::Transfer(t) => (None, Some(t.recipient_owner_id())),
         DocumentTransition::Purchase(t) => (Some(t.price()), None),
@@ -326,24 +456,25 @@ fn summarize_document_transition(transition: &DocumentTransition) -> BatchedTran
 
     let mut lines = Vec::new();
     if let Some(data) = transition.data() {
-        lines.push(format!("data: {data:#?}"));
+        lines.push(budget.line("data", data)?);
     }
     if let DocumentTransition::Create(create) = transition {
         if let Some((index_name, credits)) = create.prefunded_voting_balance() {
             lines.push(format!(
-                "prefunded voting balance: {credits} credits for index {index_name}"
+                "prefunded voting balance: {credits} credits for index {}",
+                budget.render(index_name)?
             ));
         }
     }
     let base = transition.base();
     if let Some(payment) = base.token_payment_info() {
-        lines.push(format!("token payment: {payment:?}"));
+        lines.push(budget.line("token payment", &payment)?);
     }
     if let Some(fees) = base.action_fee_agreement() {
-        lines.push(format!("action fees: {fees:?}"));
+        lines.push(budget.line("action fees", &fees)?);
     }
 
-    BatchedTransitionSummary {
+    Ok(BatchedTransitionSummary {
         data_contract_id: transition.data_contract_id(),
         action: format!("{:?}", transition.action_type()),
         target: BatchedTransitionTarget::Document {
@@ -354,10 +485,13 @@ fn summarize_document_transition(transition: &DocumentTransition) -> BatchedTran
         recipient_id,
         token_count: None,
         details: join_details(lines),
-    }
+    })
 }
 
-fn summarize_token_transition(transition: &TokenTransition) -> BatchedTransitionSummary {
+fn summarize_token_transition(
+    transition: &TokenTransition,
+    budget: &mut DetailsBudget,
+) -> Result<BatchedTransitionSummary, PlatformWalletError> {
     let mut lines = Vec::new();
     let (amount, recipient_id, token_count, public_note) = match transition {
         TokenTransition::Transfer(t) => {
@@ -398,31 +532,27 @@ fn summarize_token_transition(transition: &TokenTransition) -> BatchedTransition
             None,
         ),
         TokenTransition::Claim(t) => {
-            lines.push(format!("distribution type: {}", t.distribution_type()));
+            lines.push(budget.line("distribution type", &t.distribution_type())?);
             (None, None, None, t.public_note())
         }
         TokenTransition::EmergencyAction(t) => {
-            lines.push(format!("emergency action: {:?}", t.emergency_action()));
+            lines.push(budget.line("emergency action", &t.emergency_action())?);
             (None, None, None, t.public_note())
         }
         TokenTransition::ConfigUpdate(t) => {
-            lines.push(format!(
-                "config update: {}",
-                t.update_token_configuration_item()
-            ));
+            lines.push(budget.line("config update", t.update_token_configuration_item())?);
             (None, None, None, t.public_note())
         }
         TokenTransition::SetPriceForDirectPurchase(t) => {
             match t.price() {
-                Some(schedule) => lines.push(format!("price schedule: {schedule}")),
+                Some(schedule) => lines.push(budget.line("price schedule", schedule)?),
                 None => lines.push("price schedule: removed (not for sale)".to_string()),
             }
             (None, None, None, t.public_note())
         }
     };
-    // Debug-quoted so a note cannot forge further lines or carry a NUL.
     if let Some(note) = public_note {
-        lines.push(format!("public note: {note:?}"));
+        lines.push(budget.line("public note", note)?);
     }
     let base = transition.base();
     if let Some(group) = base.using_group_info() {
@@ -438,7 +568,7 @@ fn summarize_token_transition(transition: &TokenTransition) -> BatchedTransition
         ));
     }
 
-    BatchedTransitionSummary {
+    Ok(BatchedTransitionSummary {
         data_contract_id: transition.data_contract_id(),
         action: transition.action_type().to_string(),
         target: BatchedTransitionTarget::Token {
@@ -449,7 +579,7 @@ fn summarize_token_transition(transition: &TokenTransition) -> BatchedTransition
         recipient_id,
         token_count,
         details: join_details(lines),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -493,6 +623,11 @@ mod tests {
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+    use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+    use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+    use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+    use dpp::platform_value::Value;
     use dpp::contract_group::{ContractGroupMember, ContractGroupMembership, ContractGroupRegistration};
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV1;
     use std::collections::BTreeSet;
@@ -797,7 +932,7 @@ mod tests {
             .collect();
 
         assert_ne!(details[0], details[1]);
-        assert!(details[0].contains("Manual Minting"), "{}", details[0]);
+        assert!(details[0].contains("ManualMinting"), "{}", details[0]);
         assert!(details[0].contains("ContractOwner"), "{}", details[0]);
         assert!(
             details[0].contains("public note: \"grant\""),
@@ -805,7 +940,7 @@ mod tests {
             details[0]
         );
         assert!(
-            details[1].contains(&format!("{}", Identifier::from(RECIPIENT))),
+            details[1].contains(&format!("Identifier({})", Identifier::from(RECIPIENT))),
             "{}",
             details[1]
         );
@@ -814,7 +949,7 @@ mod tests {
             "{}",
             details[2]
         );
-        assert!(details[3].contains("SinglePrice: 4200"), "{}", details[3]);
+        assert!(details[3].contains("SinglePrice(4200)"), "{}", details[3]);
         assert!(
             details[4].contains("distribution type: Perpetual"),
             "{}",
@@ -1045,6 +1180,141 @@ mod tests {
         assert_ne!(base, details(&create([0xA2; 32], [0xB1; 32])), "admins");
         assert_ne!(base, details(&create([0xA1; 32], [0xB2; 32])), "membership");
         assert!(base.contains("contract_group_memberships"), "{base}");
+    }
+
+    /// dApp-chosen strings inside a config change (token names) and a
+    /// prefunded voting index name stay quoted inside their own field, so
+    /// delimiters and newlines cannot make two changes read the same or forge
+    /// a line.
+    #[test]
+    fn dapp_strings_in_details_stay_inside_their_field() {
+        let conventions = |singular: &str, plural: &str| {
+            BatchedTransition::Token(TokenTransition::ConfigUpdate(
+                TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+                    base: token_base(),
+                    update_token_configuration_item: TokenConfigurationChangeItem::Conventions(
+                        TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+                            localizations: BTreeMap::from([(
+                                "en".to_string(),
+                                TokenConfigurationLocalization::V0(
+                                    TokenConfigurationLocalizationV0 {
+                                        should_capitalize: false,
+                                        singular_form: singular.to_string(),
+                                        plural_form: plural.to_string(),
+                                    },
+                                ),
+                            )]),
+                            decimals: 8,
+                        }),
+                    ),
+                    public_note: None,
+                }),
+            ))
+        };
+        let details = |transition: BatchedTransition| {
+            let StateTransitionSummaryKind::Batch { transitions, .. } =
+                summarize_bytes(&batch(vec![transition])).kind
+            else {
+                panic!("expected a batch");
+            };
+            transitions[0].details.clone().expect("details rendered")
+        };
+
+        let a = details(conventions("a', Plural: 'b", "c"));
+        let b = details(conventions("a", "b', Plural: 'c"));
+        assert_ne!(a, b);
+        let forged = details(conventions("x\npublic note: \"trusted\"", "y"));
+        assert_eq!(forged.lines().count(), 1, "{forged}");
+
+        let create = BatchedTransition::Document(DocumentTransition::Create(
+            DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: document_base("post"),
+                entropy: [0xEE; 32],
+                data: BTreeMap::new(),
+                prefunded_voting_balance: Some(("idx\npublic note: \"x\"".to_string(), 1)),
+            }),
+        ));
+        let index = details(create);
+        assert!(
+            !index.lines().any(|line| line.starts_with("public note")),
+            "{index}"
+        );
+    }
+
+    /// Rendering stops at the first write past the budget and the summary is
+    /// refused, without formatting the rest or truncating it.
+    #[test]
+    fn details_beyond_the_budget_are_refused() {
+        use std::cell::Cell;
+
+        /// Writes `chunks` pieces of 100 bytes, counting how many it wrote.
+        struct Chunks<'a> {
+            chunks: usize,
+            written: &'a Cell<usize>,
+        }
+        impl fmt::Debug for Chunks<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                for _ in 0..self.chunks {
+                    f.write_str(&"x".repeat(100))?;
+                    self.written.set(self.written.get() + 1);
+                }
+                Ok(())
+            }
+        }
+
+        let written = Cell::new(0);
+        let mut budget = DetailsBudget {
+            limit: 1_000,
+            used: 0,
+        };
+        let refused = budget.render(&Chunks {
+            chunks: 1_000,
+            written: &written,
+        });
+        assert!(matches!(
+            refused,
+            Err(PlatformWalletError::InvalidParameter(message)) if message.contains("exceed")
+        ));
+        assert_eq!(written.get(), 10, "formatting stopped at the budget");
+
+        let mut budget = DetailsBudget::default();
+        let data = Value::Array((0..1_000).map(Value::U64).collect());
+        let rendered = budget.render(&data).expect("fits the default budget");
+        assert_eq!(budget.used, rendered.len());
+    }
+
+    /// Identifiers inside details read as base58, as everywhere else a user
+    /// compares them.
+    #[test]
+    fn identifiers_in_details_render_as_base58() {
+        let id = Identifier::from(core::array::from_fn::<u8, 32, _>(|i| i as u8));
+        let mut budget = DetailsBudget::default();
+        let rendered = budget
+            .render(&AuthorizedActionTakers::Identity(id))
+            .expect("renders");
+        assert_eq!(rendered, format!("Identity(Identifier({id}))"));
+    }
+
+    /// A document type name outside the consensus pattern is refused rather
+    /// than shown raw in its own field.
+    #[test]
+    fn invalid_document_type_names_are_refused() {
+        for name in ["post\u{202e}", "a\nb", "", &"x".repeat(65)] {
+            let transition = batch(vec![BatchedTransition::Document(
+                DocumentTransition::Create(DocumentCreateTransition::V0(
+                    DocumentCreateTransitionV0 {
+                        base: document_base(name),
+                        entropy: [0xEE; 32],
+                        data: BTreeMap::new(),
+                        prefunded_voting_balance: None,
+                    },
+                )),
+            )]);
+            assert!(
+                summarize_state_transition(&transition.serialize_to_bytes().unwrap()).is_err(),
+                "{name:?}"
+            );
+        }
     }
 
     /// A public note is quoted, so a newline cannot forge another line and a

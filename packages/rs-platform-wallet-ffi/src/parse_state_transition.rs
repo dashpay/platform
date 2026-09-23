@@ -209,8 +209,8 @@ pub struct ParsedStateTransitionFFI {
     /// after approval.
     pub serialized: *mut u8,
     pub serialized_len: usize,
-    /// `OTHER`: `Debug` dump of the whole transition; data contract create /
-    /// update: of the whole contract. Null otherwise. Owned, NUL-terminated.
+    /// `OTHER` and data contract create / update: single-line `Debug` dump of
+    /// the whole transition. Null otherwise. Owned, NUL-terminated.
     pub details: *mut c_char,
     /// Populated when `kind == PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE`.
     pub identity_update: ParsedIdentityUpdateFFI,
@@ -1184,10 +1184,10 @@ mod tests {
         assert!(out.serialized.is_null());
     }
 
+    /// A name that is not a valid document type name is refused before the
+    /// FFI projects anything.
     #[test]
-    fn rejects_a_document_type_that_cannot_cross_the_ffi_without_leaking() {
-        // The first row projects and owns two C strings; the second fails, so
-        // the error path has to release the first row.
+    fn rejects_an_invalid_document_type_name() {
         let bytes = batch_transition_bytes(
             vec![document_create("post"), document_create("pro\0file")],
             vec![],
@@ -1196,10 +1196,39 @@ mod tests {
 
         assert_eq!(
             result.code,
-            PlatformWalletFFIResultCode::ErrorInvalidParameter
+            PlatformWalletFFIResultCode::ErrorDeserialization
         );
         assert_eq!(out.kind, PARSED_STATE_TRANSITION_KIND_NONE);
         assert!(out.batch.transitions.is_null());
+    }
+
+    /// When a later row cannot cross the FFI, the rows already projected are
+    /// released rather than leaked.
+    #[test]
+    fn a_row_that_cannot_cross_the_ffi_releases_the_projected_rows() {
+        use platform_wallet::wallet::identity::network::BatchedTransitionSummary;
+
+        let row = |action: &str| BatchedTransitionSummary {
+            data_contract_id: Identifier::from(CONTRACT),
+            action: action.to_string(),
+            target: BatchedTransitionTarget::Document {
+                document_type: "post".to_string(),
+                document_id: Identifier::from([0x0D; 32]),
+            },
+            amount: None,
+            recipient_id: None,
+            token_count: None,
+            details: Some("data".to_string()),
+        };
+        let result =
+            project_parsed_batch(&Identifier::from(OWNER), &[row("Create"), row("Cre\0ate")]);
+        let Err(error) = result else {
+            panic!("an interior NUL must not cross the FFI");
+        };
+        assert_eq!(
+            error.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
     }
 
     #[test]
