@@ -490,9 +490,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         public let complete: Bool
         /// The decoded bytes, tagged.
         public let serialized: Data
-        /// A structured (multi-line) dump: of the whole transition for
-        /// `.other`, of the whole contract for a data contract create or
-        /// update. `nil` otherwise.
+        /// A single-line dump with every dApp-controlled string quoted: of
+        /// the whole transition for `.other` and for a data contract create
+        /// or update. `nil` otherwise.
         public let details: String?
         /// The typed summary.
         public let kind: ParsedStateTransitionKind

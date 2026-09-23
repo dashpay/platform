@@ -27,9 +27,8 @@
 //! u16    user_fee_increase   (percentage added to the processing fee)
 //! u8     complete            (0 = render details / the rows' details before approval)
 //! u32    serialized_len, u8[serialized_len] serialized (tagged DPP bytes)
-//! u32    details_len, u8[details_len] details (UTF-8; the Debug dump of the
-//!        whole transition for kind 255, of the contract for kinds 4 / 5,
-//!        empty otherwise)
+//! u32    details_len, u8[details_len] details (UTF-8; the single-line Debug
+//!        dump of the whole transition for kinds 4 / 5 / 255, empty otherwise)
 //! kind 1 (IdentityUpdate):
 //!   u8[32] identity_id
 //!   u32    add_count; repeat add_count times (same field order as

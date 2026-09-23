@@ -214,6 +214,28 @@ class StateTransitionParserTest {
         assertTrue(error.message!!.contains("totalBudget"))
     }
 
+    /**
+     * Disabled key ids are protocol u32s; one above `Int.MAX_VALUE` is refused
+     * rather than surfacing as a negative id.
+     */
+    @Test
+    fun `refuses a disabled key id above Int MAX_VALUE`() {
+        // kind 1, u32 name, no owner, unsigned, fee 0, complete, empty
+        // serialized, empty details, identity id, no added keys, one disabled
+        // key 0xFFFFFFFF.
+        val name = "IdentityUpdate".toByteArray()
+        val blob = byteArrayOf(1, 0, 0, 0, name.size.toByte()) + name +
+            byteArrayOf(0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0) +
+            ByteArray(32) { 0x11 } +
+            byteArrayOf(0, 0, 0, 0) +
+            byteArrayOf(0, 0, 0, 1, -1, -1, -1, -1)
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            StateTransitionParser.parseBlob(blob)
+        }
+        assertTrue(error.message!!.contains("4294967295"))
+    }
+
     @Test
     fun `decodes the other kind with the common fields and details`() {
         // kind 255, name "MasternodeVote", no owner, signed, fee increase 3,
