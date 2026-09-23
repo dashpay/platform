@@ -209,8 +209,10 @@ class StateTransitionParserTest {
     @Test
     fun `unknown kind tag throws rather than decoding as other`() {
         val name = "Whatever".toByteArray()
-        val blob = byteArrayOf(77, 0, name.size.toByte()) + name +
-            byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        // kind 77, u32 name, no owner, unsigned, fee 0, incomplete, empty
+        // serialized, empty details.
+        val blob = byteArrayOf(77, 0, 0, 0, name.size.toByte()) + name +
+            byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         val error = assertThrows(IllegalArgumentException::class.java) {
             StateTransitionParser.parseBlob(blob)
         }
