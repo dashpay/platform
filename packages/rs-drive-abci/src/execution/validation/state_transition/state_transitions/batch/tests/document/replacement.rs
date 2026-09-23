@@ -1141,6 +1141,8 @@ mod replacement_tests {
         document.set("recipientKeyIndex", Value::U32(1));
         document.set("senderKeyIndex", Value::U32(1));
         document.set("accountReference", Value::U32(0));
+        // an IV plus whole AES blocks, as the label's `encryptedFor` requires
+        document.set("encryptedAccountLabel", Value::Bytes(vec![0u8; 48]));
 
         let mut altered_document = document.clone();
 

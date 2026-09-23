@@ -691,7 +691,7 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            24002860070
         );
 
         let check_result = platform
@@ -1045,7 +1045,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346660);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346820);
 
         let check_result = platform
             .check_tx(
@@ -1358,7 +1358,7 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24006074280
+            24005720140
         );
 
         let check_result = platform
@@ -1836,7 +1836,7 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            24002860070
         );
 
         platform
@@ -1927,7 +1927,7 @@ mod tests {
             // other tree (an update reads what key `2` holds, billed, before writing under it),
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
             // contract bytes
-            27003119120
+            27002916290
         );
 
         let check_result = platform
@@ -2518,7 +2518,7 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            24002860070
         );
 
         platform
@@ -2641,7 +2641,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448640);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448800);
 
         let check_result = platform
             .check_tx(

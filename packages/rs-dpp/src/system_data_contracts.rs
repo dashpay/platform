@@ -296,3 +296,94 @@ mod app_connect_tests {
         );
     }
 }
+
+#[cfg(all(test, feature = "dashpay-contract"))]
+mod dashpay_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::{
+        DistinctFrom, DocumentPropertyReferenceTarget, DocumentPropertyType, EncryptedFor,
+        EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements,
+    };
+
+    /// DashPay v2 replaces v1 in place at protocol version 14 (`apply_contract` in
+    /// `transition_to_version_14`), which never runs the contract update checks, so
+    /// documents written under v1 are read with v2's types from then on. Every
+    /// property v1 declares must be stored exactly as v1 stored it.
+    #[test]
+    fn should_store_every_dashpay_v1_property_as_v1_did() {
+        let v1 = load_system_data_contract(
+            SystemDataContract::Dashpay,
+            PlatformVersion::get(13).expect("protocol version 13"),
+        )
+        .expect("dashpay v1");
+        let v2 = load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
+            .expect("dashpay v2");
+
+        for (type_name, v1_type) in v1.document_types() {
+            let v2_type = v2
+                .document_type_for_name(type_name)
+                .expect("v2 keeps every v1 document type");
+            for (path, v1_property) in v1_type.flattened_properties() {
+                let v2_property = v2_type
+                    .flattened_properties()
+                    .get(path)
+                    .unwrap_or_else(|| panic!("v2 keeps {type_name}.{path}"));
+                assert_eq!(
+                    v1_property.property_type.stored_encoding(),
+                    v2_property.property_type.stored_encoding(),
+                    "{type_name}.{path} must be stored as v1 stored it"
+                );
+            }
+        }
+    }
+
+    /// From protocol version 14 the contact request's recipient checks are schema
+    /// declarations instead of a data trigger, and the two ECDH fields name their
+    /// encryption recipe.
+    #[test]
+    fn should_declare_the_contact_request_checks_and_encryption() {
+        let contract =
+            load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
+                .expect("dashpay v2");
+        let contact_request = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest");
+        let to_user_id = contact_request
+            .flattened_properties()
+            .get("toUserId")
+            .expect("toUserId");
+
+        assert_eq!(
+            to_user_id.property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property: "recipientKeyIndex".to_string(),
+                    key_requirements: IdentityKeyReferenceRequirements::default(),
+                }
+            )
+        );
+        assert_eq!(to_user_id.distinct_from, Some(DistinctFrom::OwnerId));
+
+        let recipe = EncryptedFor {
+            recipient: EncryptedForRecipient::Property("toUserId".to_string()),
+            recipient_key: "recipientKeyIndex".to_string(),
+            sender_key: "senderKeyIndex".to_string(),
+            scheme: EncryptionScheme::EcdhSecp256k1Aes256Cbc,
+        };
+        let mut encrypted = contact_request
+            .encrypted_properties()
+            .into_iter()
+            .map(|(path, encrypted_for)| (path.as_str(), encrypted_for.clone()))
+            .collect::<Vec<_>>();
+        encrypted.sort_by_key(|(path, _)| *path);
+        assert_eq!(
+            encrypted,
+            vec![
+                ("encryptedAccountLabel", recipe.clone()),
+                ("encryptedPublicKey", recipe),
+            ]
+        );
+    }
+}

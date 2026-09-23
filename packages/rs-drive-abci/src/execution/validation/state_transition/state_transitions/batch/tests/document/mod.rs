@@ -1,5 +1,6 @@
 mod action_fees;
 mod creation;
+mod dashpay_contact_request;
 mod deletable_document_reference;
 mod deletion;
 mod distinct_from;

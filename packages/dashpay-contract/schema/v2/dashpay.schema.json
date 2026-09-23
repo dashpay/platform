@@ -64,7 +64,6 @@
         "byteArray": true,
         "minItems": 21,
         "maxItems": 21,
-        "description": "Core chain address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments. The type byte is consensus-enforced by a data trigger; clients render the address as Base58Check for the network they are on. Payments to it are publicly linkable to this profile.",
         "position": 5
       },
       "platformPaymentAddress": {
@@ -72,7 +71,6 @@
         "byteArray": true,
         "minItems": 21,
         "maxItems": 21,
-        "description": "Platform address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments. The type byte is consensus-enforced by a data trigger.",
         "position": 6
       },
       "shieldedAddress": {
@@ -80,7 +78,6 @@
         "byteArray": true,
         "minItems": 43,
         "maxItems": 43,
-        "description": "Raw Orchard receiving address: 11-byte diversifier followed by 32-byte diversified transmission key. Clients validate before payment; wallets should use a dedicated tip account.",
         "position": 7
       }
     },
@@ -226,23 +223,36 @@
         "minItems": 32,
         "maxItems": 32,
         "position": 0,
-        "contentMediaType": "application/x.dash.dpp.identifier"
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "identityPublicKey",
+          "keyIdProperty": "recipientKeyIndex"
+        },
+        "distinctFrom": "$ownerId"
       },
       "encryptedPublicKey": {
         "type": "array",
         "byteArray": true,
         "minItems": 96,
         "maxItems": 96,
+        "encryptedFor": {
+          "recipient": "toUserId",
+          "recipientKey": "recipientKeyIndex",
+          "senderKey": "senderKeyIndex",
+          "scheme": "ecdh-secp256k1-aes256-cbc"
+        },
         "position": 1
       },
       "senderKeyIndex": {
         "type": "integer",
         "minimum": 0,
+        "maximum": 4294967295,
         "position": 2
       },
       "recipientKeyIndex": {
         "type": "integer",
         "minimum": 0,
+        "maximum": 4294967295,
         "position": 3
       },
       "accountReference": {
@@ -255,6 +265,12 @@
         "byteArray": true,
         "minItems": 48,
         "maxItems": 80,
+        "encryptedFor": {
+          "recipient": "toUserId",
+          "recipientKey": "recipientKeyIndex",
+          "senderKey": "senderKeyIndex",
+          "scheme": "ecdh-secp256k1-aes256-cbc"
+        },
         "position": 5
       },
       "autoAcceptProof": {

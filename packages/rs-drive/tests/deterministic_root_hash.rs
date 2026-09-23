@@ -310,7 +310,7 @@ mod tests {
             // item in the contract's other tree (`[64, id, 2] / 64`), one more tree under
             // the contract's root subtree, serializes every contract with config version 2,
             // and ships DashPay contract v2 with the optional `shieldedAddress` profile field.
-            _ => "c25bc863d30a4185311546d51bacfdc030ee57671dbae774775d0efd4474220c",
+            _ => "d98bafb506e748c8b1f45ce174f08153e2df671dc505d781d5ef4c9c88353845",
         };
 
         assert_eq!(

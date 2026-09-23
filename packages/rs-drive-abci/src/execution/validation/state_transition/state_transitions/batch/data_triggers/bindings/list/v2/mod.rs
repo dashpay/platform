@@ -1,5 +1,5 @@
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0;
-use crate::execution::validation::state_transition::batch::data_triggers::triggers::dashpay::{create_contact_request_data_trigger, validate_profile_payment_addresses_data_trigger};
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::dashpay::validate_profile_payment_addresses_data_trigger;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::dpns::create_domain_data_trigger;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::reject::reject_data_trigger;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::withdrawals::delete_withdrawal_data_trigger;
@@ -17,7 +17,11 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 /// v2 (PROTOCOL_VERSION_14): DashPay `profile` documents gain Create and
 /// Replace triggers enforcing the DIP-33 payment-address type byte
 /// (`0x00` P2PKH / `0x01` P2SH) that the schema vocabulary cannot express.
-/// Everything else is unchanged from v1.
+/// DashPay `contactRequest` creation loses its trigger: the DashPay v2 schema
+/// declares both of its checks on `toUserId`, `distinctFrom: "$ownerId"` (no
+/// request to oneself) and an `identityPublicKey` `refersTo` (the recipient
+/// identity and its `recipientKeyIndex` key exist, and the key is not
+/// disabled). Everything else is unchanged from v1.
 ///
 /// # Returns
 ///
@@ -48,12 +52,6 @@ pub(super) fn data_trigger_bindings_list_v2() -> Result<Vec<DataTriggerBindingV0
             document_type: "domain".to_string(),
             transition_action_type: DocumentTransitionActionType::Delete,
             data_trigger: reject_data_trigger,
-        },
-        DataTriggerBindingV0 {
-            data_contract_id: dashpay_contract::ID,
-            document_type: "contactRequest".to_string(),
-            transition_action_type: DocumentTransitionActionType::Create,
-            data_trigger: create_contact_request_data_trigger,
         },
         // DIP-33 payment address fields must carry a supported type byte
         DataTriggerBindingV0 {
