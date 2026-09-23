@@ -109,7 +109,10 @@ impl Index {
             // Only a scalar reference can bind: an index property is never a
             // typed array, so element references never reach an index. A
             // lookup reference (`PermanentDocumentLookup`) never matches
-            // either: its value is not the referenced document's `$id`
+            // either: its value is not the referenced document's `$id`. Nor
+            // does an `anyOf`, even of permanentDocument targets only: a value
+            // may be the id of a document of any of them, so creating one of
+            // them determines no entry's path
             let DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
@@ -168,7 +171,7 @@ impl Index {
 mod tests {
     use super::*;
     use crate::data_contract::document_type::{
-        DocumentReferenceLookup, IndexProperty, LookupKeySource,
+        AnyOfReferenceTargets, DocumentReferenceLookup, IndexProperty, LookupKeySource,
     };
     use std::collections::BTreeMap;
 
@@ -385,6 +388,33 @@ mod tests {
         // from the post being created
         assert!(index_on(&["postId"])
             .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
+    }
+
+    #[test]
+    fn should_not_bind_through_an_any_of_reference() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let post = |document_type_name: &str| DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: document_type_name.to_string(),
+            property_agreement: BTreeMap::new(),
+        };
+        let mut property = identifier_reference_property("post", None, &[]);
+        property.property_type =
+            DocumentPropertyType::IdentifierWithReference(DocumentPropertyReferenceTarget::AnyOf(
+                AnyOfReferenceTargets::new(vec![post("post"), post("repost")]),
+            ));
+        let mut properties = IndexMap::new();
+        properties.insert("postId".to_string(), property);
+
+        // A value may name a repost as well as a post, so creating a post
+        // determines no entry's path
+        let index = index_on(&["postId"]);
+        assert!(index
+            .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
+        assert!(index
+            .preallocation_bindings_for_target(&properties, own_contract_id, "post")
             .is_empty());
     }
 }

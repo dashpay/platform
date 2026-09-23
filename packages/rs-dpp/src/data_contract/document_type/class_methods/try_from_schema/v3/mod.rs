@@ -453,6 +453,7 @@ fn try_from_schema_generation_3(
     #[cfg(feature = "validation")]
     if full_validation {
         validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_any_of_reference_target_count(&v2, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
     }
@@ -492,9 +493,47 @@ fn validate_typed_array_max_items(
     Ok(())
 }
 
+/// Every `refersTo` `anyOf`, on an identifier property or on the elements of
+/// a typed array, lists at most `SystemLimits::max_any_of_reference_targets`
+/// targets (the parse already requires two or more). Each target may be read
+/// for every value the declaration covers, so the targets also count against
+/// `max_references_per_document`, checked next; this keeps one declaration
+/// from spending the whole budget on alternatives.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_any_of_reference_target_count(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_any_of_reference_targets;
+    for (path, property) in document_type.flattened_properties() {
+        let Some(DocumentPropertyReferenceTarget::AnyOf(any_of)) = property
+            .property_type
+            .reference()
+            .and_then(|reference| reference.target())
+        else {
+            continue;
+        };
+        let targets = any_of.targets().len();
+        if targets > usize::from(limit) {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "property \"{path}\" of document type \"{name}\" declares a refersTo anyOf \
+                     of {targets} targets, above the maximum of {limit}",
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The references one document of the type can carry, one for each
 /// property declaring `refersTo` (an identifier, or a key id with a key
 /// reference) and `maxItems` for each typed array whose elements declare it,
+/// each times the number of targets when the declaration is an `anyOf`,
 /// are at most
 /// `SystemLimits::max_references_per_document`. Every reference is a billed
 /// state read when the document is created or replaced, so the sum bounds
@@ -515,13 +554,14 @@ fn validate_reference_count(
         .values()
         .filter_map(|property| property.property_type.reference())
         .map(|reference| reference.max_references())
-        .sum();
+        .fold(0, u32::saturating_add);
     if references > u32::from(limit) {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{name}\" declares references for up to {references} values per \
                  document (one per property with refersTo, maxItems per typed array of \
-                 referencing elements), above the maximum of {limit}",
+                 referencing elements, each times the targets of an anyOf), above the maximum \
+                 of {limit}",
             )),
         ));
     }
@@ -617,6 +657,8 @@ mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
 
+#[cfg(all(test, feature = "validation"))]
+mod any_of_reference_tests;
 #[cfg(test)]
 mod keep_history_tests;
 #[cfg(test)]

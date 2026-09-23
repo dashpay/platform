@@ -10,12 +10,12 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    property_names, ContractReferenceModeration, ContractReferenceOwner,
+    property_names, AnyOfReferenceTargets, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    LookupKeySource,
+    LookupKeySource, ANY_OF_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -588,10 +588,156 @@ fn apply_property_reference_v0(
 
     let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
 
+    // Two or more targets of which one must hold, in place of a single one:
+    // the wrapper declares nothing else, and it sits on an identifier, as
+    // every target it admits does
+    if let Some(any_of_value) = refers_to_map.get(property_names::ANY_OF) {
+        if refers_to_map.len() != 1 {
+            return Err(DataContractError::InvalidContractStructure(
+                "a refersTo anyOf declares nothing beside anyOf: every other key belongs to one \
+                 of its targets"
+                    .to_string(),
+            ));
+        }
+        if !matches!(
+            property_type,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        ) {
+            return Err(DataContractError::InvalidContractStructure(
+                "refersTo anyOf is only allowed on identifier properties".to_string(),
+            ));
+        }
+        return Ok(DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::AnyOf(parse_any_of_reference_targets(any_of_value)?),
+        ));
+    }
+
     let reference_type = refers_to_map
         .get_str(property_names::TYPE)
         .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
 
+    validate_reference_target_keys(&refers_to_map, reference_type)?;
+
+    // A key reference declared on the key id property itself names whose key
+    // it is through `identityProperty`; it is the one form that sits on a
+    // non-identifier property
+    if let Some(identity_property_value) = refers_to_map.get(property_names::IDENTITY_PROPERTY) {
+        return apply_key_id_reference_v0(
+            inner_properties,
+            &refers_to_map,
+            reference_type,
+            identity_property_value,
+            property_type,
+        );
+    }
+
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is only allowed on identifier properties, except an identityPublicKey \
+             reference with identityProperty, which sits on the key id property"
+                .to_string(),
+        ));
+    }
+
+    Ok(DocumentPropertyType::IdentifierWithReference(
+        parse_reference_target(&refers_to_map, reference_type)?,
+    ))
+}
+
+/// The targets of a `refersTo` `anyOf`, each parsed as a single declaration
+/// is: a list of at least two (a single target is declared without `anyOf`),
+/// none an `anyOf` itself, each of a type in [`ANY_OF_REFERENCE_TARGET_TYPES`]
+/// and never the key id form, and no two alike, which would bill the same
+/// read twice for nothing. The most a list may hold,
+/// `SystemLimits::max_any_of_reference_targets`, is a registration limit,
+/// checked under full validation with the other reference limits.
+fn parse_any_of_reference_targets(
+    any_of_value: &Value,
+) -> Result<AnyOfReferenceTargets, DataContractError> {
+    let Some(target_values) = any_of_value.as_array() else {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo anyOf must be a list of targets".to_string(),
+        ));
+    };
+    if target_values.len() < 2 {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo anyOf must list at least two targets: a single target is declared \
+             without anyOf"
+                .to_string(),
+        ));
+    }
+
+    let mut targets: Vec<DocumentPropertyReferenceTarget> = Vec::with_capacity(target_values.len());
+    for (index, target_value) in target_values.iter().enumerate() {
+        let target_map = target_value.to_btree_ref_string_map()?;
+        if target_map.contains_key(property_names::ANY_OF) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo anyOf[{index}] is itself an anyOf: the targets of an anyOf do not nest"
+            )));
+        }
+        let reference_type = target_map
+            .get_str(property_names::TYPE)
+            .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+        if let Some(reason) = any_of_refusal_reason(reference_type) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo anyOf[{index}] is a reference of type {reference_type}, which anyOf \
+                 does not take: {reason}"
+            )));
+        }
+        if target_map.contains_key(property_names::IDENTITY_PROPERTY) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo anyOf[{index}]: {reference_type} refersTo does not take identityProperty"
+            )));
+        }
+        validate_reference_target_keys(&target_map, reference_type)?;
+        let target = parse_reference_target(&target_map, reference_type)?;
+        if targets.contains(&target) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo anyOf[{index}] repeats an earlier target"
+            )));
+        }
+        targets.push(target);
+    }
+    Ok(AnyOfReferenceTargets::new(targets))
+}
+
+/// Why an `anyOf` does not take a target of `reference_type`, `None` for the
+/// types it takes ([`ANY_OF_REFERENCE_TARGET_TYPES`]). Those are existence
+/// checks, with a `propertyAgreement` on a document, against entities that
+/// can never be deleted, so an `anyOf` of them holds for good once it holds
+/// and a replace re-validates it only when the value or a property bound to
+/// a target changed, as it does a single target. The others carry semantics
+/// that do not compose with an alternative.
+fn any_of_refusal_reason(reference_type: &str) -> Option<&'static str> {
+    match reference_type {
+        _ if ANY_OF_REFERENCE_TARGET_TYPES.contains(&reference_type) => None,
+        "deletableDocument" => Some(
+            "it is re-validated on every replace and may be cleared once its document is \
+             deleted, which assumes the property refers to that one target",
+        ),
+        "identityPublicKey" => {
+            Some("it pairs the value with a key id property, which no other target reads")
+        }
+        "contract" => Some(
+            "its requirements are judged against the block time and the writer, a gate rather \
+             than an existence check, and no identity or document target stands in for a \
+             contract",
+        ),
+        "token" => Some("no identity or document target stands in for a token"),
+        _ => Some("it is not a refersTo type"),
+    }
+}
+
+/// Checks the keys of a single target declaration against its `type`: the
+/// keys that belong to one kind of target alone (`contractRequirements`,
+/// `keyRequirements`, `propertyAgreement`, `lookup`) are refused on the others.
+fn validate_reference_target_keys(
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+) -> Result<(), DataContractError> {
     // Requirements on the referenced contract belong to contract references alone
     if reference_type != "contract"
         && refers_to_map.contains_key(property_names::CONTRACT_REQUIREMENTS)
@@ -635,34 +781,20 @@ fn apply_property_reference_v0(
         )));
     }
 
-    // A key reference declared on the key id property itself names whose key
-    // it is through `identityProperty`; it is the one form that sits on a
-    // non-identifier property
-    if let Some(identity_property_value) = refers_to_map.get(property_names::IDENTITY_PROPERTY) {
-        return apply_key_id_reference_v0(
-            inner_properties,
-            &refers_to_map,
-            reference_type,
-            identity_property_value,
-            property_type,
-        );
-    }
+    Ok(())
+}
 
-    if !matches!(
-        property_type,
-        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
-    ) {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo is only allowed on identifier properties, except an identityPublicKey \
-             reference with identityProperty, which sits on the key id property"
-                .to_string(),
-        ));
-    }
-
+/// Parses a single target declaration of `reference_type` whose keys
+/// [`validate_reference_target_keys`] accepted: the target of an identifier
+/// property, or one target of an `anyOf`.
+fn parse_reference_target(
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+) -> Result<DocumentPropertyReferenceTarget, DataContractError> {
     let target = match reference_type {
         "identity" => DocumentPropertyReferenceTarget::Identity,
         "contract" => DocumentPropertyReferenceTarget::Contract {
-            contract_requirements: parse_contract_reference_requirements(&refers_to_map)?,
+            contract_requirements: parse_contract_reference_requirements(refers_to_map)?,
         },
         "token" => DocumentPropertyReferenceTarget::Token,
         // The two document targets share one declaration shape; they differ
@@ -792,7 +924,7 @@ fn apply_property_reference_v0(
 
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: key_id_property.to_string(),
-                key_requirements: parse_identity_key_reference_requirements(&refers_to_map)?,
+                key_requirements: parse_identity_key_reference_requirements(refers_to_map)?,
             }
         }
         other => {
@@ -802,7 +934,7 @@ fn apply_property_reference_v0(
         }
     };
 
-    Ok(DocumentPropertyType::IdentifierWithReference(target))
+    Ok(target)
 }
 
 /// An `identityPublicKey` declaration on the KEY ID property: `identityProperty` names
@@ -1028,20 +1160,26 @@ pub(super) fn validate_reference_lookup_sources(
     for (path, property) in document_type.flattened_properties() {
         // On an identifier property or on the elements of a typed array: the
         // key's other parts are the same for every element
-        let Some(lookup) = property
+        let Some(target) = property
             .property_type
             .reference()
             .and_then(|reference| reference.target())
-            .and_then(|target| target.as_any_document_reference())
-            .and_then(|declaration| declaration.lookup)
         else {
             continue;
         };
-        if let Some(reason) = lookup.referring_side_error(document_type, path) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "document type \"{document_type_name}\" property \"{path}\" refersTo lookup: \
-                 {reason}"
-            )));
+        // Each target of an `anyOf` reads its key as it would alone
+        let lookups = target
+            .targets()
+            .iter()
+            .filter_map(|target| target.as_any_document_reference())
+            .filter_map(|declaration| declaration.lookup);
+        for lookup in lookups {
+            if let Some(reason) = lookup.referring_side_error(document_type, path) {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "document type \"{document_type_name}\" property \"{path}\" refersTo \
+                     lookup: {reason}"
+                )));
+            }
         }
     }
     Ok(())

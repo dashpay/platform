@@ -569,6 +569,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_document_value_depth: None,
         max_typed_array_items: 1024,
         max_references_per_document: 256,
+        max_any_of_reference_targets: 4,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         // Load-bearing for state correctness, not just for throughput — see
         // SystemLimits::max_transitions_in_documents_batch. Raising it here

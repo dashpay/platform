@@ -28,6 +28,14 @@ pub struct SystemLimits {
     /// `max_typed_array_items`. Read by document type parser generation 3 (protocol version
     /// 14), the only generation that parses `refersTo`, and never reached before.
     pub max_references_per_document: u16,
+    /// Maximum number of targets one `refersTo` `anyOf` declaration may list (it lists at
+    /// least two). Every target may be read for each value the declaration covers when the
+    /// document is written, and each counts against `max_references_per_document`; this keeps
+    /// one declaration from buying the whole budget with alternatives. Refused under full
+    /// validation only, like `max_typed_array_items`. Read by document type parser generation
+    /// 3 (protocol version 14), the only generation that parses `refersTo`, and never reached
+    /// before.
+    pub max_any_of_reference_targets: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config

@@ -191,6 +191,20 @@ export type DocumentPropertyReferenceTarget =
        * Absent — not `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;
+    }
+  | {
+      /**
+       * Two or more targets, of which at least one must hold, declared as
+       * `refersTo: { anyOf: [...] }`. There is no `type`: test for
+       * `'anyOf' in reference`. Each target is an `identity` or a
+       * `permanentDocument` (by id or with a `lookup`) with its own fields,
+       * a `propertyAgreement` belonging to its own target. When a document
+       * is written, consensus checks the targets in this order and stops at
+       * the first that holds; when none holds, the write is refused with the
+       * error the last target gives.
+       */
+      type?: never;
+      anyOf: Array<Extract<DocumentPropertyReferenceTarget, { type: 'identity' | 'permanentDocument' }>>;
     };
 
 /**
@@ -231,7 +245,9 @@ export type DocumentPropertyReference = {
    * index (`"reasons[2]"` for
    * the third). Note that contract *registration* errors prefix it with the
    * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
-   * while document *write* errors do not.
+   * and name one target of an `anyOf` by its place in the list
+   * (`"<documentType>.<path>.anyOf[1]"`), while document *write* errors do
+   * neither.
    */
   path: string;
 } & DocumentPropertyReferenceTarget;
@@ -355,11 +371,26 @@ fn set_reference_target_fields(
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
         DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
+        // No `type`, as the schema declares none: the targets sit under
+        // `anyOf`, each an object of its own
+        DocumentPropertyReferenceTarget::AnyOf(any_of) => {
+            let targets = Array::new();
+            for any_of_target in any_of.targets() {
+                targets.push(&reference_target_to_js(
+                    any_of_target,
+                    declaring_contract_id,
+                    path,
+                )?);
+            }
+            return set_field(object, "anyOf", &targets, path);
+        }
     };
     set_field(object, "type", &JsValue::from_str(kind), path)?;
 
     match target {
-        DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
+        DocumentPropertyReferenceTarget::Identity
+        | DocumentPropertyReferenceTarget::Token
+        | DocumentPropertyReferenceTarget::AnyOf(_) => {}
         DocumentPropertyReferenceTarget::Contract {
             contract_requirements,
         } => {

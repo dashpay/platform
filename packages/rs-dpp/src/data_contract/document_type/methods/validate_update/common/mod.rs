@@ -2282,6 +2282,111 @@ mod tests {
             }
         }
 
+        /// An `anyOf` is frozen like a single target: documents were checked against
+        /// the targets they were written under, so turning a target into an `anyOf` or
+        /// back, adding, removing or reordering a target (the order decides which error a
+        /// writer sees), or changing one is an incompatible schema change. `anyOf` inside
+        /// `refersTo` is the declaration's data, never read as the JSON Schema keyword.
+        #[test]
+        fn should_return_invalid_result_when_an_any_of_reference_changes() {
+            let platform_version = PlatformVersion::latest();
+            let identity = platform_value!({ "type": "identity" });
+            let note = platform_value!({ "type": "permanentDocument", "documentType": "note" });
+            let memo = platform_value!({ "type": "permanentDocument", "documentType": "memo" });
+            let any_of = |targets: Vec<platform_value::Value>| platform_value!({ "anyOf": platform_value::Value::Array(targets) });
+
+            for (old_refers_to, new_refers_to) in [
+                (
+                    identity.clone(),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (any_of(vec![identity.clone(), note.clone()]), note.clone()),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![note.clone(), identity.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), memo.clone()]),
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_refers_to.clone()), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_refers_to.clone()), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert!(
+                    !result.errors.is_empty(),
+                    "{old_refers_to:?} -> {new_refers_to:?} should be incompatible"
+                );
+                for error in &result.errors {
+                    assert_matches!(
+                        error,
+                        ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        ) if e.property_path().starts_with("/properties/toUserId/refersTo"),
+                        "{old_refers_to:?} -> {new_refers_to:?}"
+                    );
+                }
+            }
+
+            // An unchanged anyOf is no change
+            let document_type =
+                identifier_document_type(Some(any_of(vec![identity, note])), platform_version);
+            let result = document_type
+                .as_ref()
+                .validate_schema(document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// The same holds on the elements of a typed array.
+        #[test]
+        fn should_refuse_a_contract_update_that_changes_an_element_any_of() {
+            let platform_version = PlatformVersion::latest();
+            let reason = platform_value!({ "type": "permanentDocument", "documentType": "reason" });
+            let any_of = platform_value!({
+                "anyOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
+
+            for (old_refers_to, new_refers_to) in [
+                (reason.clone(), any_of.clone()),
+                (any_of.clone(), reason.clone()),
+            ] {
+                let old_document_type =
+                    element_reference_document_type(Some(old_refers_to), platform_version);
+                let new_document_type =
+                    element_reference_document_type(Some(new_refers_to), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_update(new_document_type.as_ref(), 2, platform_version)
+                    .expect("validate_update should not error");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    ), ..] if e.property_path().starts_with("/properties/reasons/items/refersTo"),
+                    "{:?}",
+                    result.errors
+                );
+            }
+        }
+
         /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
         /// `delegateId` as given.
         fn distinct_from_document_type(

@@ -40,9 +40,11 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod reference_any_of;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use reference_any_of::{AnyOfReferenceTargets, ANY_OF_REFERENCE_TARGET_TYPES};
 pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
 
 #[cfg(test)]
@@ -845,6 +847,24 @@ pub enum DocumentPropertyReferenceTarget {
         /// How the referenced document is found.
         lookup: DocumentReferenceLookup,
     },
+    /// Two or more targets, declared as `{ "anyOf": [target, ...] }`: the
+    /// reference holds if at least one of them holds. Each target is an
+    /// ordinary declaration, an `identity` or a `permanentDocument` (by id or
+    /// through a lookup), never an `anyOf` itself (see
+    /// [`AnyOfReferenceTargets`] for the rules and why the other kinds are
+    /// left out). At write time the targets are checked in declared order
+    /// and the first that holds ends the check; every read is billed, and
+    /// when none holds the write is refused with the error of the last
+    /// target, so a reference error never carries this variant. A
+    /// `propertyAgreement` belongs to its target and is checked only against
+    /// that target's document.
+    ///
+    /// Not a document reference as a whole
+    /// ([`Self::as_any_document_reference`] is `None`): code that checks
+    /// each declaration walks [`Self::targets`], and code that needs one
+    /// target (joins, preallocated indexes) refuses it.
+    #[serde(rename = "anyOf")]
+    AnyOf(AnyOfReferenceTargets),
 }
 
 /// The declaration content the two document reference targets,
@@ -924,7 +944,20 @@ impl DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
-            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => None,
+            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
+            | DocumentPropertyReferenceTarget::AnyOf(_) => None,
+        }
+    }
+
+    /// The single targets this declaration is made of: the alternatives of an
+    /// `anyOf`, in declared order, or the declaration itself. Code that
+    /// checks every declaration (registration, the lookup sources, the write
+    /// time validation) walks these, so a target inside an `anyOf` is
+    /// checked exactly as the same target declared alone.
+    pub fn targets(&self) -> &[DocumentPropertyReferenceTarget] {
+        match self {
+            DocumentPropertyReferenceTarget::AnyOf(any_of) => any_of.targets(),
+            target => std::slice::from_ref(target),
         }
     }
 }
@@ -966,13 +999,17 @@ impl<'a> PropertyReference<'a> {
         }
     }
 
-    /// How many referenced values one document can carry through this
-    /// declaration: `max_items` for a typed array, one otherwise.
+    /// How many references one document can carry through this declaration,
+    /// each a billed state read when the document is written: `max_items`
+    /// for a typed array, one otherwise, times the number of targets of an
+    /// `anyOf`, every one of which may be read for one value.
     pub fn max_references(&self) -> u32 {
-        match self {
+        let values = match self {
             PropertyReference::Elements { max_items, .. } => u32::from(*max_items),
             PropertyReference::Value(_) | PropertyReference::KeyId(_) => 1,
-        }
+        };
+        let targets = self.target().map_or(1, |target| target.targets().len());
+        values.saturating_mul(u32::try_from(targets).unwrap_or(u32::MAX))
     }
 }
 
@@ -1082,6 +1119,16 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 document_type_name,
                 ..
             } => write_document_reference(f, "deletable", *contract_id, document_type_name, None),
+            DocumentPropertyReferenceTarget::AnyOf(any_of) => {
+                write!(f, "any of: ")?;
+                for (index, target) in any_of.targets().iter().enumerate() {
+                    if index > 0 {
+                        write!(f, " or ")?;
+                    }
+                    write!(f, "{target}")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -9679,6 +9726,74 @@ mod tests {
         );
     }
 
+    fn identity_or_note() -> DocumentPropertyReferenceTarget {
+        DocumentPropertyReferenceTarget::AnyOf(AnyOfReferenceTargets::new(vec![
+            DocumentPropertyReferenceTarget::Identity,
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            },
+        ]))
+    }
+
+    /// An `anyOf` is no document reference as a whole: code that needs one
+    /// target sees none, and code that checks every declaration walks its
+    /// targets, which for a single declaration is the declaration itself.
+    #[test]
+    fn should_walk_the_targets_of_an_any_of_and_expose_no_single_document_reference() {
+        let any_of = identity_or_note();
+        assert_eq!(any_of.as_document_reference(), None);
+        assert_eq!(any_of.as_any_document_reference(), None);
+        let DocumentPropertyReferenceTarget::AnyOf(targets) = &any_of else {
+            panic!("expected an anyOf");
+        };
+        assert_eq!(any_of.targets(), targets.targets());
+        assert_eq!(
+            any_of.targets()[1]
+                .as_document_reference()
+                .map(|declaration| declaration.document_type_name),
+            Some("note")
+        );
+
+        let single = DocumentPropertyReferenceTarget::Identity;
+        assert_eq!(single.targets(), std::slice::from_ref(&single));
+    }
+
+    #[test]
+    fn should_display_the_targets_of_an_any_of_in_declared_order() {
+        assert_eq!(
+            identity_or_note().to_string(),
+            "any of: identity or permanent document (own contract, document type note)"
+        );
+    }
+
+    /// Registration counts every target of an `anyOf`: each may be read for
+    /// one value when the document is written.
+    #[test]
+    fn should_count_every_target_of_an_any_of_as_a_reference() {
+        let any_of = identity_or_note();
+        assert_eq!(PropertyReference::Value(&any_of).max_references(), 2);
+        assert_eq!(
+            PropertyReference::Elements {
+                target: &any_of,
+                max_items: 15,
+            }
+            .max_references(),
+            30
+        );
+        let single = DocumentPropertyReferenceTarget::Identity;
+        assert_eq!(PropertyReference::Value(&single).max_references(), 1);
+        assert_eq!(
+            PropertyReference::Elements {
+                target: &single,
+                max_items: 15,
+            }
+            .max_references(),
+            15
+        );
+    }
+
     fn key_with(purpose: Purpose, contract_bounds: Option<ContractBounds>) -> IdentityPublicKey {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 2,
@@ -9830,8 +9945,8 @@ mod tests {
     /// notably by wasm-dpp2's `DocumentPropertyReference` TypeScript union
     /// and the conversion that builds it. Those live behind a `match` that
     /// a new variant would not break, because they can fall back to a
-    /// catch-all. This exhaustive `match` has no catch-all, so adding an
-    /// eighth variant fails to compile *here*, in the crate that owns the
+    /// catch-all. This exhaustive `match` has no catch-all, so adding a
+    /// ninth variant fails to compile *here*, in the crate that owns the
     /// enum, where whoever adds it will see it.
     #[test]
     fn reference_targets_are_exhaustively_mirrored() {
@@ -9864,6 +9979,14 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                 },
             },
+            DocumentPropertyReferenceTarget::AnyOf(AnyOfReferenceTargets::new(vec![
+                DocumentPropertyReferenceTarget::Identity,
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: None,
+                    document_type_name: "note".to_string(),
+                    property_agreement: Default::default(),
+                },
+            ])),
         ];
 
         for target in &targets {
@@ -9878,10 +10001,12 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => {
                     "permanentDocument"
                 }
+                // Not a `type`: the schema declares it under its own key
+                DocumentPropertyReferenceTarget::AnyOf(_) => "anyOf",
             };
 
-            // The tag is the `refersTo` schema keyword's own `type` value,
-            // which is what the JS surface reports verbatim.
+            // The tag is the `refersTo` schema keyword's own `type` value
+            // (or `anyOf`), which is what the JS surface reports verbatim.
             assert!(!json_tag.is_empty());
             assert!(!target.to_string().is_empty());
         }

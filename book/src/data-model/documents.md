@@ -270,7 +270,7 @@ Revision 0 is never used for active documents. This allows `0` to serve as a sen
 
 ## Document References (`refersTo`)
 
-From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument` and `identityPublicKey`. Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
+From protocol version 14 a property of a document type can declare what it points at, and consensus refuses a create or replace whose target does not exist when the document is written (the reference is a write-time constraint only; nothing resolves it for a reader). The keyword is `refersTo` on the property, its `type` one of `identity`, `contract` (optionally with `contractRequirements`, see [Contract Moderation](contract-moderation.md)), `token`, `permanentDocument`, `deletableDocument` and `identityPublicKey`, or several targets of which one must hold (see [Several targets](#several-targets-anyof)). Every form sits on an identifier property, with one exception below. The parsed shape is `DocumentPropertyType::IdentifierWithReference(target)`, and any change to a declaration on contract update is an incompatible schema change.
 
 An `identityPublicKey` reference names one key of one identity, and comes in two forms that differ in which property carries what:
 
@@ -334,6 +334,44 @@ The checks on the referenced type run where that type is in hand. For a document
 When the referring document is created or replaced, the document reference validation assembles the key for each value and queries the index for at most one document, billed as a document fetch of the same kind as the id lookup (`fetch_document_through_lookup`). No document, or a key it cannot assemble, refuses the write, paid, with `ReferencedEntityNotFoundError` (40120) naming the property, or the element by its list path (`members[1]`); its target reads "found through unique index `<index>`". A `propertyAgreement` beside the `lookup` is checked against the document the index found, exactly as for an id reference. A replace re-validates the reference when the property itself changed (for a list, the elements the stored list did not hold), and every value, every element included, when a property a key reads changed. Nothing else can move a key part: the writer is fixed on a type allowed to read it, and the referenced side's key is fixed by the rule above, so a validated lookup reference never dangles.
 
 Joins cannot go through a lookup reference: a chained query or a composite by-id join needs the join property's values to be the outer documents' ids, so both refuse such a property, and a `preallocated` index cannot be bound through one. In Rust the declaration is its own variant, `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, appended to the enum rather than a field of `PermanentDocument`: the enum is embedded in the reference errors, so an id reference keeps its encoding, and code matching `PermanentDocument` as "the value is a document id" cannot mistake a lookup for one. The rules are on `DocumentReferenceLookup`. `as_document_reference` returns only references whose value is a document id, the accessor for joins; the validators use `as_any_document_reference`, whose declaration carries the lookup.
+
+### Several targets (`anyOf`)
+
+A `refersTo` may name two or more targets in place of one, and the reference holds if at least one of them holds. The declaration is an object whose only key is `anyOf`, a list of ordinary targets, each with its own keys:
+
+```json
+"memberId": {
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "refersTo": {
+    "anyOf": [
+      {
+        "type": "permanentDocument", "documentType": "joinRequest",
+        "lookup": { "index": "bySubmittedCharter", "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." } }
+      },
+      {
+        "type": "permanentDocument", "documentType": "addedModerator",
+        "lookup": { "index": "byModerator", "keys": { "submittedCharterId": "submittedCharterId", "moderatorId": "." } }
+      }
+    ]
+  },
+  "position": 2
+}
+```
+
+reads: the member either asked to join the charter, or was added to it later. The same form sits on the `items` of a typed array, where each element meets the `anyOf` on its own, through whichever target holds for it.
+
+What is checked when the contract enters the chain:
+
+- The list names at least two targets (a single one is declared without `anyOf`) and no two alike, and the wrapper declares nothing beside `anyOf`: a `propertyAgreement` or a `lookup` belongs to one target, inside it. These are checked on every parse, by meta-schema v3 and the parser (`apply_property_reference` 0).
+- Every target is an `identity` or a `permanentDocument` (by id or with a `lookup`). Both are existence checks against entities that are never deleted, so an `anyOf` of them holds for good once it holds, as a single one of them does, and a replace re-validates it only when its value or a property one of its targets binds changed. The other types do not compose with an alternative and are refused, as are the key id form (`identityProperty`) and an `anyOf` inside an `anyOf`: `deletableDocument` is re-validated on every replace and may be cleared once its document is deleted (the immutable-property exception), which assumes the property refers to that one target; `identityPublicKey` pairs the value with a key id property no other target reads; a `contract` target's requirements are gates judged against the block time and the writer rather than an existence check, and no identity or document stands in for a contract or a token. Admitting one later takes a new `apply_property_reference` generation.
+- Every target is checked exactly as the same target declared alone: the referenced document type, its permanence, the `propertyAgreement` sides and the `lookup` rules, at the same places (the contract parse for a type of the same contract, the registration state validation for another contract's). Every target must pass, since an `anyOf` lets a write satisfy one target but each has to be a declaration that could hold; a registration error names the failing target by its place in the list (`resignation.memberId.anyOf[1]`).
+- Under full validation a list holds at most `SystemLimits::max_any_of_reference_targets` targets (4 at protocol version 14), and every target counts against `max_references_per_document`: an `anyOf` of two on a typed array of `maxItems` 15 counts 30, since each target may be read for each element.
+- A changed `anyOf` (a target added, removed, changed or moved, or a single target turned into an `anyOf` or back) is an incompatible schema change on update, like the rest of a `refersTo`. Inside `refersTo`, `anyOf` is the declaration's data; the schema compatibility rules never read it as the JSON Schema keyword.
+
+When the referring document is created or replaced, the document reference validation checks the targets of each value (each element) in declared order and stops at the first that holds. Every read is billed as it is made, so a value the second target holds for pays for the first target's query too, and a value no target holds for pays for all of them. When none holds, the write is refused, paid, with the error the LAST target gives alone (for the declaration above, `ReferencedEntityNotFoundError` (40120) for the `addedModerator` lookup, naming the property or the element). There is no error of its own for "no target held": each target's failure already has a precise error, a list error would have to nest one error per target or lose their reasons, and taking the last one lets the author choose which failure a writer sees by ordering the list, putting the most general target last. A `propertyAgreement` is checked only against its own target's document: a value whose first target fails its agreement is still accepted through a second target without one.
+
+Joins and preallocated indexes need one target: a chained query or a composite by-id join refuses an `anyOf` join property, since a value may name a document of any of its types, and a `preallocated` index is never bound through one. In Rust the declaration is `DocumentPropertyReferenceTarget::AnyOf(AnyOfReferenceTargets)`, appended to the enum so every single target keeps its encoding. It is no document reference as a whole (`as_any_document_reference` is `None`); code that checks every declaration walks `DocumentPropertyReferenceTarget::targets`, the alternatives of an `anyOf` or the declaration itself. Since the enum is embedded in consensus errors, which clients decode from bytes a node sends, decoding refuses an `anyOf` inside an `anyOf`, so no bytes can drive the decoder into unbounded recursion. A reference error never carries the variant: the refusal is the last target's error.
 
 ## Immutable Properties on Mutable Document Types
 

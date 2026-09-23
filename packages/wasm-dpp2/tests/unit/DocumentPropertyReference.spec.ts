@@ -140,7 +140,8 @@ function buildContract(platformVersion: number, fullValidation = true) {
 
 type Reference = {
   path: string;
-  type: string;
+  type?: string;
+  anyOf?: Omit<Reference, 'path'>[];
   contractId?: { toBase58(): string };
   documentType?: string;
   keyIdProperty?: string;
@@ -449,6 +450,127 @@ describe('DataContract — refersTo declarations (v14)', () => {
       });
 
       expect(build).to.throw(/is not unique/);
+    });
+  });
+
+  describe('anyOf', () => {
+    /**
+     * The moderation charter's resignation: the member is either the owner of
+     * a join request for the charter, or the moderator an `addedModerator`
+     * document names.
+     */
+    const anyOfSchemas = {
+      joinRequest: lookupSchemas.joinRequest,
+      addedModerator: {
+        type: 'object',
+        canBeDeleted: false,
+        documentsMutable: false,
+        properties: {
+          submittedCharterId: plainIdentifier,
+          moderatorId: { ...plainIdentifier, position: 1 },
+        },
+        indices: [
+          {
+            name: 'byModerator',
+            properties: [{ submittedCharterId: 'asc' }, { moderatorId: 'asc' }],
+            unique: true,
+          },
+        ],
+        required: ['submittedCharterId', 'moderatorId'],
+        additionalProperties: false,
+      },
+      resignation: {
+        type: 'object',
+        properties: {
+          submittedCharterId: plainIdentifier,
+          memberId: identifierProperty(1, {
+            anyOf: [
+              (lookupSchemas.charter.properties.memberId as { refersTo: object }).refersTo,
+              {
+                type: 'permanentDocument',
+                documentType: 'addedModerator',
+                lookup: {
+                  index: 'byModerator',
+                  keys: { submittedCharterId: 'submittedCharterId', moderatorId: '.' },
+                },
+              },
+            ],
+          }),
+        },
+        required: ['submittedCharterId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildAnyOfContract(schemas: object) {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas,
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+    }
+
+    it('should carry the targets of an anyOf in declared order, without a type', () => {
+      const contract = buildAnyOfContract(anyOfSchemas);
+      const [member] = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(member.path).to.equal('memberId');
+      expect(member).to.not.have.property('type');
+      expect(member.anyOf).to.have.lengthOf(2);
+      const [joinRequest, addedModerator] = member.anyOf!;
+      expect(joinRequest.type).to.equal('permanentDocument');
+      expect(joinRequest.documentType).to.equal('joinRequest');
+      expect(joinRequest.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(joinRequest.lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+      expect(addedModerator.documentType).to.equal('addedModerator');
+      expect(addedModerator.lookup).to.deep.equal({
+        index: 'byModerator',
+        keys: { moderatorId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+      // Each target is a target object of its own, never a nested anyOf
+      expect(joinRequest).to.not.have.property('anyOf');
+      expect(joinRequest).to.not.have.property('path');
+    });
+
+    it('should carry an anyOf the elements of a typed array declare', () => {
+      const withMembers = structuredClone(anyOfSchemas);
+      const properties = withMembers.resignation.properties as Record<string, object>;
+      properties.members = {
+        type: 'array',
+        maxItems: 15,
+        items: {
+          type: 'array',
+          byteArray: true,
+          minItems: 32,
+          maxItems: 32,
+          contentMediaType: 'application/x.dash.dpp.identifier',
+          refersTo: { anyOf: [{ type: 'identity' }, { type: 'permanentDocument', documentType: 'joinRequest' }] },
+        },
+        position: 2,
+      };
+      const contract = buildAnyOfContract(withMembers);
+      const members = (contract.documentTypeReferences('resignation') as Reference[]).find(
+        (reference) => reference.path === 'members[]',
+      )!;
+
+      expect(members).to.not.have.property('type');
+      expect(members.anyOf!.map((target) => target.type)).to.deep.equal(['identity', 'permanentDocument']);
+      expect(members.anyOf![1].documentType).to.equal('joinRequest');
+    });
+
+    it('should refuse an anyOf target of a type it does not take', () => {
+      const withContract = structuredClone(anyOfSchemas);
+      (withContract.resignation.properties.memberId as { refersTo: object }).refersTo = {
+        anyOf: [{ type: 'identity' }, { type: 'contract' }],
+      };
+
+      expect(() => buildAnyOfContract(withContract)).to.throw();
     });
   });
 

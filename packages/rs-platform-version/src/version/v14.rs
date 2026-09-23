@@ -759,6 +759,40 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
 ///
+/// 33. **`anyOf` reference targets**: a `refersTo`, on an identifier property
+///     or on the elements of a typed array (item 31), may be
+///     `{ "anyOf": [target, ...] }` in place of one target, and holds if at
+///     least one of its targets holds (meta-schema v3, which admits the
+///     wrapper only with `anyOf` as its one key, `apply_property_reference` 0,
+///     parsed to the appended `DocumentPropertyReferenceTarget::AnyOf`, so
+///     every single target keeps its variant and its encoding; decoding
+///     refuses an `anyOf` inside an `anyOf`, so the bytes of a consensus
+///     error cannot recurse). A list names two or more targets, no two
+///     alike, each an `identity` or a `permanentDocument` (by id or with a
+///     `lookup`, item 32); `contract`, `token`, `deletableDocument` and
+///     `identityPublicKey` targets, the key id form and a nested `anyOf` are
+///     refused on every parse. Registration caps a list at
+///     `SYSTEM_LIMITS_V4.max_any_of_reference_targets` (4, backfilled into the
+///     earlier tables) and counts every target against
+///     `max_references_per_document`, and checks each target as the same
+///     declaration alone (`create_document_types_from_document_schemas` 1
+///     and `data_contract_reference_validation` 0, both walking
+///     `DocumentPropertyReferenceTarget::targets`, which is the declaration
+///     itself for a single target, so their output is unchanged where no
+///     `anyOf` can parse), a failing target named by its place in the list
+///     (`resignation.memberId.anyOf[1]`). The document reference validation
+///     (`document_reference_validation` 0, reached only from this version)
+///     checks the targets of each value in declared order and stops at the
+///     first that holds; every read is billed, the failed targets' included,
+///     and when none holds the write is refused with the error of the last
+///     target, so the author's order decides which failure a writer sees and
+///     no new error exists. A `propertyAgreement` belongs to its target and is
+///     checked only against that target's document. A replace re-validates
+///     the `anyOf` when its value, or a property one of its targets binds,
+///     changed. A changed `anyOf` is an incompatible schema change on update.
+///     Chained queries and composite by-id joins refuse an `anyOf` join
+///     property, and preallocated indexes are never bound through one.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

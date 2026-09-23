@@ -14,6 +14,7 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024,
     max_references_per_document: 256,
+    max_any_of_reference_targets: 4,
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.

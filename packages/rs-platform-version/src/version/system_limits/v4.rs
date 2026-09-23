@@ -58,6 +58,9 @@ use crate::version::system_limits::SystemLimits;
 ///   `maxItems` per typed array whose elements declare one (`max_references_per_document`,
 ///   backfilled into the earlier tables, whose parsers never read it). Each reference is a
 ///   billed state read when the document is written.
+/// * `anyOf` references (protocol version 14): a `refersTo` `anyOf` lists at most 4 targets
+///   (`max_any_of_reference_targets`, backfilled into the earlier tables, whose parsers never
+///   read it), each counted against `max_references_per_document`.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -66,6 +69,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
+    max_any_of_reference_targets: 4, // refersTo anyOf (new in v14): contract registration caps the targets one anyOf lists
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.

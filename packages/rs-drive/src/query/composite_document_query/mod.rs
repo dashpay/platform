@@ -631,6 +631,17 @@ impl<'a> DriveDocumentQuery<'a> {
                         lookup.index,
                     )));
                 }
+                // An `anyOf` names no single type the derived ids resolve in
+                if let Some(DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::AnyOf(_),
+                )) = source_property_type
+                {
+                    return Err(label(
+                        "the source property declares a refersTo anyOf, so its values may name \
+                         any of several targets: a by-id join needs a reference to one document \
+                         type",
+                    ));
+                }
                 match source_property_type.and_then(document_reference_of) {
                     Some(DocumentReferenceDeclaration {
                         contract_id,

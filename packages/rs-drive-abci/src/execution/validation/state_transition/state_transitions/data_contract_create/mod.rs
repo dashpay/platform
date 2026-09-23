@@ -5703,6 +5703,45 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_register_contract_with_any_of_references() {
+            // `anyOf`s of two lookups on a property and on the elements of a
+            // typed array, of an identity and a document id, and of two lookups
+            // one of which carries a propertyAgreement: every target is checked
+            // as it would be declared alone
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-any-of.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_whose_any_of_target_names_an_unknown_document_type() {
+            // The second target names `removedModerator`, which the contract
+            // does not define: every target of an anyOf must be a declaration
+            // that could hold, and the error names it by its place in the list
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-any-of-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(e)
+                    ),
+                    ..
+                } if e.path() == "resignation.memberId.anyOf[1]"
+                    && e.document_type_name() == "removedModerator"
+            );
+        }
+
+        #[tokio::test]
         async fn should_register_contract_with_deletable_document_references() {
             // A deletableDocument reference targets a document type that
             // allows deletion (`draft`), which a permanentDocument one

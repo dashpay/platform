@@ -60,7 +60,8 @@ use crate::platform_types::platform::PlatformStateRef;
 /// Versioned, stateful validation of document references using the v0 rules.
 ///
 /// This performs existence checks for the supported reference targets (identity,
-/// contract and token) and can be limited to changed fields for replace
+/// contract and token, documents, identity keys, and the targets of an `anyOf`,
+/// of which one must hold) and can be limited to changed fields for replace
 /// transitions. It is intended to be called via the higher-level
 /// `DocumentReferenceValidation` dispatcher that selects the version.
 pub(crate) trait DocumentReferenceValidationV0 {
@@ -289,61 +290,15 @@ fn validate_document_type_references_v0(
         let bound_property_changed = if let Some(changed) = changed_fields {
             // Some targets bind a sibling property of the same document to
             // the reference; replacing that sibling must re-validate the
-            // reference even when the reference property itself is untouched:
-            // - a propertyAgreement pair binds each referring property;
-            // - an identityPublicKey reference binds the key id property,
-            //   since the referenced key is the (identity id, key id) pair
-            //   and a freshly written key id must exist and not be disabled;
-            // - a lookup binds every property its key reads, since the
-            //   referenced document is the one the whole key finds.
-            // A writer gate (an agreement keyed by `$ownerId`) is re-checked
-            // on EVERY replace: the writer is transition metadata that never
-            // appears among the changed fields, and either document may have
-            // been transferred since the last write, so a replace of an
-            // unrelated field by a now-unauthorized owner must still fail. A
-            // lookup whose key reads `$ownerId` needs no such rule: its
-            // declaring type can be neither transferred nor traded
-            // (registration refuses it otherwise), so the writer never moves.
-            // The same rules hold for the elements of a typed array, which
-            // share one declaration: the array is one field, so a replace
-            // that changes it re-validates the elements the stored list did
-            // not hold, and a changed bound property, a writer gate or a
-            // deletableDocument target re-validates them all.
-            let bound_property_changed = match reference_target {
-                DocumentPropertyReferenceTarget::PermanentDocument {
-                    property_agreement, ..
-                } => property_agreement.keys().any(|referring_property| {
-                    is_referring_system_agreement_property(referring_property)
-                        || is_changed_field(changed, referring_property)
-                }),
-                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-                    property_agreement,
-                    lookup,
-                    ..
-                } => {
-                    property_agreement.keys().any(|referring_property| {
-                        is_referring_system_agreement_property(referring_property)
-                            || is_changed_field(changed, referring_property)
-                    }) || lookup_key_may_have_changed(lookup, changed)
-                }
-                // A deletableDocument reference is re-validated on EVERY
-                // replace, touched or not: its target may have been deleted
-                // since the last write, and a referring document is not
-                // allowed to be rewritten around a dead reference. The
-                // replace has to repoint it at a document that exists, or
-                // clear it; leaving it (or pointing it at another missing
-                // document) fails the existence check below. A writer gate
-                // is therefore never evaluated against a missing document:
-                // it is checked against the new target, or not at all once
-                // the reference is cleared.
-                DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
-                DocumentPropertyReferenceTarget::IdentityPublicKey {
-                    key_id_property, ..
-                } => is_changed_field(changed, key_id_property),
-                DocumentPropertyReferenceTarget::Identity
-                | DocumentPropertyReferenceTarget::Contract { .. }
-                | DocumentPropertyReferenceTarget::Token => false,
-            };
+            // reference even when the reference property itself is untouched
+            // (see `binds_a_changed_property`, which also covers the writer
+            // gates and deletableDocument targets re-checked on every
+            // replace). The same rules hold for the elements of a typed
+            // array, which share one declaration: the array is one field, so
+            // a replace that changes it re-validates the elements the stored
+            // list did not hold, and a changed bound property, a writer gate
+            // or a deletableDocument target re-validates them all.
+            let bound_property_changed = binds_a_changed_property(reference_target, changed);
             if !is_changed_field(changed, path) && !bound_property_changed {
                 continue;
             }
@@ -471,19 +426,170 @@ fn validate_document_type_references_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// Checks one reference against platform state: the referenced id
-/// `referenced_id`, declared by `reference_target`, is an identifier
-/// property's value or one element of a typed array of them, and `path` is
-/// how the errors name it (the property path, or the element's list path).
-/// The target must exist and meet the declaration's contract requirements,
-/// a referenced document's type must be deletable or not as declared, and
-/// each `propertyAgreement` pair must hold between `document_data` (or the
-/// writer `owner_id`) and the referenced document. Every read is billed to
-/// `execution_context`; a foreign contract holding a referenced document
-/// type is resolved through `referenced_contracts`, which the caller shares
-/// among the elements of one array.
+/// Whether a replace that changed `changed_fields` must re-validate a
+/// reference declared by `reference_target` although the reference property
+/// itself is untouched, because the target binds a sibling property of the
+/// same document, or because it is re-checked on every replace:
+/// - a propertyAgreement pair binds each referring property;
+/// - an identityPublicKey reference binds the key id property, since the
+///   referenced key is the (identity id, key id) pair and a freshly written
+///   key id must exist and not be disabled;
+/// - a lookup binds every property its key reads, since the referenced
+///   document is the one the whole key finds.
+///
+/// A writer gate (an agreement keyed by `$ownerId`) is re-checked on EVERY
+/// replace: the writer is transition metadata that never appears among the
+/// changed fields, and either document may have been transferred since the
+/// last write, so a replace of an unrelated field by a now-unauthorized owner
+/// must still fail. A lookup whose key reads `$ownerId` needs no such rule:
+/// its declaring type can be neither transferred nor traded (registration
+/// refuses it otherwise), so the writer never moves. An `anyOf` is
+/// re-validated when any of its targets would be, and then as a whole, in
+/// declared order: which target holds may have changed.
+fn binds_a_changed_property(
+    reference_target: &DocumentPropertyReferenceTarget,
+    changed_fields: &BTreeSet<String>,
+) -> bool {
+    match reference_target {
+        DocumentPropertyReferenceTarget::PermanentDocument {
+            property_agreement, ..
+        } => property_agreement.keys().any(|referring_property| {
+            is_referring_system_agreement_property(referring_property)
+                || is_changed_field(changed_fields, referring_property)
+        }),
+        DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            property_agreement,
+            lookup,
+            ..
+        } => {
+            property_agreement.keys().any(|referring_property| {
+                is_referring_system_agreement_property(referring_property)
+                    || is_changed_field(changed_fields, referring_property)
+            }) || lookup_key_may_have_changed(lookup, changed_fields)
+        }
+        // A deletableDocument reference is re-validated on EVERY replace,
+        // touched or not: its target may have been deleted since the last
+        // write, and a referring document is not allowed to be rewritten
+        // around a dead reference. The replace has to repoint it at a
+        // document that exists, or clear it; leaving it (or pointing it at
+        // another missing document) fails the existence check. A writer gate
+        // is therefore never evaluated against a missing document: it is
+        // checked against the new target, or not at all once the reference
+        // is cleared.
+        DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
+        DocumentPropertyReferenceTarget::IdentityPublicKey {
+            key_id_property, ..
+        } => is_changed_field(changed_fields, key_id_property),
+        DocumentPropertyReferenceTarget::Identity
+        | DocumentPropertyReferenceTarget::Contract { .. }
+        | DocumentPropertyReferenceTarget::Token => false,
+        DocumentPropertyReferenceTarget::AnyOf(any_of) => any_of
+            .targets()
+            .iter()
+            .any(|target| binds_a_changed_property(target, changed_fields)),
+    }
+}
+
+/// Checks one referenced value against its declaration `reference_target`:
+/// the value `referenced_id` is an identifier property's value or one
+/// element of a typed array of them, and `path` is how the errors name it
+/// (the property path, or the element's list path). A single target is
+/// checked by [`validate_reference_target_v0`]. The targets of an `anyOf` are
+/// checked the same way, one after the other in declared order, and the
+/// first that holds ends the check; when none holds, the result is the last
+/// target's, its error the one a declaration of that target alone would
+/// give, so the author's order decides which failure a writer is shown.
+/// Every read is billed as it is made, so the reads of the targets that
+/// failed are paid for too.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_v0(
+    contract: &DataContract,
+    document_type: DocumentTypeRef<'_>,
+    document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
+    reference_target: &DocumentPropertyReferenceTarget,
+    referenced_id: [u8; 32],
+    path: &str,
+    referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
+    platform: &PlatformStateRef,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let DocumentPropertyReferenceTarget::AnyOf(any_of) = reference_target else {
+        return validate_reference_target_v0(
+            contract,
+            document_type,
+            document_data,
+            owner_id,
+            reference_target,
+            referenced_id,
+            path,
+            referenced_contracts,
+            platform,
+            block_info,
+            transaction,
+            execution_context,
+            platform_version,
+        );
+    };
+    let Some((last_target, earlier_targets)) = any_of.targets().split_last() else {
+        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "a refersTo anyOf declares at least two targets, which the parser enforces",
+        )));
+    };
+    for target in earlier_targets {
+        let result = validate_reference_target_v0(
+            contract,
+            document_type,
+            document_data,
+            owner_id,
+            target,
+            referenced_id,
+            path,
+            referenced_contracts,
+            platform,
+            block_info,
+            transaction,
+            execution_context,
+            platform_version,
+        )?;
+        if result.is_valid() {
+            return Ok(result);
+        }
+    }
+    validate_reference_target_v0(
+        contract,
+        document_type,
+        document_data,
+        owner_id,
+        last_target,
+        referenced_id,
+        path,
+        referenced_contracts,
+        platform,
+        block_info,
+        transaction,
+        execution_context,
+        platform_version,
+    )
+}
+
+/// Checks one reference against platform state for a single target: the
+/// referenced id `referenced_id`, declared by `reference_target`, is an
+/// identifier property's value or one element of a typed array of them, and
+/// `path` is how the errors name it (the property path, or the element's list
+/// path). The target must exist and meet the declaration's contract
+/// requirements, a referenced document's type must be deletable or not as
+/// declared, and each `propertyAgreement` pair must hold between
+/// `document_data` (or the writer `owner_id`) and the referenced document.
+/// Every read is billed to `execution_context`; a foreign contract holding a
+/// referenced document type is resolved through `referenced_contracts`,
+/// which the caller shares among the elements of one array and the targets
+/// of one `anyOf`.
+#[allow(clippy::too_many_arguments)]
+fn validate_reference_target_v0(
     contract: &DataContract,
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
@@ -882,6 +988,13 @@ fn validate_reference_v0(
             }
 
             true
+        }
+        // `validate_reference_v0` walks the targets of an `anyOf`, and the
+        // parser refuses an `anyOf` among them
+        DocumentPropertyReferenceTarget::AnyOf(_) => {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a refersTo anyOf target cannot itself be an anyOf, which the parser enforces",
+            )))
         }
     };
 
