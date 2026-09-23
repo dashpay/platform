@@ -93,7 +93,25 @@ impl Drive {
     /// descriptions name a shallower one (the credit shielded pool's, at level 3, for
     /// `ShieldedBalances` at level 4). The estimate does not depend on the order of the batch's operations, and no
     /// write is priced at a shallower depth than its own description. Applying a batch is
-    /// generation 1's.
+    /// generation 1's, but for when an owned transaction commits.
+    ///
+    /// It also holds the owned transaction until the batch is priced. Everything generation
+    /// 1 does carries over: a batch that forfeits storage refunds refunds nobody, every
+    /// write of one identity balance, fee pot or prefunded specialized balance is merged
+    /// into one, a batch writing one token balance, supply or shielded pool total twice is
+    /// refused, a batch moving one document type's `summableOffCountIndex` counters for
+    /// more than one document is refused, and the debt the batch repaid
+    /// ([`LowLevelDriveOperation::RepaidIdentityDebt`]) is written to the processing fee
+    /// pool of the block's epoch after the batch applied, followed by the processing pool
+    /// returns the batch carries (`SystemOperationType::AddToCurrentEpochProcessingPool`,
+    /// unbilled), both before the owned transaction commits, so a pricing error drops the
+    /// pool writes with the rest. From protocol version 15 pricing an owner-attributed
+    /// storage removal without the fee history is an error; generation 1 committed its
+    /// owned transaction before pricing, so a caller passing no transaction and no history
+    /// had its writes persisted and the error returned. Now `Drive::calculate_fee` runs
+    /// first, a pricing error drops the owned transaction with everything it wrote, and the
+    /// finalize tasks still run after the commit. With a caller transaction nothing is
+    /// committed by Drive in either generation.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v2(
         &self,
@@ -267,6 +285,17 @@ impl Drive {
                 &platform_version.drive,
             )?;
         }
+        // Price before committing: a pricing error drops the owned transaction with
+        // everything it wrote, so nothing is persisted without its fee result.
+        let fee_result = Drive::calculate_fee(
+            None,
+            Some(cost_operations),
+            &block_info.epoch,
+            self.config.epochs_per_era,
+            platform_version,
+            previous_fee_versions,
+        )?;
+
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }
@@ -281,14 +310,7 @@ impl Drive {
             }
         }
 
-        Drive::calculate_fee(
-            None,
-            Some(cost_operations),
-            &block_info.epoch,
-            self.config.epochs_per_era,
-            platform_version,
-            previous_fee_versions,
-        )
+        Ok(fee_result)
     }
 }
 
@@ -425,5 +447,231 @@ mod tests {
         );
         assert_eq!(deepest_root_key_level([&at(vec![vec![7]], vec![1])]), None);
         assert_eq!(deepest_root_key_level([]), None);
+    }
+}
+
+#[cfg(test)]
+mod price_before_commit_tests {
+    use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::util::batch::drive_op_batch::GroupOperationType;
+    use crate::util::batch::DriveOperation;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::group::v0::GroupV0;
+    use dpp::data_contract::group::Group;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::DataContract;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use dpp::group::action_event::GroupActionEvent;
+    use dpp::group::group_action::v0::GroupActionV0;
+    use dpp::group::group_action::GroupAction;
+    use dpp::group::group_action_status::GroupActionStatus;
+    use dpp::identifier::Identifier;
+    use dpp::tokens::token_event::TokenEvent;
+    use dpp::version::fee::FeeVersion;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    /// A contract with one two-member group and an action the first member opened,
+    /// so closing the action moves signer-flagged items: the one removal a batch can
+    /// carry without a document fixture.
+    fn drive_with_open_group_action(
+        platform_version: &PlatformVersion,
+    ) -> (Drive, Identifier, Identifier, Identifier) {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let member_1 = Identifier::from([1; 32]);
+        let member_2 = Identifier::from([2; 32]);
+        let contract = DataContract::V1(DataContractV1 {
+            id: Identifier::from([3; 32]),
+            version: 0,
+            owner_id: member_1,
+            document_types: Default::default(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::from([(
+                0,
+                Group::V0(GroupV0 {
+                    members: [(member_1, 1), (member_2, 2)].into(),
+                    required_power: 3,
+                }),
+            )]),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]),
+            keywords: Vec::new(),
+            description: None,
+        });
+        let contract_id = contract.id();
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert the contract");
+        let action_id = Identifier::from([4; 32]);
+        let action = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            proposer_id: member_1,
+            token_contract_position: 0,
+            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, member_1, None)),
+        });
+        drive
+            .add_group_action(
+                contract_id,
+                0,
+                Some(action),
+                false,
+                action_id,
+                member_1,
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to open the action");
+        (drive, contract_id, member_2, action_id)
+    }
+
+    fn close_action(
+        contract_id: Identifier,
+        member_2: Identifier,
+        action_id: Identifier,
+    ) -> Vec<DriveOperation<'static>> {
+        vec![DriveOperation::GroupOperation(
+            GroupOperationType::AddGroupAction {
+                contract_id,
+                group_contract_position: 0,
+                initialize_with_insert_action_info: None,
+                action_id,
+                signer_identity_id: member_2,
+                signer_power: 2,
+                closes_group_action: true,
+            },
+        )]
+    }
+
+    fn is_closed(
+        drive: &Drive,
+        contract_id: Identifier,
+        action_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> bool {
+        drive
+            .fetch_action_is_closed(
+                contract_id,
+                0,
+                action_id,
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to check if the action is closed")
+    }
+
+    #[test]
+    fn should_not_commit_an_owned_transaction_when_the_batch_cannot_be_priced() {
+        // No caller transaction and no fee history: closing the action frees
+        // signer-flagged bytes, which the latest generation refuses to price. The
+        // batch was applied inside an owned transaction that is dropped with the
+        // error, so the action is still open afterwards.
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract_id, member_2, action_id) =
+            drive_with_open_group_action(platform_version);
+
+        let result = drive.apply_drive_operations(
+            close_action(contract_id, member_2, action_id),
+            true,
+            &BlockInfo::default(),
+            None,
+            platform_version,
+            None,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "pricing a flagged removal without the fee history must fail, got {:?}",
+            result
+        );
+        assert!(
+            !is_closed(&drive, contract_id, action_id, platform_version),
+            "a batch that could not be priced must not be committed"
+        );
+
+        // The same batch with the block's history is priced and committed.
+        let history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
+        let fee_result = drive
+            .apply_drive_operations(
+                close_action(contract_id, member_2, action_id),
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                Some(&history),
+            )
+            .expect("expected to close the action with the fee history");
+        assert!(fee_result.fee_refunds.get(&[1; 32]).is_some());
+        assert!(is_closed(&drive, contract_id, action_id, platform_version));
+        let closed_signers = drive
+            .fetch_action_signers(
+                contract_id,
+                0,
+                GroupActionStatus::ActionClosed,
+                action_id,
+                None,
+                platform_version,
+            )
+            .expect("expected the closed signers");
+        assert_eq!(closed_signers.len(), 2);
+    }
+
+    #[test]
+    fn should_price_and_commit_without_history_under_the_frozen_generation() {
+        // Protocol version 14 selects generation 1, which commits before pricing and
+        // prices fee version number 1 without a history: the close persists.
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        let (drive, contract_id, member_2, action_id) =
+            drive_with_open_group_action(platform_version);
+
+        drive
+            .apply_drive_operations(
+                close_action(contract_id, member_2, action_id),
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("the frozen generation prices the shipped shortcut without a history");
+        assert!(is_closed(&drive, contract_id, action_id, platform_version));
     }
 }

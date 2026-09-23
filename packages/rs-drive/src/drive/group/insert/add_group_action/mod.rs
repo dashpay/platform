@@ -14,6 +14,7 @@ use dpp::prelude::Identifier;
 use grovedb::TransactionArg;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Adds an action to the state
@@ -46,9 +47,22 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_group_action_v1(
+                contract_id,
+                group_contract_position,
+                initialize_with_insert_action_info,
+                closes_group_action,
+                action_id,
+                signer_identity_id,
+                signer_power,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_group_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -86,9 +100,23 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.add_group_action_add_to_operations_v1(
+                contract_id,
+                group_contract_position,
+                initialize_with_insert_action_info,
+                closes_group_action,
+                action_id,
+                signer_identity_id,
+                signer_power,
+                block_info,
+                apply,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_group_action_add_to_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
