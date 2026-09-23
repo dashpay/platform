@@ -1254,7 +1254,7 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            460940, // v14: stamped documents (see happy-path baseline note)
+            460740, // v14: stamped documents (see happy-path baseline note)
         )
         .await;
     }
@@ -1265,7 +1265,7 @@ mod replacement_tests {
     /// v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_13() {
-        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(13, 460920)
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(13, 460720)
             .await;
     }
 
