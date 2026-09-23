@@ -1054,6 +1054,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V2(v2) => v2.owner_reference(),
         }
     }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.creator_reference(),
+        }
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentType {
@@ -1195,6 +1203,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => v2.owner_reference(),
         }
     }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.creator_reference(),
+        }
+    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
@@ -1300,6 +1316,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.owner_reference(),
+        }
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.creator_reference(),
         }
     }
 }

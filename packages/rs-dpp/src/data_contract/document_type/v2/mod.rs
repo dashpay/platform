@@ -157,6 +157,14 @@ pub struct DocumentTypeV2 {
     /// whose documents can be neither transferred nor traded, which the parser
     /// (`parse_owner_reference` and generation 3) enforces.
     pub(in crate::data_contract) owner_reference: Option<DocumentPropertyReferenceTarget>,
+    /// The `refersTo` declaration whose value is the document's `$creatorId`,
+    /// its creator (`creatorRefersTo` keyword, protocol version 14), `None`
+    /// when the type declares none. The counterpart of
+    /// [`Self::owner_reference`] for a type whose documents can change owner:
+    /// the same two targets, only on a type that records creator ids (a
+    /// transferable or tradeable type of a format-1 contract), where the
+    /// creator never changes.
+    pub(in crate::data_contract) creator_reference: Option<DocumentPropertyReferenceTarget>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -246,6 +254,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
             owner_reference: None,
+            creator_reference: None,
         }
     }
 }
@@ -295,6 +304,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
             owner_reference: None,
+            creator_reference: None,
         }
     }
 }

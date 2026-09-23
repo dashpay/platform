@@ -699,8 +699,8 @@ impl DataContractWasm {
     }
 
     /// All `refersTo` declarations of one document type: its `ownerRefersTo`
-    /// first, at the path `$ownerId`, then the properties' own in schema
-    /// property order.
+    /// or `creatorRefersTo` first, at the path `$ownerId` or `$creatorId`,
+    /// then the properties' own in schema property order.
     ///
     /// Returns an empty array when the document type declares none. Throws
     /// when the contract has no document type by that name — an empty array

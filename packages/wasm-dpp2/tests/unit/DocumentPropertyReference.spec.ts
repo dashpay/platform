@@ -452,7 +452,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
-  describe('ownerRefersTo', () => {
+  describe('ownerRefersTo and creatorRefersTo', () => {
     /**
      * A `resignation` may only be written by the owner of a join request for
      * its own `submittedCharterId`: the document type's own reference, whose
@@ -541,6 +541,30 @@ describe('DataContract — refersTo declarations (v14)', () => {
         // The stored path refuses it too, where no meta-schema runs
         expect(() => buildOwnerContract(refused, 14, false)).to.throw(/ownerRefersTo does not take/);
       }
+    });
+
+    it('should list a creator reference first, at the path $creatorId', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const badge = { ...rest, transferable: 1, creatorRefersTo: ownerRefersTo };
+      const contract = buildOwnerContract(badge);
+      const references = contract.documentTypeReferences('resignation') as Reference[];
+
+      expect(references.map((reference) => reference.path)).to.deep.equal([
+        '$creatorId',
+        'author',
+      ]);
+      expect(references[0].type).to.equal('permanentDocument');
+      expect(references[0].lookup).to.deep.equal({
+        index: 'bySubmittedCharter',
+        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+    });
+
+    it('should refuse a creator reference on a type that records no creator ids', () => {
+      const { ownerRefersTo, ...rest } = ownerSchemas.resignation;
+      const notTransferable = { ...rest, creatorRefersTo: ownerRefersTo };
+
+      expect(() => buildOwnerContract(notTransferable)).to.throw(/records no creator ids/);
     });
 
     it('should report no owner reference on a pre-v14 contract', () => {

@@ -922,24 +922,28 @@ fn apply_element_reference_v0(
     apply_property_reference_v0(items, element_type)
 }
 
-/// Reads a document type's `ownerRefersTo` keyword: one `refersTo` declaration
-/// whose value is the document's `$ownerId`, the writer, instead of a
-/// property's value. The declaration goes through [`apply_property_reference`]
-/// as one declared on an identifier property does, `propertyAgreement` and
-/// `lookup` included (where `"."` is the writer), but only two targets can
-/// hold a writer: `identity`, and a `permanentDocument` found through a
-/// `lookup`. The others are refused: `contract`, `token` and a document by id,
-/// since the writer's identity id is never a contract, token or document id,
-/// so a type declaring one could never be written, and `identityPublicKey`,
-/// which pairs the value with a key id the writer does not carry.
+/// Reads one of a document type's own `refersTo` keywords, `keyword`: one
+/// declaration whose value is an identity of the document rather than a
+/// property's value, `ownerRefersTo` the document's `$ownerId` (the writer)
+/// and `creatorRefersTo` its `$creatorId` (the creator), named `value` in the
+/// errors. The declaration goes through [`apply_property_reference`] as one
+/// declared on an identifier property does, `propertyAgreement` and `lookup`
+/// included (where `"."` is that identity), but only two targets can hold an
+/// identity: `identity`, and a `permanentDocument` found through a `lookup`.
+/// The others are refused: `contract`, `token` and a document by id, since an
+/// identity id is never a contract, token or document id, so a type declaring
+/// one could never be written, and `identityPublicKey`, which pairs the value
+/// with a key id the document does not carry.
 ///
 /// Only parser generation 3 calls it, once the core parse has run the
 /// meta-schema, on every parse, validating or not, like its other
 /// doctype-level keywords. Versioned through `apply_property_reference`, the
 /// gate of the declaration it reads: `None` leaves the keyword unread, as it
 /// leaves `refersTo` on a property, refusals included.
-pub(super) fn parse_owner_reference(
+pub(super) fn parse_doctype_reference(
     schema: &Value,
+    keyword: &str,
+    value: &str,
     platform_version: &PlatformVersion,
 ) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
     if platform_version
@@ -957,7 +961,7 @@ pub(super) fn parse_owner_reference(
     let Ok(schema_map) = schema.to_map() else {
         return Ok(None);
     };
-    let Some(declaration) = schema_map.get_optional_key(property_names::OWNER_REFERS_TO) else {
+    let Some(declaration) = schema_map.get_optional_key(keyword) else {
         return Ok(None);
     };
 
@@ -967,29 +971,27 @@ pub(super) fn parse_owner_reference(
         .and_then(|reference_type| reference_type.as_text())
         .map(str::to_string);
     let refusal = match reference_type.as_deref() {
-        Some("contract") => Some(
-            "ownerRefersTo does not take a contract reference: its value is the writer, an \
-             identity, which is never a contract",
-        ),
-        Some("identityPublicKey") => Some(
-            "ownerRefersTo does not take an identityPublicKey reference: it pairs the value with \
-             a key id, which the writer does not carry",
-        ),
-        Some("token") => Some(
-            "ownerRefersTo does not take a token reference: its value, the writer's identity id, \
-             is never a token id",
-        ),
-        Some("deletableDocument") => Some(
-            "ownerRefersTo does not take a deletableDocument reference: its value, the writer's \
+        Some("contract") => Some(format!(
+            "{keyword} does not take a contract reference: its value is {value}, an identity, \
+             which is never a contract"
+        )),
+        Some("identityPublicKey") => Some(format!(
+            "{keyword} does not take an identityPublicKey reference: it pairs the value with a \
+             key id, which {value} does not carry"
+        )),
+        Some("token") => Some(format!(
+            "{keyword} does not take a token reference: its value, {value}'s identity id, is \
+             never a token id"
+        )),
+        Some("deletableDocument") => Some(format!(
+            "{keyword} does not take a deletableDocument reference: its value, {value}'s \
              identity id, is never a document id, and only a permanentDocument reference takes \
-             the lookup that could find one",
-        ),
+             the lookup that could find one"
+        )),
         _ => None,
     };
     if let Some(refusal) = refusal {
-        return Err(DataContractError::InvalidContractStructure(
-            refusal.to_string(),
-        ));
+        return Err(DataContractError::InvalidContractStructure(refusal));
     }
 
     let inner_properties = BTreeMap::from([(property_names::REFERS_TO.to_string(), declaration)]);
@@ -1004,16 +1006,13 @@ pub(super) fn parse_owner_reference(
         ) => Ok(Some(target)),
         DocumentPropertyType::IdentifierWithReference(
             DocumentPropertyReferenceTarget::PermanentDocument { .. },
-        ) => Err(DataContractError::InvalidContractStructure(
-            "ownerRefersTo takes a permanentDocument reference only with a lookup: its value, the \
-             writer's identity id, is never a document id"
-                .to_string(),
-        )),
-        _ => Err(DataContractError::InvalidContractStructure(
-            "ownerRefersTo takes an identity reference or a permanentDocument reference with a \
-             lookup"
-                .to_string(),
-        )),
+        ) => Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword} takes a permanentDocument reference only with a lookup: its value, \
+             {value}'s identity id, is never a document id"
+        ))),
+        _ => Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword} takes an identity reference or a permanentDocument reference with a lookup"
+        ))),
     }
 }
 
@@ -1110,9 +1109,10 @@ fn parse_document_reference_lookup(
 /// be a stored, required, single value (with every object around it
 /// required), and not be the reference property itself. See
 /// [`DocumentReferenceLookup::referring_side_error`]. The lookup of the type's
-/// `ownerRefersTo` follows the same rules: its `"$ownerId"` sources pass the
-/// owner rule, since the type cannot change owner (generation 3 refuses the
-/// keyword otherwise).
+/// `ownerRefersTo` or `creatorRefersTo` follows the same rules: the owner's
+/// `"$ownerId"` sources pass the owner rule, since that type cannot change
+/// owner (generation 3 refuses the keyword otherwise), and the creator's are
+/// refused by it, since that type can.
 ///
 /// Runs on every parse, validating or not, like the `encryptedFor` check: the
 /// rule is a property of the document type, and the write-time lookup reads
@@ -1122,10 +1122,11 @@ pub(super) fn validate_reference_lookup_sources(
     document_type: DocumentTypeRef,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
-    // On the writer, on an identifier property or on the elements of a typed
-    // array: the key's other parts are the same for every element, and the
-    // owner reference's `"."` is the writer, named by the path `$ownerId`,
-    // which no property source can be
+    // On the writer or the creator, on an identifier property or on the
+    // elements of a typed array: the key's other parts are the same for every
+    // element, and the owner or creator reference's `"."` is that identity,
+    // named by the path `$ownerId` or `$creatorId`, which no property source
+    // can be
     for (holder, reference) in document_type.reference_declarations() {
         let Some(lookup) = reference
             .target()

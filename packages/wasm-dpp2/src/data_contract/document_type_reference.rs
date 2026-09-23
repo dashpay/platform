@@ -232,7 +232,10 @@ export type DocumentPropertyReference = {
    * or `propertyAgreement` reads; in its `lookup`, `'.'` is the writer. Its
    * `type` is `identity` or a `permanentDocument` with a `lookup`, the only
    * targets a writer can be, on a document type whose documents can be
-   * neither transferred nor traded.
+   * neither transferred nor traded. On a type whose documents can, a
+   * `creatorRefersTo` declaration takes its place, listed first with the
+   * path `"$creatorId"`: the same, with the document's creator, who never
+   * changes, as the value.
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135 and
@@ -499,8 +502,9 @@ fn set_reference_target_fields(
 }
 
 /// Collect every reference declaration of one document type: its
-/// `ownerRefersTo` first, listed at `$ownerId`, the path consensus names it
-/// by, then in schema property order an identifier property's own, and the
+/// `ownerRefersTo` or `creatorRefersTo` first, listed at `$ownerId` or
+/// `$creatorId`, the path consensus names it by, then in schema property
+/// order an identifier property's own, and the
 /// one the elements of a typed array of identifiers carry, listed at
 /// `path[]`.
 ///

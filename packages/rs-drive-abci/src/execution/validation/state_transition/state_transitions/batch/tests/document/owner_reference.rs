@@ -1,5 +1,6 @@
-//! `ownerRefersTo` (protocol version 14) through the full ABCI pipeline: a
-//! document type's own `refersTo` declaration, whose value is the writer. The
+//! `ownerRefersTo` and `creatorRefersTo` (protocol version 14) through the
+//! full ABCI pipeline: a document type's own `refersTo` declaration, whose
+//! value is the writer or the creator. The
 //! fixture's `addedModerator` is unique on (`electedCharterId`, `memberId`),
 //! and a `resignationRequest` may only be written by the `memberId` of an
 //! `addedModerator` for its own `electedCharterId`, the moderation charters'
@@ -7,10 +8,14 @@
 //! transferred or traded, so the writer stays the owner. `roleResignation`
 //! adds a `propertyAgreement` checked against the moderator the lookup finds,
 //! and `note` declares an identity target, which every writer meets.
+//! `moderatorBadge` can be transferred, so it declares `creatorRefersTo`
+//! instead: only a seated moderator may mint one, and whoever holds it later,
+//! the check is against that creator. `creatorNote` declares an identity
+//! target on the creator.
 //!
-//! A writer the target does not accept is refused, paid, with the error the
-//! target reports for a property, `ReferencedEntityNotFoundError` (40120) for
-//! a lookup that finds nothing, naming `$ownerId`.
+//! A writer or creator the target does not accept is refused, paid, with the
+//! error the target reports for a property, `ReferencedEntityNotFoundError`
+//! (40120) for a lookup that finds nothing, naming `$ownerId` or `$creatorId`.
 
 use super::*;
 
@@ -264,13 +269,49 @@ mod owner_reference_tests {
             self.process(&transition)
         }
 
+        /// Transfers `document`, as last accepted, from `from`, its owner,
+        /// to `to`.
+        async fn transfer(
+            &mut self,
+            from: Who,
+            to: Who,
+            type_name: &str,
+            document: &Document,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let recipient = self.id(to);
+            let mut transferred = document.clone();
+            transferred
+                .increment_revision()
+                .expect("the revision increments");
+            let (document_type, writer, _) = self.parts(from, type_name);
+            let nonce = writer.next_nonce();
+            let transition = BatchTransition::new_document_transfer_transition_from_document(
+                transferred,
+                document_type,
+                recipient,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the transfer transition");
+            self.process(&transition)
+        }
+
         /// Runs the document reference validation directly on `data`, a
-        /// `type_name` document written by `who`, as a create, or as a replace
+        /// `type_name` document written by `who` and created by `creator` (on
+        /// a type that records creators), as a create, or as a replace
         /// changing `changed_fields`, and returns the result with the execution
         /// context, whose operations are the reads it billed.
         fn validate_directly(
             &self,
             who: Who,
+            creator: Option<Who>,
             type_name: &str,
             data: BTreeMap<String, Value>,
             changed_fields: Option<BTreeSet<String>>,
@@ -313,8 +354,7 @@ mod owner_reference_tests {
                 .validate_document_references(
                     &data,
                     self.id(who),
-                    // The fixture's types record no creator ids
-                    None,
+                    creator.map(|creator| self.id(creator)),
                     changed_fields.as_ref(),
                     None,
                     &platform_ref,
@@ -369,18 +409,28 @@ mod owner_reference_tests {
     /// The refusal of a writer the owner reference's lookup found no
     /// moderator for, naming `$ownerId` and the writer.
     fn assert_writer_not_found(result: StateTransitionExecutionResult, writer: Identifier) {
+        assert_lookup_not_found(result, "$ownerId", writer);
+    }
+
+    /// The refusal of an identity, at `path`, the reference's lookup found no
+    /// moderator for.
+    fn assert_lookup_not_found(
+        result: StateTransitionExecutionResult,
+        path: &str,
+        identity: Identifier,
+    ) {
         assert_matches!(
             result,
             PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
                 ..
-            } if e.path() == "$ownerId"
-                && *e.entity_id() == writer
+            } if e.path() == path
+                && *e.entity_id() == identity
                 && matches!(
                     e.entity_type(),
                     DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
                 ),
-            "expected 40120 at $ownerId"
+            "expected 40120 at {path}"
         );
     }
 
@@ -480,6 +530,7 @@ mod owner_reference_tests {
 
         let (result, execution_context) = fixture.validate_directly(
             Who::Member,
+            None,
             "resignationRequest",
             request(charter_id(1)),
             Some(BTreeSet::from(["reason".to_string()])),
@@ -489,6 +540,7 @@ mod owner_reference_tests {
 
         let (result, execution_context) = fixture.validate_directly(
             Who::Member,
+            None,
             "resignationRequest",
             request(charter_id(1)),
             Some(BTreeSet::from(["electedCharterId".to_string()])),
@@ -564,7 +616,117 @@ mod owner_reference_tests {
         for changed_fields in [None, Some(BTreeSet::from(["text".to_string()]))] {
             let (result, execution_context) = fixture.validate_directly(
                 Who::Stranger,
+                None,
                 "note",
+                BTreeMap::from([("text".to_string(), Value::Text("hello".to_string()))]),
+                changed_fields,
+            );
+            assert!(result.is_valid(), "{:?}", result.errors);
+            assert!(execution_context.operations_slice().is_empty());
+        }
+    }
+
+    /// A badge by `who` for the elected charter `charter`.
+    async fn mint_badge(
+        fixture: &mut OwnerReferenceFixture,
+        who: Who,
+        charter: Identifier,
+    ) -> (Document, StateTransitionExecutionResult) {
+        fixture
+            .create(
+                who,
+                "moderatorBadge",
+                &[
+                    ("electedCharterId", id_value(charter)),
+                    ("label", "seated".into()),
+                ],
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn should_create_a_document_whose_creator_meets_the_creator_reference() {
+        let mut fixture = OwnerReferenceFixture::new();
+        fixture.seat(Who::Member, charter_id(1), "chair").await;
+        let stranger = fixture.id(Who::Stranger);
+
+        let (_, result) = mint_badge(&mut fixture, Who::Member, charter_id(1)).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let (_, result) = mint_badge(&mut fixture, Who::Stranger, charter_id(1)).await;
+        assert_lookup_not_found(result, "$creatorId", stranger);
+    }
+
+    /// After a transfer the new owner writes, but the value checked is still
+    /// the creator: a replace moving a key part is judged against the member
+    /// who minted the badge, not the stranger who holds it.
+    #[tokio::test]
+    async fn should_check_the_creator_not_the_owner_after_a_transfer() {
+        let mut fixture = OwnerReferenceFixture::new();
+        fixture.seat(Who::Member, charter_id(1), "chair").await;
+        fixture.seat(Who::Stranger, charter_id(2), "chair").await;
+        let member = fixture.id(Who::Member);
+        let stranger = fixture.id(Who::Stranger);
+
+        let (badge, result) = mint_badge(&mut fixture, Who::Member, charter_id(1)).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // A transfer does not change the creator, so it needs no check
+        let result = fixture
+            .transfer(Who::Member, Who::Stranger, "moderatorBadge", &badge)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let mut badge = badge;
+        badge.increment_revision().expect("the revision increments");
+        badge.set_owner_id(stranger);
+
+        // The new owner relabels it: nothing the lookup reads changed
+        let result = fixture
+            .replace(Who::Stranger, "moderatorBadge", &badge, |badge| {
+                badge.set("label", "passed on".into());
+            })
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        badge.increment_revision().expect("the revision increments");
+        badge.set("label", "passed on".into());
+
+        // Moving it to charter 2, where the stranger is seated but the creator
+        // is not, is refused for the creator
+        let result = fixture
+            .replace(Who::Stranger, "moderatorBadge", &badge, |badge| {
+                badge.set("electedCharterId", id_value(charter_id(2)));
+            })
+            .await;
+        assert_lookup_not_found(result, "$creatorId", member);
+    }
+
+    #[tokio::test]
+    async fn should_read_nothing_for_an_identity_creator_reference() {
+        let fixture = OwnerReferenceFixture::new();
+
+        // The creator existed when it wrote the document, and an identity is
+        // never removed: nothing is read on a create or on a replace by
+        // another owner
+        for (writer, changed_fields) in [
+            (Who::Stranger, None),
+            (Who::Member, Some(BTreeSet::from(["text".to_string()]))),
+        ] {
+            let (result, execution_context) = fixture.validate_directly(
+                writer,
+                Some(Who::Stranger),
+                "creatorNote",
                 BTreeMap::from([("text".to_string(), Value::Text("hello".to_string()))]),
                 changed_fields,
             );

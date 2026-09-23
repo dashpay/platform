@@ -5707,7 +5707,8 @@ mod tests {
             // `ownerRefersTo` on three types: a lookup into a permanent type of
             // the same contract, the same with a propertyAgreement whose
             // referring side is the writer (`$ownerId`, the reference's own
-            // value), and an identity target
+            // value), and an identity target; `creatorRefersTo` on two
+            // transferable types, a lookup and an identity target
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to.json",
             )
@@ -5734,6 +5735,25 @@ mod tests {
                     ),
                     ..
                 } if e.path() == "note.$ownerId" && e.document_type_name() == "ghost"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_creator_reference_to_an_unknown_document_type_at_its_creator_path()
+        {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-refers-to-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$creatorId" && e.document_type_name() == "ghost"
             );
         }
 

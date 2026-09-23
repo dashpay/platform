@@ -1,9 +1,10 @@
-//! `ownerRefersTo` (protocol version 14): a document type's own `refersTo`
-//! declaration, whose value is the document's `$ownerId`, the writer. The
-//! parse of the two targets it takes and the ones it refuses, the owner rule,
-//! the checks of its lookup on both sides, its count against the references a
-//! document may carry, the protocol version gate, the platform serialization
-//! round trip and the contract update rule.
+//! `ownerRefersTo` and `creatorRefersTo` (protocol version 14): a document
+//! type's own `refersTo` declaration, whose value is the document's
+//! `$ownerId`, the writer, or its `$creatorId`, the creator. The parse of the
+//! two targets they take and the ones they refuse, the owner and creator
+//! rules, the checks of a lookup on both sides, the count against the
+//! references a document may carry, the protocol version gate, the platform
+//! serialization round trip and the contract update rule.
 
 use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::basic_error::BasicError;
@@ -147,6 +148,39 @@ fn owner_reference(contract: &DataContract) -> Option<DocumentPropertyReferenceT
         .cloned()
 }
 
+/// [`charter_contract_with`] with `creator_refers_to` declared as
+/// `creatorRefersTo` on `resignationRequest`, made transferable or tradeable
+/// by `keyword` (a `(keyword, value)` pair), or neither when it is `None`.
+fn creator_contract_with(
+    creator_refers_to: serde_json::Value,
+    keyword: Option<(&str, u8)>,
+    version: u32,
+) -> serde_json::Value {
+    let mut schema = charter_contract_with(serde_json::Value::Null, None, version);
+    let resignation_request = &mut schema["documentSchemas"]["resignationRequest"];
+    resignation_request["creatorRefersTo"] = creator_refers_to;
+    if let Some((keyword, value)) = keyword {
+        resignation_request[keyword] = json!(value);
+    }
+    schema
+}
+
+/// [`creator_contract_with`] on a transferable type.
+fn creator_contract(creator_refers_to: serde_json::Value) -> serde_json::Value {
+    creator_contract_with(creator_refers_to, Some(("transferable", 1)), 1)
+}
+
+/// A contract builder declaring the given reference on `resignationRequest`.
+type ContractDeclaring = fn(serde_json::Value) -> serde_json::Value;
+
+fn creator_reference(contract: &DataContract) -> Option<DocumentPropertyReferenceTarget> {
+    contract
+        .document_type_for_name("resignationRequest")
+        .expect("the resignationRequest document type")
+        .creator_reference()
+        .cloned()
+}
+
 fn is_json_schema_error(error: &ProtocolError) -> bool {
     matches!(
         error,
@@ -240,50 +274,58 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
 /// which needs a key id the writer does not carry: a type declaring one could
 /// never be written.
 #[test]
-fn should_refuse_an_owner_reference_to_a_target_the_writer_can_never_be() {
-    for (owner_refers_to, fragment) in [
-        (
-            json!({ "type": "contract" }),
-            "ownerRefersTo does not take a contract reference",
-        ),
-        (
-            json!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
-            "ownerRefersTo does not take a contract reference",
-        ),
-        (
-            json!({ "type": "identityPublicKey", "keyIdProperty": "note" }),
-            "ownerRefersTo does not take an identityPublicKey reference",
-        ),
-        (
-            json!({ "type": "identityPublicKey", "identityProperty": "$ownerId" }),
-            "ownerRefersTo does not take an identityPublicKey reference",
-        ),
-        (
-            json!({ "type": "token" }),
-            "ownerRefersTo does not take a token reference",
-        ),
-        (
-            json!({ "type": "permanentDocument", "documentType": "addedModerator" }),
-            "ownerRefersTo takes a permanentDocument reference only with a lookup",
-        ),
-        (
-            json!({ "type": "deletableDocument", "documentType": "post" }),
-            "ownerRefersTo does not take a deletableDocument reference",
-        ),
-    ] {
-        let schema = charter_contract(owner_refers_to.clone());
-        // The parser refuses it on the stored path, where no meta-schema runs
-        assert_refused(
-            contract_on(schema.clone(), false, PlatformVersion::latest()),
-            fragment,
-        );
-        // and the meta-schema reports it at registration, before the parser
-        // reads the keyword, as it reports a malformed `refersTo` on a property
-        let error = contract(schema).expect_err("the meta-schema should refuse it");
-        assert!(
-            is_json_schema_error(&error),
-            "{owner_refers_to}: expected a meta-schema error, got {error}"
-        );
+fn should_refuse_an_owner_or_creator_reference_to_a_target_its_identity_can_never_be() {
+    let declare: [(&str, ContractDeclaring); 2] = [
+        ("ownerRefersTo", charter_contract),
+        ("creatorRefersTo", creator_contract),
+    ];
+    for (keyword, contract_declaring) in declare {
+        for (declaration, refusal) in [
+            (
+                json!({ "type": "contract" }),
+                "does not take a contract reference",
+            ),
+            (
+                json!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                "does not take a contract reference",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "keyIdProperty": "note" }),
+                "does not take an identityPublicKey reference",
+            ),
+            (
+                json!({ "type": "identityPublicKey", "identityProperty": "$ownerId" }),
+                "does not take an identityPublicKey reference",
+            ),
+            (
+                json!({ "type": "token" }),
+                "does not take a token reference",
+            ),
+            (
+                json!({ "type": "permanentDocument", "documentType": "addedModerator" }),
+                "takes a permanentDocument reference only with a lookup",
+            ),
+            (
+                json!({ "type": "deletableDocument", "documentType": "post" }),
+                "does not take a deletableDocument reference",
+            ),
+        ] {
+            let schema = contract_declaring(declaration.clone());
+            // The parser refuses it on the stored path, where no meta-schema
+            // runs
+            assert_refused(
+                contract_on(schema.clone(), false, PlatformVersion::latest()),
+                &format!("{keyword} {refusal}"),
+            );
+            // and the meta-schema reports it at registration, before the
+            // parser reads the keyword, as it reports a malformed `refersTo` on
+            // a property
+            let error = contract(schema).expect_err("the meta-schema should refuse it");
+            assert!(
+                is_json_schema_error(&error),
+                "{keyword} {declaration}: expected a meta-schema error, got {error}"
+            );
+        }
     }
 }
 
@@ -388,7 +430,7 @@ fn should_check_an_owner_lookup_into_a_type_of_the_same_contract() {
 }
 
 #[test]
-fn should_count_the_owner_reference_against_the_references_a_document_may_carry() {
+fn should_count_the_owner_or_creator_reference_against_the_references_a_document_may_carry() {
     let limit = PlatformVersion::latest()
         .system_limits
         .max_references_per_document;
@@ -415,17 +457,21 @@ fn should_count_the_owner_reference_against_the_references_a_document_may_carry(
     ))
     .expect("the array alone is at the limit");
 
+    let over_the_limit = format!(
+        "declares references for up to {} values per document",
+        u32::from(limit) + 1
+    );
     assert_refused(
         contract(charter_contract_with(
             json!({ "type": "identity" }),
-            Some(references),
+            Some(references.clone()),
             1,
         )),
-        &format!(
-            "declares references for up to {} values per document",
-            u32::from(limit) + 1
-        ),
+        &over_the_limit,
     );
+    let mut creator = creator_contract(json!({ "type": "identity" }));
+    creator["documentSchemas"]["resignationRequest"]["properties"]["extra"] = references;
+    assert_refused(contract(creator), &over_the_limit);
 }
 
 #[test]
@@ -537,4 +583,163 @@ fn should_refuse_adding_removing_or_changing_an_owner_reference_on_update() {
         .validate_update(&new, &BlockInfo::default(), platform_version)
         .expect("the update should be judged");
     assert!(result.is_valid(), "{:?}", result.errors);
+}
+
+#[test]
+fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
+    let lookup = DocumentReferenceLookup {
+        index: "byElectedCharterMember".to_string(),
+        keys: BTreeMap::from([
+            (
+                "electedCharterId".to_string(),
+                LookupKeySource::Property("electedCharterId".to_string()),
+            ),
+            ("memberId".to_string(), LookupKeySource::ReferenceValue),
+        ]),
+    };
+    for keyword in [("transferable", 1), ("tradeMode", 1)] {
+        for (creator_refers_to, expected) in [
+            (
+                json!({ "type": "identity" }),
+                DocumentPropertyReferenceTarget::Identity,
+            ),
+            (
+                permanent_added_moderator(added_moderator_lookup()),
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                    contract_id: None,
+                    document_type_name: "addedModerator".to_string(),
+                    property_agreement: BTreeMap::new(),
+                    lookup: lookup.clone(),
+                },
+            ),
+        ] {
+            for full_validation in [true, false] {
+                let parsed = contract_on(
+                    creator_contract_with(creator_refers_to.clone(), Some(keyword), 1),
+                    full_validation,
+                    PlatformVersion::latest(),
+                )
+                .unwrap_or_else(|e| panic!("{creator_refers_to} should parse: {e}"));
+                assert_eq!(creator_reference(&parsed).as_ref(), Some(&expected));
+                assert_eq!(owner_reference(&parsed), None);
+            }
+        }
+    }
+}
+
+/// The creator is only recorded on a type whose documents can change owner;
+/// elsewhere it is the owner, which `ownerRefersTo` checks. So a type takes
+/// at most one of the two keywords.
+#[test]
+fn should_refuse_a_creator_reference_on_a_type_that_records_no_creator_ids() {
+    let identity = json!({ "type": "identity" });
+    let mut both = creator_contract_with(identity.clone(), None, 1);
+    both["documentSchemas"]["resignationRequest"]["ownerRefersTo"] = identity.clone();
+    let mut both_transferable = creator_contract(identity.clone());
+    both_transferable["documentSchemas"]["resignationRequest"]["ownerRefersTo"] = identity.clone();
+
+    for (schema, fragment) in [
+        (
+            creator_contract_with(identity, None, 1),
+            "document type \"resignationRequest\" declares creatorRefersTo, but it records no \
+             creator ids",
+        ),
+        (
+            both,
+            "document type \"resignationRequest\" declares creatorRefersTo, but it records no \
+             creator ids",
+        ),
+        (
+            both_transferable,
+            "document type \"resignationRequest\" declares ownerRefersTo, but its documents \
+             can be transferred or traded",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            assert_refused(
+                contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+                fragment,
+            );
+        }
+    }
+}
+
+/// The owner of a transferable document moves, so the creator's lookup may not
+/// read it, as a property's lookup on such a type may not.
+#[test]
+fn should_refuse_a_creator_lookup_reading_the_owner() {
+    assert_refused(
+        contract(creator_contract(permanent_added_moderator(json!({
+            "index": "byOwnerMember",
+            "keys": { "$ownerId": "$ownerId", "memberId": "." }
+        })))),
+        "document type \"resignationRequest\" creatorRefersTo lookup: key \"$ownerId\" reads \
+         \"$ownerId\"",
+    );
+}
+
+#[test]
+fn should_refuse_creator_refers_to_before_protocol_version_14_and_read_it_at_14() {
+    let schema = creator_contract(permanent_added_moderator(added_moderator_lookup()));
+    let platform_version_13 = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+    contract_on(schema.clone(), true, platform_version_13)
+        .expect_err("protocol version 13 should refuse the keyword");
+    let ignored = contract_on(schema.clone(), false, platform_version_13)
+        .expect("protocol version 13 should parse the rest of the contract");
+    assert_eq!(creator_reference(&ignored), None);
+
+    let accepted = contract_on(schema, true, PlatformVersion::latest()).expect("parses");
+    assert!(matches!(
+        creator_reference(&accepted),
+        Some(DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. })
+    ));
+}
+
+#[test]
+fn should_round_trip_a_creator_reference_and_refuse_changing_it_on_update() {
+    let platform_version = PlatformVersion::latest();
+    let lookup = permanent_added_moderator(added_moderator_lookup());
+
+    let original = contract(creator_contract(lookup.clone())).expect("parses");
+    let bytes = original
+        .serialize_to_bytes_with_platform_version(platform_version)
+        .expect("the contract should serialize");
+    let recovered = DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
+        .expect("the contract should deserialize");
+    assert_eq!(original, recovered);
+    assert_eq!(creator_reference(&original), creator_reference(&recovered));
+
+    let transferable = Some(("transferable", 1));
+    let without = charter_contract_with(serde_json::Value::Null, None, 1);
+    let mut without_transferable = without.clone();
+    without_transferable["documentSchemas"]["resignationRequest"]["transferable"] = json!(1);
+    for (before, after, operation) in [
+        (
+            without_transferable,
+            creator_contract_with(lookup.clone(), transferable, 2),
+            "add",
+        ),
+        (
+            creator_contract_with(lookup.clone(), transferable, 1),
+            creator_contract_with(json!({ "type": "identity" }), transferable, 2),
+            "replace",
+        ),
+    ] {
+        let old = contract(before).expect("parses");
+        let new = contract(after).expect("parses");
+        let result = old
+            .validate_update(&new, &BlockInfo::default(), platform_version)
+            .expect("the update should be judged");
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::IncompatibleDocumentTypeSchemaError(e))
+                    if e.operation() == operation
+                        && e.property_path().starts_with("/creatorRefersTo")
+            )),
+            "{operation}: {:?}",
+            result.errors
+        );
+    }
 }

@@ -759,11 +759,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
 ///
-/// 33. **References on the document's writer (`ownerRefersTo`)**: a document
-///     type may declare one `refersTo` declaration of its own, under the
-///     doctype-level `ownerRefersTo` keyword (meta-schema v3, which reuses the
-///     property declaration by `$ref`), whose value is the document's
-///     `$ownerId`, the writer, instead of a property's. Only two targets can
+/// 33. **References on the document's writer or creator (`ownerRefersTo`,
+///     `creatorRefersTo`)**: a document type may declare one `refersTo`
+///     declaration of its own, under the doctype-level `ownerRefersTo`
+///     keyword (meta-schema v3, which reuses the property declaration by
+///     `$ref`), whose value is the document's `$ownerId`, the writer, instead
+///     of a property's. Only two targets can
 ///     hold a writer: `identity`, and a `permanentDocument` found through a
 ///     `lookup`, where `.` is the writer; `contract`, `token` and a document
 ///     by id (which the writer's identity id never is) and `identityPublicKey`
@@ -795,7 +796,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     target fetches nothing, the transition having proved the writer exists.
 ///     Adding, removing or changing it is an incompatible schema change on
 ///     update (`validate_schema_compatibility` 1 freezes it as the shared rule
-///     set freezes `refersTo`).
+///     set freezes `refersTo`). Its counterpart for a type whose documents can
+///     be transferred or traded is `creatorRefersTo`, whose value is the
+///     document's `$creatorId`, the creator, which never changes: the same
+///     two targets (`.` the creator), only on a type that records creator ids
+///     (`should_use_creator_id`: a transferable or tradeable type of a
+///     format-1 contract), so a type declares at most one of the two; stored
+///     as `DocumentTypeV2::creator_reference`, enumerated second by
+///     `reference_declarations`, named `$creatorId` (and
+///     `<documentType>.$creatorId` at registration), checked against the
+///     writer on a create and the stored creator on a replace under the same
+///     rules, never on a transfer or a purchase, and frozen on update the same
+///     way.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

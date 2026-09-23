@@ -140,6 +140,59 @@
         "text"
       ],
       "additionalProperties": false
+    },
+    "moderatorBadge": {
+      "type": "object",
+      "transferable": 1,
+      "creatorRefersTo": {
+        "type": "permanentDocument",
+        "documentType": "addedModerator",
+        "lookup": {
+          "index": "byElectedCharterMember",
+          "keys": {
+            "electedCharterId": "electedCharterId",
+            "memberId": "."
+          }
+        }
+      },
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "label": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "electedCharterId",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "creatorNote": {
+      "type": "object",
+      "transferable": 1,
+      "creatorRefersTo": {
+        "type": "identity"
+      },
+      "properties": {
+        "text": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 63
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
     }
   }
 }

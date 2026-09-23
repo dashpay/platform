@@ -266,6 +266,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
     fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
         self.owner_reference.as_ref()
     }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        self.creator_reference.as_ref()
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentTypeV2 {

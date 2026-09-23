@@ -63,14 +63,15 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// referenced document type. `identityPublicKey` never reaches here on
 /// elements: the parser refuses it there.
 ///
-/// A document type's `ownerRefersTo` declaration, whose value is the writer,
-/// is checked as a single identifier reference's is, first; the parser only
-/// admits an `identity` or a `permanentDocument` lookup one.
+/// A document type's `ownerRefersTo` or `creatorRefersTo` declaration, whose
+/// value is the writer or the creator, is checked as a single identifier
+/// reference's is, first; the parser only admits an `identity` or a
+/// `permanentDocument` lookup one.
 ///
 /// The error paths name the failing declaration as
 /// `documentTypeName.propertyPath`, an element declaration by its list
-/// path, `documentTypeName.propertyPath[]`, and the owner reference as
-/// `documentTypeName.$ownerId`. Validation stops at the first invalid
+/// path, `documentTypeName.propertyPath[]`, and the owner and creator
+/// references as `documentTypeName.$ownerId` and `documentTypeName.$creatorId`. Validation stops at the first invalid
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -89,13 +90,14 @@ pub(super) fn validate_data_contract_references_v0(
         BTreeMap::new();
 
     for (declaring_type_name, document_type) in contract.document_types() {
-        // The writer's reference first (`ownerRefersTo`, whose value is the
-        // document's `$ownerId` and which is named by that path), then the
-        // properties' own. The owner reference is never a key reference: the
-        // parser only admits an identity or a permanentDocument lookup there.
-        // Inert before protocol version 14: this module is only called from
-        // contract create and update state validation 1, selected from it, and
-        // no parse before it sets an owner reference.
+        // The writer's or the creator's reference first (`ownerRefersTo` or
+        // `creatorRefersTo`, whose value is the document's `$ownerId` or
+        // `$creatorId` and which is named by that path), then the properties'
+        // own. Neither is ever a key reference: the parser only admits an
+        // identity or a permanentDocument lookup there. Inert before protocol
+        // version 14: this module is only called from contract create and
+        // update state validation 1, selected from it, and no parse before it
+        // sets an owner or creator reference.
         for (holder, reference) in document_type.as_ref().reference_declarations() {
             let path = holder.path();
             let is_owner_reference = matches!(holder, ReferenceHolder::Owner);

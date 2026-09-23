@@ -3,7 +3,8 @@
 //! Generation 3 is generation 2 plus the ranked index keywords
 //! (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
 //! indexOnly grammar, the doctype-level `immutable` property list and the
-//! doctype-level `ownerRefersTo` reference on the writer.
+//! doctype-level `ownerRefersTo` and `creatorRefersTo` references on the
+//! writer and the creator.
 //!
 //! It exists as its own generation — rather than as a version gate inside the
 //! shipped ones — because that is what keeps a historical block from ever
@@ -51,7 +52,7 @@ use crate::consensus::ConsensusError;
 
 use super::common;
 use super::{
-    parse_owner_reference, validate_encrypted_for_declarations, validate_reference_lookup_sources,
+    parse_doctype_reference, validate_encrypted_for_declarations, validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -404,21 +405,53 @@ fn try_from_schema_generation_3(
     // Read from the stored schema once the core parse has run the meta-schema,
     // so under full validation a malformed declaration is the meta-schema's to
     // report, as a malformed `refersTo` on a property is
-    let owner_reference = parse_owner_reference(&v2.schema, platform_version)
-        .map_err(consensus_or_protocol_data_contract_error)?;
+    let owner_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::OWNER_REFERS_TO,
+        "the writer",
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    let creator_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::CREATOR_REFERS_TO,
+        "the creator",
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
     // A document that can change owner, by a transfer or a purchase, would end
     // up held by an owner the declaration never checked, since neither is a
-    // write: the declaration is only admitted where the writer stays the owner
+    // write: the owner's declaration is only admitted where the writer stays
+    // the owner. The creator's is only admitted where the creator is recorded,
+    // on a type that can change owner, since elsewhere the creator is the
+    // owner and `ownerRefersTo` says it. So a type takes at most one of them
     if owner_reference.is_some() && owner_can_change(DocumentTypeRef::V2(&v2)) {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{name}\" declares ownerRefersTo, but its documents can be \
                  transferred or traded: a transfer or a purchase would hand a document to an \
-                 owner the declaration never checked",
+                 owner the declaration never checked; creatorRefersTo checks the creator, who \
+                 never changes",
+            )),
+        ));
+    }
+    if creator_reference.is_some()
+        && !DocumentTypeRef::V2(&v2).should_use_creator_id(
+            data_contract_system_version,
+            contract_config_version,
+            platform_version,
+        )?
+    {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares creatorRefersTo, but it records no creator \
+                 ids: only a transferable or tradeable document type of a format-1 contract \
+                 does; ownerRefersTo checks the writer of a type whose documents stay with it",
             )),
         ));
     }
     v2.owner_reference = owner_reference;
+    v2.creator_reference = creator_reference;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
@@ -518,7 +551,7 @@ fn validate_typed_array_max_items(
 /// The references one document of the type can carry, one for each
 /// property declaring `refersTo` (an identifier, or a key id with a key
 /// reference), `maxItems` for each typed array whose elements declare it and
-/// one for the type's `ownerRefersTo`, are at most
+/// one for the type's `ownerRefersTo` or `creatorRefersTo`, are at most
 /// `SystemLimits::max_references_per_document`. Every reference is a billed
 /// state read when the document is created or replaced, so the sum bounds
 /// the reads one write can cause; `max_typed_array_items` alone would let a
@@ -542,7 +575,8 @@ fn validate_reference_count(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{name}\" declares references for up to {references} values per \
                  document (one per property with refersTo, maxItems per typed array of \
-                 referencing elements, one for ownerRefersTo), above the maximum of {limit}",
+                 referencing elements, one for ownerRefersTo or creatorRefersTo), above the \
+                 maximum of {limit}",
             )),
         ));
     }

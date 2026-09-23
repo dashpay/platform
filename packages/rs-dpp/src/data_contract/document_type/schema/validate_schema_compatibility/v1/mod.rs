@@ -30,9 +30,9 @@
 //! `validate_immutable_fields_update` judges it (the list may grow, never
 //! shrink).
 //!
-//! The top-level `ownerRefersTo` key (protocol version 14) gets the frozen
-//! rule of the property `refersTo`, so any change to it is an incompatible
-//! schema change.
+//! The top-level `ownerRefersTo` and `creatorRefersTo` keys (protocol version
+//! 14) get the frozen rule of the property `refersTo`, so any change to them
+//! is an incompatible schema change.
 
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
@@ -60,24 +60,24 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
         .expect("required rule must have inner rules")
         .allow_removal = false;
 
-    // `ownerRefersTo` (protocol version 14) is the document type's own
-    // `refersTo`, whose value is the writer: frozen exactly as the property
-    // keyword is, so adding, removing or changing it is reported as an
-    // incompatible change. The rule lives here rather than in the shared rule
-    // set, which the generation-0 check also reads, because no earlier
-    // protocol version knows the keyword. Without a `refersTo` rule to copy, a
-    // diff under `ownerRefersTo` fails as an unsupported keyword, an error
-    // rather than a panic.
-    let owner_refers_to_rule = KEYWORD_COMPATIBILITY_RULES
-        .get("refersTo")
-        .cloned()
-        .map(|rule| ("ownerRefersTo", rule));
+    // `ownerRefersTo` and `creatorRefersTo` (protocol version 14) are the
+    // document type's own `refersTo`, whose value is the writer or the
+    // creator: frozen exactly as the property keyword is, so adding, removing
+    // or changing one is reported as an incompatible change. The rules live
+    // here rather than in the shared rule set, which the generation-0 check
+    // also reads, because no earlier protocol version knows the keywords.
+    // Without a `refersTo` rule to copy, a diff under either fails as an
+    // unsupported keyword, an error rather than a panic.
+    let refers_to_rule = KEYWORD_COMPATIBILITY_RULES.get("refersTo");
+    let doctype_refers_to_rules = ["ownerRefersTo", "creatorRefersTo"]
+        .into_iter()
+        .filter_map(|keyword| refers_to_rule.map(|rule| (keyword, rule.clone())));
 
     Options {
         override_rules: CompatibilityRulesCollection::from_iter(
             [("required", required_rule)]
                 .into_iter()
-                .chain(owner_refers_to_rule),
+                .chain(doctype_refers_to_rules),
         ),
     }
 });

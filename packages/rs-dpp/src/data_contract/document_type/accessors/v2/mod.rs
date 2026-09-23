@@ -85,6 +85,13 @@ pub trait DocumentTypeV2Getters {
     /// that declare none and on those that predate the keyword. Enumerated with
     /// the property references by `DocumentTypeRef::reference_declarations`.
     fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget>;
+
+    /// The `refersTo` declaration whose value is the document's `$creatorId`,
+    /// its creator (the `creatorRefersTo` keyword, protocol version 14),
+    /// checked with the creator's id as the value when a document is created,
+    /// and on a replace under the rules of its target. `None` on document types
+    /// that declare none and on those that predate the keyword.
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

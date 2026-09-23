@@ -335,7 +335,7 @@ When the referring document is created or replaced, the document reference valid
 
 Joins cannot go through a lookup reference: a chained query or a composite by-id join needs the join property's values to be the outer documents' ids, so both refuse such a property, and a `preallocated` index cannot be bound through one. In Rust the declaration is its own variant, `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, appended to the enum rather than a field of `PermanentDocument`: the enum is embedded in the reference errors, so an id reference keeps its encoding, and code matching `PermanentDocument` as "the value is a document id" cannot mistake a lookup for one. The rules are on `DocumentReferenceLookup`. `as_document_reference` returns only references whose value is a document id, the accessor for joins; the validators use `as_any_document_reference`, whose declaration carries the lookup.
 
-### On the writer (`ownerRefersTo`)
+### On the writer or the creator (`ownerRefersTo`, `creatorRefersTo`)
 
 A property's reference constrains a value the writer chose. Some rules constrain the writer instead: in the moderation charters, a `resignationRequest` may only come from a moderator of the team it resigns from. A document type states that with the doctype-level `ownerRefersTo` keyword, one `refersTo` declaration whose value is the document's `$ownerId`, the writer, rather than a property's value:
 
@@ -363,7 +363,28 @@ reads: the writer must be the `memberId` of an `addedModerator` for this documen
 - It counts one against `SystemLimits::max_references_per_document`.
 - When a document is created, the document reference validation checks the writer against the target exactly as a property's value is checked, before the properties' references. A replace re-validates it under the rules of its target, as a property's: when a property its lookup or a `propertyAgreement` reads changed, and on every replace for a pair keyed by `$ownerId`, a writer gate. Nothing else can change the outcome: the writer is the owner, the target can never be deleted and its key is fixed. A failure is the error the target reports for a property (`ReferencedEntityNotFoundError`, 40120, for a lookup that finds no document; `ReferencedDocumentPropertyMismatchError`, 40127, for an agreement; and the rest), with `$ownerId` as its path. An `identity` target reads nothing: the transition has already proved that the writer exists. At registration the contract reference validation checks the declaration as a property's, naming it `<documentType>.$ownerId`.
 - Adding, removing or changing it is an incompatible schema change on update (`validate_schema_compatibility` 1 freezes the keyword as the shared rule set freezes `refersTo`).
-- Every validator, the reference bound and the client bindings enumerate a type's references through `DocumentTypeRef::reference_declarations`, which yields the owner reference first, as `ReferenceHolder::Owner`, then each property's, so none can skip it.
+- Every validator, the reference bound and the client bindings enumerate a type's references through `DocumentTypeRef::reference_declarations`, which yields the owner or creator reference first, as `ReferenceHolder::Owner` or `ReferenceHolder::Creator`, then each property's, so none can skip it.
+
+A document type whose documents can be transferred or traded declares `creatorRefersTo` instead: the same declaration, whose value is the document's `$creatorId`, its creator, which a transfer or a purchase never changes. A marketplace item that only a seated moderator may mint, and anyone may then own, reads:
+
+```json
+"moderatorBadge": {
+  "type": "object",
+  "transferable": 1,
+  "creatorRefersTo": {
+    "type": "permanentDocument",
+    "documentType": "addedModerator",
+    "lookup": {
+      "index": "byElectedCharterMember",
+      "keys": { "electedCharterId": "electedCharterId", "memberId": "." }
+    }
+  },
+  "properties": { "electedCharterId": { "...": "..." } }
+}
+```
+
+- It takes the same two targets, with `"."` the creator in a lookup, and is refused where `ownerRefersTo` is admitted: only a document type that records creator ids may declare it, a transferable or tradeable type of a format-1 contract (`should_use_creator_id`), checked on every parse. A type therefore declares at most one of the two. A `"$ownerId"` key part in its lookup is refused, as in a property's lookup on such a type, since the owner moves.
+- When a document is created its creator is the writer; on a replace, the value is the stored creator, whoever writes, and the replace rules are those of its target, as for the owner reference. A transfer or a purchase needs no check. A failure is the target's error at the path `$creatorId`, and registration names the declaration `<documentType>.$creatorId`. An `identity` target reads nothing: the creator existed when it wrote the document, and an identity is never removed. It counts one against `max_references_per_document`, and a change to it is an incompatible schema change on update.
 
 ## Immutable Properties on Mutable Document Types
 
