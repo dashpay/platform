@@ -5,7 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollResult;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+use dpp::voting::vote_polls::yes_no_vote_poll::{VotingPower, YesNoVotePoll};
 use drive::grovedb::TransactionArg;
 use drive::query::yes_no_vote_poll_state_query::YesNoVotePollState;
 
@@ -15,13 +15,15 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Decides a finished yes/no poll from its tallies and writes the result into its stored
-    /// info, which stays as the record of the decision after the votes are cleaned up.
+    /// Decides a finished yes/no poll from its tallies and the total voting power of the
+    /// masternode list in the closing block, and writes the result into its stored info, which
+    /// stays as the record of the decision after the votes are cleaned up.
     pub(in crate::execution) fn keep_record_of_finished_yes_no_vote_poll(
         &self,
         block_info: &BlockInfo,
         vote_poll: &YesNoVotePoll,
         tally: &YesNoVotePollState,
+        total_voting_power: VotingPower,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<YesNoVotePollResult, Error> {
@@ -35,6 +37,7 @@ where
                 block_info,
                 vote_poll,
                 tally,
+                total_voting_power,
                 transaction,
                 platform_version,
             ),

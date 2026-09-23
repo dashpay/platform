@@ -30,13 +30,22 @@ export interface VotePollOptions {
 
 /**
  * A yes/no poll's fields as a plain object. A yes/no vote carries its poll
- * like this, without a `$type` tag.
+ * like this, without a `$type` tag. The minimum is a fixed voting power or a
+ * share of the masternode list's total voting power when the poll closes.
  */
 export interface YesNoVotePollFieldsObject {
     resourcePath: Uint8Array[];
     supermajorityNumerator: number;
     supermajorityDenominator: number;
-    minimumVotingPower: number;
+    minimumVotingPower:
+        | { absolute: number }
+        | {
+              fractionOfTotal: {
+                  numerator: number;
+                  denominator: number;
+                  rounding: "up" | "down";
+              };
+          };
 }
 
 /**
@@ -46,7 +55,15 @@ export interface YesNoVotePollFieldsJSON {
     resourcePath: string[];
     supermajorityNumerator: number;
     supermajorityDenominator: number;
-    minimumVotingPower: number;
+    minimumVotingPower:
+        | { absolute: number }
+        | {
+              fractionOfTotal: {
+                  numerator: number;
+                  denominator: number;
+                  rounding: "up" | "down";
+              };
+          };
 }
 
 /**

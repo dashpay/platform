@@ -188,13 +188,14 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::BinaryData;
     use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
+    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoMinimumVotingPower;
 
     fn poll() -> YesNoVotePoll {
         YesNoVotePoll {
             resource_path: vec![BinaryData::new(vec![0xc1; 32])],
             supermajority_numerator: 2,
             supermajority_denominator: 3,
-            minimum_voting_power: 400,
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
         }
     }
 

@@ -142,6 +142,12 @@ pub struct SystemLimits {
     /// The most bytes a yes/no vote poll's resource path may hold across its segments, read by
     /// `YesNoVotePoll::validate_parameters` (protocol version 14). Every vote carries the poll.
     pub max_yes_no_vote_poll_resource_path_bytes: u16,
+    /// The largest fixed minimum voting power a yes/no vote poll may require, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 14).
+    pub max_yes_no_vote_poll_minimum_voting_power: u32,
+    /// The largest share of the total voting power, in percent, a yes/no vote poll's minimum may
+    /// require, read by `YesNoVotePoll::validate_parameters` (protocol version 14).
+    pub max_yes_no_vote_poll_minimum_voting_power_percent_of_total: u8,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never

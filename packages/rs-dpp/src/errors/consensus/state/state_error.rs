@@ -630,7 +630,7 @@ mod tests {
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use crate::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-    use crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+    use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use crate::voting::vote_polls::VotePoll;
     use platform_value::{BinaryData, Identifier};
     use std::collections::BTreeMap;
@@ -1209,7 +1209,7 @@ mod tests {
                         resource_path: vec![BinaryData::new(vec![1; 32])],
                         supermajority_numerator: 2,
                         supermajority_denominator: 3,
-                        minimum_voting_power: 400,
+                        minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
                     },
                     YesNoVotePollStatus::Started(BlockInfo::default())
                 )

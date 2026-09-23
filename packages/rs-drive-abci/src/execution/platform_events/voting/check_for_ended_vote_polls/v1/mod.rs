@@ -1,15 +1,17 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+use dpp::voting::vote_polls::yes_no_vote_poll::{VotingPower, YesNoVotePoll};
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;
@@ -177,6 +179,7 @@ where
                         }
                         ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll) => self
                             .finish_yes_no_vote_poll(
+                                block_platform_state,
                                 block_info,
                                 yes_no_vote_poll,
                                 transaction,
@@ -208,6 +211,7 @@ where
     /// voters so the clean-up can remove their votes.
     fn finish_yes_no_vote_poll(
         &self,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         vote_poll: YesNoVotePoll,
         transaction: TransactionArg,
@@ -215,10 +219,25 @@ where
     ) -> Result<ResolvedVotePollWithVotes, Error> {
         let tally =
             self.tally_votes_for_yes_no_vote_poll(&vote_poll, transaction, platform_version)?;
+        // A minimum given as a share of the total is measured against the masternode list of
+        // the closing block, each masternode weighed as its vote is.
+        let total_voting_power = block_platform_state
+            .full_masternode_list()
+            .values()
+            .try_fold(0 as VotingPower, |total, masternode| {
+                total.checked_add(match masternode.node_type {
+                    MasternodeType::Regular => 1,
+                    MasternodeType::Evo => 4,
+                })
+            })
+            .ok_or(Error::Execution(ExecutionError::Overflow(
+                "the masternode list's total voting power overflows",
+            )))?;
         let result = self.keep_record_of_finished_yes_no_vote_poll(
             block_info,
             &vote_poll,
             &tally,
+            total_voting_power,
             transaction,
             platform_version,
         )?;

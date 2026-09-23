@@ -355,7 +355,7 @@ mod fixtures {
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
-    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1206,7 +1206,7 @@ mod fixtures {
             resource_path: vec![BinaryData::new(vec![0xc1; 32])],
             supermajority_numerator: 2,
             supermajority_denominator: 3,
-            minimum_voting_power: 400,
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
         };
         drive
             .open_yes_no_vote_poll(

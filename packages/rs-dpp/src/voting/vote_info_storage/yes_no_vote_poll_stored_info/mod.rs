@@ -23,6 +23,9 @@ pub struct YesNoVotePollResult {
     pub no_voting_power: VotingPower,
     /// The abstaining voting power at the end. Recorded, but it plays no part in the result.
     pub abstain_voting_power: VotingPower,
+    /// The yes plus no voting power the poll needed, resolved in the block that closed it (a
+    /// share of the total is measured then).
+    pub required_voting_power: VotingPower,
     /// The block the poll opened in.
     pub start_block: BlockInfo,
     /// The block the poll was closed in.
@@ -33,11 +36,12 @@ impl fmt::Display for YesNoVotePollResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "YesNoVotePollResult {{ passed: {}, yes: {}, no: {}, abstain: {}, start_block: {}, finalization_block: {} }}",
+            "YesNoVotePollResult {{ passed: {}, yes: {}, no: {}, abstain: {}, required: {}, start_block: {}, finalization_block: {} }}",
             self.passed,
             self.yes_voting_power,
             self.no_voting_power,
             self.abstain_voting_power,
+            self.required_voting_power,
             self.start_block,
             self.finalization_block
         )
@@ -138,6 +142,7 @@ impl YesNoVotePollStoredInfo {
         yes_voting_power: VotingPower,
         no_voting_power: VotingPower,
         abstain_voting_power: VotingPower,
+        required_voting_power: VotingPower,
         passed: bool,
         finalization_block: BlockInfo,
     ) -> Result<YesNoVotePollResult, ProtocolError> {
@@ -146,6 +151,7 @@ impl YesNoVotePollStoredInfo {
                 yes_voting_power,
                 no_voting_power,
                 abstain_voting_power,
+                required_voting_power,
                 passed,
                 finalization_block,
             ),
@@ -187,7 +193,7 @@ mod tests {
 
         let finalization_block = BlockInfo::default_with_time(20);
         let result = stored_info
-            .finalize_vote_poll(300, 100, 7, true, finalization_block)
+            .finalize_vote_poll(300, 100, 7, 400, true, finalization_block)
             .expect("finalize");
         assert_eq!(
             result,
@@ -196,6 +202,7 @@ mod tests {
                 yes_voting_power: 300,
                 no_voting_power: 100,
                 abstain_voting_power: 7,
+                required_voting_power: 400,
                 start_block,
                 finalization_block,
             }
@@ -204,7 +211,7 @@ mod tests {
 
         // A finished poll is not finalized twice.
         assert!(stored_info
-            .finalize_vote_poll(1, 1, 1, false, finalization_block)
+            .finalize_vote_poll(1, 1, 1, 400, false, finalization_block)
             .is_err());
     }
 
@@ -215,7 +222,7 @@ mod tests {
             YesNoVotePollStoredInfo::new(BlockInfo::default_with_time(10), platform_version)
                 .expect("stored info");
         stored_info
-            .finalize_vote_poll(5, 4, 3, false, BlockInfo::default_with_time(20))
+            .finalize_vote_poll(5, 4, 3, 400, false, BlockInfo::default_with_time(20))
             .expect("finalize");
         let bytes = stored_info.serialize_to_bytes().expect("serialize");
         let recovered =

@@ -2622,7 +2622,7 @@ mod tests {
         use crate::serialization::PlatformSerializable;
         use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-        use crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+        use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
         use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
         use crate::voting::votes::resource_vote::ResourceVote;
         use crate::voting::votes::yes_no_vote::v0::YesNoVoteV0;
@@ -2632,7 +2632,7 @@ mod tests {
             resource_path: vec![BinaryData::new(vec![7u8; 32])],
             supermajority_numerator: 2,
             supermajority_denominator: 3,
-            minimum_voting_power: 400,
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
         };
         let votes = [
             Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {

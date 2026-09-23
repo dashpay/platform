@@ -52,7 +52,7 @@ pub enum YesNoVote {
 mod json_convertible_tests_yes_no_vote {
     use super::*;
     use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-    use crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+    use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use platform_value::{platform_value, BinaryData};
     use serde_json::json;
 
@@ -62,7 +62,7 @@ mod json_convertible_tests_yes_no_vote {
                 resource_path: vec![BinaryData::new(vec![0xc1; 4])],
                 supermajority_numerator: 2,
                 supermajority_denominator: 3,
-                minimum_voting_power: 400,
+                minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
             },
             vote_choice: YesNoAbstainVoteChoice::Yes,
         })
@@ -81,7 +81,7 @@ mod json_convertible_tests_yes_no_vote {
                     "resourcePath": ["wcHBwQ=="],
                     "supermajorityNumerator": 2,
                     "supermajorityDenominator": 3,
-                    "minimumVotingPower": 400,
+                    "minimumVotingPower": { "absolute": 400 },
                 },
                 "voteChoice": "yes",
             })
@@ -103,7 +103,7 @@ mod json_convertible_tests_yes_no_vote {
                     "resourcePath": [platform_value::Value::Bytes(vec![0xc1; 4])],
                     "supermajorityNumerator": 2u8,
                     "supermajorityDenominator": 3u8,
-                    "minimumVotingPower": 400u32,
+                    "minimumVotingPower": { "absolute": 400u32 },
                 },
                 "voteChoice": "yes",
             })

@@ -52,7 +52,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::{BinaryData, Identifier};
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 
@@ -61,7 +61,7 @@ mod tests {
             resource_path: vec![BinaryData::new(vec![0xc1; 32])],
             supermajority_numerator: 2,
             supermajority_denominator: 3,
-            minimum_voting_power: 400,
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
         }
     }
 

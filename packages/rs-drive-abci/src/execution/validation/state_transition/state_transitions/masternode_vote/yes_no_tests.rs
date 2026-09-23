@@ -33,7 +33,9 @@ use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll,
+};
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
@@ -59,7 +61,7 @@ fn two_thirds_poll(purpose: &[u8], minimum_voting_power: u32) -> YesNoVotePoll {
         ],
         supermajority_numerator: 2,
         supermajority_denominator: 3,
-        minimum_voting_power,
+        minimum_voting_power: YesNoMinimumVotingPower::Absolute(minimum_voting_power),
     }
 }
 
@@ -453,6 +455,91 @@ async fn should_fail_below_the_minimum_voting_power_even_when_every_vote_is_yes(
     assert_eq!(result.yes_voting_power, 5);
     assert_eq!(result.no_voting_power, 0);
     assert_eq!(result.abstain_voting_power, 3);
+}
+
+/// A minimum given as a share of the total is measured against the masternode list of the
+/// closing block, evonodes weighing 4, and the bar it resolved to is kept in the result.
+#[tokio::test]
+async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = new_platform();
+    let half_rounded_up = |purpose: &[u8]| YesNoVotePoll {
+        minimum_voting_power: YesNoMinimumVotingPower::FractionOfTotal {
+            numerator: 1,
+            denominator: 2,
+            rounding: VotingPowerRounding::Up,
+        },
+        ..two_thirds_poll(purpose, 0)
+    };
+    let evonode_alone = half_rounded_up(b"evonode alone");
+    let evonode_and_one = half_rounded_up(b"evonode and one masternode");
+    open_poll(&platform, &evonode_alone, FUND, platform_version);
+    open_poll(&platform, &evonode_and_one, FUND, platform_version);
+
+    // One evonode and five masternodes: a total of 9, so half rounded up is 5.
+    let evonode = setup_voter(&mut platform, 100, true, platform_version);
+    let masternodes: Vec<_> = (101..106)
+        .map(|seed| setup_voter(&mut platform, seed, false, platform_version))
+        .collect();
+    let total: u32 = platform
+        .state
+        .load()
+        .full_masternode_list()
+        .values()
+        .map(|masternode| match masternode.node_type {
+            MasternodeType::Evo => 4,
+            MasternodeType::Regular => 1,
+        })
+        .sum();
+    assert_eq!(total, 9, "the list holds only the voters set up here");
+    assert_eq!(masternodes.len(), 5);
+
+    let (pro_tx_hash, signer, voting_key) = &evonode;
+    for (nonce, vote_poll) in [(1, &evonode_alone), (2, &evonode_and_one)] {
+        perform_yes_no_vote(
+            &mut platform,
+            vote_poll,
+            YesNoAbstainVoteChoice::Yes,
+            signer,
+            *pro_tx_hash,
+            voting_key,
+            nonce,
+            platform_version,
+        )
+        .await
+        .expect("expected the evonode's vote to be accepted");
+    }
+    let (pro_tx_hash, signer, voting_key) = &masternodes[0];
+    perform_yes_no_vote(
+        &mut platform,
+        &evonode_and_one,
+        YesNoAbstainVoteChoice::Yes,
+        signer,
+        *pro_tx_hash,
+        voting_key,
+        1,
+        platform_version,
+    )
+    .await
+    .expect("expected the masternode's vote to be accepted");
+
+    close_ended_polls(&mut platform, platform_version);
+
+    let result_of = |vote_poll: &YesNoVotePoll| {
+        *poll_state(&platform, vote_poll, platform_version)
+            .stored_info
+            .expect("stored info")
+            .result()
+            .expect("expected the poll to be finished")
+    };
+    let alone = result_of(&evonode_alone);
+    assert_eq!(alone.yes_voting_power, 4);
+    assert_eq!(alone.required_voting_power, 5);
+    assert!(!alone.passed);
+    let with_one = result_of(&evonode_and_one);
+    assert_eq!(with_one.yes_voting_power, 5);
+    assert_eq!(with_one.required_voting_power, 5);
+    assert!(with_one.passed);
 }
 
 #[tokio::test]

@@ -32,6 +32,7 @@ impl YesNoVotePollStoredInfoV0 {
         yes_voting_power: VotingPower,
         no_voting_power: VotingPower,
         abstain_voting_power: VotingPower,
+        required_voting_power: VotingPower,
         passed: bool,
         finalization_block: BlockInfo,
     ) -> Result<YesNoVotePollResult, ProtocolError> {
@@ -45,6 +46,7 @@ impl YesNoVotePollStoredInfoV0 {
             yes_voting_power,
             no_voting_power,
             abstain_voting_power,
+            required_voting_power,
             start_block,
             finalization_block,
         };
