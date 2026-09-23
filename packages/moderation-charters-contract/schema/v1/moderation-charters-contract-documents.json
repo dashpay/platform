@@ -23,21 +23,19 @@
         "minLength": 3,
         "maxLength": 3,
         "pattern": "^[A-Z]{3}$",
-        "description": "Three uppercase letters, unique among the owner's reasons; what an action shows",
+        "description": "Three uppercase letters, unique per owner",
         "position": 0
       },
       "label": {
         "type": "string",
         "minLength": 1,
         "maxLength": 64,
-        "description": "The reason's name, such as Spam",
         "position": 1
       },
       "description": {
         "type": "string",
         "minLength": 1,
         "maxLength": 1024,
-        "description": "What the reason covers and how the team applies it",
         "position": 2
       }
     },
@@ -47,7 +45,7 @@
       "label"
     ],
     "additionalProperties": false,
-    "description": "A ground for a moderation action, keyed by its owner and a three-letter code. Anyone may file one; immutable and undeletable, so a charter that lists it lists a fixed text"
+    "description": "A ground for a moderation action"
   },
   "submittedCharter": {
     "type": "object",
@@ -88,14 +86,13 @@
             "moderation": "elected"
           }
         },
-        "description": "The contract the team proposes to moderate; it must declare elected moderation, and that declaration is the team's whole mandate",
+        "description": "The contract to moderate",
         "position": 0
       },
       "description": {
         "type": "string",
         "minLength": 1,
         "maxLength": 4096,
-        "description": "What the team would moderate and how, for joiners and voters. Informational",
         "position": 1
       },
       "reasons": {
@@ -114,14 +111,14 @@
             "documentType": "reason"
           }
         },
-        "description": "The moderation reasons the team's actions may name. Every action names one, so a team with none can take no action",
+        "description": "Reasons the team may act on; none means it cannot act",
         "position": 2
       },
       "moderatorsShare": {
         "type": "integer",
         "minimum": 0,
         "maximum": 100,
-        "description": "Percentage of each moderated type's declared moderators fee the team takes. Absent means the full amount; a lower number is a discount on the team's services, and 0 says the team will not moderate and takes no rewards",
+        "description": "Percent of the declared moderators fee taken; absent is 100, 0 takes no rewards",
         "position": 3
       },
       "rewardSplit": {
@@ -131,21 +128,20 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 100,
-            "description": "The leader's share",
             "position": 0
           },
           "equal": {
             "type": "integer",
             "minimum": 0,
             "maximum": 100,
-            "description": "The share split equally among the other members",
+            "description": "Split equally among the other members",
             "position": 1
           },
           "actions": {
             "type": "integer",
             "minimum": 0,
             "maximum": 100,
-            "description": "The share split by each member's moderation action count",
+            "description": "Split by action count",
             "position": 2
           }
         },
@@ -155,7 +151,7 @@
           "actions"
         ],
         "additionalProperties": false,
-        "description": "How the team splits each claim of the moderators pot; the three percentages sum to 100",
+        "description": "Percentages summing to 100",
         "position": 4
       }
     },
@@ -167,7 +163,7 @@
       "rewardSplit"
     ],
     "additionalProperties": false,
-    "description": "A proposal to moderate a contract on the contract's own terms: who leads it, the reasons it may act on, what it charges and how it splits the pay. Immutable, so joiners consent to a fixed text"
+    "description": "A proposal to moderate a contract"
   },
   "joinRequest": {
     "type": "object",
@@ -210,7 +206,6 @@
             "recipientId": "$ownerId"
           }
         },
-        "description": "The proposal the owner asks to join; recipientId must be its leader",
         "position": 0
       },
       "recipientId": {
@@ -227,14 +222,13 @@
             "boundTo": "submittedCharter"
           }
         },
-        "description": "The leader, and through recipientKeyId the key the message is encrypted to",
+        "description": "The proposal's leader",
         "position": 1
       },
       "recipientKeyId": {
         "type": "integer",
         "minimum": 0,
         "maximum": 4294967295,
-        "description": "The leader's decryption key the message is encrypted to",
         "position": 2
       },
       "senderKeyId": {
@@ -249,7 +243,6 @@
             "boundTo": "joinRequest"
           }
         },
-        "description": "The owner's encryption key the shared secret is derived from",
         "position": 3
       },
       "encryptedMessage": {
@@ -263,7 +256,7 @@
           "senderKey": "senderKeyId",
           "scheme": "ecdh-secp256k1-aes256-cbc"
         },
-        "description": "Why the owner wants to join, readable by the leader alone",
+        "description": "Readable by the leader only",
         "position": 4
       }
     },
@@ -276,7 +269,7 @@
       "encryptedMessage"
     ],
     "additionalProperties": false,
-    "description": "An identity's offer to serve on the team of a proposal. One per identity per proposal; immutable and permanent, so a team's consent never vanishes"
+    "description": "An offer to join a proposal's team"
   },
   "electedCharter": {
     "type": "object",
@@ -293,7 +286,7 @@
         "unique": true,
         "contested": {
           "resolution": 1,
-          "description": "Every elected charter for a target contends for its moderation team seat"
+          "description": "Contest for the moderation seat"
         }
       },
       {
@@ -318,7 +311,6 @@
             "moderation": "electionOpen"
           }
         },
-        "description": "The contract contended for; it declares elected moderation and its own election delay has passed",
         "position": 0
       },
       "submittedCharterId": {
@@ -335,7 +327,6 @@
             "targetContractId": "targetContractId"
           }
         },
-        "description": "The proposal this team runs on; only its leader may open the contest, and for the same target",
         "position": 1
       },
       "members": {
@@ -362,7 +353,7 @@
             }
           }
         },
-        "description": "The team besides the leader: only identities that asked to join this proposal",
+        "description": "Team besides the leader, each with a join request",
         "position": 2
       }
     },
@@ -373,6 +364,6 @@
       "members"
     ],
     "additionalProperties": false,
-    "description": "A proposal put to the vote with its team. Creating one opens or joins the contest for the target; the leader and every member act with the target's full mandate"
+    "description": "A proposal put to the vote with its team"
   }
 }
