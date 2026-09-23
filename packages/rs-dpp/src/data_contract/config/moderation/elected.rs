@@ -2,9 +2,9 @@
 //! masternodes and evonodes instead of by the contract owner (protocol version 14).
 //!
 //! The declaration is fixed at the contract's creation and never changes: the election
-//! parameters, the document types the team moderates with the abilities a charter may claim
-//! on each, who moderates until the first team is seated, and whether the owner is protected
-//! from the team. A charter does not price the moderators part of a document action: the
+//! parameters, the document types the team moderates with the abilities it holds on each,
+//! who moderates until the first team is seated, and whether the owner is protected from the
+//! team. A charter does not price the moderators part of a document action: the
 //! type's own `actionFees.moderators` amount is the most a team may charge, and a charter
 //! charges a share of it. No election exists yet: until one does, the contract is in its
 //! **interim**,
@@ -38,7 +38,7 @@ pub mod property_names {
     pub const CHALLENGE_COOL_DOWN: &str = "challengeCoolDown";
     /// The election delay, in seconds after the contract's creation
     pub const ELECTION_DELAY: &str = "electionDelay";
-    /// The moderated document types, each with the abilities a charter may claim on it
+    /// The moderated document types, each with the abilities the seated team holds on it
     pub const MODERATED_DOCUMENT_TYPES: &str = "moderatedDocumentTypes";
     /// The interim moderators
     pub const INTERIM: &str = "interim";
@@ -51,8 +51,9 @@ pub mod property_names {
 }
 
 /// What a moderation team may do to a contract's users and content. The contract declares
-/// which of these a charter may claim on each moderated document type; a seated team has
-/// what its charter claims.
+/// which of these a seated team holds on each moderated document type. A team holds every
+/// ability the declaration gives it; its charter narrows what it may act on only through the
+/// moderation reasons it lists, since every action names one.
 ///
 /// Append-only: the discriminant is stored in every declaration.
 #[derive(
@@ -323,7 +324,7 @@ pub struct ElectedModerators {
     /// case the election may be called at once. A reference declaring
     /// `contractRequirements: { "moderation": "electionOpen" }` is what reads it.
     pub election_delay: Option<u32>,
-    /// The document types the team moderates, each with the abilities a charter may claim
+    /// The document types the team moderates, each with the abilities the seated team holds
     /// on it: non-empty, each type a document type of the contract, each ability set
     /// non-empty and backed by the contract (`Ban`, `Suspend` and `Warn` by the list the
     /// contract keeps, `DeleteDocuments` by the type being flagged
@@ -369,7 +370,7 @@ impl ElectedModerators {
             .contains_key(document_type_name)
     }
 
-    /// Whether a charter may claim the ability on the document type
+    /// Whether the seated team holds the ability on the document type
     pub fn allows(&self, document_type_name: &str, ability: ModerationAbility) -> bool {
         self.moderated_document_types
             .get(document_type_name)

@@ -211,6 +211,11 @@ impl SystemDataContracts {
             // Never served from this cache: `WalletUtils` is only ever read from grovedb, and
             // the reserved `FeatureFlags` slot has no implementation.
             SystemDataContract::WalletUtils | SystemDataContract::FeatureFlags => return Ok(None),
+            // Registered but not yet written to state at any protocol version: the election a
+            // charter create opens does not exist yet. The PR that adds it writes the contract
+            // to state on the upgrade to protocol version 14 and gives it an activation version
+            // here; until then a lookup falls through to grovedb and reports it absent.
+            SystemDataContract::ModerationCharters => return Ok(None),
         };
 
         if activated_at_protocol_version > platform_version.protocol_version {
@@ -408,6 +413,19 @@ mod tests {
             )
             .expect("expected the v13 lookup to succeed")
             .is_some());
+    }
+
+    #[test]
+    fn should_not_serve_moderation_charters_until_it_is_written_to_state() {
+        let contracts = SystemDataContracts::new();
+
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::ModerationCharters.id(),
+                PlatformVersion::latest()
+            )
+            .expect("expected the lookup to succeed")
+            .is_none());
     }
 
     #[test]

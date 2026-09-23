@@ -759,12 +759,50 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
 ///
+/// 33. **The moderation charters system contract**
+///     (`SystemDataContract::ModerationCharters`, schema v1, the first piece of
+///     decentralized moderation teams) carries four document types, all
+///     immutable and undeletable. A `reason` is a ground for a moderation
+///     action, keyed by its owner and a three-letter `code` unique among the
+///     owner's reasons. A `submittedCharter` is a leader's proposal to
+///     moderate one contract on that contract's own terms: its
+///     `targetContractId` refers to a contract declaring elected moderation
+///     (item 24, `moderation: "elected"`, so teams form during the contract's
+///     election delay), its `reasons` are a typed array (item 25) of
+///     references to reasons (item 31), and it carries an optional
+///     `moderatorsShare` and a `rewardSplit`. A `joinRequest` is an identity's
+///     offer to serve on a proposal, one per identity per proposal, whose
+///     `recipientId` must be the proposal's owner (`propertyAgreement`) and
+///     name a decryption key bound to `submittedCharter` (item 29), whose
+///     `senderKeyId` is an encryption key of the writer bound to `joinRequest`
+///     (item 30) and whose `encryptedMessage` declares its envelope (item 27).
+///     An `electedCharter` is a proposal put to the vote with its team: only
+///     the proposal's owner may create one, for the proposal's own target
+///     (`propertyAgreement`), its `targetContractId` requires
+///     `moderation: "electionOpen"`, and its `members` are identities each of
+///     which filed a join request for that proposal (item 32, a lookup through
+///     the join request's unique index) and none of which is the leader
+///     (item 26). Its `byTargetContract` index is a contested unique index
+///     with `"resolution": 1`, the masternode vote without a Lock choice of
+///     item 23, so an elected charter create opens or joins the contest for
+///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
+///     (`moderation_charters: 1`), and
+///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
+///     on the pure-data rules the seating path will run on a proposal: its
+///     reward split sums to 100 and its description fits
+///     `SystemLimits::max_moderation_charter_description_length` bytes (basic
+///     errors 11000 to 11002). Nothing writes the contract to state yet, at
+///     genesis or on upgrade, and the Drive cache does not serve it: the
+///     seating of an elected team comes in a later pull request, which writes
+///     the contract to state.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
 /// ephemeral key and encrypted grant in `entryPayload`. Genesis registers it on
 /// chains born at this version; `transition_to_version_14` inserts it on upgrade.
 /// The Drive and trusted SDK caches serve it only from protocol version 14.
+///
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in

@@ -95,6 +95,10 @@ use dpp::consensus::basic::contract_moderation::{
     DocumentActionFeesWithoutModerationError,
     InvalidContractModerationConfigError,
 };
+use dpp::consensus::basic::moderation_charter::{
+    ModerationCharterDescriptionTooLongError, ModerationCharterMalformedFieldError,
+    ModerationCharterRewardSplitNotOneHundredError,
+};
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
@@ -1271,6 +1275,15 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ContractModerationReasonTooLongError(e) => {
             generic_consensus_error!(ContractModerationReasonTooLongError, e).into()
+        }
+        BasicError::ModerationCharterMalformedFieldError(e) => {
+            generic_consensus_error!(ModerationCharterMalformedFieldError, e).into()
+        }
+        BasicError::ModerationCharterRewardSplitNotOneHundredError(e) => {
+            generic_consensus_error!(ModerationCharterRewardSplitNotOneHundredError, e).into()
+        }
+        BasicError::ModerationCharterDescriptionTooLongError(e) => {
+            generic_consensus_error!(ModerationCharterDescriptionTooLongError, e).into()
         }
         BasicError::InvalidContractModerationReasonDocumentsError(e) => {
             generic_consensus_error!(InvalidContractModerationReasonDocumentsError, e).into()

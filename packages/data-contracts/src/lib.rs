@@ -19,6 +19,9 @@ pub use keyword_search_contract;
 #[cfg(feature = "masternode-rewards")]
 pub use masternode_reward_shares_contract;
 
+#[cfg(feature = "moderation-charters")]
+pub use moderation_charters_contract;
+
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
@@ -50,6 +53,10 @@ pub enum SystemDataContract {
     KeywordSearch = 7,
     DocumentHistory = 8,
     AppConnect = 9,
+    /// The charters of elected moderation teams (protocol version 14). Registered from
+    /// protocol version 14 on, but not yet written to state: the election a charter create
+    /// opens does not exist yet, and the PR that adds it writes the contract to state.
+    ModerationCharters = 10,
 }
 
 pub struct DataContractSource {
@@ -66,7 +73,7 @@ impl SystemDataContract {
     /// Deliberately kept beside the enum so that adding a variant and adding it here are the
     /// same edit. `assert_every_variant_is_listed` below makes that mechanical rather than
     /// remembered: a new variant makes its match non-exhaustive and the crate stops compiling.
-    pub const ALL: [SystemDataContract; 10] = [
+    pub const ALL: [SystemDataContract; 11] = [
         SystemDataContract::Withdrawals,
         SystemDataContract::MasternodeRewards,
         SystemDataContract::FeatureFlags,
@@ -77,6 +84,7 @@ impl SystemDataContract {
         SystemDataContract::KeywordSearch,
         SystemDataContract::DocumentHistory,
         SystemDataContract::AppConnect,
+        SystemDataContract::ModerationCharters,
     ];
 
     /// A new variant must also be added to [`SystemDataContract::ALL`]; this match is where the
@@ -161,6 +169,14 @@ impl SystemDataContract {
             SystemDataContract::AppConnect => [
                 239, 150, 14, 165, 105, 114, 235, 173, 190, 248, 162, 126, 247, 218, 92, 129, 255,
                 75, 179, 138, 2, 150, 151, 69, 126, 36, 218, 66, 183, 155, 84, 183,
+            ],
+
+            #[cfg(feature = "moderation-charters")]
+            SystemDataContract::ModerationCharters => moderation_charters_contract::ID_BYTES,
+            #[cfg(not(feature = "moderation-charters"))]
+            SystemDataContract::ModerationCharters => [
+                197, 6, 230, 72, 106, 198, 82, 129, 253, 135, 43, 86, 185, 182, 17, 112, 164, 127,
+                96, 5, 107, 185, 156, 46, 14, 10, 109, 237, 77, 228, 248, 129,
             ],
         };
         Identifier::new(bytes)
@@ -282,6 +298,21 @@ impl SystemDataContract {
             }),
             #[cfg(not(feature = "app-connect"))]
             SystemDataContract::AppConnect => Err(Error::ContractNotIncluded("app-connect")),
+
+            #[cfg(feature = "moderation-charters")]
+            SystemDataContract::ModerationCharters => Ok(DataContractSource {
+                id_bytes: moderation_charters_contract::ID_BYTES,
+                owner_id_bytes: moderation_charters_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.moderation_charters as u32,
+                definitions: moderation_charters_contract::load_definitions(platform_version)?,
+                document_schemas: moderation_charters_contract::load_documents_schemas(
+                    platform_version,
+                )?,
+            }),
+            #[cfg(not(feature = "moderation-charters"))]
+            SystemDataContract::ModerationCharters => {
+                Err(Error::ContractNotIncluded("moderation-charters"))
+            }
         }
     }
 }
@@ -330,6 +361,9 @@ mod tests {
                 }
                 SystemDataContract::AppConnect => {
                     published("H8F9mP1BM55TE1ShsxPZHzhyinaMdY9bMmP85mkDhcJJ")
+                }
+                SystemDataContract::ModerationCharters => {
+                    published("EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88")
                 }
             };
 

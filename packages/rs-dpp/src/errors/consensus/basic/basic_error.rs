@@ -90,6 +90,10 @@ use crate::consensus::basic::identity::{
     WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use crate::consensus::basic::moderation_charter::{
+    ModerationCharterDescriptionTooLongError, ModerationCharterMalformedFieldError,
+    ModerationCharterRewardSplitNotOneHundredError,
+};
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputOutputBalanceMismatchError,
@@ -812,6 +816,16 @@ pub enum BasicError {
     // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
     #[error(transparent)]
     InvalidEncryptedPropertyShapeError(InvalidEncryptedPropertyShapeError),
+
+    // Moderation charters (protocol version 14).
+    #[error(transparent)]
+    ModerationCharterMalformedFieldError(ModerationCharterMalformedFieldError),
+
+    #[error(transparent)]
+    ModerationCharterRewardSplitNotOneHundredError(ModerationCharterRewardSplitNotOneHundredError),
+
+    #[error(transparent)]
+    ModerationCharterDescriptionTooLongError(ModerationCharterDescriptionTooLongError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -908,8 +922,7 @@ mod tests {
             )),
             194
         );
-        // The shape of an `encryptedFor` property's ciphertext (protocol version 14): the
-        // tail of the enum.
+        // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidEncryptedPropertyShapeError(
                 InvalidEncryptedPropertyShapeError::new(
@@ -921,6 +934,28 @@ mod tests {
                 )
             )),
             195
+        );
+        // Moderation charters (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterMalformedFieldError(
+                ModerationCharterMalformedFieldError::new(
+                    "rewardSplit".to_string(),
+                    "reason".to_string()
+                )
+            )),
+            196
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterRewardSplitNotOneHundredError(
+                ModerationCharterRewardSplitNotOneHundredError::new(10, 40, 40)
+            )),
+            197
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterDescriptionTooLongError(
+                ModerationCharterDescriptionTooLongError::new(4097, 4096)
+            )),
+            198
         );
     }
 }

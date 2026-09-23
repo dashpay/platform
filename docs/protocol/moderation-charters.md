@@ -1,0 +1,150 @@
+# Moderation charters
+
+The moderation charters system contract holds how the moderation team of a
+contract that declares elected moderation comes to be: the reasons a team may
+act on, a leader's proposal, the identities that offer to join it, and the
+proposal put to the vote with its team. It activates at protocol version 14.
+Chains do not write it to state yet: the seating of an elected team does not
+exist, and the pull request that adds it writes the contract to state at
+genesis and on the upgrade to protocol version 14.
+
+- Contract ID: `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`
+- Owner: the all-zero system identity
+- Registry entry: `SystemDataContract::ModerationCharters = 10`
+- Schema version: 1
+- Document types: `reason`, `submittedCharter`, `joinRequest`, `electedCharter`
+
+Every type is immutable and undeletable, so each document another one refers
+to stays exactly as it was when it was referred to. Additional properties are
+rejected on every type.
+
+## The flow
+
+1. Anyone files `reason` documents, or reuses someone else's.
+2. A leader files a `submittedCharter` for a target contract that declares
+   elected moderation. Proposals may be filed during the target's election
+   delay, so a team can form before the election opens.
+3. Identities that want to serve file a `joinRequest` for the proposal, with a
+   message encrypted to the leader.
+4. Once the target's election delay has passed, the leader files an
+   `electedCharter` naming the proposal and the members chosen from those who
+   asked to join. That create opens or joins the contest for the target.
+
+The seated team acts with the target contract's whole elected moderation
+declaration: every document type and ability it lists. A team narrows what it
+acts on only through the reasons its proposal lists, since every action names
+one. There are no powers: any one member acts alone.
+
+## `reason`
+
+A ground for a moderation action.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `code` | string, three uppercase letters, required | Unique among the owner's reasons (`byOwnerCode`, unique on `$ownerId` and `code`); what an action shows |
+| `label` | string, 1 to 64 characters, required | The reason's name, such as Spam |
+| `description` | string, 1 to 1024 characters | What the reason covers and how the team applies it |
+
+Two owners may both file a `SPM`; a proposal says which one it means by
+document id.
+
+## `submittedCharter`
+
+A leader's proposal. Its owner is the leader. The type declares
+`requiresIdentityDecryptionBoundedKey`, so the leader can hold a decryption key
+bound to it, the key join requests are encrypted to.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `targetContractId` | identifier, required, `refersTo: { "type": "contract", "contractRequirements": { "moderation": "elected" } }` | The contract the team proposes to moderate; a target that does not exist refuses the create (40120), one that does not declare elected moderation refuses it with `ReferencedContractRequirementNotMetError` (40135) |
+| `description` | string, 1 to 4096 characters, required | What the team would moderate and how, for joiners and voters. Informational |
+| `reasons` | typed array of at most 64 unique identifiers, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; empty is allowed, a team that can take no action; a missing reason refuses the create, naming the element (`reasons[2]`) |
+| `moderatorsShare` | integer 0 to 100 | The percentage of each moderated document type's declared moderators fee the team takes. Absent is the full amount; a lower number is a discount; 0 is a team that will not moderate and takes no rewards |
+| `rewardSplit` | object, required | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members, and the share split by each member's action count |
+
+Indexes: `byTargetContract` (`targetContractId`, `$createdAt`) lists the
+proposals for a contract in filing order; `byOwner` (`$ownerId`) lists a
+leader's proposals.
+
+A type's declared moderators amount is already the most a team may charge, so a
+proposal can only lower the price, and the signer's fee agreement to the
+declared amounts never mismatches a seated team.
+
+## `joinRequest`
+
+An identity's offer to serve on the team of a proposal. The owner is the one
+offering, so the offer is consent the owner signed; no property names the
+joiner. The type declares `requiresIdentityEncryptionBoundedKey`.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` with `propertyAgreement: { "recipientId": "$ownerId" }` | The proposal; `recipientId` must be its owner, the leader |
+| `recipientId` | identifier, required, `refersTo: { "type": "identityPublicKey", "keyIdProperty": "recipientKeyId", "keyRequirements": { "purpose": "decryption", "boundTo": "submittedCharter" } }` | The leader, and through `recipientKeyId` the key the message is encrypted to: a decryption key bound to this contract's `submittedCharter` type |
+| `recipientKeyId` | integer 0 to 4294967295, required | The leader's key id |
+| `senderKeyId` | integer 0 to 4294967295, required, `refersTo: { "type": "identityPublicKey", "identityProperty": "$ownerId", "keyRequirements": { "purpose": "encryption", "boundTo": "joinRequest" } }` | The owner's encryption key, bound to this contract's `joinRequest` type, the shared secret is derived from |
+| `encryptedMessage` | bytes, 32 to 1040, required, `encryptedFor` recipient `recipientId`, keys `recipientKeyId` and `senderKeyId`, scheme `ecdh-secp256k1-aes256-cbc` | Why the owner wants to join, readable by the leader alone: a 16-byte IV followed by AES-256-CBC blocks under the ECDH shared key, the scheme dashpay contact requests use. Consensus checks only the shape |
+
+Indexes: `bySubmittedCharter` (`submittedCharterId`, `$ownerId`), unique, so
+one offer per identity per proposal, and the index an elected charter's
+members are looked up through; `byOwner` (`$ownerId`). The type is neither
+transferable nor tradeable, which a lookup keyed on `$ownerId` requires.
+
+## `electedCharter`
+
+A proposal put to the vote with its team. Its owner is the leader.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `targetContractId` | identifier, required, `refersTo: { "type": "contract", "contractRequirements": { "moderation": "electionOpen" } }` | The contract contended for; it must declare elected moderation and its own `electionDelay` since its creation must have passed (40135 otherwise) |
+| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` with `propertyAgreement: { "$ownerId": "$ownerId", "targetContractId": "targetContractId" }` | The proposal the team runs on: only its owner may file this, and for the proposal's own target |
+| `members` | typed array of at most 15 unique identifiers, required, elements `distinctFrom: "$ownerId"` and `refersTo` a `joinRequest` through `lookup: { "index": "bySubmittedCharter", "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." } }` | The team besides the leader; may be empty. Each member must be the owner of a join request for this proposal, found through the join request's unique index, and none may be the leader |
+
+The lookup reads: for each member, the join request whose
+`submittedCharterId` is this document's `submittedCharterId` and whose owner is
+the member. A member with no such request refuses the create with
+`ReferencedEntityNotFoundError` (40120), naming the element (`members[1]`).
+
+Indexes: `byTargetContract`, the contested index below, and
+`bySubmittedCharter` (`submittedCharterId`), which lists the elected charters
+of a proposal. It is not unique: a type with a contested unique index may carry
+no other unique index, so a leader may enter one proposal more than once, each
+time with its own team and its own contest fee.
+
+## The contest
+
+The `byTargetContract` index of `electedCharter` is a contested unique index
+keyed by the target contract, with `"resolution": 1`:
+
+```json
+{
+  "name": "byTargetContract",
+  "properties": [{ "targetContractId": "asc" }],
+  "unique": true,
+  "contested": { "resolution": 1 }
+}
+```
+
+Resolution `1` is `ContestedIndexResolution::MasternodeVoteNoLocking`:
+masternodes (weight 1) and evonodes (weight 4) vote for a contender or abstain,
+with no Lock choice, so the contest always ends with a winner, a tie goes to
+the earliest contender, and a contest with a single contender at the end of the
+join window is awarded at once. An elected charter create opens or joins that
+contest for its target contract. Reading the join window, the vote window and
+the fund from the target contract comes with the seating, in a later pull
+request.
+
+## Validation beyond the schema
+
+Every rule above is enforced by the schema's keywords when a document is
+written. Two rules of a proposal are not expressible there, and
+`validate_submitted_charter` in `rs-dpp`
+(`packages/rs-dpp/src/moderation_charter/`) checks them without reading state,
+for the path that seats a team:
+
+| Rule | Error | Code |
+| --- | --- | --- |
+| A property is missing or of the wrong type | `ModerationCharterMalformedFieldError` | 11000 |
+| The three shares of `rewardSplit` do not sum to 100 | `ModerationCharterRewardSplitNotOneHundredError` | 11001 |
+| The description is over `SystemLimits::max_moderation_charter_description_length` (4096) bytes; the schema's `maxLength` counts characters | `ModerationCharterDescriptionTooLongError` | 11002 |
+
+`ElectedCharter` reads an elected charter's properties for the same path.
