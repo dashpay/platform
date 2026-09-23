@@ -47,6 +47,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    permission and reports the amount whose owner has no balance element,
 ///    so block lifecycle paths can settle it into the current epoch's
 ///    processing pool.
+/// 3. **Pricing before commit**: the Drive entry points that own their
+///    transaction when a caller passes none (`apply_drive_operations` v2,
+///    `add_group_action` v1, the moderation removal wrappers v1) price the
+///    batch before committing it, so the error in item 1 never leaves a
+///    write persisted without its fee result.
 ///
 /// Everything else matches v14.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
