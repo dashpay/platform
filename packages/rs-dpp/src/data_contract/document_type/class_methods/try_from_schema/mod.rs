@@ -1,6 +1,10 @@
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
+use crate::data_contract::document_type::reference_lookup::{
+    MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
+};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -8,9 +12,10 @@ use crate::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     property_names, ContractReferenceModeration, ContractReferenceOwner,
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentType, EncryptedFor,
-    EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements, KeyIdReference,
-    KeyReferenceIdentityProperty,
+    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
+    DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
+    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
+    LookupKeySource,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -619,6 +624,17 @@ fn apply_property_reference_v0(
         ));
     }
 
+    // `lookup` finds a referenced DOCUMENT through an index of its type, and
+    // only a permanent one: a key into a deletable type could find a new
+    // document once the one it found is deleted, where an id is produced at
+    // most once. The other targets are found by the value itself
+    if refers_to_map.contains_key(property_names::LOOKUP) && reference_type != "permanentDocument" {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo does not take lookup: it is only allowed on \
+             permanentDocument references"
+        )));
+    }
+
     // A key reference declared on the key id property itself names whose key
     // it is through `identityProperty`; it is the one form that sits on a
     // non-identifier property
@@ -737,10 +753,22 @@ fn apply_property_reference_v0(
 
             let document_type_name = document_type_name.to_string();
             if document_target == "permanentDocument" {
-                DocumentPropertyReferenceTarget::PermanentDocument {
-                    contract_id,
-                    document_type_name,
-                    property_agreement,
+                // A lookup is its own variant, so an id reference keeps its
+                // shape (and its encoding in the reference errors)
+                match refers_to_map.get(property_names::LOOKUP) {
+                    Some(lookup_value) => {
+                        DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                            contract_id,
+                            document_type_name,
+                            property_agreement,
+                            lookup: parse_document_reference_lookup(lookup_value)?,
+                        }
+                    }
+                    None => DocumentPropertyReferenceTarget::PermanentDocument {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                    },
                 }
             } else {
                 DocumentPropertyReferenceTarget::DeletableDocument {
@@ -893,6 +921,130 @@ fn apply_element_reference_v0(
         ));
     }
     apply_property_reference_v0(items, element_type)
+}
+
+/// The `lookup` of a `permanentDocument` reference: `index`, the name of an index of the
+/// referenced document type, and `keys`, every property of that index mapped to
+/// its referring-side source (`"."`, `"$ownerId"` or a property path), with `"."`
+/// exactly once. What the names resolve to is checked once the document types
+/// are parsed: the sources against the declaring type
+/// ([`validate_reference_lookup_sources`]), the index against the referenced
+/// one (at contract level for a type of the same contract, at registration for
+/// one of another contract).
+fn parse_document_reference_lookup(
+    lookup_value: &Value,
+) -> Result<DocumentReferenceLookup, DataContractError> {
+    let lookup_map = lookup_value.to_btree_ref_string_map()?;
+    if let Some(unknown) = lookup_map.keys().find(|key| {
+        !matches!(
+            key.as_str(),
+            property_names::LOOKUP_INDEX | property_names::LOOKUP_KEYS
+        )
+    }) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "permanentDocument refersTo lookup {unknown:?} is unknown: a lookup takes index and \
+             keys"
+        )));
+    }
+
+    let index = lookup_map
+        .get_str(property_names::LOOKUP_INDEX)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+    if index.is_empty() || index.len() > MAX_LOOKUP_INDEX_NAME_LENGTH {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "permanentDocument refersTo lookup index must be between 1 and \
+             {MAX_LOOKUP_INDEX_NAME_LENGTH} characters"
+        )));
+    }
+
+    let keys_map = lookup_map
+        .get(property_names::LOOKUP_KEYS)
+        .ok_or_else(|| {
+            DataContractError::InvalidContractStructure(
+                "permanentDocument refersTo lookup must declare keys".to_string(),
+            )
+        })?
+        .to_btree_ref_string_map()?;
+    if keys_map.is_empty() || keys_map.len() > MAX_LOOKUP_KEYS {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "permanentDocument refersTo lookup keys must map between 1 and {MAX_LOOKUP_KEYS} \
+             index properties"
+        )));
+    }
+
+    let keys = keys_map
+        .into_iter()
+        .map(|(index_property, source_value)| {
+            if index_property.is_empty() || index_property.len() > MAX_LOOKUP_PATH_LENGTH {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "permanentDocument refersTo lookup index property names must be between 1 \
+                     and {MAX_LOOKUP_PATH_LENGTH} characters"
+                )));
+            }
+            let source = source_value.as_text().ok_or_else(|| {
+                DataContractError::InvalidContractStructure(
+                    "permanentDocument refersTo lookup keys must map each index property to a \
+                     string: \".\", \"$ownerId\" or a property path"
+                        .to_string(),
+                )
+            })?;
+            Ok((index_property, LookupKeySource::from_wire_name(source)?))
+        })
+        .collect::<Result<BTreeMap<String, LookupKeySource>, DataContractError>>()?;
+
+    // Without the reference's own value in the key, every document would
+    // resolve to the same referenced document whatever the property holds
+    let reference_value_uses = keys
+        .values()
+        .filter(|source| matches!(source, LookupKeySource::ReferenceValue))
+        .count();
+    if reference_value_uses != 1 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "permanentDocument refersTo lookup keys must fill exactly one index property from \
+             \".\", the reference's own value, found {reference_value_uses}"
+        )));
+    }
+
+    Ok(DocumentReferenceLookup {
+        index: index.to_string(),
+        keys,
+    })
+}
+
+/// Checks the referring side of every `refersTo` lookup of a document type,
+/// once all its properties are parsed: each property a key reads must exist,
+/// be a stored, required, single value (with every object around it
+/// required), and not be the reference property itself. See
+/// [`DocumentReferenceLookup::referring_side_error`].
+///
+/// Runs on every parse, validating or not, like the `encryptedFor` check: the
+/// rule is a property of the document type, and the write-time lookup reads
+/// the sources through the same flattened map. Generation 3 is the only
+/// parser admitting `refersTo` at all.
+pub(super) fn validate_reference_lookup_sources(
+    document_type: DocumentTypeRef,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    for (path, property) in document_type.flattened_properties() {
+        // On an identifier property or on the elements of a typed array: the
+        // key's other parts are the same for every element
+        let Some(lookup) = property
+            .property_type
+            .reference()
+            .and_then(|reference| reference.target())
+            .and_then(|target| target.as_any_document_reference())
+            .and_then(|declaration| declaration.lookup)
+        else {
+            continue;
+        };
+        if let Some(reason) = lookup.referring_side_error(document_type, path) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" refersTo lookup: \
+                 {reason}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Reads a property's `encryptedFor` declaration: how the bytes of a byte

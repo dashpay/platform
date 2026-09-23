@@ -1,0 +1,44 @@
+{
+  "$formatVersion": "1",
+  "id": "HBpE9BP7v9czi2hmsozHXSJdtVGcmykvAhBuYfm2r4Xi",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "vote": {
+      "type": "object",
+      "properties": {
+        "submittedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "voterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "4uAB6wAdt6FJ7djwjYrLnooVhYeQpzgkssBmgmvZ9WnM",
+            "documentType": "joinRequest",
+            "lookup": {
+              "index": "byMessage",
+              "keys": {
+                "message": "."
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "submittedCharterId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

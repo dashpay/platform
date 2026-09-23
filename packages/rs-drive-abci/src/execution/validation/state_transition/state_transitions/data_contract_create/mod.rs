@@ -5555,6 +5555,7 @@ mod tests {
     mod permanent_document_reference_declarations {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::errors::DataContractError;
         use drive::util::test_helpers::setup_contract;
 
         const FOREIGN_CONTRACT_PATH: &str =
@@ -5564,6 +5565,15 @@ mod tests {
         /// fixture, with the foreign permanent-document fixture contract
         /// already in state, and returns the execution result.
         async fn run_contract_create(fixture_path: &str) -> StateTransitionExecutionResult {
+            run_contract_create_with_foreign(fixture_path, FOREIGN_CONTRACT_PATH).await
+        }
+
+        /// [`run_contract_create`] with the contract at `foreign_contract_path`
+        /// in state instead.
+        async fn run_contract_create_with_foreign(
+            fixture_path: &str,
+            foreign_contract_path: &str,
+        ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -5575,7 +5585,7 @@ mod tests {
 
             setup_contract(
                 &platform.drive,
-                FOREIGN_CONTRACT_PATH,
+                foreign_contract_path,
                 None,
                 None,
                 None::<fn(&mut DataContract)>,
@@ -6176,6 +6186,70 @@ mod tests {
                     ),
                     ..
                 }
+            );
+        }
+
+        /// The contract whose `joinRequest` type, unique on
+        /// (`submittedCharterId`, `$ownerId`), the lookup registration
+        /// fixtures reference from another contract.
+        const LOOKUP_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup.json";
+
+        #[tokio::test]
+        async fn should_register_a_lookup_into_a_unique_index_of_another_contract() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup-registration-foreign-valid.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_lookup_naming_an_index_another_contract_does_not_have() {
+            // Only registration sees the other contract's indexes: the contract
+            // parse cannot, so this is a state error
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup-registration-foreign-missing-index.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "vote.voterId"
+                    && e.index() == "byMessage"
+                    && e.reason().contains("has no index named \"byMessage\"")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_lookup_into_a_non_unique_index_of_the_same_contract() {
+            // The contract parse sees the referenced type of the same contract,
+            // and refuses the declaration before any state is read
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup-registration-own-not-unique.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains("index \"byCharter\" of \"ballot\" is not unique")
             );
         }
     }

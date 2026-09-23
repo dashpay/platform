@@ -450,6 +450,56 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_a_lookup_on_a_permanent_document_refers_to_in_v3_document_schema() {
+        for reference_type in ["permanentDocument"] {
+            for keys in [
+                json!({ "submittedCharterId": "submittedCharterId", "$ownerId": "." }),
+                json!({ "submittedCharterId": ".", "$ownerId": "$ownerId" }),
+                json!({ "meta.charterId": "meta.charterId", "$ownerId": "." }),
+            ] {
+                let schema = document_schema_with_refers_to(json!({
+                    "type": reference_type,
+                    "documentType": "joinRequest",
+                    "lookup": { "index": "bySubmittedCharter", "keys": keys }
+                }));
+
+                assert!(
+                    DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                    "expected a {reference_type} lookup with keys {keys} to be valid"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_or_misplaced_lookups_in_v3_document_schema() {
+        let keys = json!({ "$ownerId": "." });
+        for refers_to in [
+            json!({ "type": "identity", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "contract", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "token", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "keyId", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "deletableDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": keys } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "keys": keys } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner" } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "", "keys": keys } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "x".repeat(33), "keys": keys } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": {} } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": 1 } } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": "$createdAt" } } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": "bad-name" } } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": keys, "extra": 1 } }),
+        ] {
+            let schema = document_schema_with_refers_to(refers_to.clone());
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected refersTo {refers_to} to be invalid"
+            );
+        }
+    }
+
+    #[test]
     fn should_accept_permanent_document_refers_to_in_v3_document_schema() {
         let schema = document_schema_with_refers_to(json!({
             "type": "permanentDocument",

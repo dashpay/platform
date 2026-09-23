@@ -42,7 +42,9 @@ const CHAINED_DOCUMENTS_QUERY_TS: &'static str = r#"
  * an index carrying `joinProperty`, and `joinProperty` must declare a
  * same-contract `refersTo: permanentDocument` targeting
  * `outerDocumentType` ("posts I liked": inner `like` through `byLiker`,
- * join `postId`, outer `post`). There are no outer-side clauses by
+ * join `postId`, outer `post`) whose `refersTo` carries no `lookup`: a
+ * reference resolved through a unique index holds no document ids, so it is
+ * refused as a join property. There are no outer-side clauses by
  * design — the verifier derives the outer query from the proven inner
  * results.
  */

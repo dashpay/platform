@@ -107,7 +107,9 @@ impl Index {
                 continue;
             };
             // Only a scalar reference can bind: an index property is never a
-            // typed array, so element references never reach an index
+            // typed array, so element references never reach an index. A
+            // lookup reference (`PermanentDocumentLookup`) never matches
+            // either: its value is not the referenced document's `$id`
             let DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
@@ -165,7 +167,9 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::IndexProperty;
+    use crate::data_contract::document_type::{
+        DocumentReferenceLookup, IndexProperty, LookupKeySource,
+    };
     use std::collections::BTreeMap;
 
     fn identifier_reference_property(
@@ -358,5 +362,29 @@ mod tests {
             identifier_reference_property("post", Some(own_contract_id), &[]),
         );
         assert_eq!(index.preallocation_bindings(&own, own_contract_id).len(), 1);
+    }
+    #[test]
+    fn should_not_bind_through_a_lookup_reference() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let mut property = identifier_reference_property("post", None, &[]);
+        property.property_type = DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id: None,
+                document_type_name: "post".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: DocumentReferenceLookup {
+                    index: "byAuthor".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            },
+        );
+        let mut properties = IndexMap::new();
+        properties.insert("postId".to_string(), property);
+
+        // The value names the post's owner, not the post, so no path follows
+        // from the post being created
+        assert!(index_on(&["postId"])
+            .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
     }
 }

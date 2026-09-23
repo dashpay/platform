@@ -62,11 +62,17 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// meet what the reference's `keyRequirements` require of it: its
     /// purpose, or a binding to a document type of the declaring contract.
     ReferencedIdentityKeyRequirementNotMet = 40136,
+    /// A `refersTo` lookup into a document type of another contract cannot
+    /// resolve there, reported at contract registration: the named index is
+    /// missing or not unique, the keys do not cover it exactly, or a source
+    /// holds a different kind of value than its index property. (A lookup into
+    /// the declaring contract is refused by the contract parse instead.)
+    ReferencedDocumentLookupInvalid = 40137,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131, 40135 or 40136.
+    /// is not in the 40120-40125 range, 40131, 40135, 40136 or 40137.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -78,6 +84,7 @@ impl DocumentReferenceErrorCodeWasm {
             40131 => Some(Self::ReferencedDocumentTypeNotDeletable),
             40135 => Some(Self::ReferencedContractRequirementNotMet),
             40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
+            40137 => Some(Self::ReferencedDocumentLookupInvalid),
             _ => None,
         }
     }
@@ -245,6 +252,7 @@ impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 mod tests {
     use super::*;
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+    use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -403,6 +411,17 @@ mod tests {
                 DocumentReferenceErrorCodeWasm::ReferencedIdentityKeyRequirementNotMet,
             ),
             (
+                StateError::ReferencedDocumentLookupInvalidError(
+                    ReferencedDocumentLookupInvalidError::new(
+                        "electedCharter.members".to_string(),
+                        "bySubmittedCharter".to_string(),
+                        "is not unique".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentLookupInvalid,
+            ),
+            (
                 StateError::ReferencedDocumentTypeNotFoundError(
                     ReferencedDocumentTypeNotFoundError::new(
                         id(),
@@ -499,7 +518,7 @@ mod tests {
 
     #[test]
     fn codes_outside_the_reference_range_are_not_claimed() {
-        for code in [40119, 40126, 40137, 0, 40200] {
+        for code in [40119, 40126, 40138, 0, 40200] {
             assert_eq!(DocumentReferenceErrorCodeWasm::from_code(code), None);
         }
     }
