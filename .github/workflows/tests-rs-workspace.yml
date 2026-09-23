@@ -217,6 +217,21 @@ jobs:
             --locked \
             -- --no-deps -D warnings
 
+      # The drive-proof-verifier fuzz crate is its own workspace, so the steps
+      # above never see it; lint it here so an API change it depends on fails
+      # the PR instead of the nightly fuzz run. It resolves from the workspace
+      # lock (plus libfuzzer-sys) and shares the workspace target/.
+      - name: Lint proof-verifier fuzz targets
+        run: |
+          cp Cargo.lock packages/rs-drive-proof-verifier/fuzz/
+          cargo fmt --manifest-path packages/rs-drive-proof-verifier/fuzz/Cargo.toml --check
+          cargo clippy \
+            --manifest-path packages/rs-drive-proof-verifier/fuzz/Cargo.toml \
+            --target-dir target \
+            --bins \
+            --lib \
+            -- --no-deps -D warnings
+
       - name: Find unused dependencies
         run: |
           cargo install cargo-machete 2>/dev/null || true
