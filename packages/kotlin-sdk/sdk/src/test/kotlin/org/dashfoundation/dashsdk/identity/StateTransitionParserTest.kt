@@ -85,7 +85,7 @@ class StateTransitionParserTest {
                     tokenId = ByteArray(32) { 0x77 },
                     tokenContractPosition = 3,
                     action = "Transfer",
-                    amount = 250L,
+                    amount = 250uL,
                     recipientId = ByteArray(32) { 0x22 },
                     tokenCount = null,
                     complete = true,
@@ -138,9 +138,9 @@ class StateTransitionParserTest {
                 tokenId = ByteArray(32) { 0x77 },
                 tokenContractPosition = 3,
                 action = "DirectPurchase",
-                amount = 100_000_000L,
+                amount = 100_000_000uL,
                 recipientId = null,
-                tokenCount = 100L,
+                tokenCount = 100uL,
                 complete = true,
                 details = null,
             ),
@@ -172,6 +172,46 @@ class StateTransitionParserTest {
             "parse reached the external fun before loading the library",
             error.message?.contains("parseStateTransition") == true,
         )
+    }
+
+    /**
+     * The price ceiling and token count are protocol u64s; `u64::MAX` must come
+     * through as the full unsigned value, not as a negative amount a spending
+     * limit check would let through.
+     */
+    @Test
+    fun `keeps a u64 max purchase price unsigned`() {
+        val parsed = StateTransitionParser.parseBlob(golden("parsed_max_price_purchase_v1.bin"))
+        val batch = parsed.kind as ParsedStateTransitionKind.Batch
+        val purchase = batch.transitions.single() as ParsedBatchedTransition.Token
+
+        assertEquals("DirectPurchase", purchase.action)
+        assertEquals(ULong.MAX_VALUE, purchase.amount)
+        assertEquals(ULong.MAX_VALUE, purchase.tokenCount)
+        assertEquals("18446744073709551615", purchase.amount.toString())
+    }
+
+    /**
+     * [IdentityPubkey] carries key limits as non-negative `Long`s; a budget
+     * above `Long.MAX_VALUE` is refused with a message rather than surfacing
+     * as a negative value.
+     */
+    @Test
+    fun `refuses a key budget above Long MAX_VALUE`() {
+        val golden = golden("parsed_identity_update_v1.bin")
+        // The golden's limited key carries `total_budget = 10_000_000_000`
+        // (0x00000002540be400), once inside the serialized transition and
+        // once in the parsed key that follows it; set the parsed copy's high bit.
+        val budget = byteArrayOf(0, 0, 0, 2, 0x54, 0x0b, 0xe4.toByte(), 0)
+        val at = (0..golden.size - budget.size).last { i ->
+            (budget.indices).all { golden[i + it] == budget[it] }
+        }
+        val patched = golden.copyOf().also { it[at] = 0x80.toByte() }
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            StateTransitionParser.parseBlob(patched)
+        }
+        assertTrue(error.message!!.contains("totalBudget"))
     }
 
     @Test
