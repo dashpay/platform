@@ -1,9 +1,27 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
+    "referenceOperands": {
+      "description": "The operands of a refersTo anyOf or allOf: two or more, no two alike, each a leaf or an expression of the other combinator. At most SystemLimits max_reference_operands of them in one list, and at most SystemLimits max_reference_expression_depth combinators on any path from the declaration to a leaf (4 and 4 from protocol version 14), checked at contract registration; every leaf counts against max_references_per_document, since each may be read for each value. A leaf is an identity or permanentDocument target (by id or through a lookup): both are existence checks against entities that are never deleted, so an expression of them holds for good once it holds and is re-validated on replace only when its value or a property bound to one of its leaves changes, as a single target is. The other types do not compose with other operands: deletableDocument is re-validated on every replace and may be cleared once its document is deleted, which assumes the property refers to that one target; identityPublicKey pairs the value with a key id property no other operand reads; a contract target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. A propertyAgreement belongs to its leaf and is checked only against that leaf's document. Allowed on identifier properties and on the items of a typed array of identifiers; a changed expression is an incompatible schema change on update",
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/documentSchema/properties/refersTo",
+        "properties": {
+          "type": {
+            "enum": [
+              "identity",
+              "permanentDocument"
+            ]
+          },
+          "identityProperty": false
+        }
+      }
+    },
     "documentProperties": {
       "type": "object",
       "patternProperties": {
@@ -129,6 +147,7 @@
           "additionalProperties": false
         },
         "refersTo": {
+          "description": "What an identifier property (or, for an identityPublicKey reference with identityProperty, a key id property) refers to: one target, declared by its type and the keys that type takes, or a reference expression, an object holding only anyOf (at least one operand holds) or only allOf (every operand holds)",
           "type": "object",
           "properties": {
             "type": {
@@ -140,6 +159,24 @@
                 "identityPublicKey",
                 "deletableDocument"
               ]
+            },
+            "anyOf": {
+              "description": "A reference expression holding if at least one operand holds: two or more operands, each a leaf (an ordinary identity or permanentDocument target, by id or through a lookup, with its own keys) or an allOf (an anyOf directly inside an anyOf says what one flat list says). When the referring document is created or replaced, consensus checks the operands in declared order and stops at the first that holds; every read is billed, including those of the operands that failed, and when none holds the write is refused with the error of the last operand, so the order of the list decides which failure a writer sees. See referenceOperands for the limits and the leaf types. Available from protocol version 14.",
+              "$ref": "#/$defs/referenceOperands",
+              "items": {
+                "properties": {
+                  "anyOf": false
+                }
+              }
+            },
+            "allOf": {
+              "description": "A reference expression holding if every operand holds for the same value: two or more operands, each a leaf (an ordinary identity or permanentDocument target, by id or through a lookup, with its own keys) or an anyOf (an allOf directly inside an allOf says what one flat list says). When the referring document is created or replaced, consensus checks the operands in declared order and stops at the first that fails, refusing the write with that operand's error; every read is billed. See referenceOperands for the limits and the leaf types. Available from protocol version 14.",
+              "$ref": "#/$defs/referenceOperands",
+              "items": {
+                "properties": {
+                  "allOf": false
+                }
+              }
             },
             "contractId": {
               "description": "The id of the data contract the referenced document lives in, as a base58 string or a 32-byte array; when absent the reference targets the declaring contract itself",
@@ -330,9 +367,29 @@
               "additionalProperties": false
             }
           },
-          "required": [
-            "type"
-          ],
+          "if": {
+            "required": [
+              "anyOf"
+            ]
+          },
+          "then": {
+            "maxProperties": 1
+          },
+          "else": {
+            "if": {
+              "required": [
+                "allOf"
+              ]
+            },
+            "then": {
+              "maxProperties": 1
+            },
+            "else": {
+              "required": [
+                "type"
+              ]
+            }
+          },
           "additionalProperties": false,
           "allOf": [
             {
@@ -815,7 +872,7 @@
           "maxLength": 256
         },
         "refersTo": {
-          "description": "Only on identifier elements: what every element refers to, the refersTo declaration of an identifier property with the same keys and the same checks, except that identityPublicKey is refused: its keyIdProperty names one sibling key id, which cannot pair with many elements. When a document is created or replaced each element is checked as a single reference is, and the first one that fails refuses the write, its error naming the element by its list path (reasons[2] for the third). A propertyAgreement's referring side is still a property of the referring document or its $ownerId, the same for every element, and its referenced side a property of that element's referenced document. The declaration belongs on the items, not on the array. Available from protocol version 14.",
+          "description": "Only on identifier elements: what every element refers to, the refersTo declaration of an identifier property with the same keys and the same checks (a reference expression included, which each element must meet on its own), except that identityPublicKey is refused: its keyIdProperty names one sibling key id, which cannot pair with many elements. When a document is created or replaced each element is checked as a single reference is, and the first one that fails refuses the write, its error naming the element by its list path (reasons[2] for the third). A propertyAgreement's referring side is still a property of the referring document or its $ownerId, the same for every element, and its referenced side a property of that element's referenced document. The declaration belongs on the items, not on the array. Available from protocol version 14.",
           "$ref": "#/$defs/documentSchema/properties/refersTo",
           "properties": {
             "type": {

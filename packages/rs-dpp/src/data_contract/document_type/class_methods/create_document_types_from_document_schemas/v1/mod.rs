@@ -158,52 +158,65 @@ impl DocumentType {
         //
         // Inert for every protocol version before 14 for the same reason as the check above:
         // a parsed reference carries a `lookup` only where the tables carry
-        // `apply_property_reference: Some(_)`, so the loop below finds none there.
+        // `apply_property_reference: Some(_)`, so the loop below finds none there. The same
+        // holds for the leaves of a reference expression (`anyOf` / `allOf`), walked through
+        // `leaves_with_paths()`, which parse from the same version only (for a single
+        // declaration it is the declaration itself, at an empty path, so the walk and the
+        // error are unchanged where no expression exists).
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
                 // On an identifier property or on the elements of a typed array
-                let Some(target) = property
+                let Some(declaration) = property
                     .property_type
                     .reference()
                     .and_then(|reference| reference.target())
                 else {
                     continue;
                 };
-                let Some(DocumentReferenceDeclaration {
-                    contract_id,
-                    document_type_name,
-                    lookup: Some(lookup),
-                    ..
-                }) = target.as_any_document_reference()
-                else {
-                    continue;
-                };
-                if contract_id.is_some_and(|contract_id| contract_id != data_contract_id) {
-                    continue;
-                }
-                let Some(referenced_document_type) =
-                    contract_document_types.get(document_type_name)
-                else {
-                    continue;
-                };
-                // A lookup is only declared on a permanentDocument reference, and a
-                // deletable target fails that reference whatever its indexes say:
-                // registration reports it (ReferencedDocumentTypeDeletableError), so the
-                // lookup is not judged against a type it could never reference
-                let referenced = referenced_document_type.as_ref();
-                if referenced.documents_can_be_deleted()
-                    || referenced.documents_can_be_deleted_by_moderators()
-                {
-                    continue;
-                }
-                if let Some(reason) =
-                    lookup.referenced_side_error(document_type.as_ref(), referenced)
-                {
-                    return Err(consensus_or_protocol_data_contract_error(
-                        DataContractError::InvalidContractStructure(format!(
-                            "document type \"{name}\" property \"{path}\" refersTo lookup: {reason}"
-                        )),
-                    ));
+                // Each leaf of a reference expression is judged as it would be alone,
+                // and the error names the leaf (`refersTo anyOf[1] lookup`)
+                for (leaf_path, target) in declaration.leaves_with_paths() {
+                    let Some(DocumentReferenceDeclaration {
+                        contract_id,
+                        document_type_name,
+                        lookup: Some(lookup),
+                        ..
+                    }) = target.as_any_document_reference()
+                    else {
+                        continue;
+                    };
+                    if contract_id.is_some_and(|contract_id| contract_id != data_contract_id) {
+                        continue;
+                    }
+                    let Some(referenced_document_type) =
+                        contract_document_types.get(document_type_name)
+                    else {
+                        continue;
+                    };
+                    // A lookup is only declared on a permanentDocument reference, and a
+                    // deletable target fails that reference whatever its indexes say:
+                    // registration reports it (ReferencedDocumentTypeDeletableError), so the
+                    // lookup is not judged against a type it could never reference
+                    let referenced = referenced_document_type.as_ref();
+                    if referenced.documents_can_be_deleted()
+                        || referenced.documents_can_be_deleted_by_moderators()
+                    {
+                        continue;
+                    }
+                    if let Some(reason) =
+                        lookup.referenced_side_error(document_type.as_ref(), referenced)
+                    {
+                        let at = if leaf_path.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {leaf_path}")
+                        };
+                        return Err(consensus_or_protocol_data_contract_error(
+                            DataContractError::InvalidContractStructure(format!(
+                                "document type \"{name}\" property \"{path}\" refersTo{at} lookup: {reason}"
+                            )),
+                        ));
+                    }
                 }
             }
         }

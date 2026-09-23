@@ -15,7 +15,7 @@ use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    LookupKeySource,
+    LookupKeySource, ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -588,10 +588,198 @@ fn apply_property_reference_v0(
 
     let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
 
+    // A reference expression in place of a single target: `anyOf` or `allOf`
+    // as the declaration's one key. It sits on an identifier, as every leaf
+    // it admits does
+    if let Some((combinator, operands_value)) = reference_combinator_of(&refers_to_map) {
+        if !matches!(
+            property_type,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        ) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo {} is only allowed on identifier properties",
+                combinator.wire_name()
+            )));
+        }
+        return Ok(DocumentPropertyType::IdentifierWithReference(
+            parse_reference_expression(&refers_to_map, combinator, operands_value, "")?,
+        ));
+    }
+
     let reference_type = refers_to_map
         .get_str(property_names::TYPE)
         .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
 
+    validate_reference_target_keys(&refers_to_map, reference_type)?;
+
+    // A key reference declared on the key id property itself names whose key
+    // it is through `identityProperty`; it is the one form that sits on a
+    // non-identifier property
+    if let Some(identity_property_value) = refers_to_map.get(property_names::IDENTITY_PROPERTY) {
+        return apply_key_id_reference_v0(
+            inner_properties,
+            &refers_to_map,
+            reference_type,
+            identity_property_value,
+            property_type,
+        );
+    }
+
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is only allowed on identifier properties, except an identityPublicKey \
+             reference with identityProperty, which sits on the key id property"
+                .to_string(),
+        ));
+    }
+
+    Ok(DocumentPropertyType::IdentifierWithReference(
+        parse_reference_target(&refers_to_map, reference_type)?,
+    ))
+}
+
+/// The combinator a `refersTo` declaration (or one operand of an expression)
+/// names through its key, `anyOf` or `allOf`, with the key's value; `None` for a
+/// single target.
+fn reference_combinator_of<'a>(
+    declaration: &BTreeMap<String, &'a Value>,
+) -> Option<(ReferenceCombinator, &'a Value)> {
+    ReferenceCombinator::ALL.into_iter().find_map(|combinator| {
+        declaration
+            .get(combinator.wire_name())
+            .map(|operands| (combinator, *operands))
+    })
+}
+
+/// A reference expression: `declaration` names `combinator` and holds nothing
+/// else, and `operands_value` lists two or more operands, each a leaf (see
+/// [`parse_reference_expression_leaf`]) or an expression of the other
+/// combinator (an `anyOf` directly inside an `anyOf` says what one flat list
+/// says, and so does an `allOf` inside an `allOf`). `path` is where the
+/// expression sits in the declaration (`anyOf[1]`, empty at the top), for the
+/// errors.
+///
+/// These are rules of the declaration's shape, checked on every parse. The
+/// limits on it (`SystemLimits::max_reference_operands` per list,
+/// `max_reference_expression_depth` for the nesting) and that no two operands
+/// of a list are alike, which needs the declaring contract's id to see a
+/// target naming it explicitly as the one that omits it, are checked under
+/// full validation with the other reference limits.
+fn parse_reference_expression(
+    declaration: &BTreeMap<String, &Value>,
+    combinator: ReferenceCombinator,
+    operands_value: &Value,
+    path: &str,
+) -> Result<DocumentPropertyReferenceTarget, DataContractError> {
+    let name = combinator.wire_name();
+    let here = if path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{path}.{name}")
+    };
+    if declaration.len() != 1 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {here} declares nothing beside {name}: every other key belongs to one of \
+             its operands"
+        )));
+    }
+    let Some(operand_values) = operands_value.as_array() else {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {here} must be a list of operands"
+        )));
+    };
+    if operand_values.len() < 2 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {here} must list at least two operands: a single one is declared on its own"
+        )));
+    }
+
+    let mut operands = Vec::with_capacity(operand_values.len());
+    for (index, operand_value) in operand_values.iter().enumerate() {
+        let operand_path = format!("{here}[{index}]");
+        let operand_map = operand_value.to_btree_ref_string_map()?;
+        let operand = match reference_combinator_of(&operand_map) {
+            Some((inner, _)) if inner == combinator => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "refersTo {operand_path} is an {name} directly inside an {name}, which says \
+                     what one flat list says: list its operands in the outer {name}"
+                )));
+            }
+            Some((inner, inner_operands)) => {
+                parse_reference_expression(&operand_map, inner, inner_operands, &operand_path)?
+            }
+            None => parse_reference_expression_leaf(&operand_map, &operand_path)?,
+        };
+        operands.push(operand);
+    }
+    let operands = ReferenceOperands::new(operands);
+    Ok(match combinator {
+        ReferenceCombinator::AnyOf => DocumentPropertyReferenceTarget::AnyOf(operands),
+        ReferenceCombinator::AllOf => DocumentPropertyReferenceTarget::AllOf(operands),
+    })
+}
+
+/// A leaf of a reference expression, at `path`: an ordinary target declaration
+/// of a type in [`COMBINABLE_REFERENCE_TARGET_TYPES`], never the key id form,
+/// parsed and checked exactly as the same declaration on its own.
+fn parse_reference_expression_leaf(
+    declaration: &BTreeMap<String, &Value>,
+    path: &str,
+) -> Result<DocumentPropertyReferenceTarget, DataContractError> {
+    let reference_type = declaration
+        .get_str(property_names::TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+    if let Some(reason) = expression_leaf_refusal_reason(reference_type) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {path} is a reference of type {reference_type}, which a reference \
+             expression does not take: {reason}"
+        )));
+    }
+    if declaration.contains_key(property_names::IDENTITY_PROPERTY) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo {path}: {reference_type} refersTo does not take identityProperty"
+        )));
+    }
+    validate_reference_target_keys(declaration, reference_type)?;
+    parse_reference_target(declaration, reference_type)
+}
+
+/// Why a reference expression does not take a leaf of `reference_type`, `None`
+/// for the types it takes ([`COMBINABLE_REFERENCE_TARGET_TYPES`]). Those are
+/// existence checks, with a `propertyAgreement` on a document, against
+/// entities that can never be deleted, so an expression of them holds for good
+/// once it holds and a replace re-validates it only when the value or a
+/// property bound to a leaf changed, as it does a single target. The others
+/// carry semantics that do not compose with other operands.
+fn expression_leaf_refusal_reason(reference_type: &str) -> Option<&'static str> {
+    match reference_type {
+        _ if COMBINABLE_REFERENCE_TARGET_TYPES.contains(&reference_type) => None,
+        "deletableDocument" => Some(
+            "it is re-validated on every replace and may be cleared once its document is \
+             deleted, which assumes the property refers to that one target",
+        ),
+        "identityPublicKey" => {
+            Some("it pairs the value with a key id property, which no other operand reads")
+        }
+        "contract" => Some(
+            "its requirements are gates judged against the block time and the writer rather \
+             than an existence check, and a contract id is never also an identity or document id",
+        ),
+        "token" => Some("a token id is never also an identity or document id"),
+        _ => Some("it is not a refersTo type"),
+    }
+}
+
+/// Checks the keys of a single target declaration against its `type`: the
+/// keys that belong to one kind of target alone (`contractRequirements`,
+/// `keyRequirements`, `propertyAgreement`, `lookup`) are refused on the others.
+fn validate_reference_target_keys(
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+) -> Result<(), DataContractError> {
     // Requirements on the referenced contract belong to contract references alone
     if reference_type != "contract"
         && refers_to_map.contains_key(property_names::CONTRACT_REQUIREMENTS)
@@ -635,34 +823,20 @@ fn apply_property_reference_v0(
         )));
     }
 
-    // A key reference declared on the key id property itself names whose key
-    // it is through `identityProperty`; it is the one form that sits on a
-    // non-identifier property
-    if let Some(identity_property_value) = refers_to_map.get(property_names::IDENTITY_PROPERTY) {
-        return apply_key_id_reference_v0(
-            inner_properties,
-            &refers_to_map,
-            reference_type,
-            identity_property_value,
-            property_type,
-        );
-    }
+    Ok(())
+}
 
-    if !matches!(
-        property_type,
-        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
-    ) {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo is only allowed on identifier properties, except an identityPublicKey \
-             reference with identityProperty, which sits on the key id property"
-                .to_string(),
-        ));
-    }
-
+/// Parses a single target declaration of `reference_type` whose keys
+/// [`validate_reference_target_keys`] accepted: the target of an identifier
+/// property, or one target of an `anyOf`.
+fn parse_reference_target(
+    refers_to_map: &BTreeMap<String, &Value>,
+    reference_type: &str,
+) -> Result<DocumentPropertyReferenceTarget, DataContractError> {
     let target = match reference_type {
         "identity" => DocumentPropertyReferenceTarget::Identity,
         "contract" => DocumentPropertyReferenceTarget::Contract {
-            contract_requirements: parse_contract_reference_requirements(&refers_to_map)?,
+            contract_requirements: parse_contract_reference_requirements(refers_to_map)?,
         },
         "token" => DocumentPropertyReferenceTarget::Token,
         // The two document targets share one declaration shape; they differ
@@ -792,7 +966,7 @@ fn apply_property_reference_v0(
 
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: key_id_property.to_string(),
-                key_requirements: parse_identity_key_reference_requirements(&refers_to_map)?,
+                key_requirements: parse_identity_key_reference_requirements(refers_to_map)?,
             }
         }
         other => {
@@ -802,7 +976,7 @@ fn apply_property_reference_v0(
         }
     };
 
-    Ok(DocumentPropertyType::IdentifierWithReference(target))
+    Ok(target)
 }
 
 /// An `identityPublicKey` declaration on the KEY ID property: `identityProperty` names
@@ -1028,20 +1202,33 @@ pub(super) fn validate_reference_lookup_sources(
     for (path, property) in document_type.flattened_properties() {
         // On an identifier property or on the elements of a typed array: the
         // key's other parts are the same for every element
-        let Some(lookup) = property
+        let Some(target) = property
             .property_type
             .reference()
             .and_then(|reference| reference.target())
-            .and_then(|target| target.as_any_document_reference())
-            .and_then(|declaration| declaration.lookup)
         else {
             continue;
         };
-        if let Some(reason) = lookup.referring_side_error(document_type, path) {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "document type \"{document_type_name}\" property \"{path}\" refersTo lookup: \
-                 {reason}"
-            )));
+        // Each leaf of a reference expression reads its key as it would
+        // alone, and the error names the leaf (`refersTo anyOf[1] lookup`)
+        for (leaf_path, leaf) in target.leaves_with_paths() {
+            let Some(lookup) = leaf
+                .as_any_document_reference()
+                .and_then(|declaration| declaration.lookup)
+            else {
+                continue;
+            };
+            if let Some(reason) = lookup.referring_side_error(document_type, path) {
+                let at = if leaf_path.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {leaf_path}")
+                };
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "document type \"{document_type_name}\" property \"{path}\" refersTo{at} \
+                     lookup: {reason}"
+                )));
+            }
         }
     }
     Ok(())

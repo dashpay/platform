@@ -759,6 +759,48 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     by-id joins refuse a lookup reference as a join property, and
 ///     preallocated indexes are never bound through one.
 ///
+/// 33. **Reference expressions (`anyOf` / `allOf`)**: a `refersTo`, on an
+///     identifier property or on the elements of a typed array (item 31), may
+///     be `{ "anyOf": [operand, ...] }`, holding if at least one operand
+///     holds, or `{ "allOf": [operand, ...] }`, holding if every operand holds
+///     for the same value, in place of one target (meta-schema v3, which
+///     admits either combinator only as the declaration's one key,
+///     `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::AnyOf` and `AllOf`, so every single
+///     target keeps its variant and its encoding; decoding refuses a nesting
+///     deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH`, 16, so the bytes of
+///     a consensus error cannot recurse without bound). An operand is a leaf,
+///     an `identity` or a `permanentDocument` (by id or with a `lookup`, item
+///     32), or an expression of the other combinator; a list names two or more
+///     operands. `contract`, `token`, `deletableDocument` and
+///     `identityPublicKey` leaves, the key id form, a combinator directly
+///     inside the same combinator and keys beside a combinator are refused on
+///     every parse. Registration caps a list at
+///     `SYSTEM_LIMITS_V4.max_reference_operands` (4) and the nesting at
+///     `max_reference_expression_depth` (4 combinators on any path to a leaf),
+///     both backfilled into the earlier tables, refuses two alike operands of
+///     one list (a leaf naming the declaring contract explicitly counting as
+///     the one omitting it), counts every leaf against
+///     `max_references_per_document`, and checks each leaf as the same
+///     declaration alone (`create_document_types_from_document_schemas` 1 and
+///     `data_contract_reference_validation` 0, both walking
+///     `DocumentPropertyReferenceTarget::leaves_with_paths`, which is the
+///     declaration itself at an empty path for a single target, so their
+///     output is unchanged where no expression can parse), a failing leaf
+///     named by where it sits (`resignation.memberId.anyOf[1].allOf[0]`). The
+///     document reference validation (`document_reference_validation` 0,
+///     reached only from this version) evaluates each value operand by operand
+///     in declared order: an `anyOf` stops at the first operand that holds and
+///     otherwise refuses with the last operand's error, an `allOf` stops at the
+///     first that fails and refuses with its error, so a refusal is always a
+///     leaf's own error and no new error exists; every read is billed, the
+///     failed operands' included. A `propertyAgreement` belongs to its leaf and
+///     is checked only against that leaf's document. A replace re-validates an
+///     expression when its value, or a property one of its leaves binds,
+///     changed. A changed expression is an incompatible schema change on
+///     update. Chained queries and composite by-id joins refuse an expression
+///     join property, and preallocated indexes are never bound through one.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
