@@ -133,6 +133,7 @@ fn assert_status(
         contract_id,
         identity_id,
         lists,
+        false,
         platform_version,
     )
     .expect("expected to verify the status proof");
@@ -1018,6 +1019,7 @@ fn should_say_nothing_about_a_list_the_status_proof_does_not_cover() {
         contract.id(),
         target,
         &lists,
+        false,
         platform_version,
     )
     .expect("expected to verify the status proof");

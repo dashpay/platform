@@ -69,9 +69,11 @@ use crate::consensus::state::document::referenced_document_type_deletable_error:
 use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use crate::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use crate::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use crate::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -102,6 +104,7 @@ use crate::consensus::state::voting::masternode_voted_too_many_times::Masternode
 use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use crate::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -587,6 +590,18 @@ pub enum StateError {
     // Requirements on a referenced contract (protocol version 14).
     #[error(transparent)]
     ReferencedContractRequirementNotMetError(ReferencedContractRequirementNotMetError),
+
+    // Requirements on a referenced identity key (protocol version 14).
+    #[error(transparent)]
+    ReferencedIdentityKeyRequirementNotMetError(ReferencedIdentityKeyRequirementNotMetError),
+
+    // Document references resolved through a unique index (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentLookupInvalidError(ReferencedDocumentLookupInvalidError),
+
+    // Yes/no vote polls (protocol version 14).
+    #[error(transparent)]
+    YesNoVotePollNotAvailableForVotingError(YesNoVotePollNotAvailableForVotingError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -598,6 +613,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block::block_info::BlockInfo;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::ContractModerationList;
@@ -607,11 +623,17 @@ mod tests {
     use crate::data_contract::document_type::action_fees::{
         ActionFeePricing, ContractFeePot, DocumentActionFee,
     };
+    use crate::data_contract::document_type::{
+        DocumentPropertyReferenceTarget, DocumentReferenceLookup, LookupKeySource,
+    };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use crate::voting::vote_polls::VotePoll;
-    use platform_value::Identifier;
+    use platform_value::{BinaryData, Identifier};
+    use std::collections::BTreeMap;
 
     /// `StateError` is encoded by variant position, so inserting a variant
     /// anywhere but the end silently reassigns the discriminant of every
@@ -625,6 +647,61 @@ mod tests {
             .expect("expected to encode the state error");
         // Discriminants below 251 are a single byte under bincode's varint.
         bytes[0]
+    }
+
+    /// A reference error for an id reference encodes exactly as it did before
+    /// lookup references existed: the lookup form is an appended variant of
+    /// `DocumentPropertyReferenceTarget` (`PermanentDocumentLookup`), not a
+    /// field of `PermanentDocument`, so a client decoding with an earlier dpp
+    /// still reads every error an id reference produces. The bytes are pinned;
+    /// `PermanentDocument` keeps variant 3 of the target, the lookup form
+    /// takes 6.
+    #[test]
+    fn should_keep_the_encoding_of_a_reference_error_for_an_id_reference() {
+        let id_reference = DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: BTreeMap::new(),
+        };
+        let error = StateError::ReferencedEntityNotFoundError(ReferencedEntityNotFoundError::new(
+            Identifier::from([1; 32]),
+            id_reference.clone(),
+            "noteId".to_string(),
+        ));
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("expected to encode the state error");
+        // StateError variant 93, the referenced id, target variant 3
+        // (PermanentDocument: no contract id, "note", no agreement), the path.
+        assert_eq!(
+            hex::encode(bytes),
+            concat!(
+                "5d",
+                "0101010101010101010101010101010101010101010101010101010101010101",
+                "03",
+                "00",
+                "046e6f7465",
+                "00",
+                "066e6f74654964",
+            )
+        );
+
+        let target_variant = |target: &DocumentPropertyReferenceTarget| {
+            bincode::encode_to_vec(target, bincode::config::standard())
+                .expect("expected to encode the target")[0]
+        };
+        assert_eq!(target_variant(&id_reference), 3);
+        assert_eq!(
+            target_variant(&DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: DocumentReferenceLookup {
+                    index: "byOwner".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            }),
+            6
+        );
     }
 
     #[test]
@@ -1062,7 +1139,7 @@ mod tests {
             )),
             140
         );
-        // Elected moderation teams (protocol version 14): the tail of the enum.
+        // Elected moderation teams (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ContractModeratedDocumentTypeNotYetUsableError(
                 ContractModeratedDocumentTypeNotYetUsableError::new(group_id, "post".to_string())
@@ -1086,7 +1163,7 @@ mod tests {
             )),
             142
         );
-        // Requirements on a referenced contract (protocol version 14): the tail of the enum.
+        // Requirements on a referenced contract (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedContractRequirementNotMetError(
                 ReferencedContractRequirementNotMetError::new(
@@ -1097,6 +1174,47 @@ mod tests {
                 )
             )),
             143
+        );
+        // Requirements on a referenced identity key (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedIdentityKeyRequirementNotMetError(
+                ReferencedIdentityKeyRequirementNotMetError::new(
+                    "joinRequest".to_string(),
+                    "recipientId".to_string(),
+                    group_id,
+                    2,
+                    "purpose".to_string(),
+                    "decryption".to_string(),
+                    "encryption".to_string(),
+                )
+            )),
+            144
+        );
+        // Document references resolved through a unique index (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentLookupInvalidError(
+                ReferencedDocumentLookupInvalidError::new(
+                    "electedCharter.members".to_string(),
+                    "bySubmittedCharter".to_string(),
+                    "is not unique".to_string(),
+                )
+            )),
+            145
+        );
+        // Yes/no vote polls (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::YesNoVotePollNotAvailableForVotingError(
+                YesNoVotePollNotAvailableForVotingError::new(
+                    YesNoVotePoll {
+                        resource_path: vec![BinaryData::new(vec![1; 32])],
+                        supermajority_numerator: 2,
+                        supermajority_denominator: 3,
+                        minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
+                    },
+                    YesNoVotePollStatus::Started(BlockInfo::default())
+                )
+            )),
+            146
         );
     }
 }

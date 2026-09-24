@@ -1,4 +1,5 @@
 use crate::drive::votes::resolved::votes::resolved_resource_vote::resolve::ResourceVoteResolver;
+use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
 use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -53,6 +54,9 @@ impl VoteResolver for Vote {
             Vote::ResourceVote(resource_vote) => Ok(ResolvedVote::ResolvedResourceVote(
                 resource_vote.resolve(drive, transaction, platform_version)?,
             )),
+            Vote::YesNoVote(yes_no_vote) => Ok(ResolvedVote::YesNoVote(
+                ResolvedYesNoVote::from_vote(yes_no_vote),
+            )),
         }
     }
 
@@ -65,6 +69,9 @@ impl VoteResolver for Vote {
         match self {
             Vote::ResourceVote(resource_vote) => Ok(ResolvedVote::ResolvedResourceVote(
                 resource_vote.resolve_owned(drive, transaction, platform_version)?,
+            )),
+            Vote::YesNoVote(yes_no_vote) => Ok(ResolvedVote::YesNoVote(
+                ResolvedYesNoVote::from_vote_owned(yes_no_vote),
             )),
         }
     }

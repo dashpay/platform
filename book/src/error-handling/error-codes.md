@@ -53,7 +53,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10200-10277 | Data Contract | `DataContractMaxDepthExceedError` (10200), `DuplicateIndexError` (10201), `InvalidDataContractIdError` (10204), `DataContractInvalidRequiredFieldsUpdateError` (10276), `PreProgrammedDistributionAmountOverLimitError` (10277) |
 | 10350-10359 | Groups | `GroupPositionDoesNotExistError` (10350), `GroupExceedsMaxMembersError` (10354) |
 | 10360-10367 | Contract Groups | `ContractGroupMembershipsOverLimitError` (10360), `InvalidContractGroupAdminsError` (10364), `InvalidContractGroupDescriptionLengthError` (10367); 10365 unassigned |
-| 10400-10418 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401) |
+| 10400-10420 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401), `DocumentPropertyNotDistinctError` (10419), `InvalidEncryptedPropertyShapeError` (10420) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |
 | 10500-10535 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
 | 10600-10603 | State Transition | `InvalidStateTransitionTypeError` (10600), `StateTransitionMaxSizeExceededError` (10602) |
@@ -109,7 +109,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | 40000-40009 | Data Contract | `DataContractAlreadyPresentError` (40000), `DataContractIsReadonlyError` (40001), `DataContractNotFoundError` (40008) |
 | 40100-40134 | Documents | `DocumentAlreadyPresentError` (40100), `DocumentNotFoundError` (40101), `DuplicateUniqueIndexError` (40105), `DocumentActionFeeAgreementNotSetError` (40132), `DocumentActionFeeAgreementMismatchError` (40133), `DocumentActionFeeMultiplierNotToleratedError` (40134) |
 | 40200-40217 | Identity | `IdentityAlreadyExistsError` (40200), `InvalidIdentityRevisionError` (40203), `IdentityInsufficientBalanceError` (40210) |
-| 40300-40307 | Voting | `MasternodeNotFoundError` (40300), `MasternodeVoteAlreadyPresentError` (40304), `VoteChoiceNotAllowedForVotePollError` (40307) |
+| 40300-40308 | Voting | `MasternodeNotFoundError` (40300), `MasternodeVoteAlreadyPresentError` (40304), `VoteChoiceNotAllowedForVotePollError` (40307), `YesNoVotePollNotAvailableForVotingError` (40308) |
 | 40400-40401 | Prefunded Balances | `PrefundedSpecializedBalanceInsufficientError` (40400) |
 | 40500-40502 | Data Triggers | `DataTriggerConditionError` (40500), `DataTriggerExecutionError` (40501) |
 | 40600-40603 | Addresses | `AddressDoesNotExistError` (40600), `AddressNotEnoughFundsError` (40601) |

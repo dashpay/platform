@@ -207,6 +207,8 @@ for (const ref of contract.documentTypeReferences('note')) {
 contract.documentReferences;
 ```
 
+A typed array of identifiers may declare `refersTo` on its `items`, which every element then carries. Such a declaration is listed at the list path of its elements, `path: 'reasons[]'`, which is not a property path: read the list at `reasons` and treat each element as a reference. The same declaration is on the typed array's item, `contract.documentTypeTypedArrays('charter')[0].items.refersTo`. Consensus checks every element when the document is written, and a rejection names the failing element by its index, as in `reasons[2]` for the third.
+
 A document reference comes in two strengths. `permanentDocument` requires the referenced document type to declare `canBeDeleted: false`, so a reference that was accepted keeps resolving. `deletableDocument` takes the same declaration (`contractId`, `documentType`, `propertyAgreement`) and is its disjoint counterpart: the referenced type must allow deletion (`ReferencedDocumentTypeNotDeletable`, 40131, otherwise). The referenced document must exist, and the agreement must hold, when the referring document is written, but it may be deleted afterwards. Nothing blocks that deletion and nothing cleans up after it, so a reader must expect such a reference to resolve to nothing. It can never start resolving to different content: a document id commits to the nonce of its create transition, so a deleted id can not be created again. A writer may not leave it that way: every replace of the referring document re-validates the reference, touched or not, so once the target is gone the replace has to repoint it at a document that exists or clear it (`ReferencedEntityNotFound` otherwise). A writer gate is then checked against the new target, never against a missing one. On an `immutable` property clearing is the only move, and the immutable check lets that one change through. The referring document can always be deleted. A property cannot switch between the two on a contract update, and `preallocated` indexes are only available through `permanentDocument`.
 
 Declarations are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports none even when its raw schema carries the keyword.
@@ -240,6 +242,42 @@ const stateTransition = batch.toStateTransition();
 ```
 
 From protocol version 14 the id of a new document commits to the identity contract nonce of its create transition. `new DocumentCreateTransition(...)` derives that id from the document's entropy and `identityContractNonce`, puts it on the transition and writes it back onto `document`, so `document.id` is final once the transition exists and equals `transition.base.id`. Before that the `Document` carries a placeholder. To know the id earlier, `document.setIdForCreation(nonce)` or `Document.generateId(type, owner, contract, entropy, nonce)`, or pass `identityContractNonce` to the `Document` constructor. Pass `platformVersion` (defaults to latest) to any of them for a network on an earlier protocol version. No app needs to reimplement the hash.
+
+## Encrypted properties (`encryptedFor`)
+
+From protocol version 14 a byte array property can declare how its ciphertext was produced, so a wallet reads the recipe from the contract instead of a side channel: the recipient (an identifier property of the same document type, or `$ownerId` for a message the writer encrypts to themself), the integer properties carrying the recipient's and the sender's key ids, and the scheme. The one scheme today, `ecdh-secp256k1-aes256-cbc`, is the dashpay contact request's: a random 16-byte IV followed by AES-256-CBC with PKCS7 padding under the libsecp256k1 ECDH shared key of the two identities' keys. A fetched contract can be asked what it declares:
+
+```ts
+const contract = await sdk.contracts.fetch(contractId);
+
+contract.documentTypeEncryptedProperties('joinRequest');
+// [{
+//   path: 'encryptedMessage',
+//   recipient: 'recipientId',
+//   recipientKey: 'recipientKeyId',
+//   senderKey: 'senderKeyId',
+//   scheme: 'ecdh-secp256k1-aes256-cbc',
+// }]
+
+// Every document type that declares at least one encrypted property.
+contract.documentEncryptedProperties;
+```
+
+The keyword is only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports none even when its raw schema carries it. Consensus checks only the shape of the bytes on every create and replace (at least 32 bytes and a multiple of 16 for AES-CBC) and nothing about who can decrypt them. A value of the wrong shape is rejected, and the code reaches JS as `error.code`:
+
+```ts
+import { DocumentEncryptionErrorCode } from '@dashevo/evo-sdk';
+
+try {
+  await sdk.documents.create({ document, identityKey, signer });
+} catch (e) {
+  if (e.code === DocumentEncryptionErrorCode.InvalidEncryptedPropertyShape) {
+    // the bytes are not a ciphertext of the declared scheme (code 10420)
+  }
+}
+```
+
+Encrypt and decrypt helpers keyed off the declaration are not part of the SDK yet; the Rust `platform-encryption` crate has the primitives.
 
 ## Immutable properties (`immutable`)
 

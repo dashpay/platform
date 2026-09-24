@@ -302,8 +302,10 @@ impl MasternodeVoteTransitionWasm {
 
                         Some(js_object)
                     }
+                    VotePoll::YesNoVotePoll(_) => None,
                 }
             }
+            Vote::YesNoVote(_) => None,
         }
     }
 

@@ -48,7 +48,9 @@ use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVote
 use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
+use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
 use dpp::voting::votes::Vote;
 use grovedb::{PathQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -74,6 +76,20 @@ impl Drive {
         &self,
         state_transition: &StateTransition,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
+        self.prove_state_transition_internal(state_transition, transaction, false, platform_version)
+    }
+
+    /// The proof of a state transition's execution, shared by every version of
+    /// `prove_state_transition`. With `carries_owner_balance` (from version 1) the
+    /// proof of an owned, fee-paying transition also carries the owner's credit
+    /// balance.
+    pub(in crate::prove::prove_state_transition) fn prove_state_transition_internal(
+        &self,
+        state_transition: &StateTransition,
+        transaction: TransactionArg,
+        carries_owner_balance: bool,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
         let path_query = match state_transition {
@@ -145,7 +161,7 @@ impl Drive {
                         // entry its values produce under the proof index —
                         // the same single-entry path query the verifier
                         // rebuilds from the transition.
-                        {
+                        let document_path_query = {
                             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
                             use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
                             if document_type.index_only() {
@@ -208,7 +224,9 @@ impl Drive {
                                 path_query.query.limit = None;
                                 path_query
                             }
-                        }
+                        };
+
+                        document_path_query
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();
@@ -414,20 +432,25 @@ impl Drive {
             StateTransition::MasternodeVote(st) => {
                 let pro_tx_hash = st.pro_tx_hash();
 
-                match st.vote() {
-                    Vote::ResourceVote(resource_vote) => {
-                        let query = IdentityBasedVoteDriveQuery {
-                            identity_id: pro_tx_hash,
-                            vote_poll: resource_vote.vote_poll().clone(),
-                        };
-
-                        // The path query construction can only fail if the serialization fails.
-                        // Because the serialization will pretty much never fail, we can do this.
-                        let mut path_query = query.construct_path_query()?;
-                        path_query.query.limit = None;
-                        path_query
+                // Shared by versions 0 and 1, and off the block execution path (it answers
+                // proof queries). A resource vote on a contested poll gets the same path query
+                // as before; a vote naming a yes/no poll decodes only from protocol version 14.
+                let vote_poll = match st.vote() {
+                    Vote::ResourceVote(resource_vote) => resource_vote.vote_poll().clone(),
+                    Vote::YesNoVote(yes_no_vote) => {
+                        VotePoll::YesNoVotePoll(yes_no_vote.vote_poll().clone())
                     }
-                }
+                };
+                let query = IdentityBasedVoteDriveQuery {
+                    identity_id: pro_tx_hash,
+                    vote_poll,
+                };
+
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = query.construct_path_query()?;
+                path_query.query.limit = None;
+                path_query
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_query = Drive::revision_and_balance_path_query(
@@ -699,6 +722,30 @@ impl Drive {
             }
         };
 
+        // From version 1 the proof of an owned, fee-paying transition carries
+        // the owner's credit balance next to its result, so a wallet learns
+        // what the write left it with without a second query. The verifier
+        // rebuilds a document batch's merged query and verifies it strictly,
+        // and reads the other kinds' result and balance as subsets of the
+        // merged proof.
+        let path_query =
+            if carries_owner_balance && Self::proof_merges_owner_balance_after(state_transition) {
+                let owner_id = state_transition.owner_id().ok_or(Error::Proof(
+                    ProofError::InvalidTransition(
+                        "an owned transition names its owner".to_string(),
+                    ),
+                ))?;
+                let mut path_query = path_query;
+                path_query.query.limit = None;
+                let owner_balance_query = Drive::identity_balance_query(&owner_id.to_buffer());
+                PathQuery::merge(
+                    vec![&path_query, &owner_balance_query],
+                    &platform_version.drive.grove_version,
+                )?
+            } else {
+                path_query
+            };
+
         let proof = self.grove_get_proved_path_query(
             &path_query,
             transaction,
@@ -707,5 +754,21 @@ impl Drive {
         )?;
 
         Ok(ProofCreationResult::new_with_data(proof))
+    }
+
+    /// The owned, fee-paying transitions whose version 1 proof gains the owner's
+    /// balance by a merge after their own path query is built: document and token
+    /// batches, contract creates and updates, identity updates and key limit
+    /// updates, and contract moderation.
+    fn proof_merges_owner_balance_after(state_transition: &StateTransition) -> bool {
+        matches!(
+            state_transition,
+            StateTransition::Batch(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityKeyLimitsUpdate(_)
+                | StateTransition::ContractUserModeration(_)
+        )
     }
 }

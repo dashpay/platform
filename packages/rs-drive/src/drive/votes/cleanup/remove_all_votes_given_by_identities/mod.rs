@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 
@@ -27,7 +28,7 @@ impl Drive {
             .methods
             .vote
             .cleanup
-            .remove_specific_vote_references_given_by_identity
+            .remove_all_votes_given_by_identities
         {
             0 => self.remove_all_votes_given_by_identities_v0(
                 identity_ids_as_byte_arrays,
@@ -37,9 +38,17 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.remove_all_votes_given_by_identities_v1(
+                identity_ids_as_byte_arrays,
+                block_height,
+                network,
+                chain_id,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_all_votes_given_by_identities".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

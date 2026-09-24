@@ -166,6 +166,8 @@ impl ErrorWithCode for BasicError {
             Self::DocumentCreationNotAllowedError(_) => 10416,
             Self::DocumentFieldMaxSizeExceededError(_) => 10417,
             Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
+            Self::DocumentPropertyNotDistinctError(_) => 10419,
+            Self::InvalidEncryptedPropertyShapeError(_) => 10420,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
@@ -359,6 +361,8 @@ impl ErrorWithCode for StateError {
             Self::DocumentActionFeeAgreementMismatchError(_) => 40133,
             Self::DocumentActionFeeMultiplierNotToleratedError(_) => 40134,
             Self::ReferencedContractRequirementNotMetError(_) => 40135,
+            Self::ReferencedIdentityKeyRequirementNotMetError(_) => 40136,
+            Self::ReferencedDocumentLookupInvalidError(_) => 40137,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -393,6 +397,7 @@ impl ErrorWithCode for StateError {
             Self::MasternodeIncorrectVotingAddressError(_) => 40305,
             Self::MasternodeIncorrectVoterIdentityIdError(_) => 40306,
             Self::VoteChoiceNotAllowedForVotePollError(_) => 40307,
+            Self::YesNoVotePollNotAvailableForVotingError(_) => 40308,
 
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,

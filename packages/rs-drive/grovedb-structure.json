@@ -3948,7 +3948,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Masternode votes, today on contested resources such as premium DPNS names.",
+        "description": "Masternode votes: on contested resources such as premium DPNS names, and on yes/no decisions.",
         "children": [
           {
             "id": "votes.contested_resource",
@@ -4473,8 +4473,251 @@
             "since": 1,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/votes/paths.rs",
-            "description": "Reserved for polls that decide something for the network. Nothing writes to it yet.",
-            "children": []
+            "description": "Yes/no polls: decisions taken by a supermajority of the masternodes once enough voting power was cast.",
+            "children": [
+              {
+                "id": "votes.decisions.identity_votes",
+                "key": {
+                  "type": "fixed",
+                  "hex": "69",
+                  "label": "DecisionIdentityVotes",
+                  "constant": "IDENTITY_VOTES_TREE_KEY",
+                  "ascii": true
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The yes/no votes each masternode cast, so they can be changed and removed with the masternode.",
+                "children": [
+                  {
+                    "id": "votes.decisions.identity_votes.voter",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "pro_tx_hash",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The voting masternode's pro tx hash"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "One masternode's yes/no votes. Stays once its votes are gone, like its contested counterpart.",
+                    "children": [
+                      {
+                        "id": "votes.decisions.identity_votes.voter.vote",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "vote_poll_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The double sha256 of the serialized vote poll"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "bincode YesNoVoteReferenceStorageForm: the choice and how many times the masternode voted on the poll",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "The masternode's current answer to one poll.",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "votes.decisions.active_polls",
+                "key": {
+                  "type": "fixed",
+                  "hex": "70",
+                  "label": "DecisionActivePolls",
+                  "constant": "ACTIVE_POLLS_TREE_KEY",
+                  "ascii": true
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                "description": "The yes/no polls, by their unique id.",
+                "children": [
+                  {
+                    "id": "votes.decisions.active_polls.poll",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "vote_poll_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "hash32",
+                      "description": "The double sha256 of the serialized vote poll"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                    "description": "One yes/no poll: its stored info and its three vote sum trees. The vote trees go when the poll ends; the stored info stays as the record of the decision.",
+                    "children": [
+                      {
+                        "id": "votes.decisions.active_polls.poll.stored_info",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "00",
+                          "label": "YesNoStoredInfo",
+                          "constant": "YES_NO_VOTE_POLL_STORED_INFO_KEY"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "serialized YesNoVotePollStoredInfo",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "The poll's status and, once it ends, its result.",
+                        "children": []
+                      },
+                      {
+                        "id": "votes.decisions.active_polls.poll.yes",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "01",
+                          "label": "YesVotes",
+                          "constant": "YES_NO_VOTE_POLL_YES_VOTES_TREE_KEY"
+                        },
+                        "kinds": [
+                          "SumTree"
+                        ],
+                        "since": 14,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Votes for yes.",
+                        "children": [
+                          {
+                            "id": "votes.decisions.active_polls.poll.yes.voter",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "pro_tx_hash",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The voting masternode's pro tx hash"
+                            },
+                            "kinds": [
+                              "SumItem"
+                            ],
+                            "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "One masternode's vote; the tree's sum is the tally.",
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "votes.decisions.active_polls.poll.no",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "02",
+                          "label": "NoVotes",
+                          "constant": "YES_NO_VOTE_POLL_NO_VOTES_TREE_KEY"
+                        },
+                        "kinds": [
+                          "SumTree"
+                        ],
+                        "since": 14,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Votes for no.",
+                        "children": [
+                          {
+                            "id": "votes.decisions.active_polls.poll.no.voter",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "pro_tx_hash",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The voting masternode's pro tx hash"
+                            },
+                            "kinds": [
+                              "SumItem"
+                            ],
+                            "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "One masternode's vote; the tree's sum is the tally.",
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "votes.decisions.active_polls.poll.abstain",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "03",
+                          "label": "AbstainVotes",
+                          "constant": "YES_NO_VOTE_POLL_ABSTAIN_VOTES_TREE_KEY"
+                        },
+                        "kinds": [
+                          "SumTree"
+                        ],
+                        "since": 14,
+                        "presence": "until_deleted",
+                        "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                        "description": "Votes to abstain, which count towards nothing.",
+                        "children": [
+                          {
+                            "id": "votes.decisions.active_polls.poll.abstain.voter",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "pro_tx_hash",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The voting masternode's pro tx hash"
+                            },
+                            "kinds": [
+                              "SumItem"
+                            ],
+                            "value": "vote strength: 1 for a masternode, 4 for an evonode",
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/votes/paths.rs",
+                            "description": "One masternode's vote; the tree's sum is the tally.",
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           },
           {
             "id": "votes.end_date_queries",
@@ -4509,9 +4752,10 @@
                   "Tree"
                 ],
                 "flags": [
-                  "EpochOwned"
+                  "EpochOwned",
+                  "None"
                 ],
-                "flags_note": "The owner is the identity whose contested document started the poll.",
+                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4533,9 +4777,10 @@
                       "Item"
                     ],
                     "flags": [
-                      "EpochOwned"
+                      "EpochOwned",
+                      "None"
                     ],
-                    "flags_note": "The owner is the identity whose contested document started the poll.",
+                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
                     "value": "serialized VotePoll",
                     "since": 1,
                     "presence": "always",
@@ -5569,6 +5814,30 @@
         "hex": "01",
         "left": {
           "hex": "00"
+        }
+      }
+    },
+    "votes.decisions": {
+      "origin": "genesis@14",
+      "tree": {
+        "hex": "70",
+        "left": {
+          "hex": "69"
+        }
+      }
+    },
+    "votes.decisions.active_polls.poll": {
+      "origin": "fixture yes_no_vote_polls@14",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
         }
       }
     },

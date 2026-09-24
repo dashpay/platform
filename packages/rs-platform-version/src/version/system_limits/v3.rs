@@ -12,6 +12,8 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     // Use the protocol's existing data-contract schema-depth ceiling as the conservative
     // instance budget, bounding pre-schema work well above known document requirements.
     max_document_value_depth: Some(256),
+    max_typed_array_items: 1024,
+    max_references_per_document: 256,
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
@@ -32,6 +34,10 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_contract_moderators: 16,
     max_contract_suspension_until: 9_007_199_254_740_991,
     max_contract_moderation_reason_length: 1024,
+    max_yes_no_vote_poll_resource_path_segments: 16,
+    max_yes_no_vote_poll_resource_path_bytes: 1024,
+    max_yes_no_vote_poll_minimum_voting_power: 2000,
+    max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
     min_contract_moderation_election_window_seconds: 86_400, // one day

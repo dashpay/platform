@@ -152,6 +152,12 @@ pub struct DriveAbciVotingMethodVersions {
     pub delay_vote_poll: FeatureVersion,
     pub run_dao_platform_events: FeatureVersion,
     pub remove_votes_for_removed_masternodes: FeatureVersion,
+    /// The yes/no poll kind (protocol version 14): its tally, its record, its clean-up and the
+    /// hook a feature acts on when one of its polls finishes.
+    pub tally_votes_for_yes_no_vote_poll: FeatureVersion,
+    pub keep_record_of_finished_yes_no_vote_poll: FeatureVersion,
+    pub clean_up_after_yes_no_vote_polls_end: FeatureVersion,
+    pub on_yes_no_vote_poll_finished: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

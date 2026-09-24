@@ -225,14 +225,16 @@ method, never the versioned implementation directly.
 The layout is the versioning contract made physical, and three rules follow
 from it:
 
-- **One directory per generation, always.** A behaviour change to a versioned
-  method is a new `v1/` (or `v2/`, ...) directory with its own `mod.rs`, plus
-  a new match arm. It is never an edit inside `v0/`. That includes edits that
-  look harmless: threading a new parameter through `v0`, adding an
-  `if platform_version.protocol_version >= 14` inside it, or computing a
-  version-table gate that is always false for old versions. A shipped `vN/`
-  stays byte-identical to what shipped, so a reviewer never has to prove that
-  an in-place diff is inert for old blocks.
+- **One directory per generation.** A behaviour change to a versioned method
+  is a new `v1/` (or `v2/`, ...) directory with its own `mod.rs`, plus a new
+  match arm. An edit inside a shipped `v0/` is allowed only when it cannot
+  modify consensus at any protocol version that selects `v0/`, because the
+  code it adds is unreachable there by construction or its output is
+  identical; the edited lines say why, and the pull request description
+  carries an "In-place changes to shipped generations" section (see the
+  [coding conventions](../contributing/coding-conventions.md)). An
+  `if platform_version.protocol_version >= 14` inside `v0/` is not that: it is
+  a runtime check the reader has to trust, so it gets a generation.
 - **Inside a generation, a capability is a constant fact, not a check.** If
   `v1` admits a new keyword, `v1` admits it unconditionally
   (`Index::try_from_value_map(map, true)`). The decision of whether the

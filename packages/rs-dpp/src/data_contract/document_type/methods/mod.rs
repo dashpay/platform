@@ -9,13 +9,20 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::document::Document;
 use crate::document::INITIAL_REVISION;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
+use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "validation")]
+use crate::consensus::basic::document::InvalidEncryptedPropertyShapeError;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::versioned_methods::DocumentTypeV0MethodsVersioned;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
+#[cfg(feature = "validation")]
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::{Identifier, Value};
 
 pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
@@ -45,6 +52,85 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         self.documents_mutable()
             || self.documents_transferable().is_transferable()
             || self.trade_mode().seller_sets_price()
+    }
+
+    /// Checks the shape of every `encryptedFor` property `properties` supplies
+    /// against the scheme its declaration names: at least the IV plus one
+    /// block, and a multiple of the block length. Nothing else about a
+    /// ciphertext is verifiable on chain. A declared property the document
+    /// leaves out is not checked; whether it may be left out is the schema's
+    /// `required` list's business.
+    ///
+    /// Meant to run after the JSON schema validation of `properties`, which
+    /// already established that every supplied value is a byte array. A value
+    /// that still is not one is reported as a zero-length ciphertext rather
+    /// than skipped, so the two nodes can never disagree on it.
+    ///
+    /// Versioned on `validate_encrypted_property_shapes` in the document type
+    /// method versions: `None` before protocol version 14 returns an empty
+    /// result, which keeps the shipped structure validations that call it inert.
+    #[cfg(feature = "validation")]
+    fn validate_encrypted_property_shapes(
+        &self,
+        properties: &BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_encrypted_property_shapes
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_encrypted_property_shapes_v0(properties)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_encrypted_property_shapes".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    fn validate_encrypted_property_shapes_v0(
+        &self,
+        properties: &BTreeMap<String, Value>,
+    ) -> SimpleConsensusValidationResult {
+        let declared = self
+            .flattened_properties()
+            .iter()
+            .filter_map(|(path, property)| Some((path, property.encrypted_for.as_ref()?)));
+        for (path, encrypted_for) in declared {
+            let Ok(Some(value)) = properties.get_optional_at_path(path) else {
+                continue;
+            };
+            let length = match value {
+                Value::Bytes(bytes) => bytes.len(),
+                Value::Bytes20(_) => 20,
+                Value::Bytes32(_) | Value::Identifier(_) => 32,
+                Value::Bytes36(_) => 36,
+                Value::Array(items) => items.len(),
+                other => other
+                    .to_binary_bytes()
+                    .map(|bytes| bytes.len())
+                    .unwrap_or(0),
+            };
+            let scheme = encrypted_for.scheme;
+            if !scheme.is_valid_ciphertext_length(length) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    InvalidEncryptedPropertyShapeError::new(
+                        path.clone(),
+                        scheme.as_str().to_string(),
+                        u32::try_from(length).unwrap_or(u32::MAX),
+                        scheme.minimum_ciphertext_length() as u32,
+                        scheme.block_length() as u32,
+                    )
+                    .into(),
+                );
+            }
+        }
+        SimpleConsensusValidationResult::new()
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
@@ -457,6 +543,43 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             0 => Ok(self.contested_vote_poll_for_document_properties_v0(document_properties)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "contested_vote_poll_for_document_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Judges the `distinctFrom` declarations of the document type against a document's
+    /// `data` and the id of the identity writing it: an identifier property whose value
+    /// equals the named property of the same document, or the writer's `$ownerId`, fails
+    /// with `DocumentPropertyNotDistinctError` (10419). A declaration whose named property
+    /// is absent from `data` passes. Reads the transition alone, so it runs in the structure
+    /// stage of document create and replace, and of transfer and purchase against the
+    /// stored document and its new owner.
+    ///
+    /// `None` in the version table (protocol versions before 14) selects the behavior of
+    /// the versions that predate the keyword: nothing is checked, as no parsed property
+    /// carries a declaration there.
+    fn validate_distinct_from_properties(
+        &self,
+        data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_distinct_from
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_distinct_from_properties_v0(data, owner_id)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_distinct_from_properties".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

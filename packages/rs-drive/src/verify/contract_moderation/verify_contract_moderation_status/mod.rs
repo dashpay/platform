@@ -32,6 +32,7 @@ impl Drive {
         contract_id: Identifier,
         identity_id: Identifier,
         lists: &[ContractModerationList],
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ContractModerationListStatuses), Error> {
         match platform_version
@@ -46,6 +47,7 @@ impl Drive {
                 contract_id,
                 identity_id,
                 lists,
+                verify_subset_of_proof,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

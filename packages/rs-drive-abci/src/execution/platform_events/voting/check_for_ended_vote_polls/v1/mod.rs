@@ -1,14 +1,17 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dpp::voting::vote_polls::yes_no_vote_poll::{VotingPower, YesNoVotePoll};
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;
@@ -20,7 +23,9 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Checks for ended vote polls, awarding a tie to the earliest contender
+    /// Checks for ended vote polls, awarding a tie to the earliest contender. Version 1
+    /// (protocol version 14) also closes yes/no polls: it records their result, hands it to
+    /// the feature that opened them and cleans their votes up.
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v1(
         &self,
@@ -172,6 +177,14 @@ where
                             )?;
                             Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
                         }
+                        ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll) => self
+                            .finish_yes_no_vote_poll(
+                                block_platform_state,
+                                block_info,
+                                yes_no_vote_poll,
+                                transaction,
+                                platform_version,
+                            ),
                     }
                 }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
                 Ok((end_date, vote_polls_with_votes))
@@ -191,5 +204,57 @@ where
         }
 
         Ok(())
+    }
+
+    /// Closes one yes/no poll whose time has come: tallies it, records the result in its
+    /// stored info, hands the result to the feature that opened the poll, and returns the
+    /// voters so the clean-up can remove their votes.
+    fn finish_yes_no_vote_poll(
+        &self,
+        block_platform_state: &PlatformState,
+        block_info: &BlockInfo,
+        vote_poll: YesNoVotePoll,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedVotePollWithVotes, Error> {
+        let tally =
+            self.tally_votes_for_yes_no_vote_poll(&vote_poll, transaction, platform_version)?;
+        // A minimum given as a share of the total is measured against the masternode list of
+        // the closing block, each masternode weighed as its vote is.
+        let total_voting_power = block_platform_state
+            .full_masternode_list()
+            .values()
+            .try_fold(0 as VotingPower, |total, masternode| {
+                total.checked_add(match masternode.node_type {
+                    MasternodeType::Regular => 1,
+                    MasternodeType::Evo => 4,
+                })
+            })
+            .ok_or(Error::Execution(ExecutionError::Overflow(
+                "the masternode list's total voting power overflows",
+            )))?;
+        let result = self.keep_record_of_finished_yes_no_vote_poll(
+            block_info,
+            &vote_poll,
+            &tally,
+            total_voting_power,
+            transaction,
+            platform_version,
+        )?;
+        self.on_yes_no_vote_poll_finished(
+            block_info,
+            &vote_poll,
+            &result,
+            transaction,
+            platform_version,
+        )?;
+        let voters = self.drive.fetch_identities_voting_in_yes_no_vote_poll(
+            &vote_poll,
+            transaction,
+            platform_version,
+        )?;
+        Ok(ResolvedVotePollWithVotes::YesNoVotePollWithVotes(
+            vote_poll, voters,
+        ))
     }
 }

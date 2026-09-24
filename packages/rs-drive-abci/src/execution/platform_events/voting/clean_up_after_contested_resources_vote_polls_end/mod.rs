@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 mod v0;
 mod v1;
+mod v2;
 
 impl<C> Platform<C>
 where
@@ -52,9 +53,16 @@ where
                 transaction,
                 platform_version,
             ),
+            2 => self.clean_up_after_contested_resources_vote_polls_end_v2(
+                block_info,
+                vote_polls,
+                clean_up_testnet_corrupted_reference_issue,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "clean_up_after_contested_resources_vote_polls_end".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

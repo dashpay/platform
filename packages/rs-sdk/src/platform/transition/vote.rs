@@ -11,7 +11,6 @@ use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use rs_dapi_client::{DapiRequest, IntoInner};
 
@@ -116,8 +115,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
 
         let settings = settings.unwrap_or_default();
 
-        let Vote::ResourceVote(resource_vote) = self;
-        let vote_poll_id = resource_vote.vote_poll().unique_id()?;
+        let vote_poll_id = self.vote_poll_unique_id()?;
 
         let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
             self.clone(),
@@ -142,14 +140,25 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             //todo make this more reliable
             Err(e) => {
                 return if e.to_string().contains("already exists") {
-                    let vote =
-                        Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
-                    vote.ok_or(Error::Generic(
-                        "vote was proved to not exist but was said to exist".to_string(),
-                    ))
+                    match self {
+                        Vote::ResourceVote(_) => {
+                            let vote =
+                                Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id))
+                                    .await?;
+                            vote.ok_or(Error::Generic(
+                                "vote was proved to not exist but was said to exist".to_string(),
+                            ))
+                        }
+                        // `VoteQuery` reads the contested resource votes index only; no query
+                        // fetches a yes/no vote yet, so the existing vote cannot be returned.
+                        Vote::YesNoVote(_) => Err(Error::Generic(
+                            "the yes/no vote already exists; fetching yes/no votes is not supported yet"
+                                .to_string(),
+                        )),
+                    }
                 } else {
                     Err(e.into())
-                }
+                };
             }
         }
         Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await

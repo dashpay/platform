@@ -58,11 +58,21 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// document, or a config flag (read-only, keeping history, the owner
     /// protection of its elected moderation declaration).
     ReferencedContractRequirementNotMet = 40135,
+    /// The referenced identity public key exists and is enabled but does not
+    /// meet what the reference's `keyRequirements` require of it: its
+    /// purpose, or a binding to a document type of the declaring contract.
+    ReferencedIdentityKeyRequirementNotMet = 40136,
+    /// A `refersTo` lookup into a document type of another contract cannot
+    /// resolve there, reported at contract registration: the named index is
+    /// missing or not unique, the keys do not cover it exactly, or a source
+    /// holds a different kind of value than its index property. (A lookup into
+    /// the declaring contract is refused by the contract parse instead.)
+    ReferencedDocumentLookupInvalid = 40137,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131 or 40135.
+    /// is not in the 40120-40125 range, 40131, 40135, 40136 or 40137.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -73,6 +83,8 @@ impl DocumentReferenceErrorCodeWasm {
             40125 => Some(Self::ReferencedKeyIdPropertyInvalid),
             40131 => Some(Self::ReferencedDocumentTypeNotDeletable),
             40135 => Some(Self::ReferencedContractRequirementNotMet),
+            40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
+            40137 => Some(Self::ReferencedDocumentLookupInvalid),
             _ => None,
         }
     }
@@ -111,6 +123,74 @@ impl DocumentImmutabilityErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by the `distinctFrom` check on document
+/// creates and replaces (protocol version 14+).
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentDistinctFromErrorCode.DocumentPropertyNotDistinct) {
+///     // an identifier property equals the value it must differ from
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentDistinctFromErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentDistinctFromErrorCodeWasm {
+    /// A `distinctFrom` identifier property of the written document equals
+    /// the value it must differ from: the document's `$ownerId`, or the named
+    /// property of the same document.
+    DocumentPropertyNotDistinct = 10419,
+}
+
+impl DocumentDistinctFromErrorCodeWasm {
+    /// The distinctFrom error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10419 => Some(Self::DocumentPropertyNotDistinct),
+            _ => None,
+        }
+    }
+}
+
+/// Consensus error codes emitted by `encryptedFor` validation, which runs
+/// from protocol version 14 onward on every document create and replace.
+///
+/// Branch on an error's `code` against these instead of matching its
+/// message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentEncryptionErrorCode.InvalidEncryptedPropertyShape) {
+///     // the bytes are not the shape the declared scheme produces
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentEncryptionErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentEncryptionErrorCodeWasm {
+    /// A property the document type declares `encryptedFor` was supplied
+    /// with bytes that are not a ciphertext of the declared scheme: shorter
+    /// than the IV plus one block, or not a multiple of the block length.
+    /// The shape is all consensus checks about a ciphertext.
+    InvalidEncryptedPropertyShape = 10420,
+}
+
+impl DocumentEncryptionErrorCodeWasm {
+    /// The encryption error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10420 => Some(Self::InvalidEncryptedPropertyShape),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -139,7 +219,7 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125.
+    /// not one of codes 40120-40125, 40131, 40135 and 40136.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
@@ -151,6 +231,19 @@ impl ConsensusErrorWasm {
     pub fn document_immutability_error_code(&self) -> Option<DocumentImmutabilityErrorCodeWasm> {
         DocumentImmutabilityErrorCodeWasm::from_code(self.0.code())
     }
+
+    /// The distinctFrom error this is, or `undefined` when it is not code
+    /// 10419.
+    #[wasm_bindgen(getter = "documentDistinctFromErrorCode")]
+    pub fn document_distinct_from_error_code(&self) -> Option<DocumentDistinctFromErrorCodeWasm> {
+        DocumentDistinctFromErrorCodeWasm::from_code(self.0.code())
+    }
+    /// The encrypted-property error this is, or `undefined` when it is not
+    /// code 10420.
+    #[wasm_bindgen(getter = "documentEncryptionErrorCode")]
+    pub fn document_encryption_error_code(&self) -> Option<DocumentEncryptionErrorCodeWasm> {
+        DocumentEncryptionErrorCodeWasm::from_code(self.0.code())
+    }
 }
 
 impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
@@ -159,11 +252,13 @@ impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 mod tests {
     use super::*;
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+    use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
     use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
     use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+    use dpp::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
     use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::data_contract::document_type::DocumentPropertyReferenceTarget;
@@ -205,6 +300,70 @@ mod tests {
         assert_eq!(DocumentImmutabilityErrorCodeWasm::from_code(40127), None);
     }
 
+    /// Built from the real DPP error, for the same reason as the test above.
+    #[test]
+    fn distinct_from_error_code_mirrors_the_dpp_error() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::DocumentPropertyNotDistinctError;
+
+        let error: ConsensusError =
+            BasicError::DocumentPropertyNotDistinctError(DocumentPropertyNotDistinctError::new(
+                "delegation".to_string(),
+                "delegateId".to_string(),
+                "$ownerId".to_string(),
+            ))
+            .into();
+
+        assert_eq!(
+            DocumentDistinctFromErrorCodeWasm::from_code(error.code()),
+            Some(DocumentDistinctFromErrorCodeWasm::DocumentPropertyNotDistinct)
+        );
+        assert_eq!(
+            DocumentDistinctFromErrorCodeWasm::DocumentPropertyNotDistinct as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_distinct_from_error_code(),
+            Some(DocumentDistinctFromErrorCodeWasm::DocumentPropertyNotDistinct)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentDistinctFromErrorCodeWasm::from_code(10418), None);
+    }
+
+    /// Built from the real DPP error rather than a code literal, like the
+    /// immutability test above.
+    #[test]
+    fn encryption_error_code_mirrors_the_dpp_error() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::InvalidEncryptedPropertyShapeError;
+
+        let error: ConsensusError = BasicError::InvalidEncryptedPropertyShapeError(
+            InvalidEncryptedPropertyShapeError::new(
+                "encryptedMessage".to_string(),
+                "ecdh-secp256k1-aes256-cbc".to_string(),
+                47,
+                32,
+                16,
+            ),
+        )
+        .into();
+
+        assert_eq!(
+            DocumentEncryptionErrorCodeWasm::from_code(error.code()),
+            Some(DocumentEncryptionErrorCodeWasm::InvalidEncryptedPropertyShape)
+        );
+        assert_eq!(
+            DocumentEncryptionErrorCodeWasm::InvalidEncryptedPropertyShape as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_encryption_error_code(),
+            Some(DocumentEncryptionErrorCodeWasm::InvalidEncryptedPropertyShape)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentEncryptionErrorCodeWasm::from_code(10419), None);
+    }
+
     /// The six reference-validation errors, paired with the JS enum variant
     /// each is advertised to be.
     ///
@@ -235,6 +394,32 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedContractRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedIdentityKeyRequirementNotMetError(
+                    ReferencedIdentityKeyRequirementNotMetError::new(
+                        "joinRequest".to_string(),
+                        "recipientId".to_string(),
+                        id(),
+                        3,
+                        "purpose".to_string(),
+                        "decryption".to_string(),
+                        "encryption".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedIdentityKeyRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedDocumentLookupInvalidError(
+                    ReferencedDocumentLookupInvalidError::new(
+                        "electedCharter.members".to_string(),
+                        "bySubmittedCharter".to_string(),
+                        "is not unique".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentLookupInvalid,
             ),
             (
                 StateError::ReferencedDocumentTypeNotFoundError(
@@ -333,7 +518,7 @@ mod tests {
 
     #[test]
     fn codes_outside_the_reference_range_are_not_claimed() {
-        for code in [40119, 40126, 0, 40200] {
+        for code in [40119, 40126, 40138, 0, 40200] {
             assert_eq!(DocumentReferenceErrorCodeWasm::from_code(code), None);
         }
     }

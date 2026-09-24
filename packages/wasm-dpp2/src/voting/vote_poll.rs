@@ -29,30 +29,71 @@ export interface VotePollOptions {
 }
 
 /**
+ * A yes/no poll's fields as a plain object. A yes/no vote carries its poll
+ * like this, without a `$type` tag. The minimum is a fixed voting power or a
+ * share of the masternode list's total voting power when the poll closes.
+ */
+export interface YesNoVotePollFieldsObject {
+    resourcePath: Uint8Array[];
+    supermajorityNumerator: number;
+    supermajorityDenominator: number;
+    minimumVotingPower:
+        | { absolute: number }
+        | {
+              fractionOfTotal: {
+                  numerator: number;
+                  denominator: number;
+                  rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
+              };
+          };
+}
+
+/**
+ * A yes/no poll's fields as JSON (resource path segments in base64).
+ */
+export interface YesNoVotePollFieldsJSON {
+    resourcePath: string[];
+    supermajorityNumerator: number;
+    supermajorityDenominator: number;
+    minimumVotingPower:
+        | { absolute: number }
+        | {
+              fractionOfTotal: {
+                  numerator: number;
+                  denominator: number;
+                  rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
+              };
+          };
+}
+
+/**
  * VotePoll serialized as a plain object.
  *
- * Internally tagged with `type` (plain — no `$`-prefixed neighbors at
- * this level). Inner ContestedDocumentResourceVotePoll fields flatten at
- * the same level — no `data` wrapper.
+ * Internally tagged with `$type`. The inner poll's fields flatten at the
+ * same level — no `data` wrapper.
  */
-export interface VotePollObject {
-    $type: "contestedDocumentResourceVotePoll";
-    contractId: Uint8Array;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
-}
+export type VotePollObject =
+    | {
+          $type: "contestedDocumentResourceVotePoll";
+          contractId: Uint8Array;
+          documentTypeName: string;
+          indexName: string;
+          indexValues: any[];
+      }
+    | ({ $type: "yesNoVotePoll" } & YesNoVotePollFieldsObject);
 
 /**
  * VotePoll serialized as JSON.
  */
-export interface VotePollJSON {
-    $type: "contestedDocumentResourceVotePoll";
-    contractId: string;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
-}
+export type VotePollJSON =
+    | {
+          $type: "contestedDocumentResourceVotePoll";
+          contractId: string;
+          documentTypeName: string;
+          indexName: string;
+          indexValues: any[];
+      }
+    | ({ $type: "yesNoVotePoll" } & YesNoVotePollFieldsJSON);
 "#;
 
 #[wasm_bindgen]
@@ -118,26 +159,42 @@ impl VotePollWasm {
         self.0.to_string()
     }
 
+    /// The kind of poll: `contestedDocumentResourceVotePoll` or `yesNoVotePoll`.
+    #[wasm_bindgen(getter = "kind")]
+    pub fn kind(&self) -> String {
+        match &self.0 {
+            VotePoll::ContestedDocumentResourceVotePoll(_) => {
+                "contestedDocumentResourceVotePoll".to_string()
+            }
+            VotePoll::YesNoVotePoll(_) => "yesNoVotePoll".to_string(),
+        }
+    }
+
     #[wasm_bindgen(getter = "contractId")]
-    pub fn contract_id(&self) -> IdentifierWasm {
+    pub fn contract_id(&self) -> WasmDppResult<IdentifierWasm> {
         match &self.0 {
             VotePoll::ContestedDocumentResourceVotePoll(poll) => {
-                IdentifierWasm::from(poll.contract_id)
+                Ok(IdentifierWasm::from(poll.contract_id))
             }
+            VotePoll::YesNoVotePoll(_) => Err(not_a_contested_poll()),
         }
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
-    pub fn document_type_name(&self) -> String {
+    pub fn document_type_name(&self) -> WasmDppResult<String> {
         match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.document_type_name.clone(),
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => {
+                Ok(poll.document_type_name.clone())
+            }
+            VotePoll::YesNoVotePoll(_) => Err(not_a_contested_poll()),
         }
     }
 
     #[wasm_bindgen(getter = "indexName")]
-    pub fn index_name(&self) -> String {
+    pub fn index_name(&self) -> WasmDppResult<String> {
         match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.index_name.clone(),
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => Ok(poll.index_name.clone()),
+            VotePoll::YesNoVotePoll(_) => Err(not_a_contested_poll()),
         }
     }
 
@@ -166,6 +223,7 @@ impl VotePollWasm {
 
                 Ok(js_array)
             }
+            VotePoll::YesNoVotePoll(_) => Err(not_a_contested_poll()),
         }
     }
 
@@ -182,6 +240,7 @@ impl VotePollWasm {
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }
+            VotePoll::YesNoVotePoll(_) => return Err(not_a_contested_poll()),
         };
 
         Ok(())
@@ -191,25 +250,34 @@ impl VotePollWasm {
     pub fn set_document_type_name(
         &mut self,
         #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
-    ) {
+    ) -> WasmDppResult<()> {
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
                 poll.document_type_name = document_type_name;
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }
-        }
+            VotePoll::YesNoVotePoll(_) => return Err(not_a_contested_poll()),
+        };
+
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "indexName")]
-    pub fn set_index_name(&mut self, #[wasm_bindgen(js_name = "indexName")] index_name: String) {
+    pub fn set_index_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "indexName")] index_name: String,
+    ) -> WasmDppResult<()> {
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
                 poll.index_name = index_name;
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }
+            VotePoll::YesNoVotePoll(_) => return Err(not_a_contested_poll()),
         };
+
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "indexValues")]
@@ -229,10 +297,19 @@ impl VotePollWasm {
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }
+            VotePoll::YesNoVotePoll(_) => return Err(not_a_contested_poll()),
         };
 
         Ok(())
     }
+}
+
+/// The contested index fields exist on a contested document resource poll only.
+fn not_a_contested_poll() -> WasmDppError {
+    WasmDppError::invalid_argument(
+        "this vote poll is a yes/no vote poll, not a contested document resource vote poll"
+            .to_string(),
+    )
 }
 
 impl_try_from_js_value!(VotePollWasm, "VotePoll");

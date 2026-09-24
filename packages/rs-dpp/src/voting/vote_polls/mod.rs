@@ -3,6 +3,7 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod contested_document_resource_vote_poll;
+pub mod yes_no_vote_poll;
 
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
@@ -44,6 +46,10 @@ pub mod contested_document_resource_vote_poll;
 #[platform_serialize(limit = 100000)]
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
+    /// A yes/no poll keyed by a resource path, resolved by a supermajority once enough voting
+    /// power has been cast (protocol version 14). Appended: the bincode discriminant is the
+    /// variant position.
+    YesNoVotePoll(YesNoVotePoll),
 }
 
 impl fmt::Display for VotePoll {
@@ -52,6 +58,7 @@ impl fmt::Display for VotePoll {
             VotePoll::ContestedDocumentResourceVotePoll(poll) => {
                 write!(f, "ContestedDocumentResourceVotePoll({})", poll)
             }
+            VotePoll::YesNoVotePoll(poll) => write!(f, "YesNoVotePoll({})", poll),
         }
     }
 }
@@ -70,6 +77,9 @@ impl VotePoll {
                     contested_document_resource_vote_poll.specialized_balance_id()?,
                 ))
             }
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
+                Ok(Some(yes_no_vote_poll.specialized_balance_id()?))
+            }
         }
     }
 
@@ -78,6 +88,7 @@ impl VotePoll {
             VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
                 contested_document_resource_vote_poll.unique_id()
             }
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => yes_no_vote_poll.unique_id(),
         }
     }
 }

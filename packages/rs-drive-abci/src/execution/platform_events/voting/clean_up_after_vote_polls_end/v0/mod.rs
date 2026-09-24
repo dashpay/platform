@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -40,7 +41,15 @@ where
                 match vote_poll {
                     ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(contested_poll, vote_info) => {
                         contested_polls.push((contested_poll, end_date, vote_info));
-                    } // Add more match arms here for other types of vote polls in the future
+                    }
+                    // Unreachable: only `check_for_ended_vote_polls` v1 builds this variant,
+                    // and every table that selects this v0 (protocol versions 1 to 13) selects
+                    // check v0.
+                    ResolvedVotePollWithVotes::YesNoVotePollWithVotes(..) => {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "yes/no vote polls need clean_up_after_vote_polls_end version 1",
+                        )))
+                    }
                 }
             }
         }

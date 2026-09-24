@@ -25,9 +25,13 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::{
+    DocumentPropertyReferenceTarget, PropertyReference,
+};
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
@@ -37,9 +41,14 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 #[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 
 use super::common;
+use super::{validate_encrypted_for_declarations, validate_reference_lookup_sources};
 
 mod ranked_prefix_overlap;
 use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
@@ -144,6 +153,13 @@ fn validate_ranked_index_property_key_length(
     let Some(limit) = ranked_index_key_length_limit(index) else {
         return Ok(());
     };
+
+    // A typed array is no index key at all, and its byte bound measures the
+    // whole list: the property-type check right after this one rejects it
+    // with the error that explains the problem.
+    if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
+        return Ok(());
+    }
 
     // `None` is only produced by the array and object types, which the
     // property-type check right after this one rejects outright with the
@@ -281,6 +297,18 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
+    // Generation 3 refuses `-` in a document type name, as meta-schema v3
+    // refuses it in a property name: the path syntax was written for word
+    // characters, and no contract on mainnet or testnet ever used one. A
+    // registration rule, checked under full validation like the shared
+    // name rule; earlier generations keep admitting it.
+    #[cfg(feature = "validation")]
+    if full_validation && name.contains('-') {
+        return Err(ProtocolError::ConsensusError(Box::new(
+            ConsensusError::from(InvalidDocumentTypeNameError::new(name.to_string())),
+        )));
+    }
+
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
@@ -384,6 +412,15 @@ fn try_from_schema_generation_3(
         full_validation,
     )?;
 
+    // After the core parse: every property, its transient flag and its schema
+    // are known, so each `encryptedFor` declaration can be checked against the
+    // properties it names. Generation 3 is the only one admitting the keyword.
+    validate_encrypted_for_declarations(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the properties a `refersTo` lookup reads to assemble its key.
+    validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+
     // After `apply_index_only`: the flag is refused on an indexOnly type, so it
     // has to see that one already applied.
     common::apply_can_be_deleted_by_moderators(
@@ -413,7 +450,133 @@ fn try_from_schema_generation_3(
         ));
     }
 
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_reference_count(&v2, name, platform_version)?;
+        validate_no_immutable_deletable_element_references(&v2, name)?;
+    }
+
     Ok(v2)
+}
+
+/// Every typed array property's `maxItems` (which the parse requires) is at
+/// most `SystemLimits::max_typed_array_items`, so its worst-case encoded
+/// size stays small. Read off the flattened properties, which reach a typed
+/// array nested in an object too.
+///
+/// Full validation only, like the other registration limits: a stored
+/// contract was checked when it was registered, and a later protocol version
+/// lowering the cap must not make it unreadable.
+#[cfg(feature = "validation")]
+fn validate_typed_array_max_items(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_typed_array_items;
+    for (path, property) in document_type.flattened_properties() {
+        let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
+            continue;
+        };
+        if typed_array.max_items > limit {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "typed array property \"{}\" of document type \"{}\" declares maxItems \
+                     {}, above the maximum of {}",
+                    path, name, typed_array.max_items, limit,
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The references one document of the type can carry, one for each
+/// property declaring `refersTo` (an identifier, or a key id with a key
+/// reference) and `maxItems` for each typed array whose elements declare it,
+/// are at most
+/// `SystemLimits::max_references_per_document`. Every reference is a billed
+/// state read when the document is created or replaced, so the sum bounds
+/// the reads one write can cause; `max_typed_array_items` alone would let a
+/// type declare many arrays of that many references each.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_count(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_references_per_document;
+    let references: u32 = document_type
+        .flattened_properties()
+        .values()
+        .filter_map(|property| property.property_type.reference())
+        .map(|reference| reference.max_references())
+        .sum();
+    if references > u32::from(limit) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares references for up to {references} values per \
+                 document (one per property with refersTo, maxItems per typed array of \
+                 referencing elements), above the maximum of {limit}",
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// An `immutable` property may not hold a `deletableDocument` reference the
+/// replace state validation could not clear: a typed array of them, at the
+/// top level or inside an immutable object, or a single one inside an
+/// immutable object. Every replace re-validates such a reference, so once a
+/// target is deleted the property would have to change, which an immutable
+/// property cannot: the document could never be replaced again. The one
+/// such reference that has a way out is a single one held by an immutable
+/// top-level property: a replace may remove it once its target is gone, an
+/// exception that reads the one identifier the removed top-level property
+/// held, which neither a list nor an object gives it.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_deletable_element_references(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for (path, property) in document_type.flattened_properties() {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        if !matches!(
+            reference.target(),
+            Some(DocumentPropertyReferenceTarget::DeletableDocument { .. })
+        ) {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        let is_list = matches!(reference, PropertyReference::Elements { .. });
+        // A single reference that is itself the immutable property can be
+        // cleared once its target is gone
+        if !is_list && top_level == path {
+            continue;
+        }
+        if document_type.immutable_fields.contains(top_level) {
+            let held_as = if is_list {
+                "a typed array of deletableDocument references"
+            } else {
+                "a deletableDocument reference inside an object"
+            };
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     {held_as}: every replace re-validates it, so once a target is deleted the \
+                     property would have to change and the document could never be replaced \
+                     again. Use permanentDocument references, or leave the property mutable",
+                )),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl DocumentType {
@@ -460,6 +623,16 @@ mod keep_history_tests;
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]
 mod moderators_delete_tests;
+#[cfg(all(test, feature = "validation"))]
+mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_test_helpers;
+#[cfg(all(test, feature = "validation", feature = "random-documents"))]
+mod typed_array_tests;
 
 #[cfg(test)]
 mod tests {

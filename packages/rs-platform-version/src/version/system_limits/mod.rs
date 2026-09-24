@@ -11,6 +11,23 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions that predate this limit.
     pub max_document_value_depth: Option<u16>,
+    /// Maximum `maxItems` a typed array document property (`type: "array"` with an `items`
+    /// element schema) may declare, enforced when a contract is registered or updated (every
+    /// parse requires `maxItems`; full validation refuses one above this). The bound keeps an
+    /// array's worst-case encoded size, which fee estimation charges by, small. Read by
+    /// document type parser generation 3 (protocol version 14), the only generation that
+    /// parses typed arrays, and never reached before.
+    pub max_typed_array_items: u16,
+    /// Maximum number of references one document of a document type may carry, counted at
+    /// contract registration or update from the type's `refersTo` declarations: one for each
+    /// property that declares one (an identifier, or a key id carrying a key reference), and
+    /// `maxItems` for each typed array whose identifier elements declare one. Every reference is checked against state when the
+    /// document is created or replaced, each check a billed read, so this bounds the reads one
+    /// document write can cause; without it a type could declare many typed arrays of
+    /// `max_typed_array_items` references each. Refused under full validation only, like
+    /// `max_typed_array_items`. Read by document type parser generation 3 (protocol version
+    /// 14), the only generation that parses `refersTo`, and never reached before.
+    pub max_references_per_document: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
@@ -119,6 +136,18 @@ pub struct SystemLimits {
     /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
+    /// The most segments a yes/no vote poll's resource path may have, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 14).
+    pub max_yes_no_vote_poll_resource_path_segments: u8,
+    /// The most bytes a yes/no vote poll's resource path may hold across its segments, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 14). Every vote carries the poll.
+    pub max_yes_no_vote_poll_resource_path_bytes: u16,
+    /// The largest fixed minimum voting power a yes/no vote poll may require, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 14).
+    pub max_yes_no_vote_poll_minimum_voting_power: u32,
+    /// The largest share of the total voting power, in percent, a yes/no vote poll's minimum may
+    /// require, read by `YesNoVotePoll::validate_parameters` (protocol version 14).
+    pub max_yes_no_vote_poll_minimum_voting_power_percent_of_total: u8,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never

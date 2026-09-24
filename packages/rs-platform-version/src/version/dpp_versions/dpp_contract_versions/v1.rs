@@ -45,6 +45,9 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
             // This version predates the `refersTo` reference keyword
             apply_property_reference: None,
             apply_required_since: None,
+            apply_distinct_from: None,
+            apply_encrypted_for: None,
+            parse_typed_array: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -62,6 +65,8 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
             max_size: 0,
             serialize_value_for_key: 0,
             deserialize_value_for_key: 0,
+            validate_distinct_from: None,
+            validate_encrypted_property_shapes: None,
         },
     },
     token_versions: TokenVersions {

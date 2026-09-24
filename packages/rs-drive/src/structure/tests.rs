@@ -273,6 +273,7 @@ mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
     use crate::structure::export::{LayerShape, ShapeNode, StateShape};
@@ -352,7 +353,9 @@ mod fixtures {
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
+    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1194,6 +1197,49 @@ mod fixtures {
         conformance_of(&drive, "contested_documents", run);
     }
 
+    /// A yes/no vote poll with one vote per choice, so every node of the decisions branch is
+    /// reached: the poll's stored info and vote trees, and the voters' index entries.
+    fn yes_no_vote_polls(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let vote_poll = YesNoVotePoll {
+            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
+        };
+        drive
+            .open_yes_no_vote_poll(
+                &vote_poll,
+                1_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to open the yes/no vote poll");
+        for (voter, strength, vote_choice) in [
+            ([1; 32], 4, YesNoAbstainVoteChoice::Yes),
+            ([2; 32], 1, YesNoAbstainVoteChoice::No),
+            ([3; 32], 1, YesNoAbstainVoteChoice::Abstain),
+        ] {
+            drive
+                .register_yes_no_identity_vote(
+                    voter,
+                    strength,
+                    ResolvedYesNoVote {
+                        vote_poll: vote_poll.clone(),
+                        vote_choice,
+                        previous_vote_choice_to_remove: None,
+                    },
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to register the vote");
+        }
+        conformance_of(&drive, "yes_no_vote_polls", run);
+    }
+
     fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
         drive
             .apply_batch_low_level_drive_operations(
@@ -1510,6 +1556,7 @@ mod fixtures {
         address_balances(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
+        yes_no_vote_polls(&mut run);
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);

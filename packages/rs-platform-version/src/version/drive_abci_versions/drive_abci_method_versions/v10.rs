@@ -102,14 +102,18 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
-        clean_up_after_vote_poll_end: 0,
-        clean_up_after_contested_resources_vote_poll_end: 1,
-        check_for_ended_vote_polls: 1, // changed in v14: a tie goes to the earliest contender
+        clean_up_after_vote_poll_end: 1, // changed in v14: also cleans up finished yes/no polls, and removes every finished poll from the end date index itself
+        clean_up_after_contested_resources_vote_poll_end: 2, // changed in v14: leaves the end date index to clean_up_after_vote_poll_end
+        check_for_ended_vote_polls: 1, // changed in v14: a tie goes to the earliest contender, and yes/no polls are closed too
         tally_votes_for_contested_document_resource_vote_poll: 0,
         award_document_to_winner: 0,
         delay_vote_poll: 0,
         run_dao_platform_events: 0,
         remove_votes_for_removed_masternodes: 0,
+        tally_votes_for_yes_no_vote_poll: 0,         // new in v14
+        keep_record_of_finished_yes_no_vote_poll: 0, // new in v14
+        clean_up_after_yes_no_vote_polls_end: 0,     // new in v14
+        on_yes_no_vote_poll_finished: 0,             // new in v14
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 1, // changed: deducts what a budgeted signing key spent from its remaining budget, and charges a document batch's gas sponsor instead of its signer

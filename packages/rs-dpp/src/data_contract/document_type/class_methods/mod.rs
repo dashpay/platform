@@ -8,6 +8,7 @@ use crate::ProtocolError;
 
 pub(crate) mod apply_required_since;
 mod create_document_types_from_document_schemas;
+mod parse_typed_array;
 mod should_use_creator_id;
 mod system_properties;
 mod try_from_schema;

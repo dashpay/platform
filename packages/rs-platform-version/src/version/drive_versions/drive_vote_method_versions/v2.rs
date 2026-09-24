@@ -1,7 +1,7 @@
 use crate::version::drive_versions::drive_vote_method_versions::{
     DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions,
     DriveVoteFetchMethodVersions, DriveVoteInsertMethodVersions, DriveVoteMethodVersions,
-    DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions,
+    DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions, DriveVoteYesNoMethodVersions,
 };
 
 pub const DRIVE_VOTE_METHOD_VERSIONS_V2: DriveVoteMethodVersions = DriveVoteMethodVersions {
@@ -23,6 +23,8 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V2: DriveVoteMethodVersions = DriveVoteMeth
         remove_contested_resource_vote_poll_contenders_operations: 1,
         remove_contested_resource_top_level_index_operations: 0,
         remove_contested_resource_info_operations: 0,
+        remove_all_votes_given_by_identities: 0,
+        remove_vote_poll_end_date_query_operations: 0,
     },
     setup: DriveVoteSetupMethodVersions {
         add_initial_vote_tree_main_structure_operations: 0,
@@ -34,5 +36,15 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V2: DriveVoteMethodVersions = DriveVoteMeth
         fetch_identities_voting_for_contenders: 0,
         fetch_contested_document_vote_poll_stored_info: 0,
         fetch_identity_contested_resource_vote: 0,
+    },
+    yes_no: DriveVoteYesNoMethodVersions {
+        open_yes_no_vote_poll: 0,
+        register_yes_no_identity_vote: 0,
+        insert_stored_info_for_yes_no_vote_poll: 0,
+        fetch_yes_no_vote_poll_stored_info: 0,
+        fetch_identity_yes_no_vote: 0,
+        fetch_identities_voting_in_yes_no_vote_poll: 0,
+        remove_yes_no_vote_poll_votes_operations: 0,
+        remove_yes_no_vote_references_given_by_identity: 0,
     },
 };

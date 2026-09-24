@@ -3,10 +3,12 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentReferenceDeclaration, KeyReferenceIdentityProperty, PropertyReference,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
+use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
@@ -30,16 +32,10 @@ use crate::execution::types::state_transition_execution_context::{
 
 /// Whether two property types hold the same KIND of value for agreement
 /// purposes: sizes and other constraints may differ (both sides validated
-/// their own documents already), and an identifier is one kind whether or
-/// not it carries its own reference annotation.
+/// their own documents already). The rule is `DocumentPropertyType::value_kind`,
+/// shared with the key parts of a `refersTo` lookup.
 fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
-    let normalized_kind = |property_type: &DocumentPropertyType| match property_type {
-        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
-            std::mem::discriminant(&DocumentPropertyType::Identifier)
-        }
-        other => std::mem::discriminant(other),
-    };
-    normalized_kind(a) == normalized_kind(b)
+    a.value_kind() == b.value_kind()
 }
 
 /// Checks every reference declaration of the given contract that carries
@@ -50,16 +46,26 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
 /// including when it names its own id) and the referenced document type must
 /// exist in it; for `permanentDocument` that type must forbid deletion, for
 /// `deletableDocument` it must allow it.
-/// Every `propertyAgreement` pair is checked for both. Self references are
-/// checked against the in-flight
-/// contract, so a contract may reference its own document types on creation;
-/// foreign contract fetches are billed.
+/// Every `propertyAgreement` pair is checked for both, and a `lookup` into
+/// another contract's document type is checked against that type's indexes
+/// (one into the declaring contract was checked by the contract parse). Self
+/// references are checked against the in-flight contract, so a contract may
+/// reference its own document types on creation; foreign contract fetches are
+/// billed.
 ///
 /// `identityPublicKey`: the declared key id property must exist in the same
 /// document type and be an integer.
 ///
+/// A declaration on the `items` of a typed array of identifiers holds for
+/// every element and is checked once, exactly as a single reference's: the
+/// referring side of an agreement is still a property of the declaring
+/// document type (or the writer), the referenced side a property of the
+/// referenced document type. `identityPublicKey` never reaches here on
+/// elements: the parser refuses it there.
+///
 /// The error paths name the failing declaration as
-/// `documentTypeName.propertyPath`. Validation stops at the first invalid
+/// `documentTypeName.propertyPath`, and an element declaration by its list
+/// path, `documentTypeName.propertyPath[]`. Validation stops at the first invalid
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -79,18 +85,102 @@ pub(super) fn validate_data_contract_references_v0(
 
     for (declaring_type_name, document_type) in contract.document_types() {
         for (path, property) in document_type.as_ref().flattened_properties() {
-            let DocumentPropertyType::IdentifierWithReference(reference_target) =
-                &property.property_type
-            else {
-                continue;
-            };
-
             let declaration_path = format!("{declaring_type_name}.{path}");
+
+            let (reference_target, declaration_path) = match property.property_type.reference() {
+                // A key reference on the key id property: what `identityProperty`
+                // names must fit the document type; nothing else about the
+                // declaration is state-dependent
+                Some(PropertyReference::KeyId(reference)) => {
+                    let invalid = |message: &str| {
+                        SimpleConsensusValidationResult::new_with_error(
+                            ReferencedKeyIdPropertyInvalidError::new(
+                                path.to_string(),
+                                declaration_path.clone(),
+                                message.to_string(),
+                            )
+                            .into(),
+                        )
+                    };
+                    match &reference.identity_property {
+                        KeyReferenceIdentityProperty::OwnerId => {}
+                        KeyReferenceIdentityProperty::CreatorId => {
+                            if !document_type
+                                .as_ref()
+                                .should_use_creator_id(
+                                    contract.system_version_type(),
+                                    contract.config().version(),
+                                    platform_version,
+                                )
+                                .map_err(Error::Protocol)?
+                            {
+                                return Ok(invalid(
+                                    "identityProperty $creatorId needs a document type that \
+                                     records creator ids: only transferable or tradeable \
+                                     document types of a format-1 contract do",
+                                ));
+                            }
+                        }
+                        KeyReferenceIdentityProperty::Property(identity_path) => {
+                            match document_type
+                                .as_ref()
+                                .flattened_properties()
+                                .get(identity_path)
+                            {
+                                None => {
+                                    return Ok(invalid(&format!(
+                                        "the document type does not define the identity \
+                                         property {identity_path}"
+                                    )));
+                                }
+                                // The (identity, key id) pair is declared once
+                                Some(DocumentProperty {
+                                    property_type:
+                                        DocumentPropertyType::IdentifierWithReference(
+                                            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                                                ..
+                                            },
+                                        ),
+                                    ..
+                                }) => {
+                                    return Ok(invalid(&format!(
+                                        "the identity property {identity_path} carries its own \
+                                         identityPublicKey reference"
+                                    )));
+                                }
+                                Some(identity_property)
+                                    if !matches!(
+                                        identity_property.property_type,
+                                        DocumentPropertyType::Identifier
+                                            | DocumentPropertyType::IdentifierWithReference(_)
+                                    ) =>
+                                {
+                                    return Ok(invalid(&format!(
+                                        "the identity property {identity_path} must be an \
+                                         identifier"
+                                    )));
+                                }
+                                Some(_) => {}
+                            }
+                        }
+                    }
+                    continue;
+                }
+                Some(PropertyReference::Value(target)) => (target, declaration_path),
+                // A typed array only parses from protocol version 14, whose
+                // contract create and update state validation are the only
+                // callers, so this arm is never reached before it
+                Some(PropertyReference::Elements { target, .. }) => {
+                    (target, format!("{declaring_type_name}.{path}[]"))
+                }
+                None => continue,
+            };
 
             // The key id property must exist in the same document type and be
             // an integer; nothing else about the declaration is state-dependent
-            if let DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } =
-                reference_target
+            if let DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property, ..
+            } = reference_target
             {
                 match document_type
                     .as_ref()
@@ -117,6 +207,22 @@ pub(super) fn validate_data_contract_references_v0(
                             .into(),
                         ));
                     }
+                    // A key id that already names whose key it is (the writer's)
+                    // can not also be a key of the referenced identity
+                    Some(DocumentProperty {
+                        property_type: DocumentPropertyType::KeyIdWithReference(_),
+                        ..
+                    }) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedKeyIdPropertyInvalidError::new(
+                                key_id_property.clone(),
+                                declaration_path,
+                                "the property carries its own identityPublicKey reference"
+                                    .to_string(),
+                            )
+                            .into(),
+                        ));
+                    }
                     Some(_) => continue,
                 }
             }
@@ -126,7 +232,8 @@ pub(super) fn validate_data_contract_references_v0(
                 document_type_name,
                 property_agreement,
                 permanent,
-            }) = reference_target.as_document_reference()
+                lookup,
+            }) = reference_target.as_any_document_reference()
             else {
                 continue;
             };
@@ -226,6 +333,30 @@ pub(super) fn validate_data_contract_references_v0(
                 ));
             }
 
+            // A lookup, only ever on a permanentDocument reference, must
+            // resolve in the referenced document type: a unique index its keys
+            // cover exactly, filled from sources of the right kinds, with a key
+            // that stays with the document it found. The contract parse checks
+            // a lookup into the declaring contract under full validation, where
+            // it sees every document type; only here is another contract's
+            // document type in hand.
+            if let Some(lookup) = lookup {
+                if effective_contract_id != contract.id() {
+                    if let Some(reason) = lookup
+                        .referenced_side_error(document_type.as_ref(), referenced_document_type)
+                    {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedDocumentLookupInvalidError::new(
+                                declaration_path,
+                                lookup.index.clone(),
+                                reason,
+                            )
+                            .into(),
+                        ));
+                    }
+                }
+            }
+
             // propertyAgreement declarations: both sides must exist, be
             // plain values (not containers), and share one value kind — a
             // cross-kind equality could never be satisfied and would brick
@@ -323,6 +454,18 @@ pub(super) fn validate_data_contract_references_v0(
                 {
                     return Ok(invalid(
                         "agreement properties must be plain values, not object containers",
+                    ));
+                }
+                // The write-time check compares index key encodings, which a
+                // list does not have, so an agreement on one would never hold
+                if matches!(referring_type, DocumentPropertyType::TypedArray(_))
+                    || matches!(
+                        referenced.property_type,
+                        DocumentPropertyType::TypedArray(_)
+                    )
+                {
+                    return Ok(invalid(
+                        "agreement properties must be single values, not typed arrays",
                     ));
                 }
                 if !same_value_kind(referring_type, &referenced.property_type) {

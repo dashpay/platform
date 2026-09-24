@@ -92,7 +92,21 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
                             }
                         }
                     }
+                    // Unreachable: this v0 is selected up to protocol version 13, where a
+                    // masternode vote that names a yes/no poll does not decode
+                    // (`StateTransition::active_version_range`).
+                    ResolvedVotePoll::YesNoVotePoll(_) => {
+                        Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "yes/no vote polls need validate_state version 1",
+                        )))
+                    }
                 }
+            }
+            // Unreachable for the same reason: no yes/no vote decodes before 14.
+            ResolvedVote::YesNoVote(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "yes/no votes need validate_state version 1",
+                )))
             }
         }
     }

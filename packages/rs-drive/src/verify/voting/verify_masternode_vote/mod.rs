@@ -4,10 +4,13 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 
 impl Drive {
@@ -44,6 +47,29 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vote>), Error> {
+        // The versions below prove the contested resource votes index. A yes/no vote lives in the
+        // decisions branch, so it goes to its own verifier: querying the contested index for it
+        // would accept a genuine absence proof from the wrong branch as "not voted". A resource
+        // vote cannot name a yes/no poll at all.
+        match vote {
+            Vote::YesNoVote(yes_no_vote) => {
+                return Self::verify_masternode_yes_no_vote(
+                    proof,
+                    masternode_pro_tx_hash,
+                    yes_no_vote,
+                    verify_subset_of_proof,
+                    platform_version,
+                )
+                .map(|(root_hash, proved_vote)| (root_hash, proved_vote.map(Vote::YesNoVote)));
+            }
+            Vote::ResourceVote(resource_vote) => {
+                if let VotePoll::YesNoVotePoll(_) = resource_vote.vote_poll() {
+                    return Err(Error::Proof(ProofError::InvalidTransition(
+                        "a resource vote cannot answer a yes/no vote poll".to_string(),
+                    )));
+                }
+            }
+        }
         match platform_version
             .drive
             .methods

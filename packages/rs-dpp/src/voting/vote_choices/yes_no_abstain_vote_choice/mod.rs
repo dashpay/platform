@@ -1,18 +1,53 @@
 use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
-#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Default, DecodeUntrusted)]
+/// The answer a masternode gives a yes/no vote poll. Abstaining counts towards nothing: the
+/// poll's supermajority and minimum are measured over yes plus no only.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Encode,
+    Decode,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 pub enum YesNoAbstainVoteChoice {
-    YES,
-    NO,
+    Yes,
+    No,
     #[default]
-    ABSTAIN,
+    Abstain,
+}
+
+impl YesNoAbstainVoteChoice {
+    /// Every choice, in tree key order.
+    pub const ALL: [YesNoAbstainVoteChoice; 3] = [
+        YesNoAbstainVoteChoice::Yes,
+        YesNoAbstainVoteChoice::No,
+        YesNoAbstainVoteChoice::Abstain,
+    ];
+}
+
+impl fmt::Display for YesNoAbstainVoteChoice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            YesNoAbstainVoteChoice::Yes => write!(f, "Yes"),
+            YesNoAbstainVoteChoice::No => write!(f, "No"),
+            YesNoAbstainVoteChoice::Abstain => write!(f, "Abstain"),
+        }
+    }
 }
 
 // --- canonical conversion trait impls (unification pass 1) ---
@@ -33,23 +68,15 @@ mod json_convertible_tests_yesnoabstainvotechoice {
     use platform_value::platform_value;
     use serde_json::json;
 
-    // `YesNoAbstainVoteChoice` is a unit-only enum with `rename_all = "camelCase"`,
-    // so each variant serializes as a plain string: `"yes"` / `"no"` / `"abstain"`.
-
-    // Surprise wire shape: the variants are SCREAMING_CASE in source
-    // (`YES`/`NO`/`ABSTAIN`) and the type carries `rename_all = "camelCase"`.
-    // serde's camelCase rule lowercases the FIRST letter only, leaving the
-    // rest as-is — so the wire emits `"yES"` / `"nO"` / `"aBSTAIN"` rather
-    // than the lowercase-clean strings a casual reader would expect. These
-    // tests pin that behaviour so a future "looks-like-a-typo" rename to
-    // lowercase doesn't silently change the on-the-wire format.
+    // A unit-only enum with `rename_all = "camelCase"`: each variant is a plain lowercase
+    // string on the wire.
 
     #[test]
     fn json_round_trip_yes() {
         use crate::serialization::JsonConvertible;
-        let original = YesNoAbstainVoteChoice::YES;
+        let original = YesNoAbstainVoteChoice::Yes;
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!("yES"));
+        assert_eq!(json, json!("yes"));
         let recovered = YesNoAbstainVoteChoice::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -57,9 +84,9 @@ mod json_convertible_tests_yesnoabstainvotechoice {
     #[test]
     fn json_round_trip_no() {
         use crate::serialization::JsonConvertible;
-        let original = YesNoAbstainVoteChoice::NO;
+        let original = YesNoAbstainVoteChoice::No;
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!("nO"));
+        assert_eq!(json, json!("no"));
         let recovered = YesNoAbstainVoteChoice::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -67,9 +94,9 @@ mod json_convertible_tests_yesnoabstainvotechoice {
     #[test]
     fn json_round_trip_abstain() {
         use crate::serialization::JsonConvertible;
-        let original = YesNoAbstainVoteChoice::ABSTAIN;
+        let original = YesNoAbstainVoteChoice::Abstain;
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!("aBSTAIN"));
+        assert_eq!(json, json!("abstain"));
         let recovered = YesNoAbstainVoteChoice::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -77,9 +104,9 @@ mod json_convertible_tests_yesnoabstainvotechoice {
     #[test]
     fn value_round_trip_yes() {
         use crate::serialization::ValueConvertible;
-        let original = YesNoAbstainVoteChoice::YES;
+        let original = YesNoAbstainVoteChoice::Yes;
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!("yES"));
+        assert_eq!(value, platform_value!("yes"));
         let recovered = YesNoAbstainVoteChoice::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
@@ -87,9 +114,9 @@ mod json_convertible_tests_yesnoabstainvotechoice {
     #[test]
     fn value_round_trip_no() {
         use crate::serialization::ValueConvertible;
-        let original = YesNoAbstainVoteChoice::NO;
+        let original = YesNoAbstainVoteChoice::No;
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!("nO"));
+        assert_eq!(value, platform_value!("no"));
         let recovered = YesNoAbstainVoteChoice::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
@@ -97,9 +124,9 @@ mod json_convertible_tests_yesnoabstainvotechoice {
     #[test]
     fn value_round_trip_abstain() {
         use crate::serialization::ValueConvertible;
-        let original = YesNoAbstainVoteChoice::ABSTAIN;
+        let original = YesNoAbstainVoteChoice::Abstain;
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!("aBSTAIN"));
+        assert_eq!(value, platform_value!("abstain"));
         let recovered = YesNoAbstainVoteChoice::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }

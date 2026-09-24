@@ -99,7 +99,8 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyType, DocumentReferenceDeclaration, DocumentTypeRef,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -305,7 +306,10 @@ fn sorted_values(values: &[Identifier]) -> Vec<Identifier> {
     sorted
 }
 
-/// The document reference a property type declares, of either kind.
+/// The document reference a property type declares, of either kind. Only
+/// a scalar reference counts: a binding reads one identifier out of the
+/// property, and a typed array whose elements are references holds many,
+/// is no index property and so is never a join field.
 fn document_reference_of(
     property_type: &DocumentPropertyType,
 ) -> Option<DocumentReferenceDeclaration<'_>> {
@@ -613,6 +617,20 @@ impl<'a> DriveDocumentQuery<'a> {
                 // proof; a deletableDocument one does not, and a missing
                 // document is then a proven absence (see
                 // `assemble_documents`).
+                // A lookup reference's values are not document ids, so
+                // `document_reference_of` leaves it out; it is named here so
+                // the refusal says why
+                if let Some(DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. },
+                )) = source_property_type
+                {
+                    return Err(label(&format!(
+                        "the source property's refersTo finds its document through the unique \
+                         index \"{}\", so its values are not document ids: a by-id join needs \
+                         a reference whose value is the referenced document's $id",
+                        lookup.index,
+                    )));
+                }
                 match source_property_type.and_then(document_reference_of) {
                     Some(DocumentReferenceDeclaration {
                         contract_id,

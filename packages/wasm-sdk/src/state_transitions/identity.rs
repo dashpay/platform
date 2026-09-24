@@ -795,6 +795,13 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let vote_poll: dash_sdk::dpp::voting::vote_polls::VotePoll =
             VotePollWasm::try_from_options(&options, "votePoll")?.into();
+        // This casts a resource vote, which answers a contested document resource poll only;
+        // consensus refuses one naming a yes/no poll.
+        if let dash_sdk::dpp::voting::vote_polls::VotePoll::YesNoVotePoll(_) = vote_poll {
+            return Err(WasmSdkError::invalid_argument(
+                "masternodeVote casts a resource vote, which cannot answer a yes/no vote poll",
+            ));
+        }
         let resource_vote_choice: dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice =
             ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
         let voting_public_key: IdentityPublicKey =

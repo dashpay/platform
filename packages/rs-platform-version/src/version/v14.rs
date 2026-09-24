@@ -199,6 +199,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   reference checks, re-validates a `refersTo: deletableDocument`
 ///   reference on every replace (a dead one must be repointed or cleared),
 ///   and lets an `immutable` one be cleared once its target is deleted.
+///   Document create structure validation 1 and replace structure
+///   validation 0 (extended in place) refuse a `distinctFrom` identifier
+///   property equal to the value it must differ from
+///   (`DocumentPropertyNotDistinctError`, 10419); transfer and purchase
+///   structure validation 0, extended in place, judge the stored document's
+///   `$ownerId` declarations against the new owner.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
@@ -556,6 +562,203 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
+/// 25. **Typed arrays of scalars in document schemas**: a document property
+///     may be `type: "array"` with an `items` element schema instead of
+///     `byteArray` (meta-schema v3, `parse_typed_array` 0,
+///     `DocumentPropertyType::TypedArray`). An element is an integer, a
+///     number, a string, a boolean, a byte array or an identifier; objects
+///     and arrays of arrays are refused. On the array `minItems` and
+///     `maxItems` count elements, `maxItems` is required (with `minItems`
+///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
+///     (1024), and `uniqueItems` refuses a document repeating an element. An
+///     element's `enum` has members of the element type only (none on a byte
+///     array or identifier element), and an integer element's `minimum` and
+///     `maximum` are integers; the parser reads them so random documents stay
+///     inside them. The array is stored inline, a varint element count followed by the
+///     elements, each encoded exactly as a required scalar property of its
+///     type: an identifier element is 32 raw bytes, an integer element takes
+///     the width its bounds give it, a fixed-size byte array element is raw.
+///     A contract update may not change how an element encodes
+///     (`validate_update` 1). The array cannot be an index property or one
+///     side of a `propertyAgreement`. Its identifier and byte array elements
+///     are conversion paths (`find_identifier_and_binary_paths` 1). A byte array
+///     refuses `items`, and an identifier (a byte array with the identifier
+///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
+///     no byte repeat.
+///
+/// 26. **Distinct identifier properties**: the `distinctFrom` property
+///     keyword (meta-schema v3, `apply_distinct_from` 0, `DistinctFrom` on
+///     `DocumentProperty`) requires an identifier property's value to differ
+///     from the value of a named property of the same document, or from the
+///     document's `$ownerId`; on the `items` of a typed array of identifiers
+///     it binds every element. A pure structure rule: document create
+///     structure validation 1 and replace structure validation 0 call
+///     `validate_distinct_from_properties` (`validate_distinct_from` 0) on the
+///     transition's data and owner id after the schema validation, transfer
+///     and purchase structure validation 0 call it on the stored document and
+///     its new owner (the three generation-0 modules were extended in place:
+///     the call is inert before this version, where no property carries the
+///     keyword), and each refuses an equal pair with
+///     `DocumentPropertyNotDistinctError` (10419); an absent named property
+///     passes. The parser checks the target at contract
+///     registration and update (it must exist, be an identifier and not be
+///     the declaring property), and a changed `distinctFrom` is an
+///     incompatible schema change on update.
+///
+/// 27. **`encryptedFor` on byte array properties**: a byte array property may
+///     declare how its ciphertext was produced, so wallets read the recipe
+///     from the contract instead of a side channel: `recipient` (an identifier
+///     property of the same document type, or `$ownerId`), `recipientKey` and
+///     `senderKey` (integer properties of the same type bounded to u32,
+///     carrying key ids) and `scheme` (`ecdh-secp256k1-aes256-cbc`, the
+///     dashpay contact request scheme: a 16-byte IV followed by AES-256-CBC
+///     with PKCS7 padding under the ECDH shared key). Meta-schema v3 admits it
+///     on byte arrays that are not identifiers, `apply_encrypted_for` 0 parses
+///     it onto `DocumentProperty::encrypted_for` and checks the three named
+///     properties exist with the right types at registration. Document create
+///     structure validation 1 and replace structure validation 0 (extended in
+///     place, inert before this version) call
+///     `validate_encrypted_property_shapes` (`validate_encrypted_property_shapes`
+///     0, `None` before this version) to check the ciphertext shape of every declared property a transition supplies,
+///     at least the IV plus one block and a multiple of the block, and refuse
+///     it with `InvalidEncryptedPropertyShapeError` (10420). Nothing else about
+///     the ciphertext is verifiable on chain. A changed `encryptedFor` is an
+///     incompatible schema change on update.
+///
+/// 28. **Property and document type names are word characters only**:
+///     meta-schema v3 refuses `-` in a property name (top-level or nested,
+///     and in the property paths of `refersTo` declarations) and generation
+///     3 of the document type parser refuses it in a document type name,
+///     under full validation. Every earlier meta-schema and generation
+///     admitted `-`, which the dotted and `list[]` path syntax was never
+///     written for; a census of every contract create and update on mainnet
+///     and testnet (2026-09-23) found no name carrying one, so nothing stored
+///     is affected. Stored contracts are read as they are.
+///
+/// 29. **Identity key references may require a purpose and a document type
+///     bound**: an `identityPublicKey` `refersTo` declaration may carry
+///     `keyRequirements`, what the referenced key must be beyond existing and
+///     not being disabled, with `purpose` (the key's purpose, by its wire name,
+///     any but `system`) and `boundTo` (the key's contract bounds must be
+///     exactly the declaring contract and the named document type of it) as
+///     the requirements (meta-schema v3, `apply_property_reference` 0,
+///     `IdentityKeyReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::IdentityPublicKey`).
+///     `create_document_types_from_document_schemas` 1, edited in place (the
+///     check is inert before this version, where no parsed reference carries
+///     requirements), refuses a contract whose `boundTo` names a document type
+///     it does not have or one no key of the required purpose can be bound
+///     to, so the check never needs a second contract fetch and a declared
+///     requirement can be met. The document reference validation
+///     checks the requirements against the key it fetched for the existence
+///     check, so they cost no further read, and refuses the first unmet one
+///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed
+///     `keyRequirements` is an incompatible schema change on update.
+///
+/// 30. **Key references on the key id property**: an `identityPublicKey`
+///     `refersTo` declaration may sit on the key id property itself, an
+///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
+///     `u32`), naming through `identityProperty` whose key the value is:
+///     `"$ownerId"` (the writer), `"$creatorId"` (the document's creator,
+///     only on a document type that records creator ids) or the path of an
+///     identifier property of the same document type (which must exist, be
+///     an identifier and not carry an `identityPublicKey` reference of its
+///     own); the last two are checked at contract registration (40125). The
+///     declaration takes no `keyIdProperty`; the identifier form is unchanged
+///     and every other `refersTo` form stays identifier-only (meta-schema v3,
+///     `apply_property_reference` 0, `DocumentPropertyType::KeyIdWithReference`
+///     over `KeyReferenceIdentityProperty`). At document create and replace the
+///     reference validation reads the key id from the property, resolves the
+///     identity (the writer, the creator the action carries, or the named
+///     property's value, a key id set while it is unset being refused with
+///     40125) and fetches that key, so the key fetch is the only read; a key
+///     that does not exist refuses the write, paid, with
+///     `ReferencedIdentityKeyNotFoundError` (40123) and a disabled one with
+///     `ReferencedIdentityKeyDisabledError` (40124), as for the identifier
+///     form. A replace re-validates `$ownerId` touched or not, as the
+///     `$ownerId` writer gate is, since the writer may not be the one who
+///     wrote the key id; `$creatorId` when the key id changed; a property
+///     path when the key id or that property changed (a transfer itself is
+///     never checked: the reference governs writing, not holding). A
+///     `keyIdProperty` may not name a property carrying this form (40125 at
+///     registration). `keyRequirements` (item 29) sit on this form exactly
+///     as on the identifier form, checked by the same key check and by the
+///     same `boundTo` registration rule. Adding, removing or changing it is
+///     an incompatible schema change on update, like the rest of a
+///     `refersTo`.
+///
+/// 31. **`refersTo` on the elements of a typed array**: an identifier element
+///     of a typed array may carry a `refersTo` declaration on its `items`,
+///     which every element then declares (meta-schema v3 `documentArrayItem`
+///     reuses the property `refersTo` definition by `$ref` and refuses
+///     `identityPublicKey` in both forms, which pair one key id with the
+///     reference).
+///     `parse_typed_array` 0 folds it into the element through the same
+///     `apply_property_reference` 0 a scalar identifier goes through, so the
+///     element is `IdentifierWithReference(target)` inside `item_type`, and
+///     `DocumentPropertyType::reference` reports either kind. Contract
+///     registration (`data_contract_reference_validation` 0) checks the
+///     declaration as a single one, and document create state validation 2
+///     and replace state validation 1 (`document_reference_validation` 0,
+///     extended in place: both are only reached from protocol version 14,
+///     where the element arm is the only new path) check every element as a
+///     single reference, refusing the first that fails with that
+///     reference's error (40120, 40127, 40135 and the rest), its path the
+///     element's list path (`reasons[2]`). A replace re-validates the
+///     elements of a changed list the stored list did not hold (the replace
+///     action carries `stored_changed_values`), and all of them when a
+///     property bound by a `propertyAgreement` changed, for a `$ownerId`
+///     agreement or for `deletableDocument` elements. A repeated element and
+///     a foreign contract holding the referenced document type are fetched
+///     once per list. Registration caps the references one document
+///     can carry at `SYSTEM_LIMITS_V4.max_references_per_document` (256; one
+///     per property declaring a reference, key id references of item 30
+///     included, `maxItems` per typed array of referencing elements;
+///     backfilled into the earlier tables), and
+///     refuses an `immutable` property holding a `deletableDocument`
+///     reference no replace could clear (a typed array of them, or a single
+///     one inside an immutable object), which could never be replaced once
+///     a target is deleted. A changed
+///     element `refersTo` is an incompatible schema change on update.
+///
+/// 32. **Document references resolved through a unique index**: a
+///     `permanentDocument` `refersTo`, on an identifier property or on the
+///     elements of a typed array (item 31), may carry a `lookup`
+///     (meta-schema v3, `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, so an id
+///     reference keeps its variant and its encoding): the value is then
+///     not the referenced document's id, and the referenced document is the
+///     one the named unique index of the referenced document type finds for
+///     a key assembled from the referring document. `keys` maps every index
+///     property to a property path of the referring type, `$ownerId` or `.`
+///     (the value, or the element, exactly once). A `deletableDocument`
+///     reference takes none: a key into a deletable type could find a new
+///     document once the one it found is deleted. Generation 3 of the parser
+///     checks on every parse that each property a key reads is a stored,
+///     required, single value of the referring type;
+///     `create_document_types_from_document_schemas` 1, edited in place like
+///     for item 29 (inert before this version, where no parsed reference
+///     carries a lookup), checks a lookup into a document type of the same
+///     contract under full validation (the index exists, is unique, carries
+///     no `timeRange` and is not on an indexOnly type, the keys cover it
+///     exactly, every source shares its index property's value kind, and the
+///     key cannot move off the document it found: its schema properties are
+///     immutable, and `$ownerId` is only a part on a type that is neither
+///     transferable nor tradeable), and the contract reference validation
+///     checks one into another contract, refusing it with
+///     `ReferencedDocumentLookupInvalidError` (40137). The document
+///     reference validation (generation 0, reached only from this version)
+///     queries the index for each value's key, billed as a document fetch,
+///     refuses a write with no match with `ReferencedEntityNotFoundError`
+///     (40120, an element named by its list path), checks a
+///     `propertyAgreement` against the document found, and on replace
+///     re-validates when a property the key reads changed. A key may read
+///     `$ownerId` only on a referring type that is neither transferable nor
+///     tradeable, checked on every parse. A changed `lookup` is an
+///     incompatible schema change on update. Chained queries and composite
+///     by-id joins refuse a lookup reference as a join property, and
+///     preallocated indexes are never bound through one.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -619,11 +822,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the yes/no poll kind
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; closes and cleans up yes/no polls
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; masternode vote state + transform 1 admit votes on yes/no polls
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
