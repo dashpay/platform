@@ -301,6 +301,22 @@ mod tests {
         let mut address_list = client.address_list().clone();
         assert!(address_list.add(mock_address()));
         assert_eq!(client.get_live_addresses(), vec![mock_address()]);
+
+        // Nothing listens there, so the request fails, but on the added address.
+        let err = client
+            .execute(
+                dapi_grpc::platform::v0::GetIdentityRequest::default(),
+                RequestSettings {
+                    retries: Some(0),
+                    ban_failed_address: Some(false),
+                    connect_timeout: Some(Duration::from_secs(1)),
+                    timeout: Some(Duration::from_secs(1)),
+                    ..RequestSettings::default()
+                },
+            )
+            .await
+            .expect_err("nothing serves the added address");
+        assert_eq!(err.address, Some(mock_address()));
     }
 
     #[test]
