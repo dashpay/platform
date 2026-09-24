@@ -72,6 +72,26 @@ impl ContractUserModerationTransitionAction {
         }
     }
 
+    /// The signer's moderation action count on the elected contract after this action, when
+    /// the action counts for a member of the seated team
+    pub fn moderation_action_count(&self) -> Option<u32> {
+        match self {
+            ContractUserModerationTransitionAction::V0(action) => action.moderation_action_count,
+        }
+    }
+
+    /// The same action, counted for its signer, a member of the elected contract's seated team:
+    /// `count` is the signer's moderation action count since the moderators pot was last
+    /// settled, this action included
+    pub fn with_moderation_action_count(self, count: u32) -> Self {
+        match self {
+            ContractUserModerationTransitionAction::V0(mut action) => {
+                action.moderation_action_count = Some(count);
+                ContractUserModerationTransitionAction::V0(action)
+            }
+        }
+    }
+
     /// fee multiplier
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {

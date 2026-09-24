@@ -36,6 +36,8 @@
 //! [`SubmittedCharter`] and [`ElectedCharter`] read the documents' properties. Nothing here
 //! reads state.
 
+mod reward_split;
+
 use crate::balances::credits::Credits;
 use crate::consensus::basic::moderation_charter::ModerationCharterMalformedFieldError;
 use crate::data_contract::document_type::contested_index_identifier;
@@ -130,15 +132,18 @@ pub mod property_names {
     pub const MEMBER_ID: &str = "memberId";
 }
 
-/// How a team splits every claim of the moderators pot: three percentages summing to 100.
+/// How a team splits every settle of the moderators pot, a claim or a change of the team: three
+/// percentages summing to 100.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModerationCharterRewardSplit {
     /// The share of the leader.
     pub leader: u8,
-    /// The share split equally between the members other than the leader.
+    /// The share split equally between the members other than the leader; the leader's when
+    /// it has no member.
     pub equal: u8,
-    /// The share split between the members by the moderation actions each signed since the
-    /// last claim.
+    /// The share split between the team, the leader included, by the moderation actions each
+    /// signed since the pot was last settled, or equally when nobody acted. See
+    /// [`ModerationCharterRewardSplit::payouts`].
     pub actions: u8,
 }
 

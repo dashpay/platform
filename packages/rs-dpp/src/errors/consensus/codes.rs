@@ -493,6 +493,7 @@ impl ErrorWithCode for StateError {
             Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
             Self::ContractModerationAbilityNotGrantedError(_) => 41201,
             Self::ModerationCharterAddedModeratorLimitReachedError(_) => 41202,
+            Self::ModerationReasonNotListedError(_) => 41203,
         }
     }
 }

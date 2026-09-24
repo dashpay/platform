@@ -1375,8 +1375,12 @@ impl Drive {
                         contract_id
                     )),
                 ))?;
+                // The prover's identities: the recipients the contract names when the claimant
+                // is one, the claimant alone otherwise (a seated moderation team's member). A
+                // contract fee claim exists from protocol version 14 only, so no earlier proof
+                // changes.
                 let recipients: Vec<[u8; 32]> = pot
-                    .recipients(&contract)
+                    .claim_proof_identities(&contract, transition.owner_id())
                     .into_iter()
                     .map(|recipient| recipient.to_buffer())
                     .collect();

@@ -24,6 +24,7 @@ mod document_restore_window_elapsed_error;
 mod document_type_not_deletable_by_moderators_error;
 mod identity_not_contract_moderator_error;
 mod moderation_charter_added_moderator_limit_reached_error;
+mod moderation_reason_not_listed_error;
 
 pub use contract_document_already_restored_error::*;
 pub use contract_document_removal_not_found_error::*;
@@ -51,3 +52,4 @@ pub use document_restore_window_elapsed_error::*;
 pub use document_type_not_deletable_by_moderators_error::*;
 pub use identity_not_contract_moderator_error::*;
 pub use moderation_charter_added_moderator_limit_reached_error::*;
+pub use moderation_reason_not_listed_error::*;

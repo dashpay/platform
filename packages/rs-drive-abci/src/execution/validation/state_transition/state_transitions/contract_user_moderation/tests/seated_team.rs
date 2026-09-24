@@ -32,8 +32,8 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::moderation_charter::{
     moderators_share_of, ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
     ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
-    JOIN_REQUEST_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
-    SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+    JOIN_REQUEST_DOCUMENT_TYPE_NAME, REASON_DOCUMENT_TYPE_NAME,
+    REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -53,6 +53,9 @@ use drive::util::batch::GroveDbOpBatch;
 use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use std::sync::Arc;
+
+mod pot;
+mod reasons;
 
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
@@ -139,6 +142,129 @@ fn discounted() -> Credits {
     moderators_share_of(MODERATORS_PART, MODERATORS_SHARE)
 }
 
+/// The `reason` document the team's proposal lists, which every action of the team in these
+/// tests names.
+const LISTED_REASON: Identifier = Identifier::new([0xE1; 32]);
+/// A `reason` document the team's proposal does not list.
+const UNLISTED_REASON: Identifier = Identifier::new([0xE2; 32]);
+
+/// `action` naming the reason document `reason_document_id`, when it carries a reason
+fn citing(
+    action: ContractUserModerationAction,
+    reason_document_id: Identifier,
+) -> ContractUserModerationAction {
+    match action {
+        ContractUserModerationAction::Ban {
+            identity_id,
+            reason,
+        } => ContractUserModerationAction::Ban {
+            identity_id,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        ContractUserModerationAction::Suspend {
+            identity_id,
+            until,
+            reason,
+        } => ContractUserModerationAction::Suspend {
+            identity_id,
+            until,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        ContractUserModerationAction::Warn {
+            identity_id,
+            reason,
+        } => ContractUserModerationAction::Warn {
+            identity_id,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        ContractUserModerationAction::DeleteDocument {
+            document_type_name,
+            document_id,
+            reason,
+        } => ContractUserModerationAction::DeleteDocument {
+            document_type_name,
+            document_id,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        reversal => reversal,
+    }
+}
+
+// The team's actions name the listed reason: the helpers of the parent module, citing it.
+fn ban_action(identity_id: Identifier) -> ContractUserModerationAction {
+    citing(super::ban_action(identity_id), LISTED_REASON)
+}
+
+fn suspend_action(identity_id: Identifier, until: TimestampMillis) -> ContractUserModerationAction {
+    citing(super::suspend_action(identity_id, until), LISTED_REASON)
+}
+
+fn warn_action(identity_id: Identifier, text: &str) -> ContractUserModerationAction {
+    citing(super::warn_action(identity_id, text), LISTED_REASON)
+}
+
+fn delete_action(
+    document_type_name: &str,
+    document_id: Identifier,
+) -> ContractUserModerationAction {
+    citing(
+        super::delete_action(document_type_name, document_id),
+        LISTED_REASON,
+    )
+}
+
+/// The banlist entry `ban_action` leaves
+fn banned() -> Option<ContractBan> {
+    Some(ContractBan {
+        reason: ban_reason().with_reason_document(LISTED_REASON),
+    })
+}
+
+/// A `reason` document of the charter contract at `reason_id`, owned by `owner`, written to
+/// Drive as a reason create leaves it
+fn write_reason(
+    setup: &Setup,
+    charters: &DataContract,
+    reason_id: Identifier,
+    owner: &Actor,
+    code: &str,
+) {
+    let platform_version = PlatformVersion::latest();
+    let document_type = charters
+        .document_type_for_name(REASON_DOCUMENT_TYPE_NAME)
+        .expect("expected the reason type");
+    let document = Document::V0(DocumentV0 {
+        id: reason_id,
+        owner_id: owner.id(),
+        properties: BTreeMap::from([
+            ("code".to_string(), Value::Text(code.to_string())),
+            ("label".to_string(), Value::Text(format!("Reason {code}"))),
+        ]),
+        created_at: Some(BLOCK_TIME_MS),
+        ..Default::default()
+    });
+    setup
+        .platform
+        .drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, None)),
+                    owner_id: Some(owner.id().to_buffer()),
+                },
+                contract: charters,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("expected to write the reason");
+}
+
 /// A contract with an elected declaration and a team on its way: the leader filed a proposal
 /// and put it to the vote with one member, and three more identities asked to join it. The
 /// contest is open until `award` ends it.
@@ -158,7 +284,26 @@ impl Team {
     }
 
     async fn with_abilities(interim: InterimModerators, abilities: &[ModerationAbility]) -> Self {
-        Self::build(interim, abilities, false, Some(CHALLENGE_COOL_DOWN)).await
+        Self::build(
+            interim,
+            abilities,
+            false,
+            Some(CHALLENGE_COOL_DOWN),
+            vec![LISTED_REASON],
+        )
+        .await
+    }
+
+    /// A team whose proposal lists `reasons`
+    async fn with_reasons(interim: InterimModerators, reasons: Vec<Identifier>) -> Self {
+        Self::build(
+            interim,
+            &ALL_ABILITIES,
+            false,
+            Some(CHALLENGE_COOL_DOWN),
+            reasons,
+        )
+        .await
     }
 
     async fn build(
@@ -166,6 +311,7 @@ impl Team {
         abilities: &[ModerationAbility],
         owner_protected: bool,
         challenge_cool_down: Option<u32>,
+        reasons: Vec<Identifier>,
     ) -> Self {
         let platform_version = PlatformVersion::latest();
         let mut setup = Setup::new_at_with(
@@ -208,10 +354,14 @@ impl Team {
             .load_moderation_charters(platform_version)
             .expect("expected the moderation charters contract");
 
+        // Two grounds anyone may cite; the proposal lists those it was given.
+        for (reason_id, code) in [(LISTED_REASON, "SPM"), (UNLISTED_REASON, "OFF")] {
+            write_reason(&setup, &charters, reason_id, &joiners[2], code);
+        }
         let proposal = SubmittedCharter {
             target_contract_id: setup.contract.id(),
             description: "We keep the posts civil".to_string(),
-            reasons: vec![],
+            reasons,
             moderators_share: Some(MODERATORS_SHARE),
             reward_split: ModerationCharterRewardSplit {
                 leader: 10,
@@ -771,6 +921,7 @@ async fn should_keep_the_seat_of_a_seated_team_whether_or_not_it_is_contestable(
             &ALL_ABILITIES,
             false,
             challenge_cool_down,
+            vec![LISTED_REASON],
         )
         .await;
         team.award();
@@ -1269,6 +1420,7 @@ async fn should_protect_the_owner_from_a_seated_team_when_the_declaration_says_s
         &ALL_ABILITIES,
         true,
         Some(CHALLENGE_COOL_DOWN),
+        vec![LISTED_REASON],
     )
     .await;
     let setup = &team.setup;

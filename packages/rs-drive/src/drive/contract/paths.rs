@@ -219,6 +219,21 @@ pub const CONTRACT_WARNINGS_KEY: u8 = 224;
 /// it leaves the banlist on top.
 pub const CONTRACT_DOCUMENT_REMOVALS_KEY: u8 = 16;
 
+/// The key under a contract's other tree (`[64, id, 2]`) of the moderation action counts of a
+/// contract that declares elected moderation (protocol version 14): `identity id -> Item(count,
+/// u32 big-endian)`, one per member of the seated team who signed a counted moderation action
+/// (a ban, a suspension, a warning or a document deletion) since the moderators pot was last
+/// settled. Every settle, a claim or a change of the team, pays the pot out by them and
+/// deletes them. Created with an elected contract, the only kind that has a seated team.
+///
+/// Read by the moderation actions of the team and by a settle, never by a document transition,
+/// so it sorts below `64`: created together with the lists of an elected contract it keeps the
+/// banlist on top when the contract keeps two or three lists, with or without removal records
+/// beside them (the combination of every ability included), where a key above `128` would push
+/// it down in most of those. It costs the banlist a level for a contract keeping the banlist
+/// alone, or the banlist and one other list beside removal records.
+pub const CONTRACT_MODERATION_ACTION_COUNTS_KEY: u8 = 48;
+
 /// `[64, contract id, 2]`: the contract's other tree.
 pub fn contract_other_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [
@@ -271,6 +286,26 @@ pub fn contract_moderation_list_path_vec(
         contract_id.to_vec(),
         vec![CONTRACT_OTHER_KEY],
         contract_moderation_list_key(list).to_vec(),
+    ]
+}
+
+/// `[64, contract id, 2, 48]`: the moderation action counts of an elected contract.
+pub fn contract_moderation_action_counts_path(contract_id: &[u8]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_MODERATION_ACTION_COUNTS_KEY],
+    ]
+}
+
+/// `[64, contract id, 2, 48]`: the moderation action counts of an elected contract.
+pub fn contract_moderation_action_counts_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        vec![CONTRACT_OTHER_KEY],
+        vec![CONTRACT_MODERATION_ACTION_COUNTS_KEY],
     ]
 }
 

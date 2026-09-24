@@ -39,12 +39,24 @@ impl DriveHighLevelOperationConverter for BatchTransitionAction {
             }
             // Protocol version 14: the batch also sweeps the lapsed suspensions the transformer
             // found for its owner, one delete per (contract, identity) after the transitions'
-            // own operations, always the owner's own suspension.
+            // own operations, always the owner's own suspension. And before a change of a
+            // seated moderation team, it settles the team's moderators pot first: the payouts
+            // its state validation settled and the reset of the action counts, operations on
+            // other keys than the change's own.
             1 => {
-                let owner_id = self.owner_id();
-                let lapsed_suspensions = self.lapsed_suspensions().clone();
-                let transitions = self.transitions_owned();
-                let mut operations = transitions
+                let mut action = self;
+                let owner_id = action.owner_id();
+                let lapsed_suspensions = action.lapsed_suspensions().clone();
+                let settlements = action.take_moderators_pot_settlements();
+                let transitions = action.transitions_owned();
+                let mut operations = settlements
+                    .into_iter()
+                    .map(|settlement| settlement.into_drive_operations())
+                    .collect::<Result<Vec<Vec<DriveOperation>>, Error>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let transition_operations = transitions
                     .into_iter()
                     .map(|transition| {
                         transition.into_high_level_batch_drive_operations(
@@ -55,8 +67,8 @@ impl DriveHighLevelOperationConverter for BatchTransitionAction {
                     })
                     .collect::<Result<Vec<Vec<DriveOperation>>, Error>>()?
                     .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>();
+                    .flatten();
+                operations.extend(transition_operations);
                 operations.extend(lapsed_suspensions.into_iter().map(|contract_id| {
                     DriveOperation::ContractModerationOperation(
                         ContractModerationOperationType::RemoveSuspension {

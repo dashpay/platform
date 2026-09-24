@@ -722,7 +722,7 @@ message ContractModerationDocument {
 
 // Why a moderator banned, suspended or warned an identity, or deleted a
 // document. Nothing checks what a moderator writes, and the documents cited
-// are not looked up.
+// are not looked up, except the reason document a seated elected team names.
 message ContractModerationReason {
   optional uint32 code =
       1; // Reserved for the ban codes a contract may declare in a later
@@ -730,6 +730,10 @@ message ContractModerationReason {
   string text = 2; // Free text, at most 1024 bytes of UTF-8, may be empty
   repeated ContractModerationDocument documents =
       3; // The documents the reason is about, at most 16, none twice
+  optional bytes reason_document_id =
+      4; // The 32-byte id of the moderation charters contract's `reason`
+         // document the action is taken on; one the seated team's proposal
+         // lists for a seated elected team's action, unchecked otherwise
 }
 
 // One warning an identity carries on a contract's warning list.

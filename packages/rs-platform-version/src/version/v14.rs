@@ -1086,6 +1086,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     but for the shipped batch `validate_state` v0, which no batch of an
 ///     earlier version reaches through the new hook.
 ///
+/// 41. **A seated team's pot, action counts and reasons**: the leader or an
+///     active member of a seated team claims the moderators pot for the team,
+///     and it is split by the proposal's `rewardSplit`: the leader share to the
+///     leader, the equal share between the other members (the leader's when it
+///     has none), and the action share between the whole team by each one's
+///     count of bans, suspensions, warnings and document deletions since the
+///     last settle, equally when nobody acted. Every part rounds down and the
+///     remainder stays in the pot. The counts are `member id -> u32` items
+///     without storage flags under key `48` of an elected contract's other tree,
+///     created with the contract (`insert_contract_moderation_trees` v0), and
+///     every settle deletes them. An `addedModerator` or `removedModerator`
+///     created or deleted settles the pot first, to the team as it was, by a
+///     hook in the batch's `validate_state` v0 beside the cap on additions: it
+///     ignores the once-per-epoch limit and writes no last claim. The proof of a
+///     claim by a seated team's member, whom the contract does not name as a
+///     recipient, shows the claimant's balance alone. A moderation reason gains
+///     `reasonDocumentId` (tag bit 2 where it is stored), and a seated team's
+///     ban, suspension, warning or deletion must name a `reason` document its
+///     proposal lists (`ModerationReasonNotListedError`, 41203). No table moves
+///     but the four
+///     new Drive method slots, `0` at every version.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
