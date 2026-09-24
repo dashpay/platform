@@ -26,6 +26,11 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // gained the same judgement in place (replace on the transition's data,
 // transfer and purchase on the stored document and its new owner), which is
 // inert before this version, where no property carries the keyword.
+// Document create and replace structure validation also refuse a document that
+// breaks a rule of its type's `propertyConstraints`
+// (DocumentPropertyConstraintViolatedError, 10422): the check runs inside dpp's
+// `DataContract::validate_document_properties` 0, which both call, and is inert
+// before this version through its own dpp gate.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {

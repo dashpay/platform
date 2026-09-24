@@ -1,3 +1,4 @@
+use crate::consensus::basic::document::DocumentPropertyConstraintViolatedError;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
@@ -838,6 +839,28 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 {
                     return SimpleConsensusValidationResult::new_with_error(error.into());
                 }
+            }
+        }
+        SimpleConsensusValidationResult::default()
+    }
+
+    /// `validate_property_constraints` version 0: every rule of the document type's
+    /// `propertyConstraints` is evaluated against `data` in name order, and the first one
+    /// broken is reported. A type without rules costs nothing.
+    fn validate_property_constraints_v0(&self, data: &Value) -> SimpleConsensusValidationResult
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (name, constraint) in self.property_constraints() {
+            if let Some(violation) = constraint.violation(data) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                );
             }
         }
         SimpleConsensusValidationResult::default()

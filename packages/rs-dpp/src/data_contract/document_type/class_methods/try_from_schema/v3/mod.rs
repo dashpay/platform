@@ -2,9 +2,10 @@
 //!
 //! Generation 3 is generation 2 plus the ranked index keywords
 //! (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
-//! indexOnly grammar, the doctype-level `immutable` property list and the
+//! indexOnly grammar, the doctype-level `immutable` property list, the
 //! doctype-level `ownerRefersTo` and `creatorRefersTo` references on the
-//! writer and the creator.
+//! writer and the creator, and the doctype-level `propertyConstraints` rules
+//! over the document's integer properties.
 //!
 //! It exists as its own generation — rather than as a version gate inside the
 //! shipped ones — because that is what keeps a historical block from ever
@@ -53,8 +54,8 @@ use crate::consensus::ConsensusError;
 
 use super::common;
 use super::{
-    parse_doctype_reference, validate_encrypted_for_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources,
+    apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
+    validate_list_element_sources, validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -477,6 +478,11 @@ fn try_from_schema_generation_3(
     // The same for the properties a `refersTo` lookup reads to assemble its key,
     // the lookup of the `ownerRefersTo` declaration included.
     validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The `propertyConstraints` rules are parsed onto the type here, where the
+    // integer properties they read and their transient flags are known; their
+    // limits are checked under full validation only.
+    apply_property_constraints(&mut v2, name, full_validation, platform_version)
         .map_err(consensus_or_protocol_data_contract_error)?;
 
     // After `apply_index_only`: the flag is refused on an indexOnly type, so it
@@ -910,6 +916,8 @@ mod moderators_delete_tests;
 mod name_rules_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_expression_tests;
 #[cfg(all(test, feature = "validation"))]

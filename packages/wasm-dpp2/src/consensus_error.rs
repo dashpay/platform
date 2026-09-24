@@ -236,6 +236,41 @@ impl DocumentMaxBytesErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by the `propertyConstraints` check, which
+/// runs from protocol version 14 onward wherever a document is validated, on
+/// every create and replace included.
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentPropertyConstraintErrorCode.DocumentPropertyConstraintViolated) {
+///     // the document breaks one of its type's rules; the message names it
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentPropertyConstraintErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentPropertyConstraintErrorCodeWasm {
+    /// The written document breaks a rule of its document type's
+    /// `propertyConstraints`: the comparison does not hold, or evaluating it
+    /// overflowed, divided by zero, raised to a negative power or read a value
+    /// that is not an integer.
+    DocumentPropertyConstraintViolated = 10422,
+}
+
+impl DocumentPropertyConstraintErrorCodeWasm {
+    /// The propertyConstraints error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10422 => Some(Self::DocumentPropertyConstraintViolated),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -293,6 +328,15 @@ impl ConsensusErrorWasm {
     #[wasm_bindgen(getter = "documentMaxBytesErrorCode")]
     pub fn document_max_bytes_error_code(&self) -> Option<DocumentMaxBytesErrorCodeWasm> {
         DocumentMaxBytesErrorCodeWasm::from_code(self.0.code())
+    }
+
+    /// The propertyConstraints error this is, or `undefined` when it is not
+    /// code 10422.
+    #[wasm_bindgen(getter = "documentPropertyConstraintErrorCode")]
+    pub fn document_property_constraint_error_code(
+        &self,
+    ) -> Option<DocumentPropertyConstraintErrorCodeWasm> {
+        DocumentPropertyConstraintErrorCodeWasm::from_code(self.0.code())
     }
 }
 
@@ -436,6 +480,43 @@ mod tests {
         );
         // A neighbouring code is not claimed.
         assert_eq!(DocumentMaxBytesErrorCodeWasm::from_code(10420), None);
+    }
+
+    /// Built from the real DPP error rather than a code literal, like the
+    /// encryption test above.
+    #[test]
+    fn should_mirror_the_dpp_property_constraint_error_code() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::{
+            DocumentPropertyConstraintViolatedError, PropertyConstraintViolation,
+        };
+
+        let error: ConsensusError = BasicError::DocumentPropertyConstraintViolatedError(
+            DocumentPropertyConstraintViolatedError::new(
+                "order".to_string(),
+                "depositCoversOrder".to_string(),
+                PropertyConstraintViolation::NotMet,
+            ),
+        )
+        .into();
+
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::from_code(error.code()),
+            Some(DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated)
+        );
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_property_constraint_error_code(),
+            Some(DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::from_code(10420),
+            None
+        );
     }
 
     /// The six reference-validation errors, paired with the JS enum variant

@@ -973,10 +973,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
 ///     (`moderation_charters: 1`), and
 ///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
-///     on the pure-data rule the seating path will run on a proposal: its
-///     reward split sums to 100 (basic errors 11000 and 11001). Its description
-///     fits 4096 bytes through the schema's own `maxBytes` (item 38), which
-///     every document validation checks. Genesis registers it on chains born at this
+///     on the step the seating path will run on a proposal, which reads it
+///     (basic error 11000) and holds no rule of its own: the reward split sums
+///     to 100 through the contract's `propertyConstraints` rule (item 39), so
+///     11001 is no longer produced, and the description fits 4096 bytes through
+///     the schema's own `maxBytes` (item 38); every document validation checks
+///     both. Genesis registers it on chains born at this
 ///     version (`create_genesis_state` v1, behind the app-connect branch),
 ///     `transition_to_version_14` inserts it on upgrade, and the Drive system
 ///     contract cache serves it from this version
@@ -1002,6 +1004,35 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract (item 37) declares it on the proposal's description, replacing
 ///     the charter-specific description check, its error 11002 and
 ///     `SystemLimits::max_moderation_charter_description_length`.
+///
+/// 39. **Property constraints**: the doctype-level `propertyConstraints`
+///     keyword (meta-schema v3, `parse_property_constraints` 0) names rules a
+///     document's integer properties must meet, each a comparison (`equal`,
+///     `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
+///     `greaterThanOrEqual`) of two integer expressions built from integer
+///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
+///     `modulo` and `power`. A property the document leaves out counts as 0,
+///     or as the value of an `ifAbsent` operand naming it. Arithmetic is exact
+///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
+///     negative), and an overflow, a zero divisor, a negative exponent or a
+///     value that is not an integer refuses the document rather than wrapping.
+///     The parser checks that every path names an integer property that is
+///     neither transient nor inside a transient object, and that no operand
+///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
+///     parse, and under full validation the limits
+///     `SystemLimits::max_property_constraints` (16 rules) and
+///     `max_property_constraint_nodes` (32 per rule).
+///     `DataContract::validate_document_properties` 0 (extended in place, inert
+///     before this version) calls `validate_property_constraints`
+///     (`validate_property_constraints` 0) after the schema validation, so
+///     document create and replace, and any client validating a document,
+///     refuse a broken rule with `DocumentPropertyConstraintViolatedError`
+///     (10422), naming the rule and why. The rules read no state and change
+///     nothing stored. They are fixed when the document type is created: a
+///     changed `propertyConstraints` is an incompatible schema change on
+///     update. The moderation charters contract declares its first one: a
+///     `submittedCharter`'s `rewardSplit` members add up to 100, which
+///     `validate_submitted_charter` therefore no longer checks (11001).
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

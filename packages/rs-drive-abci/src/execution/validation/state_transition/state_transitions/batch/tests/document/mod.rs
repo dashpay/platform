@@ -16,6 +16,7 @@ mod max_bytes;
 mod nft;
 mod owner_balance_proof;
 mod owner_reference;
+mod property_constraints;
 mod ranked_group_drain;
 mod reference_expression;
 mod reference_test_setup;

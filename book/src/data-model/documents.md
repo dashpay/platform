@@ -679,6 +679,43 @@ The parser (generation 3, meta-schema v3, `apply_max_bytes`) folds the bound int
 
 The check runs where the JSON schema validation of a document's properties runs, `DataContract::validate_document_properties`, right after it: on every document create and replace, and in every client that validates a document before sending it. A longer string is refused with `DocumentPropertyMaxBytesExceededError` (basic code 10421), which names the property (`tags[2]` for an element) and both lengths. The document validation (version 0, extended in place) is inert before protocol version 14, where no string carries a byte cap and the `validate_max_bytes` method slot is `None`. In Rust the check is `DocumentTypeBasicMethods::validate_max_bytes_properties()`; in JavaScript the error reaches an app as `DocumentMaxBytesErrorCode.MaxBytesExceeded`.
 
+## Property Constraints (`propertyConstraints`)
+
+Protocol version 14 adds the doctype-level `propertyConstraints` keyword: named rules the integer properties of every created or replaced document must meet, where JSON Schema can only bound one property at a time. Each rule compares two integer expressions.
+
+```json
+"propertyConstraints": {
+  "depositCoversOrder": {
+    "lessThanOrEqual": [
+      { "multiply": [{ "add": ["price", "fee"] }, "quantity"] },
+      "deposit"
+    ]
+  },
+  "wholeLots": { "equal": [{ "modulo": ["quantity", 10] }, 0] },
+  "minimumOrder": {
+    "greaterThanOrEqual": [{ "multiply": ["price", { "ifAbsent": ["quantity", 1] }] }, 100]
+  }
+}
+```
+
+The first rule reads `((price + fee) * quantity) <= deposit`. A rule's name is 1 to 64 letters, digits or underscores, and the rule is an object with one key, its comparison: `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` or `greaterThanOrEqual`, listing the left and the right expression. An expression is one of:
+
+- an integer value (`100`; a float with no fractional part, `100.0`, reads as that integer, as the meta-schema's `integer` type admits it);
+- a string, the dotted path of an integer property of the document type (`"price"`, `"meta.total"`), whose value it takes, 0 when the document leaves the property out;
+- `{ "ifAbsent": [path, value] }`, the property's value, or `value` when the document leaves it out;
+- `{ "add": [...] }` or `{ "multiply": [...] }` over two or more operands;
+- `{ "subtract": [a, b] }`, `{ "divide": [a, b] }`, `{ "modulo": [a, b] }` or `{ "power": [a, b] }`.
+
+A JSON number is always a value and a string always a path, so a property named `100` is not confused with the number, and the rule is a tree the meta-schema can check rather than a string with precedence rules to parse. Consensus holds nothing but this tree; an SDK may offer an infix spelling that compiles to it.
+
+The arithmetic is exact over `i128`. Operands are evaluated left to right, and every intermediate result must fit: an overflow, a divisor of 0, a negative exponent or a property value that is not an integer (a float with no fractional part passes the schema's `integer` type) breaks the rule instead of wrapping or truncating. `divide` and `modulo` are Euclidean, so the remainder is never negative and the quotient is the one that goes with it (`-7` by `2` is `-4` remainder `1`); for operands that are not negative this is ordinary integer division. `0` to the power `0` is `1`. There are no floats: a `number` property cannot be read, which keeps every node's result bit-identical.
+
+The parser (generation 3, meta-schema v3) checks the keyword on every parse, stored contracts included: the shape, that every path names an integer property of the type (a nested one by its dotted path) that is neither `transient` nor inside a transient object (a transient value is never stored, so a stored document could not be held to the rule), that every rule reads at least one property, that no literal divisor is 0 and no literal exponent negative, and that no operand nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), a constant that keeps a parse without full validation from recursing without bound and that no registrable rule comes near. Under full validation, when a contract registers or updates, it also holds the limits: at most `SystemLimits::max_property_constraints` rules per type (16) and `max_property_constraint_nodes` nodes per rule (32), counting the comparison, every operator and every operand. The rules are fixed when the document type is created: adding, removing or changing one is an incompatible schema change (`IncompatibleDocumentTypeSchemaError`, 10246), since stored documents were judged against the rules as they were.
+
+Enforcement lives in `DataContract::validate_document_properties` (generation 0, extended in place: the call is inert before protocol version 14, where `validate_property_constraints` is `None`), after the schema validation. Document create and replace structure validation call it, so consensus applies the rules, and so does every client that validates a document before sending it. The rules are checked in name order against the document's properties, which for a replace is the whole document, and the first one broken fails with `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the document type, the rule and why: the comparison does not hold, or evaluating it overflowed, divided by zero, raised to a negative power or read a value that is not an integer. The check reads no state and changes nothing stored, so it adds no fee; the limits bound its cost. Transfers, purchases and price updates change no property and are not judged.
+
+In Rust the rules are `DocumentTypeV2Getters::property_constraints` (a map from name to `PropertyConstraint`, empty on types that predate the keyword), each rule's `violation` evaluates it against a document's data, and the document check is `DocumentTypeV0Methods::validate_property_constraints`.
+
 ## Rules and Guidelines
 
 **Do:**
