@@ -133,8 +133,16 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
 
     /// This means we should transform into the action before validation of the advanced structure,
     /// and that we must even do this on check_tx
+    ///
+    /// An identity create from addresses is checked here so that one whose key proofs of
+    /// possession fail never enters the mempool: the address witnesses do not sign those proofs,
+    /// so their owners should not be charged for them. Admission is not consensus, so every
+    /// protocol version gets this.
     fn requires_advanced_structure_validation_with_state_on_check_tx(&self) -> bool {
-        matches!(self, StateTransition::Batch(_))
+        matches!(
+            self,
+            StateTransition::Batch(_) | StateTransition::IdentityCreateFromAddresses(_)
+        )
     }
 }
 
@@ -262,13 +270,20 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_return_true_only_for_batch() {
+        fn should_return_true_only_for_batch_and_identity_create_from_addresses() {
             let batch = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
             assert!(batch.requires_advanced_structure_validation_with_state_on_check_tx());
+            let identity_create_from_addresses = StateTransition::IdentityCreateFromAddresses(
+                IdentityCreateFromAddressesTransition::V0(
+                    IdentityCreateFromAddressesTransitionV0::default(),
+                ),
+            );
+            assert!(identity_create_from_addresses
+                .requires_advanced_structure_validation_with_state_on_check_tx());
         }
 
         #[test]
-        fn should_return_false_for_non_batch_transitions() {
+        fn should_return_false_for_other_transitions() {
             let transitions: Vec<(&str, StateTransition)> = vec![
                 (
                     "IdentityCreate",

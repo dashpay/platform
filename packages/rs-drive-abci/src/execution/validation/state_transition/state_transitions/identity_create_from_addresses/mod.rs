@@ -33,6 +33,7 @@ use drive::state_transition_action::identity::identity_create_from_addresses::Id
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use drive::state_transition_action::StateTransitionAction;
 use crate::execution::validation::state_transition::identity_create_from_addresses::advanced_structure::v0::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0;
+use crate::execution::validation::state_transition::identity_create_from_addresses::advanced_structure::v1::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV1;
 
 /// The action of an identity create from addresses that failed after its inputs were checked:
 /// the transition only bumps its input nonces, its inputs keep their whole balances, and the
@@ -160,16 +161,22 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
                 execution_context,
                 platform_version,
             ),
+            Some(1) => self.validate_advanced_structure_v1(
+                action,
+                signable_bytes,
+                execution_context,
+                platform_version,
+            ),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create from addresses transition: validate_advanced_structure_from_state"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "identity create from addresses transition: validate_advanced_structure_from_state"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
             })),
         }
     }

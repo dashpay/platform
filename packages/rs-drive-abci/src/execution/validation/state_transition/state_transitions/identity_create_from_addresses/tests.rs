@@ -8205,10 +8205,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::SignatureError(SignatureError::BasicECDSAError(_)),
-                    ..
-                }],
+                // From protocol version 14 a key whose proof of possession fails is refused unpaid
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                )],
                 "Expected BasicECDSAError, got {:?}",
                 processing_result.execution_results()
             );
@@ -8318,10 +8318,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::SignatureError(SignatureError::BasicBLSError(_)),
-                    ..
-                }],
+                // From protocol version 14 a key whose proof of possession fails is refused unpaid
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(SignatureError::BasicBLSError(_))
+                )],
                 "Expected BasicBLSError, got {:?}",
                 processing_result.execution_results()
             );
@@ -11954,6 +11954,7 @@ mod tests {
             address: PlatformAddress,
             output: Option<(PlatformAddress, Credits)>,
             fee_strategy: AddressFundsFeeStrategy,
+            user_fee_increase: UserFeeIncrease,
             rng: &mut StdRng,
             platform_version: &PlatformVersion,
         ) -> StateTransition {
@@ -11977,7 +11978,7 @@ mod tests {
                 inputs,
                 output,
                 fee_strategy,
-                user_fee_increase: 0,
+                user_fee_increase,
                 input_witnesses: Vec::new(),
             };
             let signable_bytes = StateTransition::from(transition_v0.clone())
@@ -11990,9 +11991,12 @@ mod tests {
             transition_v0.into()
         }
 
+        /// Before protocol version 14 a key whose proof of possession fails is a paid refusal.
         #[tokio::test]
         async fn should_conserve_credits_when_a_key_signature_is_invalid() {
-            for platform_version in platform_versions() {
+            for platform_version in
+                [PlatformVersion::get(13).expect("expected protocol version 13")]
+            {
                 let mut platform = setup_platform(platform_version);
                 let mut rng = StdRng::seed_from_u64(9100);
                 let mut address_signer = TestAddressSigner::new();
@@ -12047,9 +12051,13 @@ mod tests {
                         INITIAL_BALANCE,
                     );
 
-                    let transition = transition_with_an_invalid_key_signature(
+                    let transition = transition_with_duplicated_key_ids(
                         &address_signer,
                         address,
+                        None,
+                        AddressFundsFeeStrategy::from(vec![
+                            AddressFundsFeeStrategyStep::DeductFromInput(0),
+                        ]),
                         user_fee_increase,
                         &mut rng,
                         platform_version,
@@ -12060,7 +12068,7 @@ mod tests {
                         .drive_abci
                         .validation_and_processing
                         .penalties
-                        .validation_of_added_keys_proof_of_possession_failure;
+                        .validation_of_added_keys_structure_failure;
                     assert_input_paid_the_fee_and_penalty(
                         &platform,
                         address,
@@ -12077,7 +12085,7 @@ mod tests {
                         .drive_abci
                         .validation_and_processing
                         .penalties
-                        .validation_of_added_keys_proof_of_possession_failure,
+                        .validation_of_added_keys_structure_failure,
                     "at protocol version {}",
                     platform_version.protocol_version
                 );
@@ -12105,6 +12113,7 @@ mod tests {
                     AddressFundsFeeStrategy::from(vec![
                         AddressFundsFeeStrategyStep::DeductFromInput(0),
                     ]),
+                    0,
                     &mut rng,
                     platform_version,
                 )
@@ -12233,6 +12242,7 @@ mod tests {
                     AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(
                         0,
                     )]),
+                    0,
                     &mut rng,
                     platform_version,
                 )
@@ -12249,6 +12259,82 @@ mod tests {
                         .validation_and_processing
                         .penalties
                         .validation_of_added_keys_structure_failure,
+                );
+            }
+        }
+
+        /// From protocol version 14 a key whose proof of possession fails is refused unpaid: the
+        /// address witnesses do not sign the key signatures, so the inputs are not charged.
+        #[tokio::test]
+        async fn should_refuse_an_invalid_key_signature_unpaid() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform(platform_version);
+            let mut rng = StdRng::seed_from_u64(9500);
+            let mut address_signer = TestAddressSigner::new();
+            let address = address_signer.add_p2pkh([97u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                address,
+                0,
+                INITIAL_BALANCE,
+            );
+
+            let transition = transition_with_an_invalid_key_signature(
+                &address_signer,
+                address,
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .await;
+
+            assert_matches!(
+                process_block(&platform, transition).as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(_)
+                )]
+            );
+            let (nonce, balance) = platform
+                .drive
+                .fetch_balance_and_nonce(&address, None, platform_version)
+                .expect("should fetch")
+                .expect("address should exist");
+            assert_eq!(nonce, 0, "the refused transition must not bump the nonce");
+            assert_eq!(balance, INITIAL_BALANCE, "the inputs must not be charged");
+        }
+
+        /// check_tx checks the key proofs of possession at every protocol version, so a
+        /// transition whose key signatures fail never enters the mempool.
+        #[tokio::test]
+        async fn should_refuse_an_invalid_key_signature_at_check_tx() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let mut rng = StdRng::seed_from_u64(9600);
+                let mut address_signer = TestAddressSigner::new();
+                let address = address_signer.add_p2pkh([98u8; 32]);
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+
+                let transition = transition_with_an_invalid_key_signature(
+                    &address_signer,
+                    address,
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .await;
+                let raw_transition = transition.serialize_to_bytes().expect("should serialize");
+
+                let result = run_check_tx(&platform, &raw_transition, platform_version);
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::SignatureError(_)],
+                    "at protocol version {}",
+                    platform_version.protocol_version
                 );
             }
         }
