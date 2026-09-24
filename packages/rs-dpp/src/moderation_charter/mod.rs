@@ -40,6 +40,7 @@ mod v0;
 
 use crate::balances::credits::Credits;
 use crate::consensus::basic::moderation_charter::ModerationCharterMalformedFieldError;
+use crate::data_contract::document_type::contested_index_identifier;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::ProtocolError;
 use platform_value::{Identifier, IdentifierBytes32, Value, ValueMap};
@@ -72,6 +73,35 @@ pub const RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME: &str = "resignationRequest";
 
 /// The moderators share a proposal takes when it declares none: the full declared fee.
 pub const FULL_MODERATORS_SHARE: u8 = 100;
+
+/// Whether a contest on the contested index of `document_type_name` in the contract
+/// `contract_id` is a moderation election: an `electedCharter` of the moderation charters
+/// contract, contending for the seat of its target contract. A moderation election runs on the
+/// join and vote windows its target declares and is prefunded with the moderation fund; every
+/// other contest keeps the generic windows and fund.
+pub fn is_charter_election(contract_id: &Identifier, document_type_name: &str) -> bool {
+    *contract_id == MODERATION_CHARTERS_CONTRACT_ID
+        && document_type_name == ELECTED_CHARTER_DOCUMENT_TYPE_NAME
+}
+
+/// The contract a moderation election contends for: the single value of the contested index's
+/// key, `targetContractId`, in any form validation accepts for an identifier (from protocol
+/// version 14 a contest's index values are written as `Value::Identifier` anyway, see
+/// `Index::extract_contested_values`). `None` for every other contest, and for index values
+/// that do not name one contract, a base58 string included.
+pub fn charter_election_target(
+    contract_id: &Identifier,
+    document_type_name: &str,
+    index_values: &[Value],
+) -> Option<Identifier> {
+    if !is_charter_election(contract_id, document_type_name) {
+        return None;
+    }
+    match index_values {
+        [target] => contested_index_identifier(target).map(Identifier::new),
+        _ => None,
+    }
+}
 
 /// The moderators part a seated charter's team charges for an action whose document type
 /// declares `declared_moderators`: `moderators_share` percent of it, rounded down to the credit.

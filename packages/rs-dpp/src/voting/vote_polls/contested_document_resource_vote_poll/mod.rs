@@ -1,3 +1,5 @@
+use crate::fee::Credits;
+use crate::moderation_charter::is_charter_election;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
@@ -12,6 +14,7 @@ use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -86,6 +89,34 @@ impl ContestedDocumentResourceVotePoll {
 
     pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
         self.sha256_2_hash().map(Identifier::new)
+    }
+
+    /// The prefunded voting balance a contender pays into this contest, see
+    /// [`required_vote_resolution_fund`].
+    pub fn required_vote_resolution_fund(&self, platform_version: &PlatformVersion) -> Credits {
+        required_vote_resolution_fund(
+            &self.contract_id,
+            &self.document_type_name,
+            platform_version,
+        )
+    }
+}
+
+/// The prefunded voting balance a contender pays into a contest on the contested index of
+/// `document_type_name` in the contract `contract_id`: the moderation fund for a moderation
+/// election (an `electedCharter` of the moderation charters contract), the contested document
+/// fund for every other contest. Whatever the votes leave of it is released as processing fees
+/// when the contest is cleaned up.
+pub fn required_vote_resolution_fund(
+    contract_id: &Identifier,
+    document_type_name: &str,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    let fund_fees = &platform_version.fee_version.vote_resolution_fund_fees;
+    if is_charter_election(contract_id, document_type_name) {
+        fund_fees.moderation_vote_resolution_fund_required_amount
+    } else {
+        fund_fees.contested_document_vote_resolution_fund_required_amount
     }
 }
 

@@ -1,6 +1,8 @@
 use super::{
-    moderators_share_of, property_names, validate_submitted_charter, ElectedCharter,
-    ModerationCharterRewardSplit, SubmittedCharter, FULL_MODERATORS_SHARE,
+    charter_election_target, moderators_share_of, property_names, validate_submitted_charter,
+    ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
+    ELECTED_CHARTER_DOCUMENT_TYPE_NAME, FULL_MODERATORS_SHARE, MODERATION_CHARTERS_CONTRACT_ID,
+    SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
 use crate::balances::credits::MAX_CREDITS;
 use crate::consensus::basic::BasicError;
@@ -184,6 +186,68 @@ fn should_combine_the_elected_members_the_additions_and_the_removals() {
         charter.active_members(leader, &[leader], &[]),
         [id(2), id(3), id(4)].into()
     );
+}
+
+#[test]
+fn should_read_a_charter_election_target_from_every_accepted_identifier_form() {
+    let target = Identifier::new([0x7A; 32]);
+    let target_of = |contract_id: &Identifier, document_type_name: &str, value: Value| {
+        charter_election_target(contract_id, document_type_name, &[value])
+    };
+
+    // Every form validation accepts for an identifier property
+    for value in [
+        Value::Identifier([0x7A; 32]),
+        Value::Bytes32([0x7A; 32]),
+        Value::Bytes(vec![0x7A; 32]),
+        Value::Array(vec![Value::U8(0x7A); 32]),
+        Value::Array(vec![Value::U64(0x7A); 32]),
+    ] {
+        assert_eq!(
+            target_of(
+                &MODERATION_CHARTERS_CONTRACT_ID,
+                ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                value
+            ),
+            Some(target)
+        );
+    }
+
+    // The same contract written as base58 text, an array holding a value that is not a byte,
+    // a short byte string, another type of the charter contract, and another contract
+    for (contract_id, document_type_name, value) in [
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Text(bs58::encode([0x7A; 32]).into_string()),
+        ),
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Array(
+                std::iter::once(Value::U64(256))
+                    .chain(std::iter::repeat_n(Value::U8(0x7A), 31))
+                    .collect(),
+            ),
+        ),
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Bytes(vec![0x7A; 31]),
+        ),
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Identifier([0x7A; 32]),
+        ),
+        (
+            Identifier::new([0x01; 32]),
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Identifier([0x7A; 32]),
+        ),
+    ] {
+        assert_eq!(target_of(&contract_id, document_type_name, value), None);
+    }
 }
 
 #[test]

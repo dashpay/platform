@@ -91,7 +91,14 @@ impl DocumentCreateTransitionActionV0 {
                         document_type.name()
                     )),
                 )?;
-                let index_values = index.extract_values(data);
+                // Identifier values are written one way from protocol version 14, so every
+                // contender of a contest names it with the same poll and prefunds the same
+                // balance; before 14 they are taken as given, as they always were
+                let index_values = index.extract_contested_values(
+                    data,
+                    document_type.flattened_properties(),
+                    platform_version,
+                )?;
 
                 let vote_poll = ContestedDocumentResourceVotePoll {
                     contract_id: base.data_contract_id(),
