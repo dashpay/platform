@@ -580,8 +580,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     writer, which a transfer or a purchase changes without any write, so
 ///     on a document type whose documents can be transferred or traded a
 ///     declaration carrying it is re-checked, whole, on every replace, as a
-///     `$ownerId` writer gate is: the new owner has to repoint the reference.
-///     The other requirements are facts about the referenced contract and
+///     `$ownerId` writer gate is: the new owner has to repoint the reference,
+///     so registration refuses one held by an `immutable` property of such a
+///     type. The other requirements are facts about the referenced contract and
 ///     never bring a reference back. A changed `contractRequirements` is an
 ///     incompatible schema change on update.
 ///

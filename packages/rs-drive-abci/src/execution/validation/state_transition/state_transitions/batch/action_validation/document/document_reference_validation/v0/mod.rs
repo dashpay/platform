@@ -644,7 +644,9 @@ fn binds_a_changed_property(
         // write, so on a type whose documents can change owner the
         // reference is re-validated on every replace, as a writer gate is,
         // and the new owner has to repoint it at a contract that meets the
-        // requirement for them (or clear it, where it is optional). On any
+        // requirement for them (or clear it, where it is optional); the
+        // generation 3 parser refuses such a reference on an immutable
+        // property of that type, which could not be repointed. On any
         // other type every replace is written by the owner the requirement
         // was checked against, and a contract's owner never changes, so the
         // outcome stands and no contract fetch is billed for it. The other
