@@ -4,7 +4,9 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::validation::state_transition::common::seated_moderation_charter::fetch_seated_moderation_charter;
+use crate::execution::validation::state_transition::common::seated_moderation_charter::{
+    fetch_seated_moderation_charter, SeatedModerationCharter,
+};
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
@@ -103,37 +105,45 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
             return refuse(DataContractNotPresentError::new(contract_id).into());
         };
 
-        // Only who a payout of the pot goes to may claim it: the contract owner for the owner
-        // pot, a member of the moderation team for the moderators pot. A contract that
-        // declares no moderation has no team, so nobody claims its moderators pot.
-        let recipients = pot.recipients(&contract_fetch_info.contract);
-        if !recipients.contains(&claimant_id) {
-            return refuse(
-                ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into(),
-            );
-        }
-        // The recipients of an elected contract's moderators pot are its interim team, who may
-        // claim it only until a charter is seated (decentralized moderation teams): from
-        // then on the pot is the seated team's, and it accumulates for that team, unsettled,
-        // as it does under an interim that names nobody. Whether one is seated is read, billed,
-        // only for an interim recipient.
+        // An elected contract's moderators pot is its seated team's once a charter is seated
+        // (decentralized moderation teams): the leader or an active member claims it for the
+        // team, and it is split by the proposal's reward split. Whether one is seated is read,
+        // billed. Until then it is its interim team's, as the declaration names it.
         let elected = contract_fetch_info
             .contract
             .config()
             .moderation()
-            .is_some_and(|moderation| moderation.moderators.elected().is_some());
-        if pot == ContractFeePot::Moderators
-            && elected
-            && fetch_seated_moderation_charter(
+            .and_then(|moderation| moderation.moderators.elected());
+        if let (ContractFeePot::Moderators, Some(elected)) = (pot, elected) {
+            if let Some(charter) = fetch_seated_moderation_charter(
                 platform.drive,
                 contract_id,
                 &block_info.epoch,
                 execution_context,
                 tx,
                 platform_version,
-            )?
-            .is_some()
-        {
+            )? {
+                return claim_seated_moderators_pot_v0(
+                    self,
+                    platform,
+                    block_info,
+                    &charter,
+                    elected.max_added_moderators,
+                    execution_context,
+                    tx,
+                    platform_version,
+                );
+            }
+        }
+
+        // Only who a payout of the pot goes to may claim it: the contract owner for the owner
+        // pot, a member of the moderation team for the moderators pot. A contract that
+        // declares no moderation has no team, so nobody claims its moderators pot. The
+        // recipients of an elected contract's moderators pot are its interim team, who claim it
+        // only until a charter is seated: from then on it is the seated team's (above), and it
+        // accumulates for that team, unsettled, as it does under an interim that names nobody.
+        let recipients = pot.recipients(&contract_fetch_info.contract);
+        if !recipients.contains(&claimant_id) {
             return refuse(
                 ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into(),
             );
@@ -165,10 +175,99 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
                 epoch_index,
                 block_info.time_ms,
                 payouts,
+                vec![],
             )
             .into(),
         ))
     }
+}
+
+/// The claim of the moderators pot of an elected contract with a seated charter: the
+/// signer is the leader or an active member of the seated team, the pot was not claimed in
+/// this epoch yet, and the proposal's reward split pays someone at least a credit. The
+/// split reads the team, the proposal and the team's moderation action counts, all billed,
+/// and the claim resets the counts. Every refusal is paid for by bumping the signer's
+/// contract nonce.
+#[allow(clippy::too_many_arguments)]
+fn claim_seated_moderators_pot_v0<C: CoreRPCLike>(
+    transition: &ContractFeeClaimTransition,
+    platform: &PlatformRef<C>,
+    block_info: &BlockInfo,
+    charter: &SeatedModerationCharter,
+    max_added_moderators: u16,
+    execution_context: &mut StateTransitionExecutionContext,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    let contract_id = transition.data_contract_id();
+    let claimant_id = transition.owner_id();
+    let pot = ContractFeePot::Moderators;
+    let epoch = &block_info.epoch;
+    let refuse = |error: ConsensusError| {
+        Ok(ConsensusValidationResult::new_with_data_and_errors(
+            StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_borrowed_contract_fee_claim_transition(
+                    transition,
+                ),
+            ),
+            vec![error],
+        ))
+    };
+
+    // The interim moderators, the owner among them, claim no more once a charter is seated.
+    if !charter.seats(
+        platform.drive,
+        claimant_id,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into());
+    }
+
+    let (fee, fee_pot) = platform.drive.fetch_contract_fee_pot_with_fee(
+        contract_id,
+        pot,
+        epoch,
+        tx,
+        platform_version,
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+    let epoch_index = epoch.index;
+    if fee_pot.last_claim_epoch() == Some(epoch_index) {
+        return refuse(
+            ContractFeesAlreadyClaimedThisEpochError::new(contract_id, pot, epoch_index).into(),
+        );
+    }
+
+    let settlement = charter.settle_moderators_pot(
+        platform.drive,
+        contract_id,
+        fee_pot.credits,
+        max_added_moderators,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    // A claim that would pay nobody a credit is refused, as for a declared team; what the
+    // split leaves over waits in the pot for the next settle.
+    if settlement.payouts.is_empty() {
+        return refuse(ContractFeesNothingToClaimError::new(contract_id, pot).into());
+    }
+
+    Ok(ConsensusValidationResult::new_with_data(
+        ContractFeeClaimTransitionAction::from_borrowed_transition_with_payouts(
+            transition,
+            epoch_index,
+            block_info.time_ms,
+            settlement.payouts,
+            settlement.settled_action_counts,
+        )
+        .into(),
+    ))
 }
 
 /// What each of `recipients` is paid out of `credits`: an equal share each, `None` when there

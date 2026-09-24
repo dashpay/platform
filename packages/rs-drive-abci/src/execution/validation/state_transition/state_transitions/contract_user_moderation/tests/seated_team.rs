@@ -54,6 +54,8 @@ use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use std::sync::Arc;
 
+mod pot;
+
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
 const MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED: u32 = 41202;

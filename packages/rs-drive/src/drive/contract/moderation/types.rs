@@ -181,6 +181,26 @@ impl ContractDocumentRemovalEntry {
     }
 }
 
+/// The stored size of a moderation action count: a u32, big-endian.
+pub const CONTRACT_MODERATION_ACTION_COUNT_SIZE: usize = 4;
+
+/// Encodes a moderation action count.
+pub fn encode_moderation_action_count(count: u32) -> Vec<u8> {
+    count.to_be_bytes().to_vec()
+}
+
+/// Decodes a moderation action count.
+pub fn decode_moderation_action_count(value: &[u8]) -> Result<u32, String> {
+    let bytes: [u8; CONTRACT_MODERATION_ACTION_COUNT_SIZE] = value.try_into().map_err(|_| {
+        format!(
+            "moderation action count holds {} bytes, expected {}",
+            value.len(),
+            CONTRACT_MODERATION_ACTION_COUNT_SIZE
+        )
+    })?;
+    Ok(u32::from_be_bytes(bytes))
+}
+
 /// The stored size of what a document removal starts with: the document owner's id, the
 /// moderator's id, the removal time as a u64, the hash of the removed document and the tag
 /// byte that says whether a restoration follows.

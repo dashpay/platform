@@ -51,6 +51,8 @@ mod estimated_costs;
 #[cfg(feature = "server")]
 mod fetch_contract_document_removals;
 #[cfg(feature = "server")]
+mod fetch_contract_moderation_action_counts;
+#[cfg(feature = "server")]
 mod fetch_contract_moderation_entries;
 #[cfg(feature = "server")]
 mod fetch_contract_moderation_status;
@@ -68,12 +70,19 @@ mod queries;
 #[cfg(feature = "server")]
 mod remove_contract_ban;
 #[cfg(feature = "server")]
+mod remove_contract_moderation_action_counts;
+#[cfg(feature = "server")]
 mod remove_contract_suspension;
 #[cfg(feature = "server")]
 mod remove_contract_warnings;
+#[cfg(feature = "server")]
+mod set_contract_moderation_action_count;
 /// Query and result types shared by the fetch and verify sides.
 pub mod types;
 
+#[cfg(test)]
+#[cfg(feature = "server")]
+mod action_count_tests;
 #[cfg(test)]
 #[cfg(feature = "server")]
 mod document_removal_tests;

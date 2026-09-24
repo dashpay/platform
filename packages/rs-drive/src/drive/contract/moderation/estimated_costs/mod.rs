@@ -64,6 +64,33 @@ impl Drive {
         }
     }
 
+    /// Adds the estimated layer information for writing or deleting moderation action counts
+    /// of an elected contract: the levels up to the contract, the contract's subtree and the
+    /// tree of the counts.
+    pub(crate) fn add_estimation_costs_for_contract_moderation_action_counts(
+        contract_id: [u8; 32],
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_moderation_action_counts
+        {
+            0 => Self::add_estimation_costs_for_contract_moderation_action_counts_v0(
+                contract_id,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_moderation_action_counts".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
     /// Adds the layers a contract insertion or update touches when it creates the trees of
     /// the document removal records.
     pub(crate) fn add_estimation_costs_for_contract_document_removal_trees(

@@ -104,7 +104,8 @@ impl ActionFeePricing {
 pub enum ContractFeePot {
     /// The pot the contract owner claims
     Owner,
-    /// The pot the contract's moderation team shares equally
+    /// The pot the contract's moderation team shares: equally for a declared team, by its
+    /// proposal's reward split for a seated elected team
     Moderators,
 }
 
@@ -124,6 +125,26 @@ impl ContractFeePot {
                 .moderation()
                 .map(|moderation| moderation.team(&owner_id))
                 .unwrap_or_default(),
+        }
+    }
+
+    /// The identities whose balances the proof of a claim of this pot of `contract` by
+    /// `claimant_id` shows: the recipients, or for the moderators pot of an elected contract
+    /// the claimant alone. The team a seated charter pays is the charter contract's, which the
+    /// contract does not say, so neither the prover nor the verifier could name it; the
+    /// claimant, a member of whichever team claimed, is in the transition.
+    pub fn claim_proof_identities(
+        &self,
+        contract: &DataContract,
+        claimant_id: Identifier,
+    ) -> BTreeSet<Identifier> {
+        let elected = contract
+            .config()
+            .moderation()
+            .is_some_and(|moderation| moderation.moderators.elected().is_some());
+        match self {
+            ContractFeePot::Moderators if elected => BTreeSet::from([claimant_id]),
+            _ => self.recipients(contract),
         }
     }
 }

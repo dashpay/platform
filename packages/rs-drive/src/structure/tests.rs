@@ -322,7 +322,8 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{
         ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
-        ContractModerators, ContractWarning,
+        ContractModerators, ContractWarning, ElectedModerators, InterimModerators,
+        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
     };
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
@@ -815,6 +816,60 @@ mod fixtures {
             )
             .expect("expected to fill and claim the fee pots");
         conformance_of(&drive, "moderated_contract", run);
+    }
+
+    /// A contract whose moderators are elected, keeping the banlist, with one member of its
+    /// seated team's moderation action counted
+    fn elected_contract(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            Some([11; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: true,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: 1_209_600,
+                            election_delay: None,
+                            max_added_moderators: 0,
+                            moderated_document_types: BTreeMap::from([(
+                                "person".to_string(),
+                                BTreeSet::from([ModerationAbility::Ban]),
+                            )]),
+                            interim: InterimModerators::NotYetUsable,
+                            owner_protected: false,
+                        })),
+                    },
+                )))
+            }),
+            None,
+            Some(platform_version),
+        );
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::SetActionCount {
+                        contract_id: contract.id(),
+                        identity_id: Identifier::from([0x24; 32]),
+                        count: 3,
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to count a moderation action");
+        conformance_of(&drive, "elected_contract", run);
     }
 
     /// A contract that keeps the banlist and the warning list, with one identity carrying two
@@ -1505,6 +1560,7 @@ mod fixtures {
         contracts_with_documents(&mut run);
         moderated_contract(&mut run);
         warned_contract(&mut run);
+        elected_contract(&mut run);
         contract_with_document_removals(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);

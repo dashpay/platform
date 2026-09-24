@@ -290,13 +290,22 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
             return refuse(error);
         }
 
-        Ok(ConsensusValidationResult::new_with_data(
+        let moderation_action =
             ContractUserModerationTransitionAction::from_borrowed_transition_with_status(
                 self,
                 &status,
                 block_info.time_ms,
-            )
-            .into(),
+            );
+        let moderation_action = moderators.count_for_signer(
+            moderation_action,
+            platform.drive,
+            epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        Ok(ConsensusValidationResult::new_with_data(
+            moderation_action.into(),
         ))
     }
 }
@@ -489,7 +498,7 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         }
     };
 
-    Ok(ConsensusValidationResult::new_with_data(
+    let moderation_action =
         ContractUserModerationTransitionAction::from_borrowed_transition_with_document_deletion(
             transition,
             ContractDocumentDeletionContext {
@@ -499,8 +508,17 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
                 document_hash,
                 replaces_restored_record,
             },
-        )
-        .into(),
+        );
+    let moderation_action = moderators.count_for_signer(
+        moderation_action,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    Ok(ConsensusValidationResult::new_with_data(
+        moderation_action.into(),
     ))
 }
 
@@ -838,6 +856,47 @@ impl<'a> Moderators<'a> {
                 )
             }
         }
+    }
+
+    /// `action`, counted for its signer when a member of a seated team signs a ban, a
+    /// suspension, a warning or a document deletion: the signer's moderation action count since
+    /// the moderators pot was last settled is read (one point read, billed) and the action
+    /// carries it one higher, for Drive to write. What a settle splits the pot's action share
+    /// by. A reversal (an unban, an unsuspension, a clearing, a restore) counts for nothing,
+    /// and neither does an action of the moderators a declaration names, who share the pot
+    /// equally.
+    #[allow(clippy::too_many_arguments)]
+    fn count_for_signer(
+        &self,
+        action: ContractUserModerationTransitionAction,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContractUserModerationTransitionAction, Error> {
+        let Moderators::Seated { .. } = self else {
+            return Ok(action);
+        };
+        let counts = matches!(
+            action.action(),
+            ContractUserModerationAction::Ban { .. }
+                | ContractUserModerationAction::Suspend { .. }
+                | ContractUserModerationAction::Warn { .. }
+                | ContractUserModerationAction::DeleteDocument { .. }
+        );
+        if !counts {
+            return Ok(action);
+        }
+        let (fee, count) = drive.fetch_contract_moderation_action_count_with_fee(
+            action.data_contract_id(),
+            action.moderator_id(),
+            epoch,
+            tx,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+        Ok(action.with_moderation_action_count(count.saturating_add(1)))
     }
 
     /// Whether a seated team lacks `ability`: on `document_type_name` for a deletion or a

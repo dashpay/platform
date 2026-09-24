@@ -2,6 +2,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::{
     GasPayer, ResolvedContractGroupMemberships, ResolvedGasSponsor,
 };
+use crate::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
 use dpp::prelude::FeeMultiplier;
 use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
@@ -58,6 +59,14 @@ pub struct BatchTransitionActionV0 {
     /// the batch executes: the first document transition after a suspension lapses sweeps it.
     /// Only ever the owner's own: the identity is not stored, so nothing can queue another's.
     pub lapsed_suspensions: BTreeSet<Identifier>,
+
+    /// The settles of elected contracts' moderators pots the batch forces before it changes a
+    /// seated team (protocol version 14): an `addedModerator` or `removedModerator` of the
+    /// moderation charters contract created or deleted pays the pot out to the team as it was
+    /// before the change, by its proposal's reward split, and resets the action counts. Set
+    /// by the batch's state validation, which reads the team, the pot and the counts; empty
+    /// for every other batch.
+    pub moderators_pot_settlements: Vec<ModeratorsPotSettlement>,
 }
 
 impl BatchTransitionActionV0 {

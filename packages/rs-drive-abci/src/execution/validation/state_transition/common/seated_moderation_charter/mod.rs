@@ -30,9 +30,10 @@ use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::moderation_charter::{
-    property_names, ElectedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+    property_names, ElectedCharter, SubmittedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
     ELECTED_CHARTER_DOCUMENT_TYPE_NAME, FULL_MODERATORS_SHARE,
     REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
@@ -43,6 +44,8 @@ use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
+use std::collections::BTreeSet;
 
 /// The charter seated on an elected contract, as stored by the moderation charters contract
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +82,43 @@ pub(crate) fn fetch_seated_moderation_charter(
     .next() else {
         return Ok(None);
     };
+    seated_charter_of(document).map(Some)
+}
+
+/// The elected charter stored at `elected_charter_id`, `None` when there is none. A stored
+/// elected charter is a seated one: only a contest's winner is ever written to the type's
+/// storage. One read by id, billed.
+pub(crate) fn fetch_moderation_charter_by_id(
+    drive: &Drive,
+    elected_charter_id: Identifier,
+    epoch: &Epoch,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<SeatedModerationCharter>, Error> {
+    let contract = drive
+        .cache
+        .system_data_contracts
+        .load_moderation_charters(platform_version)?;
+    let document_type = contract.document_type_for_name(ELECTED_CHARTER_DOCUMENT_TYPE_NAME)?;
+    let Some(document) = fetch_document_with_id(
+        drive,
+        &contract,
+        document_type,
+        elected_charter_id,
+        epoch,
+        execution_context,
+        transaction,
+        platform_version,
+    )?
+    else {
+        return Ok(None);
+    };
+    seated_charter_of(document).map(Some)
+}
+
+/// Reads a stored elected charter document.
+fn seated_charter_of(document: Document) -> Result<SeatedModerationCharter, Error> {
     // The schema admitted the document when it was filed, so it reads.
     let charter = ElectedCharter::from_document_properties(document.properties())
         .into_data()
@@ -87,11 +127,11 @@ pub(crate) fn fetch_seated_moderation_charter(
                 "a stored elected charter does not read as one",
             ))
         })?;
-    Ok(Some(SeatedModerationCharter {
+    Ok(SeatedModerationCharter {
         id: document.id(),
         leader_id: document.owner_id(),
         charter,
-    }))
+    })
 }
 
 impl SeatedModerationCharter {
@@ -148,27 +188,13 @@ impl SeatedModerationCharter {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<u8, Error> {
-        let contract = drive
-            .cache
-            .system_data_contracts
-            .load_moderation_charters(platform_version)?;
-        let document_type =
-            contract.document_type_for_name(SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME)?;
-        // The elected charter's reference proved the proposal when the charter was filed, and
-        // a proposal can not be deleted.
-        let proposal = fetch_document_with_id(
+        let proposal = self.fetch_proposal_document(
             drive,
-            &contract,
-            document_type,
-            self.charter.submitted_charter_id,
             epoch,
             execution_context,
             transaction,
             platform_version,
-        )?
-        .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
-            "the proposal of a seated charter is not stored",
-        )))?;
+        )?;
         // The share alone is read: nothing else of the proposal decides the discount. The
         // schema bounds it to 0 to 100 and leaves it out for the full amount.
         let share = proposal
@@ -180,6 +206,191 @@ impl SeatedModerationCharter {
                 ))
             })?;
         Ok(share.unwrap_or(FULL_MODERATORS_SHARE))
+    }
+
+    /// The proposal the team runs on: its reasons, its share and its reward split. One read of
+    /// the `submittedCharter` by id, billed.
+    pub(crate) fn fetch_proposal(
+        &self,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SubmittedCharter, Error> {
+        let proposal = self.fetch_proposal_document(
+            drive,
+            epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        // The schema admitted the proposal when it was filed, so it reads.
+        SubmittedCharter::from_document_properties(proposal.properties())
+            .into_data()
+            .map_err(|_| {
+                Error::Execution(ExecutionError::DriveIncoherence(
+                    "a stored moderation charter proposal does not read as one",
+                ))
+            })
+    }
+
+    fn fetch_proposal_document(
+        &self,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, Error> {
+        let contract = drive
+            .cache
+            .system_data_contracts
+            .load_moderation_charters(platform_version)?;
+        let document_type =
+            contract.document_type_for_name(SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME)?;
+        // The elected charter's reference proved the proposal when the charter was filed, and
+        // a proposal can not be deleted.
+        fetch_document_with_id(
+            drive,
+            &contract,
+            document_type,
+            self.charter.submitted_charter_id,
+            epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?
+        .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
+            "the proposal of a seated charter is not stored",
+        )))
+    }
+
+    /// The active members of the team besides the leader ([`ElectedCharter::active_members`]):
+    /// the charter's `members` less its `removedModerator` documents, plus its
+    /// `addedModerator` documents. Two billed queries of the `byElectedCharterMember` indexes,
+    /// each bounded: a removal names one of the charter's members, and the target's
+    /// `maxAddedModerators` caps the additions that exist. A query that can find nothing is not
+    /// made.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn fetch_active_members(
+        &self,
+        drive: &Drive,
+        max_added_moderators: u16,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeSet<Identifier>, Error> {
+        let removals_bound = u16::try_from(self.charter.members.len()).unwrap_or(u16::MAX);
+        let member_ids = |document_type_name: &str,
+                          limit: u16,
+                          execution_context: &mut StateTransitionExecutionContext|
+         -> Result<Vec<Identifier>, Error> {
+            if limit == 0 {
+                return Ok(vec![]);
+            }
+            query_charter_documents(
+                drive,
+                document_type_name,
+                [(property_names::ELECTED_CHARTER_ID, self.id)],
+                limit,
+                epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            )?
+            .iter()
+            .map(|document| {
+                // The schema requires the member of every team change.
+                document
+                    .properties()
+                    .get_identifier(property_names::MEMBER_ID)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::DriveIncoherence(
+                            "a stored moderation team change names its member",
+                        ))
+                    })
+            })
+            .collect()
+        };
+        let removed = member_ids(
+            REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+            removals_bound,
+            execution_context,
+        )?;
+        let added = member_ids(
+            ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+            max_added_moderators,
+            execution_context,
+        )?;
+        Ok(self
+            .charter
+            .active_members(self.leader_id, &added, &removed))
+    }
+
+    /// The settle of the moderators pot of the elected contract `contract_id`, holding
+    /// `pot_credits`, to the team as it is now: what the proposal's reward split pays the
+    /// leader and each active member ([`dpp::moderation_charter::ModerationCharterRewardSplit::payouts`]), and the
+    /// action counts it resets, every count that exists. Reads, all billed: the active members
+    /// (see [`SeatedModerationCharter::fetch_active_members`]), the proposal, and the counts,
+    /// at most one per identity the team can hold.
+    ///
+    /// Every settle resets every count, so a count only exists for a member of the team as it
+    /// is at the settle: a change of the team settles first.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn settle_moderators_pot(
+        &self,
+        drive: &Drive,
+        contract_id: Identifier,
+        pot_credits: Credits,
+        max_added_moderators: u16,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ModeratorsPotSettlement, Error> {
+        let members = self.fetch_active_members(
+            drive,
+            max_added_moderators,
+            epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        let proposal = self.fetch_proposal(
+            drive,
+            epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        // The leader, the elected members and the additions the target allows.
+        let team_bound = u16::try_from(self.charter.members.len())
+            .unwrap_or(u16::MAX)
+            .saturating_add(max_added_moderators)
+            .saturating_add(1);
+        let (fee, action_counts) = drive.fetch_contract_moderation_action_counts_with_fee(
+            contract_id,
+            team_bound,
+            epoch,
+            transaction,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+        let payouts = proposal
+            .reward_split
+            .payouts(pot_credits, self.leader_id, &members, &action_counts)
+            .map_err(|_| {
+                Error::Execution(ExecutionError::DriveIncoherence(
+                    "a stored moderation charter proposal's reward split adds up to 100",
+                ))
+            })?;
+        Ok(ModeratorsPotSettlement {
+            contract_id,
+            payouts,
+            settled_action_counts: action_counts.into_keys().collect(),
+        })
     }
 }
 

@@ -36,6 +36,7 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::execution::validation::state_transition::batch::state::v0::added_moderator_cap::AddedModeratorCap;
 use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
+use crate::execution::validation::state_transition::batch::state::v0::moderators_pot_settle::ModeratorsPotSettles;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
@@ -46,6 +47,7 @@ mod added_moderator_cap;
 pub mod fetch_contender;
 pub mod fetch_documents;
 mod index_only_batch_entries;
+mod moderators_pot_settle;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
@@ -102,6 +104,12 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         // charters contract's `addedModerator` is counted, and that contract is in state from
         // protocol version 14 only, so no earlier batch takes this path.
         let mut added_moderator_cap = AddedModeratorCap::default();
+
+        // The settles of moderators pots this batch forces: a change of a seated moderation
+        // team pays the target's pot out to the team as it was first. Only a create or a
+        // delete of the moderation charters contract's team changes takes this path, and that
+        // contract is in state from protocol version 14 only, so no earlier batch does.
+        let mut moderators_pot_settles = ModeratorsPotSettles::default();
 
         // Next we need to validate the structure of all actions (this means with the data contract)
         for transition in state_transition_action.transitions_take() {
@@ -416,10 +424,22 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 }
             }
 
+            // A change of a seated moderation team settles the team's moderators pot first.
+            moderators_pot_settles.settle_before_team_change(
+                &transition,
+                platform,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            )?;
+
             validated_transitions.push(transition);
         }
 
         state_transition_action.set_transitions(validated_transitions);
+        state_transition_action
+            .set_moderators_pot_settlements(moderators_pot_settles.into_settlements());
 
         validation_result.set_data(state_transition_action.into());
 

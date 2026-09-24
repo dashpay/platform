@@ -1,5 +1,6 @@
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
+use crate::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -264,6 +265,21 @@ impl BatchTransitionAction {
     pub fn lapsed_suspensions(&self) -> &BTreeSet<Identifier> {
         match self {
             BatchTransitionAction::V0(v0) => &v0.lapsed_suspensions,
+        }
+    }
+
+    /// The settles of moderators pots the batch forces before it changes a seated team
+    pub fn moderators_pot_settlements(&self) -> &[ModeratorsPotSettlement] {
+        match self {
+            BatchTransitionAction::V0(v0) => &v0.moderators_pot_settlements,
+        }
+    }
+
+    /// Records the settles of moderators pots the batch forces before it changes a seated
+    /// team
+    pub fn set_moderators_pot_settlements(&mut self, settlements: Vec<ModeratorsPotSettlement>) {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.moderators_pot_settlements = settlements,
         }
     }
 }

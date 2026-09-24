@@ -377,7 +377,8 @@ impl Drive {
                 }
             }
             // The pot the claim paid out with its last claim (epoch, time, claimant), and the balance
-            // of every identity a payout of that pot goes to.
+            // of every identity a payout of that pot goes to, or the claimant's alone for the
+            // moderators pot of an elected contract.
             StateTransition::ContractFeeClaim(st) => {
                 let contract_id = st.data_contract_id();
                 let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
@@ -392,9 +393,13 @@ impl Drive {
                         contract_id
                     ))));
                 };
+                // The moderators pot of an elected contract proves the claimant's balance
+                // alone: the team a seated charter pays is not in the contract. Only a
+                // contract fee claim takes this arm, a transition protocol version 14
+                // introduced, so no earlier proof changes.
                 let recipients: Vec<[u8; 32]> = st
                     .pot()
-                    .recipients(&contract_fetch_info.contract)
+                    .claim_proof_identities(&contract_fetch_info.contract, st.owner_id())
                     .into_iter()
                     .map(|recipient| recipient.to_buffer())
                     .collect();

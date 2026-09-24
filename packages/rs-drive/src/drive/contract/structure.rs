@@ -1,7 +1,7 @@
 use crate::drive::contract::paths::{
     CONTRACT_BANLIST_KEY, CONTRACT_DOCUMENT_REMOVALS_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY,
-    CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
-    CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
+    CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_MODERATION_ACTION_COUNTS_KEY, CONTRACT_OTHER_KEY,
+    CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
@@ -148,6 +148,44 @@ pub(crate) fn structure() -> StructureNode {
                                      when and why. Never deleted and never replaced: a \
                                      document id is produced at most once.",
                             ),
+                        ),
+                    ),
+                    StructureNode::fixed(
+                        "moderation_action_counts",
+                        &[CONTRACT_MODERATION_ACTION_COUNTS_KEY],
+                        "ModerationActionCounts",
+                        "CONTRACT_MODERATION_ACTION_COUNTS_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                    .describe(
+                        "How many moderation actions each member of the contract's \
+                             seated moderation team signed since its moderators pot \
+                             was last settled. Created with a contract that declares \
+                             elected moderation. Read by the team's actions and by a \
+                             settle, never by a document transition, so it sorts \
+                             below the version item.",
+                    )
+                    .child(
+                        StructureNode::identifier(
+                            "member",
+                            "identity_id",
+                            "The member of the seated team",
+                        )
+                        .kind(ElementKind::Item)
+                        .flags(
+                            &[FlagsKind::None],
+                            "None: the member whose action writes the count pays \
+                                 for it, and the settle that deletes it refunds nobody.",
+                        )
+                        .value("u32 big endian")
+                        .describe(
+                            "The member's count of bans, suspensions, warnings and \
+                                 document deletions since the last settle. Rewritten \
+                                 one higher by each; every settle, a claim or a change \
+                                 of the team, pays the pot's action share by the counts \
+                                 and deletes them.",
                         ),
                     ),
                     StructureNode::fixed(

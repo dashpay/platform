@@ -3048,6 +3048,52 @@
                     "children": []
                   },
                   {
+                    "id": "contracts.contract.other.moderation_action_counts",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "30",
+                      "label": "ModerationActionCounts",
+                      "constant": "CONTRACT_MODERATION_ACTION_COUNTS_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "flags": [
+                      "EpochOwned",
+                      "None"
+                    ],
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "How many moderation actions each member of the contract's seated moderation team signed since its moderators pot was last settled. Created with a contract that declares elected moderation. Read by the team's actions and by a settle, never by a document transition, so it sorts below the version item.",
+                    "children": [
+                      {
+                        "id": "contracts.contract.other.moderation_action_counts.member",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "identity_id",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "identifier32",
+                          "description": "The member of the seated team"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "flags_note": "None: the member whose action writes the count pays for it, and the settle that deletes it refunds nobody.",
+                        "value": "u32 big endian",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "The member's count of bans, suspensions, warnings and document deletions since the last settle. Rewritten one higher by each; every settle, a claim or a change of the team, pays the pot's action share by the counts and deletes them.",
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
                     "id": "contracts.contract.other.version",
                     "key": {
                       "type": "fixed",
