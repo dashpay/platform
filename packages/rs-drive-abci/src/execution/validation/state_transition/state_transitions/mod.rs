@@ -551,7 +551,6 @@ pub(in crate::execution) mod tests {
             state_transitions,
             block_info,
             platform_state,
-            PlatformVersion::latest(),
         );
 
         let fee_results = execution_results.iter().map(|result| {
@@ -563,18 +562,23 @@ pub(in crate::execution) mod tests {
     }
 
     /// Runs the state transitions through a whole block, including the block-end fee
-    /// distribution and sum tree check (a credit imbalance panics here), and commits it. Unlike
-    /// `process_state_transitions` the transitions may fail.
+    /// distribution and sum tree check (a credit imbalance panics here), and commits it, all at
+    /// the protocol version of `platform_state`. Unlike `process_state_transitions` the
+    /// transitions may fail.
     pub(in crate::execution) fn process_state_transitions_with_results(
         platform: &TempPlatform<MockCoreRPCLike>,
         state_transitions: &[StateTransition],
         block_info: BlockInfo,
         platform_state: &PlatformState,
-        platform_version: &PlatformVersion,
     ) -> (
         Vec<StateTransitionExecutionResult>,
         ProcessedBlockFeesOutcome,
     ) {
+        // Validation reads the version from the state, so decoding, execution and the block fees
+        // use the same one.
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected the state's platform version");
         let raw_state_transitions = state_transitions
             .iter()
             .map(|a| a.serialize_to_bytes().expect("expected to serialize"))
