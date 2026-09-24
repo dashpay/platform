@@ -149,7 +149,7 @@ left when the contest ends is released as processing fees. The amounts are
 |---|---|---|
 | Contested document fund (DPNS and every other contest) | 0.2 Dash | 0.1 Dash |
 | Moderation election fund (an `electedCharter` application) | none exist | 0.5 Dash |
-| One vote | 0.0001 Dash | 0.0001 Dash |
+| One vote | 0.0001 Dash | 0.00002 Dash |
 
 `required_vote_resolution_fund` in `rs-dpp` picks between the two funds; the
 schedules before 14 carry the contested document amount in the moderation
