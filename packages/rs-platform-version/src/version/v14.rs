@@ -734,7 +734,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refuses an `immutable` property holding a `deletableDocument`
 ///     reference no replace could clear (a typed array of them, or a single
 ///     one inside an immutable object), which could never be replaced once
-///     a target is deleted. A changed
+///     a target is deleted, and a single top-level one that is also listed
+///     under `immutableAllowSetting`, which a replace could clear once its
+///     target is deleted and the next one set to another document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
 /// 32. **Document references resolved through a unique index**: a

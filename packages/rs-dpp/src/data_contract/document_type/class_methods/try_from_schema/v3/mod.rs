@@ -828,6 +828,16 @@ fn validate_reference_count(
 /// top-level property: a replace may remove it once its target is gone, an
 /// exception that reads the one identifier the removed top-level property
 /// held, which neither a list nor an object gives it.
+///
+/// That property may not also be listed under `immutableAllowSetting`. Once
+/// the reference is cleared the stored document has no value for it, so the
+/// allowance would let the next replace set it again, to another document,
+/// as a first-time set: the frozen reference would be repointed. The pair is
+/// refused here rather than by refusing the clear at write time, since
+/// without the clear a document whose target is deleted could never be
+/// replaced again. Every other `deletableDocument` form is refused on any
+/// immutable property, and an `immutableAllowSetting` entry is always
+/// immutable, so no deletableDocument reference can be set once.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_deletable_element_references(
     document_type: &DocumentTypeV2,
@@ -860,8 +870,20 @@ fn validate_no_immutable_deletable_element_references(
         let top_level = path.split('.').next().unwrap_or(path);
         let is_list = matches!(reference, PropertyReference::Elements { .. });
         // A single reference by id that is itself the immutable property can be
-        // cleared once its target is gone
+        // cleared once its target is gone, so it may not also be settable while
+        // absent: the clear makes it absent again
         if !deletable_lookup && !is_list && top_level == path {
+            if document_type.immutable_fields_allow_setting.contains(path) {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "document type \"{name}\" lists \"{path}\" in `immutableAllowSetting`, \
+                         but it is a deletableDocument reference: a replace may clear it once \
+                         its target is deleted, and the next replace could then set it to \
+                         another document. Use a permanentDocument reference, or leave it out \
+                         of immutableAllowSetting",
+                    )),
+                ));
+            }
             continue;
         }
         if document_type.immutable_fields.contains(top_level) {
