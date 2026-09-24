@@ -252,6 +252,14 @@ macro_rules! impl_transport_request_grpc {
 
 const STREAMING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// Attempt timeout for unary requests whose responses run to megabytes.
+///
+/// The timeout bounds the whole attempt including the response body (see
+/// `RequestSettings::timeout`), so the 10 s default would fail these responses
+/// on a slow link every time and ban the node that was sending them. Dead
+/// connections are still caught early by the channel's HTTP/2 keepalive.
+const LARGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 impl_transport_request_grpc!(
     platform_proto::GetIdentityRequest,
     platform_proto::GetIdentityResponse,
@@ -617,7 +625,12 @@ impl_transport_request_grpc!(
     platform_proto::GetShieldedEncryptedNotesRequest,
     platform_proto::GetShieldedEncryptedNotesResponse,
     PlatformGrpcClient,
-    RequestSettings::default(),
+    RequestSettings {
+        // A full chunk carries thousands of encrypted notes (megabytes), and
+        // the notes sync fetches several chunks in parallel over one link.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        ..RequestSettings::default()
+    },
     get_shielded_encrypted_notes
 );
 
@@ -923,6 +936,7 @@ impl_transport_request_grpc!(
         // GetRecentCompactedAddressBalanceChangesResponse can have 100 values * 2048 addresses * ~44  bytes each = ~9MB
         // We set it to 16MB to be safe
         max_decoding_message_size: Some(16 * 1024 * 1024),
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
         ..RequestSettings::default()
     },
     get_recent_compacted_address_balance_changes

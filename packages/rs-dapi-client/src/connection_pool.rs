@@ -91,6 +91,32 @@ impl ConnectionPool {
         self.inner.lock().expect("must lock").put(key, value);
     }
 
+    /// Drop every pooled connection to `uri`, whatever its prefix and
+    /// connection settings.
+    ///
+    /// A request that misses its deadline may have been sent over a half-open
+    /// connection: the network path died after the request left, and nothing
+    /// on the idle channel would ever notice. Keeping it pooled would stall
+    /// the next request sent to the same node, so the executor evicts it and
+    /// the next request dials a fresh connection.
+    pub fn remove_uri(&self, uri: &Uri) {
+        let prefixes = [PoolPrefix::Core, PoolPrefix::Platform].map(|prefix| {
+            // Every key continues with `:` after the URI (see `key`), so this
+            // cannot match a longer URI that merely starts with this one.
+            format!("{}:{}:", prefix, uri)
+        });
+        let mut cache = self.inner.lock().expect("must lock");
+        let stale: Vec<String> = cache
+            .iter()
+            .map(|(key, _)| key)
+            .filter(|key| prefixes.iter().any(|prefix| key.starts_with(prefix)))
+            .cloned()
+            .collect();
+        for key in stale {
+            cache.pop(&key);
+        }
+    }
+
     fn key<C: Into<PoolPrefix>>(
         class: C,
         uri: &Uri,
@@ -397,6 +423,35 @@ mod tests {
         // Platform prefix should find it
         let result = pool.get(PoolPrefix::Platform, &uri, None);
         assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn should_remove_every_pooled_connection_to_an_uri() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+        let longer_port = Uri::from_str("http://127.0.0.1:30001").unwrap();
+        let connect_timeout = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+
+        pool.put(&uri, None, make_platform_pool_item());
+        pool.put(&uri, None, make_core_pool_item());
+        pool.put(&uri, Some(&connect_timeout), make_platform_pool_item());
+        pool.put(&longer_port, None, make_platform_pool_item());
+
+        pool.remove_uri(&uri);
+
+        assert!(pool.get(PoolPrefix::Platform, &uri, None).is_none());
+        assert!(pool.get(PoolPrefix::Core, &uri, None).is_none());
+        assert!(pool
+            .get(PoolPrefix::Platform, &uri, Some(&connect_timeout))
+            .is_none());
+        assert!(
+            pool.get(PoolPrefix::Platform, &longer_port, None).is_some(),
+            "a URI that merely starts with the evicted one must stay pooled"
+        );
     }
 
     #[tokio::test]

@@ -3,6 +3,7 @@ use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig};
+use std::time::Duration;
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<Channel>;
@@ -12,6 +13,11 @@ pub type CoreGrpcClient = CoreClient<Channel>;
 /// backon::Sleeper
 // #[derive(Default, Clone, Debug)]
 pub type TokioBackonSleeper = backon::TokioSleeper;
+
+/// HTTP/2 PING interval while a request is in flight on a connection.
+const HTTP2_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
+/// How long to wait for a PING acknowledgement before closing the connection.
+const HTTP2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Create channel (connection) for gRPC transport.
 pub fn create_channel(
@@ -49,6 +55,15 @@ pub fn create_channel(
             tls_config = tls_config.ca_certificate(cert).domain_name(host);
         };
     }
+
+    // Ping only while a request is in flight: a connection whose network path
+    // died mid-response is then closed within interval + timeout, failing its
+    // streams instead of leaving them waiting for data that never comes.
+    // Idle pooled connections are not pinged.
+    builder = builder
+        .http2_keep_alive_interval(HTTP2_KEEP_ALIVE_INTERVAL)
+        .keep_alive_timeout(HTTP2_KEEP_ALIVE_TIMEOUT)
+        .keep_alive_while_idle(false);
 
     builder = builder
         .tls_config(tls_config)

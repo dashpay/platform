@@ -4,6 +4,8 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
+#[cfg(not(target_arch = "wasm32"))]
+use dapi_grpc::tonic::Status;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 use tracing::Instrument;
@@ -834,15 +836,33 @@ impl DapiRequestExecutor for DapiClient {
                 };
 
                 // Execute the transport request
-                let result = transport_request
+                let attempt = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
                     .instrument(tracing::trace_span!(
                         "execute_request",
                         ?address,
                         settings = ?applied_settings,
                         method = request.method_name(),
-                    ))
-                    .await;
+                    ));
+                // tonic enforces the `grpc-timeout` header only until the
+                // response headers arrive; reading the body has no limit, so an
+                // attempt over a half-open connection would never return. Bound
+                // the whole attempt, and drop the pooled connection it used.
+                #[cfg(not(target_arch = "wasm32"))]
+                let result = match applied_settings.attempt_deadline() {
+                    Some(deadline) => match tokio::time::timeout(deadline, attempt).await {
+                        Ok(result) => result,
+                        Err(_) => {
+                            self.pool.remove_uri(address.uri());
+                            Err(TransportError::Grpc(Status::deadline_exceeded(format!(
+                                "no complete response within {deadline:?}"
+                            ))))
+                        }
+                    },
+                    None => attempt.await,
+                };
+                #[cfg(target_arch = "wasm32")]
+                let result = attempt.await;
 
                 let execution_result = match result {
                     Ok(response) => {
