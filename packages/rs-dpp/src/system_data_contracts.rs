@@ -327,8 +327,8 @@ mod moderation_charters_tests {
     use crate::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use crate::identity::Purpose;
     use crate::moderation_charter::{
-        property_names, validate_submitted_charter, ElectedCharter, ModerationCharterRewardSplit,
-        SubmittedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+        property_names, ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
+        ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
         JOIN_REQUEST_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
         REASON_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
         RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
@@ -711,10 +711,9 @@ mod moderation_charters_tests {
             vec![],
             "the encoded proposal passes the schema"
         );
-        let read = validate_submitted_charter(document.properties(), PlatformVersion::latest())
-            .expect("validation executes")
+        let read = SubmittedCharter::from_document_properties(document.properties())
             .into_data()
-            .expect("the proposal is valid");
+            .expect("the proposal reads");
         assert_eq!(read, proposal);
     }
 

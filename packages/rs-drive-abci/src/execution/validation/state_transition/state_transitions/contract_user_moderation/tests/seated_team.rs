@@ -72,6 +72,8 @@ const MODERATORS_PART: Credits = 100_000_000;
 const MODERATORS_SHARE: u8 = 60;
 /// How many members the leader may add after the election.
 const MAX_ADDED_MODERATORS: u16 = 2;
+/// The challenge cool-down of a contestable seat: two weeks.
+const CHALLENGE_COOL_DOWN: u32 = 1_209_600;
 /// When the suspensions of these tests end: after the award too, which the mempool judges
 /// against, the award's block time being the last committed one.
 const LATER: TimestampMillis = 4_000_000_000_000;
@@ -84,11 +86,13 @@ const NOTE: &str = "note";
 
 /// An elected declaration keeping all three lists, moderating `post` with `abilities` and
 /// `reply` with bans, with `interim` until a team is seated, room for `MAX_ADDED_MODERATORS`
-/// additions and the owner protected from the team when `owner_protected`
+/// additions, the owner protected from the team when `owner_protected`, and the seat
+/// contestable after `challenge_cool_down` when there is one
 fn elected_posts(
     interim: InterimModerators,
     abilities: &[ModerationAbility],
     owner_protected: bool,
+    challenge_cool_down: Option<u32>,
 ) -> ContractModerationConfig {
     ContractModerationConfig {
         banlist: true,
@@ -97,7 +101,7 @@ fn elected_posts(
         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down,
             election_delay: None,
             max_added_moderators: MAX_ADDED_MODERATORS,
             moderated_document_types: BTreeMap::from([
@@ -280,23 +284,43 @@ impl Team {
     }
 
     async fn with_abilities(interim: InterimModerators, abilities: &[ModerationAbility]) -> Self {
-        Self::build(interim, abilities, false, vec![LISTED_REASON]).await
+        Self::build(
+            interim,
+            abilities,
+            false,
+            Some(CHALLENGE_COOL_DOWN),
+            vec![LISTED_REASON],
+        )
+        .await
     }
 
     /// A team whose proposal lists `reasons`
     async fn with_reasons(interim: InterimModerators, reasons: Vec<Identifier>) -> Self {
-        Self::build(interim, &ALL_ABILITIES, false, reasons).await
+        Self::build(
+            interim,
+            &ALL_ABILITIES,
+            false,
+            Some(CHALLENGE_COOL_DOWN),
+            reasons,
+        )
+        .await
     }
 
     async fn build(
         interim: InterimModerators,
         abilities: &[ModerationAbility],
         owner_protected: bool,
+        challenge_cool_down: Option<u32>,
         reasons: Vec<Identifier>,
     ) -> Self {
         let platform_version = PlatformVersion::latest();
         let mut setup = Setup::new_at_with(
-            Some(elected_posts(interim, abilities, owner_protected)),
+            Some(elected_posts(
+                interim,
+                abilities,
+                owner_protected,
+                challenge_cool_down,
+            )),
             platform_version,
             |c| {
                 for (name, pricing) in [(POST, "fixed"), (REPLY, "feeMultiplier"), (NOTE, "fixed")]
@@ -884,6 +908,88 @@ async fn should_seat_the_winner_of_the_contest_and_let_its_team_moderate_instead
     }
 }
 
+/// A seat is never contested again in protocol version 14, whatever the target declares:
+/// challenges come later, so once a charter is seated another leader's elected charter for the
+/// same target is refused, with the target's seat contestable or not, and the seated charter
+/// keeps the seat.
+#[tokio::test]
+async fn should_keep_the_seat_of_a_seated_team_whether_or_not_it_is_contestable() {
+    let platform_version = PlatformVersion::latest();
+    for challenge_cool_down in [Some(CHALLENGE_COOL_DOWN), None] {
+        let team = Team::build(
+            InterimModerators::ContractOwner,
+            &ALL_ABILITIES,
+            false,
+            challenge_cool_down,
+            vec![LISTED_REASON],
+        )
+        .await;
+        team.award();
+
+        // A rival files its own proposal for the seated target, which a proposal may, and puts
+        // it to the vote.
+        let rival = &team.joiners[0];
+        let target_contract_id = team.setup.contract.id();
+        let proposal = SubmittedCharter {
+            target_contract_id,
+            description: "We would keep the posts civil too".to_string(),
+            reasons: vec![],
+            moderators_share: None,
+            reward_split: ModerationCharterRewardSplit {
+                leader: 100,
+                equal: 0,
+                actions: 0,
+            },
+        };
+        let (proposal, filing) = team
+            .charter_document(
+                rival,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                proposal.to_document_properties(),
+            )
+            .await;
+        team.process_and_commit(&filing);
+        let charter = ElectedCharter {
+            target_contract_id,
+            submitted_charter_id: proposal.id(),
+            members: vec![],
+        };
+        let (_, application) = team
+            .charter_document(
+                rival,
+                ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                charter.to_document_properties(),
+            )
+            .await;
+        let transaction = team.setup.platform.drive.grove.start_transaction();
+        // The seated charter holds the unique index for the target: the contest was awarded.
+        assert_paid_with_code(
+            &team.setup.process(&application, &transaction),
+            DUPLICATE_UNIQUE_INDEX,
+        );
+
+        // The seated charter keeps the seat.
+        let mut reads =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("expected an execution context");
+        let seated = fetch_seated_moderation_charter(
+            &team.setup.platform.drive,
+            target_contract_id,
+            &Default::default(),
+            &mut reads,
+            Some(&transaction),
+            platform_version,
+        )
+        .expect("expected to read the seated charter")
+        .expect("expected a seated charter");
+        assert_eq!(
+            seated.leader_id,
+            team.leader.id(),
+            "seat contestable: {challenge_cool_down:?}"
+        );
+    }
+}
+
 /// The leader adds members from the join requests and removes elected members: an added member
 /// moderates and is protected until the leader deletes its addition, a removed elected member
 /// no longer moderates and can be moderated until the leader deletes the removal, and the
@@ -1313,6 +1419,7 @@ async fn should_protect_the_owner_from_a_seated_team_when_the_declaration_says_s
         InterimModerators::ContractOwner,
         &ALL_ABILITIES,
         true,
+        Some(CHALLENGE_COOL_DOWN),
         vec![LISTED_REASON],
     )
     .await;

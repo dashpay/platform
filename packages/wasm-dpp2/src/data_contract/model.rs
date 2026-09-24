@@ -141,17 +141,16 @@ export interface DataContractConfig {
  * team is seated (no election exists yet) the contract is moderated by its `interim`
  * moderators, or by nobody: with the moderated document types not yet usable (every
  * document transition of one is refused) or used unmoderated meanwhile. Windows and the
- * cool-down are in seconds: the windows one day
- * to four weeks (one week when left out), the cool-down two weeks to three years.
+ * cool-down are in seconds: the windows one day to four weeks (one week when left out), the
+ * cool-down of a contestable seat two weeks to three years.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
   | { $type: "appointedModerators"; identities: string[] }
-  | {
+  | ({
       $type: "elected";
       joinWindow?: number;
       voteWindow?: number;
-      challengeCoolDown: number;
       /**
        * Seconds after the contract's creation before the first charter may be filed
        * against it, unbounded; the election may be called at once when left out. A
@@ -174,7 +173,18 @@ export type ContractModerators =
       interim: InterimModerators;
       /** Whether the owner is protected from the team; false when left out. */
       ownerProtected?: boolean;
-    };
+    } & ElectedModerationSeat);
+
+/**
+ * Whether the seat of an elected contract can be contested again once a team is seated,
+ * required with no default. A contestable seat declares its `challengeCoolDown`: how long a
+ * seated team is safe from a challenge after a seat change. A seat that can not be contested
+ * declares none, and its first team keeps it for good. Challenges come after protocol version
+ * 14: until then a seat is never contested again, whatever this says.
+ */
+export type ElectedModerationSeat =
+  | { seatContestable: true; challengeCoolDown: number }
+  | { seatContestable: false; challengeCoolDown?: never };
 
 /** What a charter may claim on an elected contract. */
 export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn";

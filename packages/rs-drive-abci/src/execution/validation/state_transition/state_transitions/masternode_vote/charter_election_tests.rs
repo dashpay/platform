@@ -130,7 +130,7 @@ fn elected_moderation(join_window: u32, vote_window: u32) -> ContractModerationC
         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
             join_window,
             vote_window,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down: Some(1_209_600),
             election_delay: None,
             max_added_moderators: 0,
             moderated_document_types: BTreeMap::from([(

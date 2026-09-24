@@ -32,20 +32,17 @@
 //!
 //! The schema carries almost every rule through its keywords (references, lookups, key
 //! requirements, `distinctFrom`, `maxBytes` for the description's byte cap, and the
-//! `propertyConstraints` rule holding the reward split to 100). What it cannot say is here:
-//! [`SubmittedCharter`] and [`ElectedCharter`] read the documents' properties, and
-//! [`validate_submitted_charter`] reads a proposal. Nothing here reads state.
+//! `propertyConstraints` rule holding the reward split to 100). What is here only reads:
+//! [`SubmittedCharter`] and [`ElectedCharter`] read the documents' properties. Nothing here
+//! reads state.
 
 mod reward_split;
-mod v0;
 
 use crate::balances::credits::Credits;
 use crate::consensus::basic::moderation_charter::ModerationCharterMalformedFieldError;
 use crate::data_contract::document_type::contested_index_identifier;
-use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use crate::ProtocolError;
+use crate::validation::ConsensusValidationResult;
 use platform_value::{Identifier, IdentifierBytes32, Value, ValueMap};
-use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The id of the moderation charters system contract, `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
@@ -231,8 +228,9 @@ impl SubmittedCharter {
     /// Reads a proposal out of the properties of a `submittedCharter` document.
     ///
     /// The result carries a consensus error, never a proposal, when a property is missing or
-    /// of the wrong type. The proposal's own rules are checked by
-    /// [`SubmittedCharter::validate`]; [`validate_submitted_charter`] does both.
+    /// of the wrong type. The proposal's rules are the contract's own keywords (the reward
+    /// split's `propertyConstraints` rule `rewardSplitIsWhole`, the description's `maxBytes`),
+    /// checked wherever the document is validated, not here.
     pub fn from_document_properties(
         properties: &BTreeMap<String, Value>,
     ) -> ConsensusValidationResult<Self> {
@@ -329,33 +327,6 @@ impl SubmittedCharter {
         }
         properties
     }
-
-    /// Checks the proposal's own rules. None is left: the reward split's sum is the
-    /// contract's `propertyConstraints` rule `rewardSplitIsWhole` and the description's
-    /// 4096-byte cap its `maxBytes`, both checked wherever the document is validated. The
-    /// versioned step stays for the path that seats a team.
-    pub fn validate(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        match platform_version
-            .dpp
-            .validation
-            .data_contract
-            .validate_moderation_charter
-        {
-            Some(0) => Ok(self.validate_v0()),
-            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "SubmittedCharter::validate".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-            None => Err(ProtocolError::NotSupported(format!(
-                "moderation charters do not exist at protocol version {}",
-                platform_version.protocol_version
-            ))),
-        }
-    }
 }
 
 impl ElectedCharter {
@@ -429,28 +400,6 @@ impl ElectedCharter {
                 identifier_list_value(&self.members),
             ),
         ])
-    }
-}
-
-/// Reads a proposal out of the properties of a `submittedCharter` document and checks its own
-/// rules. The result carries the proposal when it passes, and the first error it fails on
-/// otherwise.
-pub fn validate_submitted_charter(
-    properties: &BTreeMap<String, Value>,
-    platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<SubmittedCharter>, ProtocolError> {
-    let result = SubmittedCharter::from_document_properties(properties);
-    if !result.is_valid_with_data() {
-        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
-    }
-    let charter = result.into_data()?;
-    let validation = charter.validate(platform_version)?;
-    if validation.is_valid() {
-        Ok(ConsensusValidationResult::new_with_data(charter))
-    } else {
-        Ok(ConsensusValidationResult::new_with_errors(
-            validation.errors,
-        ))
     }
 }
 

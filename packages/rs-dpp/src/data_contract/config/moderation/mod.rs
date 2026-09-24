@@ -184,16 +184,18 @@ impl Serialize for ContractModerators {
             }
             ContractModerators::Elected(elected) => {
                 let entries = 7
+                    + usize::from(elected.challenge_cool_down.is_some())
                     + usize::from(elected.election_delay.is_some())
                     + usize::from(elected.max_added_moderators > 0);
                 let mut m = serializer.serialize_map(Some(entries))?;
                 m.serialize_entry("$type", "elected")?;
                 m.serialize_entry(elected_names::JOIN_WINDOW, &elected.join_window)?;
                 m.serialize_entry(elected_names::VOTE_WINDOW, &elected.vote_window)?;
-                m.serialize_entry(
-                    elected_names::CHALLENGE_COOL_DOWN,
-                    &elected.challenge_cool_down,
-                )?;
+                m.serialize_entry(elected_names::SEAT_CONTESTABLE, &elected.seat_contestable())?;
+                // Only a contestable seat has a cool-down
+                if let Some(cool_down) = elected.challenge_cool_down {
+                    m.serialize_entry(elected_names::CHALLENGE_COOL_DOWN, &cool_down)?;
+                }
                 // Absent, not null, when the declaration has no delay: the wire form of a
                 // declaration that left it out is unchanged
                 if let Some(delay) = elected.election_delay {
@@ -228,6 +230,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
             "identities",
             elected_names::JOIN_WINDOW,
             elected_names::VOTE_WINDOW,
+            elected_names::SEAT_CONTESTABLE,
             elected_names::CHALLENGE_COOL_DOWN,
             elected_names::ELECTION_DELAY,
             elected_names::MAX_ADDED_MODERATORS,
@@ -241,6 +244,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
         struct ElectedKeys {
             join_window: Option<u32>,
             vote_window: Option<u32>,
+            seat_contestable: Option<bool>,
             challenge_cool_down: Option<u32>,
             election_delay: Option<u32>,
             max_added_moderators: Option<u16>,
@@ -253,12 +257,29 @@ impl<'de> Deserialize<'de> for ContractModerators {
             fn any(&self) -> bool {
                 self.join_window.is_some()
                     || self.vote_window.is_some()
+                    || self.seat_contestable.is_some()
                     || self.challenge_cool_down.is_some()
                     || self.election_delay.is_some()
                     || self.max_added_moderators.is_some()
                     || self.moderated_document_types.is_some()
                     || self.interim.is_some()
                     || self.owner_protected.is_some()
+            }
+
+            /// The cool-down of the seat, `None` for a seat that can not be contested.
+            /// `seatContestable` is required with no default: false would make every team
+            /// permanent, true would opt every contract into challenges unasked. The
+            /// cool-down comes with a contestable seat and only with one.
+            fn challenge_cool_down<E: de::Error>(&self) -> Result<Option<u32>, E> {
+                match (self.seat_contestable, self.challenge_cool_down) {
+                    (None, _) => Err(E::missing_field(elected_names::SEAT_CONTESTABLE)),
+                    (Some(true), None) => Err(E::missing_field(elected_names::CHALLENGE_COOL_DOWN)),
+                    (Some(false), Some(_)) => Err(E::custom(
+                        "`challengeCoolDown` is only valid with `seatContestable: true`: a seat \
+                         that can not be contested has no cool-down",
+                    )),
+                    (Some(_), cool_down) => Ok(cool_down),
+                }
             }
         }
 
@@ -285,8 +306,9 @@ impl<'de> Deserialize<'de> for ContractModerators {
                     "ContractModerators as a map with a `$type` discriminator, \
                      e.g. {\"$type\": \"contractOwner\"}, \
                      {\"$type\": \"appointedModerators\", \"identities\": [\"<base58>\"]} or \
-                     {\"$type\": \"elected\", \"challengeCoolDown\": 1209600, \
-                     \"moderatedDocumentTypes\": [\"post\"], \"abilities\": [\"ban\"], \
+                     {\"$type\": \"elected\", \"seatContestable\": true, \
+                     \"challengeCoolDown\": 1209600, \
+                     \"moderatedDocumentTypes\": {\"post\": [\"ban\"]}, \
                      \"interim\": {\"$type\": \"contractOwner\"}}",
                 )
             }
@@ -309,6 +331,11 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             &mut map,
                             elected_names::VOTE_WINDOW,
                             &mut elected.vote_window,
+                        )?,
+                        elected_names::SEAT_CONTESTABLE => read_once(
+                            &mut map,
+                            elected_names::SEAT_CONTESTABLE,
+                            &mut elected.seat_contestable,
                         )?,
                         elected_names::CHALLENGE_COOL_DOWN => read_once(
                             &mut map,
@@ -379,9 +406,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             vote_window: elected
                                 .vote_window
                                 .unwrap_or(DEFAULT_ELECTION_WINDOW_SECONDS),
-                            challenge_cool_down: elected
-                                .challenge_cool_down
-                                .ok_or_else(required(elected_names::CHALLENGE_COOL_DOWN))?,
+                            challenge_cool_down: elected.challenge_cool_down()?,
                             election_delay: elected.election_delay,
                             max_added_moderators: elected.max_added_moderators.unwrap_or(0),
                             moderated_document_types: elected
