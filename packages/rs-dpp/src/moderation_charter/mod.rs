@@ -21,10 +21,10 @@
 //! members and the additions, less the removals.
 //!
 //! The schema carries almost every rule through its keywords (references, lookups, key
-//! requirements, `distinctFrom`). What it cannot say is here: [`SubmittedCharter`] and
-//! [`ElectedCharter`] read the documents' properties, and [`validate_submitted_charter`] adds
-//! the proposal's two pure-data rules, which the path that seats a team runs. Nothing here reads
-//! state.
+//! requirements, `distinctFrom`, and `maxBytes` for the description's byte cap). What it
+//! cannot say is here: [`SubmittedCharter`] and [`ElectedCharter`] read the documents'
+//! properties, and [`validate_submitted_charter`] adds the proposal's one pure-data rule, which
+//! the path that seats a team runs. Nothing here reads state.
 
 mod v0;
 
@@ -277,10 +277,9 @@ impl SubmittedCharter {
         properties
     }
 
-    /// Checks the proposal's own rules, the two the schema cannot express: the reward split
-    /// sums to 100, and the description fits
-    /// `SystemLimits::max_moderation_charter_description_length` bytes (the schema's
-    /// `maxLength` counts characters).
+    /// Checks the proposal's own rule, the one the schema cannot express: the reward split
+    /// sums to 100. The description's 4096-byte cap is the schema's `maxBytes`, checked
+    /// wherever the document is validated.
     pub fn validate(
         &self,
         platform_version: &PlatformVersion,
@@ -291,7 +290,7 @@ impl SubmittedCharter {
             .data_contract
             .validate_moderation_charter
         {
-            Some(0) => Ok(self.validate_v0(platform_version)),
+            Some(0) => Ok(self.validate_v0()),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "SubmittedCharter::validate".to_string(),
                 known_versions: vec![0],

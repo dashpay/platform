@@ -1,5 +1,6 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentType;
 
 use crate::consensus::basic::document::{
@@ -90,6 +91,14 @@ impl DataContract {
             ));
         }
 
+        // Added in place at protocol version 14, inert before it: the meta-schemas there
+        // refuse `maxBytes`, their parser ignores it (`apply_max_bytes` is `None`, so no
+        // string carries a byte cap) and `validate_max_bytes` is `None`, so the check returns
+        // an empty result. Computed before the JSON conversion consumes `value`; reported
+        // only when the schema validation passes, so a schema error keeps precedence.
+        let max_bytes_result =
+            document_type.validate_max_bytes_properties(&value, platform_version)?;
+
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
@@ -100,7 +109,7 @@ impl DataContract {
         };
 
         // Compile json schema validator if it's not yet compiled
-        if !validator.is_compiled(platform_version)? {
+        let schema_result = if !validator.is_compiled(platform_version)? {
             // It is normal that we get a protocol error here, since the document type is coming
             // from the state
             let root_schema = DocumentType::enrich_with_base_schema(
@@ -115,10 +124,15 @@ impl DataContract {
                 .try_to_validating_json()
                 .map_err(ProtocolError::ValueError)?;
 
-            validator.compile_and_validate(&root_json_schema, &json_value, platform_version)
+            validator.compile_and_validate(&root_json_schema, &json_value, platform_version)?
         } else {
-            validator.validate(&json_value, platform_version)
+            validator.validate(&json_value, platform_version)?
+        };
+        if !schema_result.is_valid() {
+            return Ok(schema_result);
         }
+
+        Ok(max_bytes_result)
     }
 
     #[inline(always)]

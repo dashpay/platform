@@ -51,6 +51,7 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
             apply_required_since: None,
             apply_distinct_from: None,
             apply_encrypted_for: None,
+            apply_max_bytes: None,
             parse_typed_array: None,
             validate_max_depth: 0,
             max_depth: 256,
@@ -71,6 +72,7 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
             deserialize_value_for_key: 0,
             validate_distinct_from: None,
             validate_encrypted_property_shapes: None,
+            validate_max_bytes: None,
         },
     },
     token_versions: TokenVersions {

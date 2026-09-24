@@ -111,37 +111,6 @@ fn should_refuse_a_reward_split_that_does_not_sum_to_one_hundred() {
 }
 
 #[test]
-fn should_refuse_a_description_over_the_byte_limit() {
-    let platform_version = PlatformVersion::latest();
-    let limit = platform_version
-        .system_limits
-        .max_moderation_charter_description_length as usize;
-
-    let at_limit = SubmittedCharter {
-        description: "a".repeat(limit),
-        ..proposal()
-    };
-    assert!(
-        validate_submitted_charter(&at_limit.to_document_properties(), platform_version)
-            .expect("validation executes")
-            .is_valid_with_data()
-    );
-
-    // Fewer characters than the schema's maxLength, more bytes than the consensus cap.
-    let over = SubmittedCharter {
-        description: "é".repeat(limit / 2 + 1),
-        ..proposal()
-    };
-    let result = validate_submitted_charter(&over.to_document_properties(), platform_version)
-        .expect("validation executes");
-    assert!(matches!(
-        first_basic_error(&result),
-        BasicError::ModerationCharterDescriptionTooLongError(e)
-            if e.length() == (limit + 2) as u64
-    ));
-}
-
-#[test]
 fn should_refuse_a_missing_or_mistyped_property() {
     for field in [
         property_names::TARGET_CONTRACT_ID,

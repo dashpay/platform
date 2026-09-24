@@ -179,11 +179,6 @@ pub struct SystemLimits {
     /// action): a week. Read by the `ContractUserModeration` state validation v0 (protocol
     /// version 14) and never reached before.
     pub contract_document_restore_window_ms: u64,
-    /// Maximum length, in bytes of UTF-8, of a moderation charter's description. Read by
-    /// `SubmittedCharter::validate` v0 (protocol version 14) and never reached before; the
-    /// charter schema pins the same number as the description's `maxLength`, which the JSON
-    /// schema validator counts in characters, so the byte cap is this check's.
-    pub max_moderation_charter_description_length: u16,
     /// Most members an elected moderation declaration may let a seated team's leader add
     /// after the election (`maxAddedModerators`). Read by the declaration's validation
     /// (protocol version 14) and never reached before.

@@ -71,6 +71,7 @@ mod tests {
                 item_type: Box::new(DocumentPropertyType::String(StringPropertySizes {
                     min_length: None,
                     max_length: Some(16),
+                    max_bytes: None,
                 })),
                 item_constraints: Default::default(),
                 min_items: Some(1),

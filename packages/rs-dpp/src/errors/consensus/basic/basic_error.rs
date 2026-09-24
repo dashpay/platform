@@ -54,10 +54,11 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
-    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DocumentPropertyMaxBytesExceededError, DocumentPropertyNotDistinctError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -91,8 +92,7 @@ use crate::consensus::basic::identity::{
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::moderation_charter::{
-    ModerationCharterDescriptionTooLongError, ModerationCharterMalformedFieldError,
-    ModerationCharterRewardSplitNotOneHundredError,
+    ModerationCharterMalformedFieldError, ModerationCharterRewardSplitNotOneHundredError,
 };
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
@@ -824,8 +824,9 @@ pub enum BasicError {
     #[error(transparent)]
     ModerationCharterRewardSplitNotOneHundredError(ModerationCharterRewardSplitNotOneHundredError),
 
+    // A string over the `maxBytes` its property declares (protocol version 14).
     #[error(transparent)]
-    ModerationCharterDescriptionTooLongError(ModerationCharterDescriptionTooLongError),
+    DocumentPropertyMaxBytesExceededError(DocumentPropertyMaxBytesExceededError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -935,7 +936,7 @@ mod tests {
             )),
             195
         );
-        // Moderation charters (protocol version 14): the tail of the enum.
+        // Moderation charters (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::ModerationCharterMalformedFieldError(
                 ModerationCharterMalformedFieldError::new(
@@ -951,9 +952,10 @@ mod tests {
             )),
             197
         );
+        // A string over its property's `maxBytes` (protocol version 14): the tail of the enum.
         assert_eq!(
-            discriminant_of(BasicError::ModerationCharterDescriptionTooLongError(
-                ModerationCharterDescriptionTooLongError::new(4097, 4096)
+            discriminant_of(BasicError::DocumentPropertyMaxBytesExceededError(
+                DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4097, 4096)
             )),
             198
         );
