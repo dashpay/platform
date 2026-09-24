@@ -1,5 +1,7 @@
 use super::*;
 
+mod minimum_pool_notes;
+
 /// Token shielded pool transitions: shield, unshield and shielded transfer inside a batch.
 ///
 /// The bundles are real Orchard bundles proven with the shared proving key, so the tests cover
@@ -1320,7 +1322,7 @@ mod token_shielded_pool_tests {
     }
 
     /// A contract carrying a token configuration with a shielded pool.
-    fn shielded_token_contract(
+    pub(super) fn shielded_token_contract(
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> DataContract {
@@ -2920,8 +2922,8 @@ mod document_shielded_token_payment_tests {
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
 
-    const CARD_COST: u64 = 10;
-    const SHIELDED: u64 = 15;
+    pub(super) const CARD_COST: u64 = 10;
+    pub(super) const SHIELDED: u64 = 15;
 
     /// The card game contract with an in-game currency: creating a `card` costs `CARD_COST` of
     /// token 0, burned (`burn`) or paid to the contract owner. `pool` gives token 0 a shielded pool.
@@ -2964,7 +2966,7 @@ mod document_shielded_token_payment_tests {
         )
     }
 
-    fn random_card(
+    pub(super) fn random_card(
         rng: &mut StdRng,
         card_document_type: DocumentTypeRef,
         owner_id: Identifier,
@@ -2996,7 +2998,10 @@ mod document_shielded_token_payment_tests {
         (document, entropy)
     }
 
-    fn shielded_payment(bundle: OrchardBundleParams, amount: u64) -> TokenShieldedPayment {
+    pub(super) fn shielded_payment(
+        bundle: OrchardBundleParams,
+        amount: u64,
+    ) -> TokenShieldedPayment {
         TokenShieldedPayment {
             amount,
             actions: bundle.actions,
@@ -3006,7 +3011,7 @@ mod document_shielded_token_payment_tests {
         }
     }
 
-    fn payment_info(shielded_payment: TokenShieldedPayment) -> TokenPaymentInfo {
+    pub(super) fn payment_info(shielded_payment: TokenShieldedPayment) -> TokenPaymentInfo {
         TokenPaymentInfo::V1(TokenPaymentInfoV1 {
             payment_token_contract_id: None,
             token_contract_position: 0,
@@ -3026,7 +3031,7 @@ mod document_shielded_token_payment_tests {
     }
 
     /// Funds the buyer with `SHIELDED` tokens and shields all of them (identity contract nonce 1).
-    async fn fund_and_shield(
+    pub(super) async fn fund_and_shield(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         contract: &DataContract,
         token_id: Identifier,
@@ -3479,7 +3484,7 @@ mod token_pool_paid_transitions_tests {
 
     /// A credit pool note the test wallet holds: enough for a purchase at 0.01 DASH a token.
     pub(super) const CREDIT_NOTE: u64 = 5_000_000_000;
-    const SHIELDED: u64 = 15;
+    pub(super) const SHIELDED: u64 = 15;
 
     pub(super) struct Prover;
 
@@ -3524,7 +3529,7 @@ mod token_pool_paid_transitions_tests {
     /// Funds the buyer with `SHIELDED` tokens and shields all of them (identity contract nonce
     /// 2, the contract creation used 1), then records an anchor for a `SHIELDED` note of the
     /// test wallet in the token pool.
-    async fn fund_token_pool(
+    pub(super) async fn fund_token_pool(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         contract: &DataContract,
         token_id: Identifier,

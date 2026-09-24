@@ -19,6 +19,7 @@ use dpp::shielded::token_unshield_extra_sighash_data;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::{
     TokenUnshieldTransitionAction, TokenUnshieldTransitionActionAccessorsV0,
 };
@@ -105,6 +106,7 @@ impl TokenUnshieldTransitionActionStateValidationV0 for TokenUnshieldTransitionA
         let validation_result = validate_minimum_token_pool_notes(
             platform.drive,
             &token_id_bytes,
+            self.base().token_configuration()?,
             transaction,
             &mut drive_operations,
             platform_version,

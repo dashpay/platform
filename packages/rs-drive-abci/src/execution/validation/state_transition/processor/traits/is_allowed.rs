@@ -4,12 +4,14 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::data_contract::associated_token::token_configuration::validate_token_configurations;
+use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
@@ -101,8 +103,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         }
         match self {
             StateTransition::Batch(st) => {
-                // Token shielded pools (the batch transitions that use them and a document token
-                // cost paid from one) are a
+                // Token shielded pools (the batch transitions that use them, a document token
+                // cost paid from one and the configuration items of a pool's threshold) are a
                 // protocol-version feature, not a table-versioned validator, so the gate is
                 // applied to the batch as a whole before its own `is_allowed` runs.
                 if platform_version.protocol_version < TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
@@ -131,6 +133,19 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                                 BatchedTransitionRef::Token(
                                     TokenTransition::DirectPurchaseToPool(_),
                                 ) => Some("TokenDirectPurchaseToPool"),
+                                // Only a token with a pool has an outgoing notes threshold,
+                                // and software older than it cannot decode these items.
+                                BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(
+                                    config_update,
+                                )) if matches!(
+                                    config_update.update_token_configuration_item(),
+                                    TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
+                                        | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
+                                        | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_)
+                                ) =>
+                                {
+                                    Some("TokenConfigUpdateMinimumPoolNotesForOutgoing")
+                                }
                                 BatchedTransitionRef::Document(document_transition)
                                     if document_transition
                                         .base()

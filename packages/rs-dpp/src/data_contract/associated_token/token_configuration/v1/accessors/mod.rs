@@ -97,11 +97,32 @@ impl TokenConfigurationV0Getters for TokenConfigurationV1 {
     }
 
     fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool) {
-        self.base.all_used_group_positions()
+        let (mut group_positions, mut uses_main_group) = self.base.all_used_group_positions();
+        let rules = &self.minimum_pool_notes_for_outgoing_change_rules;
+        for action_takers in [
+            rules.authorized_to_make_change_action_takers(),
+            rules.admin_action_takers(),
+        ] {
+            match action_takers {
+                AuthorizedActionTakers::Group(group_position) => {
+                    group_positions.insert(*group_position);
+                }
+                AuthorizedActionTakers::MainGroup => uses_main_group = true,
+                AuthorizedActionTakers::NoOne
+                | AuthorizedActionTakers::ContractOwner
+                | AuthorizedActionTakers::Identity(_) => {}
+            }
+        }
+        (group_positions, uses_main_group)
     }
 
     fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)> {
-        self.base.all_change_control_rules()
+        let mut rules = self.base.all_change_control_rules();
+        rules.push((
+            "minimum_pool_notes_for_outgoing_change_rules",
+            &self.minimum_pool_notes_for_outgoing_change_rules,
+        ));
+        rules
     }
 
     fn description(&self) -> &Option<String> {
@@ -184,6 +205,10 @@ impl TokenConfigurationV0Setters for TokenConfigurationV1 {
 impl TokenConfigurationV1Getters for TokenConfigurationV1 {
     fn has_shielded_pool(&self) -> bool {
         self.has_shielded_pool
+    }
+
+    fn minimum_pool_notes_for_outgoing(&self) -> u64 {
+        self.minimum_pool_notes_for_outgoing.unwrap_or(0)
     }
 }
 

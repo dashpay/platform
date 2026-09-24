@@ -24,6 +24,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{TokenIsPausedError, TokenShieldedPoolNotEnabledError};
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
+use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::prelude::Identifier;
 use dpp::shielded::{SerializedAction};
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
@@ -204,20 +205,18 @@ pub(crate) fn validate_token_pool_output_nullifiers(
     Ok(validation_result)
 }
 
-/// The anonymity-set floor for outflows with an observable destination
-/// (`minimum_token_pool_notes_for_outgoing`, 0 at introduction).
+/// The token's configured notes threshold for outflows with an observable destination
+/// (`minimumPoolNotesForOutgoing`, none unless the configuration sets one). The pool's notes
+/// are counted only when there is a threshold to compare them with.
 pub(crate) fn validate_minimum_token_pool_notes(
     drive: &Drive,
     token_id: &[u8; 32],
+    token_configuration: &TokenConfiguration,
     transaction: TransactionArg,
     drive_operations: &mut Vec<LowLevelDriveOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let min_notes = platform_version
-        .drive_abci
-        .validation_and_processing
-        .event_constants
-        .minimum_token_pool_notes_for_outgoing;
+    let min_notes = token_configuration.minimum_pool_notes_for_outgoing();
     if min_notes > 0 {
         let notes_count = drive.token_shielded_pool_notes_count(
             token_id,

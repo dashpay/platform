@@ -14,7 +14,6 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
-use dpp::tokens::token_payment_info::v1::TokenShieldedPayment;
 use dpp::ProtocolError;
 use std::sync::Arc;
 
@@ -110,7 +109,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
         }
     }
 
-    fn shielded_token_payment(&self) -> Option<&TokenShieldedPayment> {
+    fn shielded_token_payment(&self) -> Option<&DocumentShieldedTokenPayment> {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.shielded_token_payment.as_deref(),
         }
@@ -144,7 +143,7 @@ impl DocumentBaseTransitionAction {
             return vec![];
         };
         let contract_owner_id = self.data_contract_fetch_info_ref().contract.owner_id();
-        if let Some(payment) = self.shielded_token_payment() {
+        if let Some(DocumentShieldedTokenPayment { payment, .. }) = self.shielded_token_payment() {
             let nullifiers = payment
                 .actions
                 .iter()

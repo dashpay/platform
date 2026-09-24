@@ -152,6 +152,7 @@ impl TokenBurnFromPoolTransitionActionStateValidationV0 for TokenBurnFromPoolTra
         let validation_result = validate_minimum_token_pool_notes(
             platform.drive,
             &token_id_bytes,
+            token_configuration,
             transaction,
             &mut drive_operations,
             platform_version,

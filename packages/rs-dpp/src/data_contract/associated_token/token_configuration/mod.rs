@@ -6,6 +6,7 @@ use crate::data_contract::associated_token::token_configuration::v0::TokenConfig
 use crate::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::TokenContractPosition;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
@@ -120,12 +121,53 @@ impl TokenConfiguration {
         }
         SimpleConsensusValidationResult::new()
     }
+
+    /// The pool's outgoing notes threshold may not exceed
+    /// `max_token_pool_notes_for_outgoing`: a threshold the pool never reaches would refuse
+    /// every outflow and strand every shielded balance, irreversibly on a readonly contract.
+    /// Checked on contract create and update and on the configuration a `TokenConfigUpdate`
+    /// proposes.
+    pub fn validate_minimum_pool_notes_for_outgoing(
+        &self,
+        token_contract_position: TokenContractPosition,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult {
+        validate_minimum_pool_notes_for_outgoing_bound(
+            self.minimum_pool_notes_for_outgoing(),
+            token_contract_position,
+            platform_version,
+        )
+    }
+}
+
+/// The bound on a token shielded pool's outgoing notes threshold: at most
+/// `max_token_pool_notes_for_outgoing`, refused as `KeyWrongBounds`. Shared by the token
+/// configuration validation and the `TokenConfigUpdate` that changes the threshold.
+pub fn validate_minimum_pool_notes_for_outgoing_bound(
+    minimum_pool_notes: u64,
+    token_contract_position: TokenContractPosition,
+    platform_version: &PlatformVersion,
+) -> SimpleConsensusValidationResult {
+    let max_minimum_pool_notes = platform_version
+        .system_limits
+        .max_token_pool_notes_for_outgoing;
+    if minimum_pool_notes > max_minimum_pool_notes {
+        return SimpleConsensusValidationResult::new_with_error(
+            DataContractError::KeyWrongBounds(format!(
+                "token at position {token_contract_position}: minimumPoolNotesForOutgoing \
+                 {minimum_pool_notes} is above the maximum {max_minimum_pool_notes}"
+            ))
+            .into(),
+        );
+    }
+    SimpleConsensusValidationResult::new()
 }
 
 /// Validates every token configuration of a contract for `platform_version`: the format
-/// version must be admitted and a pooled token's rules must be compatible with a pool. Returns
-/// the first error. Shared by the contract create and update basic structure generations and
-/// by the pre-activation gate, so the three cannot drift.
+/// version must be admitted, a pooled token's rules must be compatible with a pool and its
+/// outgoing notes threshold within bounds. Returns the first error. Shared by the contract
+/// create and update basic structure generations and by the pre-activation gate, so the three
+/// cannot drift.
 pub fn validate_token_configurations(
     tokens: &BTreeMap<TokenContractPosition, TokenConfiguration>,
     platform_version: &PlatformVersion,
@@ -136,6 +178,11 @@ pub fn validate_token_configurations(
             return result;
         }
         let result = configuration.validate_shielded_pool_rules(*position);
+        if !result.is_valid() {
+            return result;
+        }
+        let result =
+            configuration.validate_minimum_pool_notes_for_outgoing(*position, platform_version);
         if !result.is_valid() {
             return result;
         }
@@ -383,5 +430,289 @@ mod json_convertible_tests {
                 Some("destroyFrozenFundsRules".to_string())
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod minimum_pool_notes_tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::codes::ErrorWithCode;
+    use crate::consensus::ConsensusError;
+    use crate::data_contract::associated_token::token_configuration::accessors::v0::{
+        TokenConfigurationV0Getters, TokenConfigurationV0Setters,
+    };
+    use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+    use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+    use crate::group::action_taker::{ActionGoal, ActionTaker};
+    use crate::prelude::Identifier;
+
+    fn pooled() -> TokenConfiguration {
+        let mut configuration =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        configuration.set_has_shielded_pool(true);
+        configuration
+    }
+
+    fn pooled_with_threshold(minimum_pool_notes: u64) -> TokenConfiguration {
+        let mut configuration = pooled();
+        let TokenConfiguration::V1(v1) = &mut configuration else {
+            panic!("a pooled configuration is V1");
+        };
+        v1.minimum_pool_notes_for_outgoing = Some(minimum_pool_notes);
+        configuration
+    }
+
+    fn rules(authorized: AuthorizedActionTakers) -> ChangeControlRules {
+        ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: authorized,
+            admin_action_takers: authorized,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        })
+    }
+
+    #[test]
+    fn should_read_a_configuration_without_a_threshold_as_zero() {
+        assert_eq!(
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
+                .minimum_pool_notes_for_outgoing(),
+            0
+        );
+        let configuration = pooled();
+        let TokenConfiguration::V1(v1) = &configuration else {
+            panic!("a pooled configuration is V1");
+        };
+        assert_eq!(v1.minimum_pool_notes_for_outgoing, None);
+        assert_eq!(configuration.minimum_pool_notes_for_outgoing(), 0);
+        // Nobody may change a threshold the issuer did not open to change.
+        assert_eq!(
+            configuration.authorized_action_takers_for_configuration_item(
+                &TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(1)
+            ),
+            AuthorizedActionTakers::NoOne
+        );
+    }
+
+    #[test]
+    fn should_bound_the_threshold_by_the_system_limit_with_error_10241() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version
+            .system_limits
+            .max_token_pool_notes_for_outgoing;
+        assert_eq!(max, 250);
+
+        let at_the_limit = BTreeMap::from([(0, pooled_with_threshold(max))]);
+        let result = validate_token_configurations(&at_the_limit, platform_version);
+        assert!(result.is_valid(), "unexpected errors: {:?}", result.errors);
+
+        let over_the_limit = BTreeMap::from([(3, pooled_with_threshold(max + 1))]);
+        let result = validate_token_configurations(&over_the_limit, platform_version);
+        assert_matches::assert_matches!(
+            result.errors.as_slice(),
+            [error @ ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::KeyWrongBounds(message)
+            ))] if error.code() == 10241 && message.contains("position 3")
+        );
+    }
+
+    #[test]
+    fn should_govern_the_threshold_by_its_own_rules_on_a_pooled_token_only() {
+        let owner = Identifier::from([1; 32]);
+        let other = Identifier::from([2; 32]);
+        let groups = BTreeMap::new();
+        let change = TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(12);
+        let can_apply = |configuration: &TokenConfiguration, action_taker: Identifier| {
+            configuration.can_apply_token_configuration_item(
+                &change,
+                &owner,
+                None,
+                &groups,
+                &ActionTaker::SingleIdentity(action_taker),
+                ActionGoal::ActionCompletion,
+            )
+        };
+
+        let mut governed = pooled();
+        let TokenConfiguration::V1(v1) = &mut governed else {
+            panic!("a pooled configuration is V1");
+        };
+        v1.minimum_pool_notes_for_outgoing_change_rules =
+            rules(AuthorizedActionTakers::ContractOwner);
+        assert!(can_apply(&governed, owner));
+        assert!(!can_apply(&governed, other));
+        assert_eq!(
+            governed.controlling_action_takers_for_configuration_item(&change),
+            AuthorizedActionTakers::ContractOwner
+        );
+        governed.apply_token_configuration_item(change.clone());
+        assert_eq!(governed.minimum_pool_notes_for_outgoing(), 12);
+
+        // A token without a pool has no threshold, whoever asks and whatever its other rules.
+        let mut unpooled = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        unpooled.set_max_supply_change_rules(rules(AuthorizedActionTakers::ContractOwner));
+        assert!(!can_apply(&unpooled, owner));
+        let before = unpooled.clone();
+        unpooled.apply_token_configuration_item(change);
+        assert_eq!(unpooled, before);
+    }
+
+    /// The control item moves who may set the threshold and the admin item moves who
+    /// administers that, each under the threshold's own admin rule and neither touching the
+    /// other or any rule of the nested V0 configuration.
+    #[test]
+    fn should_route_the_threshold_control_and_admin_items_to_their_own_rules() {
+        let owner = Identifier::from([1; 32]);
+        let heir = Identifier::from([3; 32]);
+        let groups = BTreeMap::new();
+        let can_apply = |configuration: &TokenConfiguration,
+                         change: &TokenConfigurationChangeItem,
+                         action_taker: Identifier| {
+            configuration.can_apply_token_configuration_item(
+                change,
+                &owner,
+                None,
+                &groups,
+                &ActionTaker::SingleIdentity(action_taker),
+                ActionGoal::ActionCompletion,
+            )
+        };
+        let threshold_rules = |configuration: &TokenConfiguration| {
+            let TokenConfiguration::V1(v1) = configuration else {
+                panic!("a pooled configuration is V1");
+            };
+            v1.minimum_pool_notes_for_outgoing_change_rules.clone()
+        };
+
+        let mut configuration = pooled();
+        let TokenConfiguration::V1(v1) = &mut configuration else {
+            panic!("a pooled configuration is V1");
+        };
+        v1.minimum_pool_notes_for_outgoing_change_rules =
+            ChangeControlRules::V0(ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: true,
+            });
+        let max_supply_rules_before = configuration.max_supply_change_rules().clone();
+        let set_threshold = TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(8);
+        let control = TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+            AuthorizedActionTakers::Identity(heir),
+        );
+        let admin = TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(
+            AuthorizedActionTakers::Identity(heir),
+        );
+
+        for item in [&control, &admin] {
+            assert_eq!(
+                configuration.authorized_action_takers_for_configuration_item(item),
+                AuthorizedActionTakers::ContractOwner
+            );
+            assert!(can_apply(&configuration, item, owner));
+            assert!(!can_apply(&configuration, item, heir));
+        }
+        assert!(!can_apply(&configuration, &set_threshold, owner));
+
+        configuration.apply_token_configuration_item(control);
+        let rules = threshold_rules(&configuration);
+        assert_eq!(
+            *rules.authorized_to_make_change_action_takers(),
+            AuthorizedActionTakers::Identity(heir)
+        );
+        assert_eq!(
+            *rules.admin_action_takers(),
+            AuthorizedActionTakers::ContractOwner
+        );
+        assert!(can_apply(&configuration, &set_threshold, heir));
+        assert!(!can_apply(&configuration, &set_threshold, owner));
+
+        configuration.apply_token_configuration_item(admin);
+        let rules = threshold_rules(&configuration);
+        assert_eq!(
+            *rules.authorized_to_make_change_action_takers(),
+            AuthorizedActionTakers::Identity(heir)
+        );
+        assert_eq!(
+            *rules.admin_action_takers(),
+            AuthorizedActionTakers::Identity(heir)
+        );
+        assert_eq!(
+            configuration.max_supply_change_rules(),
+            &max_supply_rules_before
+        );
+    }
+
+    #[test]
+    fn should_hand_every_other_item_of_a_pooled_token_to_its_v0_rules() {
+        let owner = Identifier::from([1; 32]);
+        let groups = BTreeMap::new();
+        let mut configuration = pooled();
+        configuration.set_max_supply_change_rules(rules(AuthorizedActionTakers::ContractOwner));
+        let change = TokenConfigurationChangeItem::MaxSupply(Some(5_000));
+        assert!(configuration.can_apply_token_configuration_item(
+            &change,
+            &owner,
+            None,
+            &groups,
+            &ActionTaker::SingleIdentity(owner),
+            ActionGoal::ActionCompletion,
+        ));
+        configuration.apply_token_configuration_item(change);
+        assert_eq!(configuration.max_supply(), Some(5_000));
+        assert!(configuration.has_shielded_pool());
+    }
+
+    #[test]
+    fn should_count_the_threshold_rules_among_the_tokens_rules_and_groups() {
+        let mut configuration = pooled();
+        let TokenConfiguration::V1(v1) = &mut configuration else {
+            panic!("a pooled configuration is V1");
+        };
+        v1.minimum_pool_notes_for_outgoing_change_rules = rules(AuthorizedActionTakers::Group(4));
+        let (group_positions, _) = configuration.all_used_group_positions();
+        assert!(group_positions.contains(&4));
+        assert!(configuration
+            .all_change_control_rules()
+            .iter()
+            .any(
+                |(name, rules)| *name == "minimum_pool_notes_for_outgoing_change_rules"
+                    && *rules.authorized_to_make_change_action_takers()
+                        == AuthorizedActionTakers::Group(4)
+            ));
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod minimum_pool_notes_json_tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use crate::serialization::JsonConvertible;
+
+    /// A pooled configuration written before the threshold existed, or by a client that leaves
+    /// it out, reads with no threshold and no one allowed to change it.
+    #[test]
+    fn should_read_a_pooled_configuration_without_the_threshold_keys_as_none() {
+        let mut configuration =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        configuration.set_has_shielded_pool(true);
+        let mut json = configuration.to_json().expect("to_json");
+        let object = json.as_object_mut().expect("configuration object");
+        assert!(object.remove("minimumPoolNotesForOutgoing").is_some());
+        assert!(object
+            .remove("minimumPoolNotesForOutgoingChangeRules")
+            .is_some());
+
+        let decoded = TokenConfiguration::from_json(json).expect("from_json");
+        assert_eq!(decoded, configuration);
+        assert_eq!(decoded.minimum_pool_notes_for_outgoing(), 0);
     }
 }

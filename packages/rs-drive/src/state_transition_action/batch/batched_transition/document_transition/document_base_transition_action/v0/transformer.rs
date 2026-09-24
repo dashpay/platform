@@ -21,7 +21,7 @@ use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
-use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DeclaredDocumentActionFee, DocumentBaseTransitionActionV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DeclaredDocumentActionFee, DocumentBaseTransitionActionV0, DocumentShieldedTokenPayment};
 
 impl DocumentBaseTransitionActionV0 {
     /// try from borrowed base transition with contract lookup
@@ -131,7 +131,13 @@ impl DocumentBaseTransitionActionV0 {
                         ),
                     ));
                 }
-                shielded_token_payment = Some(Box::new(payment.clone()));
+                shielded_token_payment = Some(Box::new(DocumentShieldedTokenPayment {
+                    payment: payment.clone(),
+                    token_contract_id: document_action_token_cost
+                        .contract_id
+                        .unwrap_or(data_contract_id),
+                    token_contract_position: document_action_token_cost.token_contract_position,
+                }));
             }
         } else if let Some(token_payment_info) = value.token_payment_info_ref() {
             // A bundle with nothing to pay would be verified for free and never applied.

@@ -72,6 +72,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
     min_time_range_ttl_drop_operations_per_write: None,

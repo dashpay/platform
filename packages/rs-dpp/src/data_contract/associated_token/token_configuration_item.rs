@@ -71,7 +71,55 @@ pub enum TokenConfigurationChangeItem {
     MarketplaceTradeModeControlGroup(AuthorizedActionTakers),
     MarketplaceTradeModeAdminGroup(AuthorizedActionTakers),
     MainControlGroup(Option<GroupContractPosition>),
+    /// The token shielded pool's outgoing notes threshold. Only a `TokenConfiguration::V1`
+    /// (a token with a pool) carries one, so only it can apply these three items.
+    MinimumPoolNotesForOutgoing(u64),
+    MinimumPoolNotesForOutgoingControlGroup(AuthorizedActionTakers),
+    MinimumPoolNotesForOutgoingAdminGroup(AuthorizedActionTakers),
 }
+
+/// Every change item a `TokenConfigurationV0` carries the field for, as one pattern. A
+/// `TokenConfigurationV1` hands these to its nested V0 configuration and handles its own items
+/// itself; spelling the list out keeps each of its matches exhaustive, so an item added later
+/// cannot fall through to the V0 handling unnoticed. Expects `TokenConfigurationChangeItem`
+/// in scope.
+macro_rules! token_configuration_v0_change_items {
+    () => {
+        TokenConfigurationChangeItem::TokenConfigurationNoChange
+            | TokenConfigurationChangeItem::Conventions(_)
+            | TokenConfigurationChangeItem::ConventionsControlGroup(_)
+            | TokenConfigurationChangeItem::ConventionsAdminGroup(_)
+            | TokenConfigurationChangeItem::MaxSupply(_)
+            | TokenConfigurationChangeItem::MaxSupplyControlGroup(_)
+            | TokenConfigurationChangeItem::MaxSupplyAdminGroup(_)
+            | TokenConfigurationChangeItem::PerpetualDistribution(_)
+            | TokenConfigurationChangeItem::PerpetualDistributionControlGroup(_)
+            | TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(_)
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentity(_)
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(_)
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(_)
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestination(_)
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(_)
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(_)
+            | TokenConfigurationChangeItem::ManualMinting(_)
+            | TokenConfigurationChangeItem::ManualMintingAdminGroup(_)
+            | TokenConfigurationChangeItem::ManualBurning(_)
+            | TokenConfigurationChangeItem::ManualBurningAdminGroup(_)
+            | TokenConfigurationChangeItem::Freeze(_)
+            | TokenConfigurationChangeItem::FreezeAdminGroup(_)
+            | TokenConfigurationChangeItem::Unfreeze(_)
+            | TokenConfigurationChangeItem::UnfreezeAdminGroup(_)
+            | TokenConfigurationChangeItem::DestroyFrozenFunds(_)
+            | TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(_)
+            | TokenConfigurationChangeItem::EmergencyAction(_)
+            | TokenConfigurationChangeItem::EmergencyActionAdminGroup(_)
+            | TokenConfigurationChangeItem::MarketplaceTradeMode(_)
+            | TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(_)
+            | TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(_)
+            | TokenConfigurationChangeItem::MainControlGroup(_)
+    };
+}
+pub(crate) use token_configuration_v0_change_items;
 
 // Internal-`$type` serde shape via a struct-variant Repr (the outer enum mixes
 // AuthorizedActionTakers/struct variants with primitive/Option/unit variants
@@ -151,6 +199,9 @@ token_configuration_change_item_repr! {
     MarketplaceTradeModeControlGroup: AuthorizedActionTakers;
     MarketplaceTradeModeAdminGroup: AuthorizedActionTakers;
     MainControlGroup: Option<GroupContractPosition>;
+    MinimumPoolNotesForOutgoing: u64, with = "crate::serialization::json_safe_u64";
+    MinimumPoolNotesForOutgoingControlGroup: AuthorizedActionTakers;
+    MinimumPoolNotesForOutgoingAdminGroup: AuthorizedActionTakers;
 }
 
 impl TokenConfigurationChangeItem {
@@ -184,7 +235,11 @@ impl TokenConfigurationChangeItem {
             | TokenConfigurationChangeItem::EmergencyAction(a)
             | TokenConfigurationChangeItem::EmergencyActionAdminGroup(a)
             | TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(a)
-            | TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(a) => Some(a.to_bytes()),
+            | TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(a)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(a)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(a) => {
+                Some(a.to_bytes())
+            }
             TokenConfigurationChangeItem::MaxSupply(max_supply) => {
                 max_supply.map(|amount| amount.to_be_bytes().to_vec())
             }
@@ -207,6 +262,9 @@ impl TokenConfigurationChangeItem {
             ),
             TokenConfigurationChangeItem::MainControlGroup(position) => {
                 position.map(|pos| pos.to_be_bytes().to_vec())
+            }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(minimum_pool_notes) => {
+                Some(minimum_pool_notes.to_be_bytes().to_vec())
             }
         })
     }
@@ -244,6 +302,9 @@ impl TokenConfigurationChangeItem {
             TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(_) => 29,
             TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(_) => 30,
             TokenConfigurationChangeItem::MainControlGroup(_) => 31,
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_) => 32,
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_) => 33,
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_) => 34,
         }
     }
 }
@@ -376,6 +437,25 @@ impl fmt::Display for TokenConfigurationChangeItem {
             TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(admin_group) => {
                 write!(f, "Marketplace Trade Mode Admin Group: {}", admin_group)
             }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(minimum_pool_notes) => {
+                write!(f, "Minimum Pool Notes For Outgoing: {}", minimum_pool_notes)
+            }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+                control_group,
+            ) => {
+                write!(
+                    f,
+                    "Minimum Pool Notes For Outgoing Control Group: {}",
+                    control_group
+                )
+            }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(admin_group) => {
+                write!(
+                    f,
+                    "Minimum Pool Notes For Outgoing Admin Group: {}",
+                    admin_group
+                )
+            }
         }
     }
 }
@@ -425,10 +505,64 @@ mod tests {
             TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat),
             TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat),
             TokenConfigurationChangeItem::MainControlGroup(None),
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(0),
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(aat),
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(aat),
         ]
     }
 
-    // ---- u8_item_index returns unique values 0..=31 ----
+    /// `TokenConfigurationChangeItem` is encoded by variant position, so inserting a variant
+    /// anywhere but the end silently reassigns the bincode discriminant of every variant after
+    /// it: a stored group action or a transition in flight would then decode as a different
+    /// change. `u8_item_index` is an explicit table that a reordered declaration leaves
+    /// untouched, so holding every variant's discriminant to it catches a reorder anywhere.
+    fn discriminant_of(item: &TokenConfigurationChangeItem) -> u8 {
+        let bytes = bincode::encode_to_vec(item, bincode::config::standard())
+            .expect("expected to encode the change item");
+        // Discriminants below 251 are a single byte under bincode's varint.
+        bytes[0]
+    }
+
+    #[test]
+    fn change_item_discriminants_are_frozen() {
+        let aat = AuthorizedActionTakers::NoOne;
+        assert_eq!(
+            discriminant_of(&TokenConfigurationChangeItem::TokenConfigurationNoChange),
+            0
+        );
+        assert_eq!(
+            discriminant_of(&TokenConfigurationChangeItem::MainControlGroup(None)),
+            31
+        );
+        assert_eq!(
+            discriminant_of(&TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(
+                0
+            )),
+            32
+        );
+        assert_eq!(
+            discriminant_of(
+                &TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(aat)
+            ),
+            33
+        );
+        assert_eq!(
+            discriminant_of(
+                &TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(aat)
+            ),
+            34
+        );
+        for item in all_variants() {
+            assert_eq!(
+                discriminant_of(&item),
+                item.u8_item_index(),
+                "bincode discriminant of {:?} moved",
+                item
+            );
+        }
+    }
+
+    // ---- u8_item_index returns unique values 0..=34 ----
 
     #[test]
     fn u8_item_index_values_are_unique() {
@@ -444,10 +578,10 @@ mod tests {
     }
 
     #[test]
-    fn u8_item_index_covers_0_through_31() {
+    fn u8_item_index_covers_0_through_34() {
         let variants = all_variants();
         let indices: BTreeSet<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
-        for i in 0u8..=31 {
+        for i in 0u8..=34 {
             assert!(indices.contains(&i), "Missing u8_item_index value: {}", i);
         }
     }
@@ -457,7 +591,7 @@ mod tests {
         let variants = all_variants();
         for v in &variants {
             let idx = v.u8_item_index();
-            assert!(idx <= 31, "Index {} exceeds expected max of 31", idx);
+            assert!(idx <= 34, "Index {} exceeds expected max of 34", idx);
         }
     }
 
@@ -480,13 +614,31 @@ mod tests {
             TokenConfigurationChangeItem::MainControlGroup(Some(5)).u8_item_index(),
             31
         );
+        assert_eq!(
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(10).u8_item_index(),
+            32
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+                AuthorizedActionTakers::NoOne
+            )
+            .u8_item_index(),
+            33
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(
+                AuthorizedActionTakers::NoOne
+            )
+            .u8_item_index(),
+            34
+        );
     }
 
     #[test]
     fn u8_item_index_variant_count() {
-        // We expect exactly 32 variants (indices 0..=31)
+        // We expect exactly 35 variants (indices 0..=34)
         let variants = all_variants();
-        assert_eq!(variants.len(), 32);
+        assert_eq!(variants.len(), 35);
     }
 
     // --- payload_serialization ---
@@ -891,6 +1043,19 @@ mod json_convertible_tests {
             platform_value!({"$type": "maxSupply", "value": 123_456_789u64})
         );
         let recovered = TokenConfigurationChangeItem::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_of_the_pool_notes_threshold() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(10);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({"$type": "minimumPoolNotesForOutgoing", "value": 10})
+        );
+        let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
 

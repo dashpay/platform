@@ -117,12 +117,18 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
 
     /// Returns all group positions used in the token configuration
     fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool) {
-        self.as_v0().all_used_group_positions()
+        match self {
+            TokenConfiguration::V0(v0) => v0.all_used_group_positions(),
+            TokenConfiguration::V1(v1) => v1.all_used_group_positions(),
+        }
     }
 
     /// Returns all the change contract rules, including those from the distribution rules
     fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)> {
-        self.as_v0().all_change_control_rules()
+        match self {
+            TokenConfiguration::V0(v0) => v0.all_change_control_rules(),
+            TokenConfiguration::V1(v1) => v1.all_change_control_rules(),
+        }
     }
 
     /// Returns the token description.
@@ -240,6 +246,13 @@ impl TokenConfigurationV1Getters for TokenConfiguration {
         match self {
             TokenConfiguration::V0(_) => false,
             TokenConfiguration::V1(v1) => v1.has_shielded_pool(),
+        }
+    }
+
+    fn minimum_pool_notes_for_outgoing(&self) -> u64 {
+        match self {
+            TokenConfiguration::V0(_) => 0,
+            TokenConfiguration::V1(v1) => v1.minimum_pool_notes_for_outgoing(),
         }
     }
 }

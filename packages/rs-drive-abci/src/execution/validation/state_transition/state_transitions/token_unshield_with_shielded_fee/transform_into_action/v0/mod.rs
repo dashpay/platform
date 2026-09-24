@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_pool_common::validate_minimum_token_pool_notes;
 use crate::execution::validation::state_transition::state_transitions::token_pool_paid_common::{
     resolve_pooled_token, validate_credit_pool_fee_spend, validate_token_pool_holds,
     validate_token_pool_spend,
@@ -26,9 +27,10 @@ impl TokenUnshieldWithShieldedFeeStateTransitionTransformIntoActionValidationV0
     for TokenUnshieldWithShieldedFeeTransition
 {
     /// Both Orchard proofs and the fee floor were checked by the processor. Here the token
-    /// must own a pool and not be paused, the token bundle must spend recorded and unspent
-    /// notes of that pool, the fee bundle must spend recorded and unspent notes of the credit
-    /// pool which must hold what leaves it, and the transition's own rules apply.
+    /// must own a pool and not be paused, the pool must hold the notes the token's
+    /// configuration requires before tokens leave it, the token bundle must spend recorded and
+    /// unspent notes of that pool, the fee bundle must spend recorded and unspent notes of the
+    /// credit pool which must hold what leaves it, and the transition's own rules apply.
     fn transform_into_action_v0(
         &self,
         drive: &Drive,
@@ -36,7 +38,7 @@ impl TokenUnshieldWithShieldedFeeStateTransitionTransformIntoActionValidationV0
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let TokenUnshieldWithShieldedFeeTransition::V0(v0) = self;
-        let (_contract, _configuration) = match resolve_pooled_token(
+        let (_contract, configuration) = match resolve_pooled_token(
             drive,
             v0.data_contract_id,
             v0.token_contract_position,
@@ -56,6 +58,20 @@ impl TokenUnshieldWithShieldedFeeStateTransitionTransformIntoActionValidationV0
             return Ok(ConsensusValidationResult::new_with_error(
                 TokenTransferRecipientIdentityNotExistError::new(v0.recipient_id).into(),
             ));
+        }
+        // The tokens leave the pool for a visible identity, as with `TokenUnshield`; only the
+        // fee comes from the credit pool. So the token's outgoing notes threshold applies here
+        // too, or a holder with credit pool notes could leave a pool below it.
+        let result = validate_minimum_token_pool_notes(
+            drive,
+            &v0.token_id.to_buffer(),
+            &configuration,
+            transaction,
+            &mut vec![],
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_errors(result.errors));
         }
         let token_nullifiers: Vec<[u8; 32]> =
             v0.token_actions.iter().map(|a| a.nullifier).collect();

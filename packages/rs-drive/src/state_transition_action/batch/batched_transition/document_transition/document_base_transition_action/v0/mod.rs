@@ -6,6 +6,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::TokenContractPosition;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -47,6 +48,19 @@ impl DeclaredDocumentActionFee {
     }
 }
 
+/// A document action's token cost paid out of the token's shielded pool, with the token it is
+/// paid in: the contract declaring the token (the document's own or the one its document type's
+/// token cost names) and the token's position there.
+#[derive(Debug, Clone)]
+pub struct DocumentShieldedTokenPayment {
+    /// The spend bundle paying the cost (`TokenPaymentInfo::V1`)
+    pub payment: TokenShieldedPayment,
+    /// The contract declaring the token the cost is paid in
+    pub token_contract_id: Identifier,
+    /// The token's position in that contract
+    pub token_contract_position: TokenContractPosition,
+}
+
 #[derive(Debug, Clone)]
 /// document base transition action v0
 pub struct DocumentBaseTransitionActionV0 {
@@ -72,7 +86,7 @@ pub struct DocumentBaseTransitionActionV0 {
     pub declared_action_fee: Option<Box<DeclaredDocumentActionFee>>,
     /// The spend bundle paying `token_cost` out of the token's shielded pool instead of the
     /// owner's token balance (`TokenPaymentInfo::V1`). Only set when there is a token cost.
-    pub shielded_token_payment: Option<Box<TokenShieldedPayment>>,
+    pub shielded_token_payment: Option<Box<DocumentShieldedTokenPayment>>,
 }
 
 /// document base transition action accessors v0
@@ -113,7 +127,7 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// to pay
     fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee>;
     /// The shielded payment of the token cost, when the cost is paid out of the token's pool
-    fn shielded_token_payment(&self) -> Option<&TokenShieldedPayment>;
+    fn shielded_token_payment(&self) -> Option<&DocumentShieldedTokenPayment>;
     /// Whether the transition agrees to a discounted moderators part on a document type an
     /// elected contract moderates: the only place a discount may come from, the share of the
     /// contract's seated moderation charter. The batch transformer reads that share for every

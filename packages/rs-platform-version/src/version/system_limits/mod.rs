@@ -203,6 +203,13 @@ pub struct SystemLimits {
     // do this that much
     pub max_token_redemption_cycles: u32,
     pub max_shielded_transition_actions: u16,
+    /// Highest `minimumPoolNotesForOutgoing` a token's configuration may set. The threshold
+    /// refuses outflows from the token's shielded pool while the pool holds fewer notes, so
+    /// without an upper bound an issuer could set one no pool ever reaches and strand every
+    /// holder's shielded balance, irreversibly on a readonly contract. Read by the token
+    /// configuration validation of contract create and update and by `TokenConfigUpdate`
+    /// (protocol version 14), which never reach it before.
+    pub max_token_pool_notes_for_outgoing: u64,
     /// Maximum overlap factor (`range / step`) a `timeRange` index transform
     /// may declare, enforced at contract registration.
     ///

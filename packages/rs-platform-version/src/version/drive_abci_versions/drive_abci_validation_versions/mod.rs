@@ -33,11 +33,10 @@ pub struct DriveAbciValidationConstants {
     /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
     /// sufficient anonymity set before funds can leave the pool.
     pub minimum_pool_notes_for_outgoing: u64,
-    /// Minimum number of notes a TOKEN shielded pool must hold before a `TokenUnshield`
-    /// (the outflow with an observable destination) is allowed. Token pools start empty
-    /// and are small, so this is 0 at introduction: a floor would trap the first
-    /// depositors until enough other holders shielded. The knob exists so a later version
-    /// can raise it once per-token anonymity sets are meaningful.
+    /// Superseded and read by nothing: a token shielded pool's outgoing notes threshold is
+    /// the token configuration's `minimumPoolNotesForOutgoing`, set per token by its issuer
+    /// and bounded by `SystemLimits::max_token_pool_notes_for_outgoing`. Kept only so the
+    /// version tables stay as they are; do not read it for a token pool.
     pub minimum_token_pool_notes_for_outgoing: u64,
     /// Number of blocks of anchors to retain. Anchors older than this are
     /// pruned at the end of each block. Clients must use an anchor no older
