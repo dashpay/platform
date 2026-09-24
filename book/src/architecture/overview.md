@@ -274,7 +274,7 @@ Here is a simplified view of every Rust workspace member, grouped by role:
 
 | Role | Crates |
 |------|--------|
-| **Protocol types** | `dpp`, `platform-value`, `platform-serialization`, `platform-serialization-derive`, `platform-versioning`, `platform-value-convertible`, `dpp-json-convertible-derive` |
+| **Protocol types** | `dpp`, `platform-version`, `platform-value`, `platform-serialization`, `platform-serialization-derive`, `platform-versioning`, `platform-value-convertible`, `dpp-json-convertible-derive` |
 | **Storage** | `drive` |
 | **Application server** | `drive-abci` |
 | **Client SDK** | `dash-sdk`, `rs-dapi-client`, `dash-context-provider`, `rs-sdk-trusted-context-provider`, `dash-async`, `dash-platform-queries` |

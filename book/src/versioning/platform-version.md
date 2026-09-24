@@ -349,7 +349,7 @@ version 14 means.
   a reason.
 - Never add a new field to `PlatformVersion` without also updating every
   `PLATFORM_V*` constant. The compiler will enforce this, but be aware that
-  the fix is updating twelve files, not one.
+  the fix is updating every registered version file (fourteen today), not one.
 - Never use `PlatformVersion::latest()` in consensus-critical code paths.
   Always use the version from the current platform state, obtained via
   `platform_state.current_platform_version()`. The "latest" version is what

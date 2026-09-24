@@ -332,20 +332,25 @@ guard let identity = swift_dash_identity_fetch(sdk, identityId) else {
 
 ## Testing
 
-The Swift SDK uses compilation verification and Swift integration testing:
+`Package.swift` defines two test targets: `SwiftDashSDKTests` (offline,
+hermetic) and `SwiftDashSDKIntegrationTests` (against a local dashmate devnet,
+gated by `RUN_INTEGRATION_TESTS=1`). The package tests run on macOS, so the
+xcframework needs the macOS slice:
 
 ```bash
-# Verify compilation
-cargo build -p swift-sdk
+cd packages/swift-sdk
 
-# Run unit tests
-cargo test -p swift-sdk --lib
+# Build the simulator and macOS slices, run the package tests and the
+# SwiftExampleApp test bundle on a simulator (what CI runs)
+./run_tests.sh
 
-# Check symbol exports
-nm -g target/debug/libswift_sdk.a | grep swift_dash_
+# Or by hand
+./build_ios.sh --target tests --profile dev
+swift test
+
+# Integration tests: restarts a local dashmate devnet, then runs the gated target
+./run_integration_tests.sh
 ```
-
-For comprehensive testing, integrate the compiled library into an iOS project with XCTest suites.
 
 ## Example App
 

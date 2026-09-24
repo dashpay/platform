@@ -318,11 +318,15 @@ an error for inapplicable variants).
 - Assume all transitions have signatures. `signature()` returns `None` for
   `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`,
   `AddressCreditWithdrawal`, `Shield`, `ShieldedTransfer`, `Unshield`,
-  `ShieldedWithdrawal` and `IdentityCreateFromShieldedPool`. Of the address and
-  shielded transitions only `AddressFundingFromAssetLock` and `ShieldFromAssetLock`
-  are signed.
-- Assume all transitions have an `owner_id`. Address-based and shielded transitions
-  do not.
+  `ShieldedWithdrawal` and `IdentityCreateFromShieldedPool`. Of the transitions
+  that spend from addresses or the shielded pool only `AddressFundingFromAssetLock`
+  and `ShieldFromAssetLock` are signed. `IdentityCreditTransferToAddresses` is the
+  exception in the address group: it is identity-signed like `IdentityCreditTransfer`,
+  because it sends to addresses without consuming address inputs (`inputs()` returns
+  `None` for it).
+- Assume all transitions have an `owner_id`. The transitions funded from address
+  inputs, asset locks into addresses, or the shielded pool return `None`;
+  `IdentityCreditTransferToAddresses` keeps its identity owner.
 - Modify the `StateTransitionType` discriminant values -- they are part of the
   wire format and changing them would break all existing serialized data.
 - Add new variants without also updating every `call_method` macro and every

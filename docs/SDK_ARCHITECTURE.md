@@ -343,18 +343,19 @@ Each SDK layer provides appropriate error handling:
 | Tokens | ✅ | ✅ | ✅ | ⏳ | ⏳ | ⏳ |
 | Proofs | ✅ | ✅ | ✅ | ⏳ | ⏳ | 🚧 |
 | State Transitions | ✅ | ✅ | ✅ | ⏳ | ⏳ | ⏳ |
-| Dashpay | ⏳ | ⏳ | ✅ | ⏳ | ⏳ | ⏳ |
-| Name Service (DPNS) | ⏳ | ⏳ | ✅ | ⏳ | ⏳ | ⏳ |
+| Dashpay | ⏳ | ⏳ | 🚧 | ⏳ | ⏳ | ⏳ |
+| Name Service (DPNS) | ⏳ | ⏳ | 🚧 | ⏳ | ⏳ | ⏳ |
 | Core Types Support | ✅ | ✅ | ✅ | ⏳ | ⏳ | ⏳ |
 | Core Blockchain Sync | 🚧 | 🚧 | ✅ | ⏳ | ⏳ | ⏳ |
 | Core Deterministic Masternode List Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
 
 Legend: ✅ Fully Supported | 🚧 In Development | ⏳ Planned | ❌ Not Supported
 
-The Kotlin column follows the feature list in `packages/kotlin-sdk/README.md`.
-The per-capability Swift and Kotlin parity audit, including capabilities that
-are only partially supported, is generated into
-`packages/kotlin-sdk/PARITY_SUMMARY.md`.
+The Kotlin column follows the feature list in `packages/kotlin-sdk/README.md`,
+qualified by the generated parity audit in
+`packages/kotlin-sdk/PARITY_SUMMARY.md`. Dashpay and DPNS are marked in
+development there because that audit records `dashpay.deferred_contact_crypto`
+and `dpns.contested_names_by_identity` as partial on Kotlin.
 
 ## Development Considerations
 
