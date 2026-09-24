@@ -9658,7 +9658,7 @@ mod tests {
                     moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                         join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                         vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                        challenge_cool_down: 1_209_600,
+                        challenge_cool_down: Some(1_209_600),
                         election_delay: None,
                         max_added_moderators: 0,
                         moderated_document_types: BTreeMap::from([(
@@ -9742,7 +9742,7 @@ mod tests {
                         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                            challenge_cool_down: 1_209_600,
+                            challenge_cool_down: Some(1_209_600),
                             election_delay,
                             max_added_moderators: 0,
                             moderated_document_types: BTreeMap::from([(
