@@ -40,6 +40,7 @@ members = [
     "packages/app-connect-contract",
     "packages/moderation-charters-contract",
     "packages/rs-sdk-ffi",
+    "packages/rs-platform-cxx",
     "packages/wasm-drive-verify",
     "packages/dash-platform-balance-checker",
     "packages/rs-dapi",

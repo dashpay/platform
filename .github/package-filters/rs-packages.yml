@@ -181,6 +181,12 @@ dash-sdk: &sdk
   - *dapi_client
   - *drive
 
+dash-platform-cxx:
+  - .github/workflows/tests*
+  - packages/rs-platform-cxx/**
+  - *sdk
+  - *platform_encryption
+
 rs-sdk-ffi: &sdk_ffi
   - .github/workflows/tests*
   - packages/rs-sdk-ffi/**
