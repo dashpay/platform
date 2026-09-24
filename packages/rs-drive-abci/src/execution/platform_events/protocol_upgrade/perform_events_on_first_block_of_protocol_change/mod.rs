@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -40,6 +41,9 @@ impl<C> Platform<C> {
     ///   which contains the logic for version `0`.
     /// - If the version is `1`, it calls `perform_events_on_first_block_of_protocol_change_v1`, which runs
     ///   the same transitions and then refreshes the cached definitions of the contracts they rewrote.
+    /// - If the version is `2`, it calls `perform_events_on_first_block_of_protocol_change_v2`, which
+    ///   empties the contract cache, so no read is billed at a fee cached under the old fee
+    ///   schedule, and then runs v1.
     /// - If no version is specified (`None`), the function does nothing and returns `Ok(())`.
     /// - If a different version is specified, it returns an error indicating an unknown version mismatch.
     ///
@@ -71,10 +75,17 @@ impl<C> Platform<C> {
                 previous_protocol_version,
                 platform_version,
             ),
+            Some(2) => self.perform_events_on_first_block_of_protocol_change_v2(
+                platform_state,
+                block_info,
+                transaction,
+                previous_protocol_version,
+                platform_version,
+            ),
             None => Ok(()),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "perform_events_on_first_block_of_protocol_change".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -88,7 +99,9 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
+    use dpp::tests::fixtures::get_data_contract_fixture;
 
     #[test]
     fn test_perform_events_when_version_method_is_none() {
@@ -166,11 +179,90 @@ mod tests {
                 received,
             })) => {
                 assert_eq!(method, "perform_events_on_first_block_of_protocol_change");
-                assert_eq!(known_versions, vec![0, 1]);
+                assert_eq!(known_versions, vec![0, 1, 2]);
                 assert_eq!(received, 255);
             }
             _ => panic!("expected UnknownVersionMismatch error"),
         }
+    }
+
+    #[test]
+    fn should_empty_the_contract_cache_on_the_first_block_of_protocol_version_14() {
+        let previous_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("epoch"),
+        };
+
+        // A user contract a node read while protocol version 13 was active, caching the fee of
+        // that read under version 13's fee schedule.
+        let contract = get_data_contract_fixture(None, 0, previous_version.protocol_version)
+            .data_contract_owned();
+        let contract_id = contract.id().to_buffer();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                previous_version,
+            )
+            .expect("expected to apply the contract");
+        platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                contract_id,
+                Some(&Epoch::new(0).expect("epoch")),
+                true,
+                None,
+                previous_version,
+            )
+            .expect("expected to read the contract");
+        let contracts = &platform.drive.cache.data_contracts;
+        let is_cached_with_its_fee = || {
+            contracts
+                .get(contract_id, false)
+                .is_some_and(|cached| cached.has_fee_for_tests())
+        };
+        assert!(is_cached_with_its_fee());
+
+        let run_the_events = |platform_version: &PlatformVersion| {
+            contracts.clear_block_cache();
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform_state,
+                    &block_info,
+                    &transaction,
+                    previous_version.protocol_version,
+                    platform_version,
+                )
+                .expect("expected the protocol change events to run");
+        };
+
+        // The events of v1 leave it there, so a hit would keep billing the old fee.
+        let mut with_the_events_of_v1 = platform_version.clone();
+        with_the_events_of_v1
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .perform_events_on_first_block_of_protocol_change = Some(1);
+        run_the_events(&with_the_events_of_v1);
+        assert!(is_cached_with_its_fee());
+
+        run_the_events(platform_version);
+        assert!(contracts.get(contract_id, false).is_none());
+        assert!(contracts.get(contract_id, true).is_none());
     }
 
     #[test]

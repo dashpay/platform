@@ -44,9 +44,9 @@ pub(in crate::execution::validation::state_transition::state_transitions::contra
 impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransition {
     /// Reads the contract and the pot and settles the payout: the signer is a recipient of the
     /// pot, the pot was not claimed in this epoch yet, and it holds enough to pay every
-    /// recipient something. Every refusal after the contract is found is paid for by bumping
-    /// the signer's contract nonce, and a refused claim leaves the pot's last claim epoch
-    /// alone.
+    /// recipient something. Every refusal, a contract that does not exist included, is paid for
+    /// by bumping the signer's contract nonce, and a refused claim leaves the pot's last claim
+    /// epoch alone.
     ///
     /// The action carries what each recipient is paid, so Drive pays the pot out without
     /// reading it again, and the mempool, which transforms without a state validation stage,
@@ -77,16 +77,11 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
         // so billing it would make the fee, and the app hash, depend on the cache.
         let contract_fetch_fee =
             contract_fetch_fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "fee must exist for the contract fetch of a contract fee claim",
+                "fee must exist for the contract fetch of a contract fee claim transition",
             )))?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
             contract_fetch_fee,
         ));
-        let Some(contract_fetch_info) = maybe_contract_fetch_info else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                DataContractNotPresentError::new(contract_id).into(),
-            ));
-        };
 
         let bump_action = || {
             StateTransitionAction::BumpIdentityDataContractNonceAction(
@@ -100,6 +95,12 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
                 bump_action(),
                 vec![error],
             ))
+        };
+
+        // Paid like every other refusal: the signer is authenticated and the lookup happened,
+        // as for a contract update of a contract that does not exist.
+        let Some(contract_fetch_info) = maybe_contract_fetch_info else {
+            return refuse(DataContractNotPresentError::new(contract_id).into());
         };
 
         // Only who a payout of the pot goes to may claim it: the contract owner for the owner
