@@ -664,10 +664,12 @@ pub fn token_shielded_transfer_extra_sighash_data_v0(
 ///   nothing is Faerie Gold. The harm is that the recipient now holds notes derived from one
 ///   `rho` in two pools, which links their spends across pools.
 ///
-/// Not covered: a copy into the same pool *and* the same kind, submitted by someone else. That
-/// is the larger Faerie Gold vector and this preimage does not reach it, because it binds no
-/// owner. Closing it needs the bundle's dummy nullifiers recorded and checked, which no
-/// outputs-only path does yet, here or in the credit pool.
+/// Not covered by this preimage: a copy into the same pool *and* the same kind, submitted by
+/// someone else. That is the larger Faerie Gold vector, and the preimage cannot reach it
+/// because it binds no owner. Consensus closes it on the state side instead: every token pool
+/// write that takes an outputs-only bundle records the bundle's dummy nullifiers in the pool's
+/// nullifier tree, and every such transition is refused with `NullifierAlreadySpentError` when
+/// one of them is already there. The credit pool's outputs-only paths do not do this.
 pub fn token_pool_output_only_extra_sighash_data(
     action_type: TokenTransitionActionType,
     token_id: &[u8; 32],

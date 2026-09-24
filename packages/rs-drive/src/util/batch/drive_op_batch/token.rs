@@ -142,7 +142,8 @@ pub enum TokenOperationType {
         identity_id: Identifier,
         /// The amount entering the pool
         amount: TokenAmount,
-        /// The bundle's output notes, appended to the pool's commitment tree
+        /// The bundle's output notes, appended to the pool's commitment tree; their dummy
+        /// nullifiers are recorded in the pool's nullifier set
         notes: Vec<ShieldedActionNote>,
     },
     /// Moves tokens from the token's shielded pool into an identity balance.
@@ -175,7 +176,8 @@ pub enum TokenOperationType {
         amount: TokenAmount,
         /// Should we allow this to be the first ever mint
         allow_first_mint: bool,
-        /// The output notes of the bundle
+        /// The output notes of the bundle; their dummy nullifiers are recorded in the pool's
+        /// nullifier set
         notes: Vec<ShieldedActionNote>,
     },
     /// Burns tokens held in the token's shielded pool (pool balance and supply shrink).

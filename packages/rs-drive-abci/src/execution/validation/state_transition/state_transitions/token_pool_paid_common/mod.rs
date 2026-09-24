@@ -135,6 +135,37 @@ pub(crate) fn validate_token_pool_spend(
     Ok(None)
 }
 
+/// An outputs-only token bundle entering the token pool: its dummy nullifiers must not repeat
+/// within the bundle or already be recorded there. Returns the rejection, if any.
+///
+/// The bundle binds nobody, so its authorized bytes can be put into a second transition of the
+/// same kind with another fee bundle. That copy would land notes with the same commitments and
+/// the same nullifiers as the original's, of which only one of each could ever be spent. The
+/// pool records these nullifiers when the bundle enters; this is what refuses the copy.
+pub(crate) fn validate_token_pool_outputs(
+    drive: &Drive,
+    token_id: Identifier,
+    nullifiers: &[[u8; 32]],
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
+    let mut drive_operations = vec![];
+    let result = validate_token_pool_nullifiers(
+        drive,
+        &token_id.to_buffer(),
+        nullifiers,
+        transaction,
+        &mut drive_operations,
+        platform_version,
+    )?;
+    if !result.is_valid() {
+        return Ok(Some(ConsensusValidationResult::new_with_errors(
+            result.errors,
+        )));
+    }
+    Ok(None)
+}
+
 /// The credit pool side of the fee bundle: anchor recorded, nullifiers unspent and the pool
 /// holding `credits_leaving`. Returns the pool's current total on success.
 pub(crate) fn validate_credit_pool_fee_spend(

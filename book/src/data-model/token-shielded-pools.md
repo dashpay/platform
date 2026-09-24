@@ -101,6 +101,15 @@ Outputs-only bundles (shield, mint, claim, purchase) have no spends, so their an
 checked against the pool; the client builds them against the empty tree. Spending bundles must
 name an anchor the pool has recorded.
 
+Because the preimage of an outputs-only bundle binds no owner, anybody can lift one out of the
+mempool and submit it again as the same kind into the same pool. The copy would land a second
+note with the same commitment and the same `rho`, hence the same nullifier, and only one of the
+two could ever be spent. The pool refuses it on the state side: each action's dummy nullifier,
+from which its note takes its `rho`, is recorded in the pool's nullifier tree when the bundle
+enters, and a bundle whose dummy nullifier is already there is rejected with
+`NullifierAlreadySpentError`. `TokenPurchaseFromShieldedPool` carries an outputs-only token
+bundle too and is checked the same way.
+
 A mint or burn into the pool that goes through a group action stores
 `TokenEvent::MintToPool` / `TokenEvent::BurnFromPool` with a digest of the serialized actions
 (`serialized_actions_digest`), so every signer commits to exactly the same notes. A burn's
@@ -195,7 +204,8 @@ State validation runs in this order, and the first failure is returned:
    schedule and the max supply.
 4. Spending bundles: the anchor is recorded in the pool (`InvalidAnchorError`), no nullifier
    repeats within the bundle or is already spent (`NullifierAlreadySpentError`), and for an
-   unshield the pool holds `amount`.
+   unshield the pool holds `amount`. Outputs-only bundles: no dummy nullifier repeats within
+   the bundle or is already recorded in the pool (`NullifierAlreadySpentError`).
 5. Proof verification. The fee for it, `compute_shielded_verification_fee(actions)`, is added
    as a precalculated operation before the Halo 2 proof and binding signature are checked, so a
    failed proof is a paid failure: the identity is charged, its nonce advances, and nothing
@@ -213,13 +223,13 @@ batch carrying any of them with `StateTransitionNotActiveError`.
 
 The drive operations are composites of the credit pool primitives re-rooted under the token:
 
-- shield: remove `amount` from the owner's token balance, append the notes, add `amount` to
-  the pool's `TOTAL_BALANCE`;
+- shield: remove `amount` from the owner's token balance, insert the bundle's dummy
+  nullifiers, append the notes, add `amount` to the pool's `TOTAL_BALANCE`;
 - unshield: insert the nullifiers, append the notes, subtract `amount` from the pool balance,
   add `amount` to the recipient's token balance;
 - shielded transfer: insert the nullifiers, append the notes;
-- mint, claim and purchase to pool: append the notes, add `amount` to the pool balance and to
-  the total supply (`TokenMintToPool`);
+- mint, claim and purchase to pool: insert the bundle's dummy nullifiers, append the notes,
+  add `amount` to the pool balance and to the total supply (`TokenMintToPool`);
 - burn from pool: insert the nullifiers, append the change notes, subtract `amount` from the
   pool balance and from the total supply (`TokenBurnFromPool`).
 

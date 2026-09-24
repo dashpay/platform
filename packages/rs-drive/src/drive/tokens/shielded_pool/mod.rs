@@ -380,8 +380,10 @@ mod tests {
         assert_eq!(token_balance(&drive, identity_id), Some(600));
         assert_eq!(pool_balance(&drive), 400);
         assert_eq!(notes_count(&drive), 2);
-        // Outputs-only bundles never spend: their dummy nullifiers are not recorded.
-        assert!(!nullifier_is_spent(&drive, &notes[0].nullifier));
+        // An outputs-only bundle spends nothing, yet its dummy nullifiers are recorded: they are
+        // what lets validation refuse the same bundle entering this pool again.
+        assert!(nullifier_is_spent(&drive, &notes[0].nullifier));
+        assert!(nullifier_is_spent(&drive, &notes[1].nullifier));
     }
 
     #[test]
@@ -524,12 +526,13 @@ mod tests {
         let (drive, identity_id) = setup(1_000);
         let platform_version = PlatformVersion::latest();
 
+        let notes = [note(1), note(2)];
         let operations = drive
             .token_mint_to_pool_operations(
                 TOKEN_ID,
                 250,
                 false,
-                &[note(1), note(2)],
+                &notes,
                 &mut None,
                 None,
                 platform_version,
@@ -547,6 +550,9 @@ mod tests {
         );
         // The minter's own balance is not involved.
         assert_eq!(token_balance(&drive, identity_id), Some(1_000));
+        // The bundle's dummy nullifiers are recorded, as for a shield.
+        assert!(nullifier_is_spent(&drive, &notes[0].nullifier));
+        assert!(nullifier_is_spent(&drive, &notes[1].nullifier));
         assert!(drive
             .has_token_shielded_pool(TOKEN_ID, None, &mut vec![], platform_version)
             .expect("pool lookup"));

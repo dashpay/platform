@@ -1,5 +1,4 @@
-//! Stateful checks shared by the three token shielded pool validators (`TokenShield`,
-//! `TokenUnshield`, `TokenShieldedTransfer`).
+//! Stateful checks shared by the token shielded pool validators.
 //!
 //! These mirror the credit pool helpers in `shielded_common`, re-rooted under the token's
 //! pool, and meter every read into the execution context so the batch owner pays for them.
@@ -166,6 +165,45 @@ pub(crate) fn validate_token_pool_nullifiers(
     Ok(SimpleConsensusValidationResult::new())
 }
 
+/// An outputs-only bundle's dummy nullifiers must not repeat within the bundle or already be
+/// recorded in the token pool. The reads are charged to the batch owner.
+///
+/// Such a bundle binds no owner and no anchor, so the same authorized bytes can be submitted
+/// again, by anybody, as the same kind into the same pool. Each of its notes takes its `rho`
+/// from its action's dummy nullifier, so the copy would land a second note with the same
+/// commitment and the same nullifier, of which only one could ever be spent. Every token pool
+/// write that takes an outputs-only bundle records these nullifiers; this is the check that
+/// makes the record refuse anything, since the insert itself does not look for an existing
+/// entry.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn validate_token_pool_output_nullifiers(
+    platform: &PlatformStateRef,
+    token_id: &[u8; 32],
+    nullifiers: &[[u8; 32]],
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let mut drive_operations = vec![];
+    let validation_result = validate_token_pool_nullifiers(
+        platform.drive,
+        token_id,
+        nullifiers,
+        transaction,
+        &mut drive_operations,
+        platform_version,
+    )?;
+    charge_drive_operations(
+        platform.drive,
+        block_info,
+        execution_context,
+        drive_operations,
+        platform_version,
+    )?;
+    Ok(validation_result)
+}
+
 /// The anonymity-set floor for outflows with an observable destination
 /// (`minimum_token_pool_notes_for_outgoing`, 0 at introduction).
 pub(crate) fn validate_minimum_token_pool_notes(
@@ -239,4 +277,71 @@ pub(crate) fn verify_token_pool_bundle(
     }
 
     Ok(SimpleConsensusValidationResult::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::setup_platform;
+    use assert_matches::assert_matches;
+
+    const TOKEN_ID: [u8; 32] = [7u8; 32];
+
+    /// A bundle naming one nullifier in two actions would land two notes of which only one
+    /// could be spent, and an outputs-only bundle's pool write would insert that nullifier
+    /// twice in one batch. The pool here has recorded nothing, so only the within-bundle
+    /// check can refuse it.
+    #[test]
+    fn a_nullifier_repeated_within_one_bundle_is_refused_by_a_pool_that_has_not_seen_it() {
+        let platform = setup_platform();
+        let platform_version = PlatformVersion::latest();
+        let operations = platform
+            .drive
+            .create_token_shielded_pool_trees_operations(
+                TOKEN_ID,
+                false,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("pool tree operations");
+        platform
+            .drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("create pool trees");
+
+        let nullifier = [1u8; 32];
+        let result = validate_token_pool_nullifiers(
+            &platform.drive,
+            &TOKEN_ID,
+            &[nullifier, nullifier],
+            None,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("no execution error");
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+                if error.nullifier() == nullifier
+        );
+
+        // Named once, the same nullifier is fresh: what was refused is the repeat.
+        let result = validate_token_pool_nullifiers(
+            &platform.drive,
+            &TOKEN_ID,
+            &[nullifier],
+            None,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("no execution error");
+        assert!(result.is_valid());
+    }
 }

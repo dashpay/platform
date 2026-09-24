@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::token_pool_paid_common::{
-    resolve_pooled_token, validate_credit_pool_fee_spend,
+    resolve_pooled_token, validate_credit_pool_fee_spend, validate_token_pool_outputs,
 };
 use dpp::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
 use dpp::consensus::basic::BasicError;
@@ -31,9 +31,10 @@ impl TokenPurchaseFromShieldedPoolStateTransitionTransformIntoActionValidationV0
     for TokenPurchaseFromShieldedPoolTransition
 {
     /// Both Orchard proofs and the fee floor were checked by the processor. Here the token
-    /// must own a pool and not be paused, the token bundle must spend recorded and unspent
-    /// notes of that pool, the fee bundle must spend recorded and unspent notes of the credit
-    /// pool which must hold what leaves it, and the transition's own rules apply.
+    /// must own a pool and not be paused, the outputs-only token bundle's dummy nullifiers
+    /// must not already be recorded in that pool, the fee bundle must spend recorded and
+    /// unspent notes of the credit pool which must hold what leaves it, and the transition's
+    /// own rules apply.
     fn transform_into_action_v0(
         &self,
         drive: &Drive,
@@ -114,6 +115,17 @@ impl TokenPurchaseFromShieldedPoolStateTransitionTransformIntoActionValidationV0
                 .into(),
             ));
         };
+        let token_nullifiers: Vec<[u8; 32]> =
+            v0.token_actions.iter().map(|a| a.nullifier).collect();
+        if let Some(rejection) = validate_token_pool_outputs(
+            drive,
+            v0.token_id,
+            &token_nullifiers,
+            transaction,
+            platform_version,
+        )? {
+            return Ok(rejection);
+        }
         let fee_nullifiers: Vec<[u8; 32]> = v0.fee_actions.iter().map(|a| a.nullifier).collect();
         let current_credit_pool_balance = match validate_credit_pool_fee_spend(
             drive,

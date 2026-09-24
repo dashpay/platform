@@ -10,7 +10,8 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Version 0: debit the identity, then append the notes and credit the pool balance.
+    /// Version 0: debit the identity, then record the dummy nullifiers, append the notes and
+    /// credit the pool balance.
     /// The token's total supply is unchanged: the pool balance is a conservation-side term.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn token_shield_operations_v0(
@@ -34,11 +35,15 @@ impl Drive {
             platform_version,
         )?;
 
-        // An outputs-only bundle spends nothing: its dummy nullifiers are never recorded.
+        // An outputs-only bundle spends nothing, but its dummy nullifiers are recorded all the
+        // same. Each note takes its `rho` from its action's dummy nullifier, so the same bundle
+        // entering this pool again would land notes with the same commitments and nullifiers;
+        // the record is what lets validation refuse it.
+        let dummy_nullifiers: Vec<[u8; 32]> = notes.iter().map(|note| note.nullifier).collect();
         drive_operations.extend(self.token_shielded_pool_update_operations(
             token_id,
             TokenPoolBalanceChange::Add(amount),
-            &[],
+            &dummy_nullifiers,
             notes,
             estimated_costs_only_with_layer_info,
             transaction,

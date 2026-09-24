@@ -13,7 +13,8 @@ use drive::query::TransactionArg;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_pool_common::{
-    validate_token_not_paused, validate_token_shielded_pool_enabled, verify_token_pool_bundle,
+    validate_token_not_paused, validate_token_pool_output_nullifiers,
+    validate_token_shielded_pool_enabled, verify_token_pool_bundle,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::FLAGS_OUTPUTS_ONLY;
 use dpp::consensus::basic::token::ChoosingTokenMintRecipientNotAllowedError;
@@ -195,6 +196,19 @@ impl TokenMintToPoolTransitionActionStateValidationV0 for TokenMintToPoolTransit
                     ));
                 }
             }
+        }
+
+        let validation_result = validate_token_pool_output_nullifiers(
+            platform,
+            &token_id.to_buffer(),
+            &self.nullifiers(),
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
         }
 
         // An outputs-only bundle has no anchor of its own, so the sighash is what pins it to

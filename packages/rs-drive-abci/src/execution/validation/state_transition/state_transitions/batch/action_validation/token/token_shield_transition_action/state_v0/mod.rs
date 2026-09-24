@@ -5,7 +5,8 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_pool_common::{
-    validate_token_not_paused, validate_token_shielded_pool_enabled, verify_token_pool_bundle,
+    validate_token_not_paused, validate_token_pool_output_nullifiers,
+    validate_token_shielded_pool_enabled, verify_token_pool_bundle,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::FLAGS_OUTPUTS_ONLY;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -105,6 +106,19 @@ impl TokenShieldTransitionActionStateValidationV0 for TokenShieldTransitionActio
         let validation_result = validate_token_not_paused(
             platform,
             token_id,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        let validation_result = validate_token_pool_output_nullifiers(
+            platform,
+            &token_id.to_buffer(),
+            &self.nullifiers(),
             block_info,
             execution_context,
             transaction,
