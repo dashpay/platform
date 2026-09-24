@@ -27,7 +27,9 @@ jobs:
   release-npm:
     name: Release NPM packages
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # A release usually misses the js-build artifact cache and rebuilds every
+    # WASM package from scratch, which already takes close to an hour.
+    timeout-minutes: 120
     if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Check out repo

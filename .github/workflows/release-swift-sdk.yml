@@ -31,7 +31,8 @@ jobs:
   build-and-release:
     name: Build and release DashSDKFFI
     runs-on: macos-15
-    timeout-minutes: 45
+    # Two cold release-profile builds (device + simulator) of ~25 min each.
+    timeout-minutes: 90
     permissions:
       contents: write # attach the xcframework to the platform release
     # Serialize same-tag runs (e.g. an emergency dispatch racing the
