@@ -278,10 +278,13 @@ mod tests {
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::identifier::Identifier;
     use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::fee::FeeVersion;
     use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+    use std::collections::BTreeMap;
 
     const YAPPR_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
@@ -509,6 +512,9 @@ mod tests {
     fn should_report_a_deleted_post_of_a_deletable_document_join() {
         let (platform, state, version, contract) =
             setup_yappr_state_at(YAPPR_DELETABLE_POSTS_CONTRACT_PATH);
+        // The post is owner-flagged, so pricing its removal needs the fee history of the
+        // removing block, as every production caller passes.
+        let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
         platform
             .drive
             .delete_document_for_contract(
@@ -519,7 +525,7 @@ mod tests {
                 true,
                 None,
                 version,
-                None,
+                Some(&fee_history),
             )
             .expect("expected to delete the post");
 
