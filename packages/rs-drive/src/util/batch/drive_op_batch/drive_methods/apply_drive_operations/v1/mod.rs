@@ -43,6 +43,12 @@ impl Drive {
     /// for them gets nothing back, and the credits stay in the storage pools they were
     /// distributed to. An estimate carries no refund to begin with, so `check_tx` sees the
     /// same fee with or without the forfeiture.
+    ///
+    /// Every write of one identity balance or one contract fee pot is also merged into one
+    /// ([`DriveOperation::merge_balance_writes`]): each computes the new value from the one
+    /// committed before the batch, so a second write in the same batch would replace the first
+    /// and the credits would no longer add up. A batch that writes each key once is applied
+    /// exactly as by generation 0.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -53,6 +59,7 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
+        let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }

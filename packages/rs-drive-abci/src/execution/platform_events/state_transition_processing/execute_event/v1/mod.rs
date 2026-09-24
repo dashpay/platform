@@ -158,8 +158,10 @@ where
                 .unwrap_or(identity.id);
 
             // Whoever pays the gas pays the document action fees: they leave the payer's
-            // balance for the contract's fee pots in the same batch as the documents. They are
-            // no part of the fee below, which goes to the fee pools.
+            // balance for the contract's fee pots in the same batch as the documents, which
+            // merges them with any other write of that balance (a purchase price, a voting
+            // fund, a sale to a sponsoring contract owner). They are no part of the fee below,
+            // which goes to the fee pools.
             //
             // They are a price the contract set, like the price of a purchase, and move as that
             // principal does: with the operations, before the gas is metered and debited. Fee

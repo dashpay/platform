@@ -402,7 +402,14 @@ ran.
 
 **The fee is not part of the `FeeResult`.** It moves as balance operations in
 the batch's own operation list: one removal from the payer, one addition per
-pot. The fee pools and the proposers see exactly what they saw before. The
+pot. The transition may already write the payer's balance: a purchase moves
+its price, a contested document its voting fund, and a sale pays a contract
+owner who may be sponsoring the gas. A balance operation computes the new
+balance from the one committed before its batch and GroveDB keeps only the
+last write of a key, so `apply_drive_operations` (generation 1, protocol
+version 14) merges every write of one identity balance or one fee pot in a
+batch into a single net operation. The fee pools and the proposers see
+exactly what they saw before. The
 pots sit under the `PreFundedSpecializedBalances` root sum tree, which the
 per-block total credits check already sums, so the credits stay accounted for
 while they wait to be claimed.

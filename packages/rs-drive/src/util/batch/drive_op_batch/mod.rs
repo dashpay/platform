@@ -47,9 +47,12 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 
 use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
+use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::identifier::Identifier;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -361,6 +364,122 @@ impl DriveOperation<'_> {
             })
             .fold(0u64, |total, amount| total.saturating_add(amount))
     }
+
+    /// Merges every write of one identity balance, and every write of one contract fee pot,
+    /// into a single net operation.
+    ///
+    /// Each of these operations computes the new value from the one committed before its
+    /// batch, and GroveDB keeps only the last write of a key, so two of them in one batch lose
+    /// the first: a purchase price and a purchase fee leaving the buyer, a contested document's
+    /// voting fund and its creation fee, a sale and the action fee of a contract owner who
+    /// sponsors the gas. Merged, they apply as if in turn. The merged operation takes the place
+    /// of the first one on its key, and a balance or pot the writes leave as it was gets none.
+    /// A key written once keeps its operation untouched.
+    pub fn merge_balance_writes(operations: Vec<Self>) -> Result<Vec<Self>, Error> {
+        let mut writes: BTreeMap<BalanceKey, (usize, i128)> = BTreeMap::new();
+        for (key, change) in operations.iter().filter_map(balance_write) {
+            let (count, net) = writes.entry(key).or_default();
+            *count += 1;
+            *net += change;
+        }
+        if writes.values().all(|(count, _)| *count == 1) {
+            return Ok(operations);
+        }
+        let mut merged = Vec::with_capacity(operations.len());
+        for operation in operations {
+            let Some((key, _)) = balance_write(&operation) else {
+                merged.push(operation);
+                continue;
+            };
+            match writes.get_mut(&key) {
+                Some((1, _)) => merged.push(operation),
+                // The first write of a repeated key: the merged one goes here, and the entry
+                // is marked done so the later writes are dropped.
+                Some((count, net)) if *count > 1 => {
+                    merged.extend(net_balance_write(key, *net)?);
+                    *count = 0;
+                }
+                _ => {}
+            }
+        }
+        Ok(merged)
+    }
+}
+
+/// A key an identity balance or a contract fee pot operation writes
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum BalanceKey {
+    Identity([u8; 32]),
+    FeePot(Identifier, ContractFeePot),
+}
+
+/// The key `operation` writes and the signed change it makes there, if it is an identity
+/// balance or contract fee pot operation
+fn balance_write(operation: &DriveOperation) -> Option<(BalanceKey, i128)> {
+    match operation {
+        DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+            identity_id,
+            added_balance,
+        }) => Some((BalanceKey::Identity(*identity_id), *added_balance as i128)),
+        DriveOperation::IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
+            identity_id,
+            balance_to_remove,
+        }) => Some((
+            BalanceKey::Identity(*identity_id),
+            -(*balance_to_remove as i128),
+        )),
+        DriveOperation::ContractFeePotOperation(ContractFeePotOperationType::AddToPot {
+            contract_id,
+            pot,
+            amount,
+        }) => Some((BalanceKey::FeePot(*contract_id, *pot), *amount as i128)),
+        DriveOperation::ContractFeePotOperation(ContractFeePotOperationType::DeductFromPot {
+            contract_id,
+            pot,
+            amount,
+        }) => Some((BalanceKey::FeePot(*contract_id, *pot), -(*amount as i128))),
+        _ => None,
+    }
+}
+
+/// The one operation that makes the signed change `net` at `key`, or none when it is zero
+fn net_balance_write<'a>(key: BalanceKey, net: i128) -> Result<Option<DriveOperation<'a>>, Error> {
+    if net == 0 {
+        return Ok(None);
+    }
+    let amount = Credits::try_from(net.unsigned_abs()).map_err(|_| {
+        Error::Fee(FeeError::Overflow(
+            "the merged writes of one balance overflow credits",
+        ))
+    })?;
+    Ok(Some(match (key, net > 0) {
+        (BalanceKey::Identity(identity_id), true) => {
+            DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+                identity_id,
+                added_balance: amount,
+            })
+        }
+        (BalanceKey::Identity(identity_id), false) => {
+            DriveOperation::IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
+                identity_id,
+                balance_to_remove: amount,
+            })
+        }
+        (BalanceKey::FeePot(contract_id, pot), true) => {
+            DriveOperation::ContractFeePotOperation(ContractFeePotOperationType::AddToPot {
+                contract_id,
+                pot,
+                amount,
+            })
+        }
+        (BalanceKey::FeePot(contract_id, pot), false) => {
+            DriveOperation::ContractFeePotOperation(ContractFeePotOperationType::DeductFromPot {
+                contract_id,
+                pot,
+                amount,
+            })
+        }
+    }))
 }
 
 #[cfg(feature = "server")]
@@ -1281,5 +1400,86 @@ mod tests {
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 1);
+    }
+
+    fn add(identity: u8, added_balance: Credits) -> DriveOperation<'static> {
+        DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+            identity_id: [identity; 32],
+            added_balance,
+        })
+    }
+
+    fn remove(identity: u8, balance_to_remove: Credits) -> DriveOperation<'static> {
+        DriveOperation::IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
+            identity_id: [identity; 32],
+            balance_to_remove,
+        })
+    }
+
+    fn add_to_pot(pot: ContractFeePot, amount: Credits) -> DriveOperation<'static> {
+        DriveOperation::ContractFeePotOperation(ContractFeePotOperationType::AddToPot {
+            contract_id: Identifier::new([9; 32]),
+            pot,
+            amount,
+        })
+    }
+
+    fn deduct_from_pot(pot: ContractFeePot, amount: Credits) -> DriveOperation<'static> {
+        DriveOperation::ContractFeePotOperation(ContractFeePotOperationType::DeductFromPot {
+            contract_id: Identifier::new([9; 32]),
+            pot,
+            amount,
+        })
+    }
+
+    fn merged(operations: Vec<DriveOperation<'static>>) -> String {
+        format!(
+            "{:?}",
+            DriveOperation::merge_balance_writes(operations).expect("expected to merge")
+        )
+    }
+
+    #[test]
+    fn should_merge_every_write_of_one_identity_balance_into_one_in_place_of_the_first() {
+        // A purchase price and a purchase fee leaving the buyer, and a sale paying the seller
+        assert_eq!(
+            merged(vec![remove(1, 100), add(2, 100), remove(1, 7)]),
+            format!("{:?}", vec![remove(1, 107), add(2, 100)])
+        );
+        // A sale paying a contract owner who also pays the moderators part of the fee
+        assert_eq!(
+            merged(vec![add(3, 100), remove(3, 7)]),
+            format!("{:?}", vec![add(3, 93)])
+        );
+    }
+
+    #[test]
+    fn should_merge_the_writes_of_one_fee_pot_and_drop_writes_that_change_nothing() {
+        assert_eq!(
+            merged(vec![
+                add_to_pot(ContractFeePot::Moderators, 5),
+                add_to_pot(ContractFeePot::Owner, 2),
+                deduct_from_pot(ContractFeePot::Moderators, 8),
+                add(4, 10),
+                remove(4, 10),
+            ]),
+            format!(
+                "{:?}",
+                vec![
+                    deduct_from_pot(ContractFeePot::Moderators, 3),
+                    add_to_pot(ContractFeePot::Owner, 2),
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn should_keep_a_batch_that_writes_every_key_once_as_it_is() {
+        let operations = vec![
+            remove(1, 100),
+            add(2, 100),
+            add_to_pot(ContractFeePot::Owner, 2),
+        ];
+        assert_eq!(merged(operations.clone()), format!("{operations:?}"));
     }
 }

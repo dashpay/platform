@@ -6,13 +6,15 @@
 //! sum of all credits changes by the gas alone.
 
 use super::gas_sponsorship::gas_sponsorship_tests::{
-    total_fee, Sponsorship, GAS_SPONSOR_INSUFFICIENT_BALANCE, IDENTITY_INSUFFICIENT_BALANCE,
+    balance_of, process_alone, total_fee, Sponsorship, GAS_SPONSOR_INSUFFICIENT_BALANCE,
+    IDENTITY_INSUFFICIENT_BALANCE,
 };
 use super::*;
 
 mod action_fee_tests {
     use super::*;
     use crate::execution::check_tx::CheckTxLevel::Recheck;
+    use crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
         PaidConsensusError, SuccessfulExecution, UnpaidConsensusError,
     };
@@ -21,15 +23,18 @@ mod action_fee_tests {
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
-    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+    use dpp::data_contract::document_type::accessors::{
+        DocumentTypeV0MutGetters, DocumentTypeV2Getters,
+    };
     use dpp::data_contract::document_type::action_fees::agreement::{
         AgreedFeeMultiplier, DocumentActionFeeAgreement,
     };
     use dpp::data_contract::document_type::action_fees::{
         ActionFeePricing, ContractFeePot, DocumentActionFee,
     };
-    use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
     use dpp::data_contract::DataContract;
+    use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::{platform_value, Value};
     use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
@@ -38,7 +43,8 @@ mod action_fee_tests {
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
-    use drive::drive::contract::fee_pots::types::ContractFeePotState;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use drive::grovedb::Transaction;
     use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -60,9 +66,15 @@ mod action_fee_tests {
         })
     }
 
-    /// Declares `action_fees` on the `card` document type, on a contract that keeps a banlist
-    /// when `moderated`, and parses the document type again so that it carries them.
-    fn declare_action_fees(contract: &mut DataContract, action_fees: Value, moderated: bool) {
+    /// Declares `action_fees` on the `document_type_name` document type, on a contract that
+    /// keeps a banlist when `moderated`, and parses the document type again so that it carries
+    /// them.
+    fn declare_action_fees(
+        contract: &mut DataContract,
+        document_type_name: &str,
+        action_fees: Value,
+        moderated: bool,
+    ) {
         let platform_version = PlatformVersion::latest();
         if moderated {
             contract.set_config(contract.config().clone().with_moderation(Some(
@@ -77,19 +89,19 @@ mod action_fee_tests {
         let contract_id = contract.id();
         let config = contract.config().clone();
         let tokens = contract.tokens().clone();
-        let card = contract
+        let document_type = contract
             .document_types_mut()
-            .get_mut("card")
-            .expect("expected the card document type");
-        let mut schema = card.schema().clone();
+            .get_mut(document_type_name)
+            .expect("expected the document type");
+        let mut schema = document_type.schema().clone();
         schema
             .insert("actionFees".to_string(), action_fees)
             .expect("expected to declare the action fees");
-        *card = DocumentType::try_from_schema(
+        *document_type = DocumentType::try_from_schema(
             contract_id,
             1,
             config.version(),
-            "card",
+            document_type_name,
             schema,
             None,
             &tokens,
@@ -98,8 +110,8 @@ mod action_fee_tests {
             &mut vec![],
             platform_version,
         )
-        .expect("expected the card document type to parse with its action fees");
-        assert!(card.action_fees().is_some());
+        .expect("expected the document type to parse with its action fees");
+        assert!(document_type.action_fees().is_some());
     }
 
     /// The card game of the sponsorship tests, whose card creation also charges an action fee
@@ -137,35 +149,23 @@ mod action_fee_tests {
             user_credits,
             user_gold,
             user_key_budget,
-            move |contract| declare_action_fees(contract, card_action_fees(pricing), true),
+            move |contract| declare_action_fees(contract, "card", card_action_fees(pricing), true),
         )
     }
 
-    fn pot(setup: &Sponsorship, pot: ContractFeePot, tx: &Transaction) -> ContractFeePotState {
-        setup
-            .platform
-            .drive
-            .fetch_contract_fee_pot(setup.contract.id(), pot, Some(tx), setup.platform_version)
-            .expect("expected to fetch the pot")
-    }
-
     fn pots(setup: &Sponsorship, tx: &Transaction) -> (Credits, Credits) {
-        (
-            pot(setup, ContractFeePot::Owner, tx).credits,
-            pot(setup, ContractFeePot::Moderators, tx).credits,
+        pots_of(
+            &setup.platform,
+            setup.contract.id(),
+            tx,
+            setup.platform_version,
         )
     }
 
     /// Every credit held in a tree: identity balances, pools, and the fee pots among the
     /// prefunded balances.
     fn credits_in_trees(setup: &Sponsorship, tx: &Transaction) -> Credits {
-        setup
-            .platform
-            .drive
-            .calculate_total_credits_balance(Some(tx), &setup.platform_version.drive)
-            .expect("expected to sum the credits")
-            .total_in_trees()
-            .expect("expected the credits to add up")
+        credits_in_trees_of(&setup.platform, tx, setup.platform_version)
     }
 
     fn unpaid_codes(result: &StateTransitionExecutionResult) -> Vec<u32> {
@@ -772,6 +772,7 @@ mod action_fee_tests {
         let mut raised = setup.contract.clone();
         declare_action_fees(
             &mut raised,
+            "card",
             platform_value!({
                 "pricing": "fixed",
                 "create": {"owner": OWNER_PART, "moderators": MODERATORS_PART + 1},
@@ -1018,6 +1019,7 @@ mod action_fee_tests {
         .expect("expected the card game contract");
         declare_action_fees(
             &mut contract,
+            "card",
             platform_value!({
                 "pricing": "fixed",
                 "create": {"owner": CREATE_FEE},
@@ -1106,20 +1108,6 @@ mod action_fee_tests {
             owner_pot(&tx) - before
         };
         let by = |identity: &Identity| identity.id();
-        // The fees are fixed, so the agreement names no fee multiplier whatever is known.
-        let agreeing_to = |action: DocumentTransitionActionType| {
-            Some(StateTransitionCreationOptions {
-                action_fee_agreement: DocumentActionFeeAgreement::for_document_type_action(
-                    card,
-                    action,
-                    AgreedFeeMultiplier {
-                        known_permille: 1_000,
-                        increase_tolerance_percent: 0,
-                    },
-                ),
-                ..Default::default()
-            })
-        };
         let signed_by_the_seller: (&IdentityPublicKey, &SimpleSigner) =
             (&seller_key, &seller_signer);
         let signed_by_the_buyer: (&IdentityPublicKey, &SimpleSigner) = (&buyer_key, &buyer_signer);
@@ -1134,7 +1122,7 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            agreeing_to(DocumentTransitionActionType::Create),
+            agreeing_to(card, DocumentTransitionActionType::Create),
         )
         .await
         .expect("expected the creation");
@@ -1151,7 +1139,7 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            agreeing_to(DocumentTransitionActionType::Replace),
+            agreeing_to(card, DocumentTransitionActionType::Replace),
         )
         .await
         .expect("expected the replacement");
@@ -1169,7 +1157,7 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            agreeing_to(DocumentTransitionActionType::UpdatePrice),
+            agreeing_to(card, DocumentTransitionActionType::UpdatePrice),
         )
         .await
         .expect("expected the price update");
@@ -1187,7 +1175,7 @@ mod action_fee_tests {
             None,
             signed_by_the_buyer.1,
             platform_version,
-            agreeing_to(DocumentTransitionActionType::Purchase),
+            agreeing_to(card, DocumentTransitionActionType::Purchase),
         )
         .await
         .expect("expected the purchase");
@@ -1205,7 +1193,7 @@ mod action_fee_tests {
             None,
             signed_by_the_buyer.1,
             platform_version,
-            agreeing_to(DocumentTransitionActionType::Transfer),
+            agreeing_to(card, DocumentTransitionActionType::Transfer),
         )
         .await
         .expect("expected the transfer");
@@ -1222,10 +1210,411 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            agreeing_to(DocumentTransitionActionType::Delete),
+            agreeing_to(card, DocumentTransitionActionType::Delete),
         )
         .await
         .expect("expected the deletion");
         assert_eq!(charged(deletion, "delete"), DELETE_FEE);
+    }
+
+    fn pots_of(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        contract_id: Identifier,
+        tx: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> (Credits, Credits) {
+        let pot = |pot| {
+            platform
+                .drive
+                .fetch_contract_fee_pot(contract_id, pot, Some(tx), platform_version)
+                .expect("expected to fetch the pot")
+                .credits
+        };
+        (pot(ContractFeePot::Owner), pot(ContractFeePot::Moderators))
+    }
+
+    fn credits_in_trees_of(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        tx: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        platform
+            .drive
+            .calculate_total_credits_balance(Some(tx), &platform_version.drive)
+            .expect("expected to sum the credits")
+            .total_in_trees()
+            .expect("expected the credits to add up")
+    }
+
+    /// The agreement to what `document_type` declares for `action`, at the fee multiplier of
+    /// the fee schedule
+    fn agreeing_to(
+        document_type: DocumentTypeRef,
+        action: DocumentTransitionActionType,
+    ) -> Option<StateTransitionCreationOptions> {
+        Some(StateTransitionCreationOptions {
+            action_fee_agreement: DocumentActionFeeAgreement::for_document_type_action(
+                document_type,
+                action,
+                AgreedFeeMultiplier {
+                    known_permille: 1_000,
+                    increase_tolerance_percent: 0,
+                },
+            ),
+            ..Default::default()
+        })
+    }
+
+    /// What the contract owner asks for the card they put up for sale: 0.01 Dash
+    const CARD_PRICE: Credits = 1_000_000_000;
+
+    /// The card game of the sponsorship tests with a card the contract owner created and put
+    /// up for sale, committed so that check tx sees it, and the card as a purchase of it
+    /// carries it. A purchase charges an action fee to whoever pays the gas, and its token cost
+    /// offers that the contract owner pays it.
+    async fn card_for_sale() -> (Sponsorship, Document) {
+        let setup = Sponsorship::build_customized(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::DocumentOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |contract| {
+                let offered: u8 = GasFeesPaidBy::ContractOwner.into();
+                contract
+                    .document_types_mut()
+                    .get_mut("card")
+                    .expect("expected the card document type")
+                    .schema_mut()
+                    .get_mut("tokenCost")
+                    .expect("expected to get the token cost")
+                    .expect("expected the token cost to be set")
+                    .get_mut("purchase")
+                    .expect("expected to get the purchase token cost")
+                    .expect("expected the purchase token cost to be set")
+                    .set_value("gasFeesPaidBy", offered.into())
+                    .expect("expected to offer that the contract owner pays the gas");
+                declare_action_fees(
+                    contract,
+                    "card",
+                    platform_value!({
+                        "pricing": "fixed",
+                        "purchase": {"owner": OWNER_PART, "moderators": MODERATORS_PART},
+                    }),
+                    true,
+                );
+            },
+        );
+        // The contract owner pays for their card in gold and for its price in the second
+        // token, like anybody else.
+        add_tokens_to_identity_in(&setup, 15);
+        add_tokens_to_identity(
+            &setup.platform,
+            calculate_token_id(setup.contract.id().as_bytes(), 1).into(),
+            setup.contract_owner.id(),
+            1,
+        );
+        let card_type = setup
+            .contract
+            .document_type_for_name("card")
+            .expect("expected the card document type");
+
+        let tx = setup.platform.drive.grove.start_transaction();
+        let creation = setup
+            .card_creation_by_the_contract_owner(GasFeesPaidBy::DocumentOwner)
+            .await;
+        assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
+        let (mut card, _) = setup.card_of(&setup.contract_owner);
+        card.bump_revision();
+        let price_update = BatchTransition::new_document_update_price_transition_from_document(
+            card.clone(),
+            card_type,
+            CARD_PRICE,
+            &setup.contract_owner_key,
+            3,
+            0,
+            Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                payment_token_contract_id: None,
+                token_contract_position: 1,
+                minimum_token_cost: None,
+                maximum_token_cost: Some(1),
+                gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            })),
+            &setup.contract_owner_signer,
+            setup.platform_version,
+            None,
+        )
+        .await
+        .expect("expected the price update");
+        assert_matches!(
+            setup.process(&price_update, &tx),
+            SuccessfulExecution { .. }
+        );
+        setup
+            .platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .expect("expected to commit the card for sale");
+        card.bump_revision();
+        (setup, card)
+    }
+
+    /// The user's purchase of `card`, asking `requested` for the gas
+    async fn purchase_of(
+        setup: &Sponsorship,
+        card: Document,
+        requested: GasFeesPaidBy,
+    ) -> StateTransition {
+        let card_type = setup
+            .contract
+            .document_type_for_name("card")
+            .expect("expected the card document type");
+        BatchTransition::new_document_purchase_transition_from_document(
+            card,
+            card_type,
+            setup.user.id(),
+            CARD_PRICE,
+            &setup.user_key,
+            2,
+            0,
+            Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                payment_token_contract_id: None,
+                token_contract_position: 0,
+                minimum_token_cost: None,
+                maximum_token_cost: Some(3),
+                gas_fees_paid_by: requested,
+            })),
+            &setup.user_signer,
+            setup.platform_version,
+            agreeing_to(card_type, DocumentTransitionActionType::Purchase),
+        )
+        .await
+        .expect("expected the purchase")
+    }
+
+    /// A purchase moves its price out of the buyer's balance with its own operations, and its
+    /// action fee leaves the same balance: the buyer pays both, and the credits only move.
+    #[tokio::test]
+    async fn should_charge_the_buyer_both_the_price_and_the_purchase_fee() {
+        let (setup, card) = card_for_sale().await;
+        let purchase = purchase_of(&setup, card, GasFeesPaidBy::DocumentOwner).await;
+        assert_check_tx_valid_at_all_levels(
+            &setup.platform,
+            &purchase
+                .serialize_to_bytes()
+                .expect("expected to serialize"),
+            "a purchase owing a purchase fee",
+        );
+        let tx = setup.platform.drive.grove.start_transaction();
+        let buyer_before = setup.credits(&setup.user, &tx);
+        let seller_before = setup.credits(&setup.contract_owner, &tx);
+        let credits_before = credits_in_trees(&setup, &tx);
+
+        let result = setup.process(&purchase, &tx);
+
+        let SuccessfulExecution { fee_result, .. } = &result else {
+            panic!("expected the purchase to execute, got {result:?}");
+        };
+        let gas = fee_result.total_base_fee();
+        let refunded_to_seller = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(setup.contract_owner.id())
+            .unwrap_or_default();
+        assert_eq!(
+            setup.credits(&setup.user, &tx),
+            buyer_before - CARD_PRICE - OWNER_PART - MODERATORS_PART - gas,
+            "the buyer pays the price, the purchase fee and the gas"
+        );
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            seller_before + CARD_PRICE + refunded_to_seller
+        );
+        assert_eq!(pots(&setup, &tx), (OWNER_PART, MODERATORS_PART));
+        // Only the gas leaves the trees, less what the purchase refunded the seller for the
+        // storage they had paid; the price and the fee only move.
+        assert_eq!(
+            credits_in_trees(&setup, &tx),
+            credits_before - gas + refunded_to_seller
+        );
+    }
+
+    /// A purchase from the contract owner whose gas they sponsor pays them the price with its
+    /// own operations, and takes the moderators part of the purchase fee from the same
+    /// balance: the owner gets the price less that part and the gas, and the credits only move.
+    #[tokio::test]
+    async fn should_pay_a_seller_who_sponsors_the_gas_the_price_less_the_moderators_part_and_the_gas(
+    ) {
+        let (setup, card) = card_for_sale().await;
+        let purchase = purchase_of(&setup, card, GasFeesPaidBy::ContractOwner).await;
+        assert_check_tx_valid_at_all_levels(
+            &setup.platform,
+            &purchase
+                .serialize_to_bytes()
+                .expect("expected to serialize"),
+            "a sponsored purchase from the sponsor owing a purchase fee",
+        );
+        let tx = setup.platform.drive.grove.start_transaction();
+        let buyer_before = setup.credits(&setup.user, &tx);
+        let seller_before = setup.credits(&setup.contract_owner, &tx);
+        let credits_before = credits_in_trees(&setup, &tx);
+
+        let result = setup.process(&purchase, &tx);
+
+        let SuccessfulExecution { fee_result, .. } = &result else {
+            panic!("expected the purchase to execute, got {result:?}");
+        };
+        let gas = fee_result.total_base_fee();
+        let refunded_to_seller = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(setup.contract_owner.id())
+            .unwrap_or_default();
+        assert_eq!(
+            setup.credits(&setup.user, &tx),
+            buyer_before - CARD_PRICE,
+            "the buyer pays the price only"
+        );
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            seller_before + CARD_PRICE + refunded_to_seller - MODERATORS_PART - gas,
+            "the seller gets the price and pays the moderators part and the gas"
+        );
+        assert_eq!(
+            pots(&setup, &tx),
+            (0, MODERATORS_PART),
+            "the contract owner never pays into their own owner pot"
+        );
+        assert_eq!(
+            credits_in_trees(&setup, &tx),
+            credits_before - gas + refunded_to_seller
+        );
+    }
+
+    /// A contested document's creation moves the prefunded voting balance out of its creator's
+    /// balance with its own operations, and its action fee leaves the same balance: the
+    /// creator pays both, and the credits only move.
+    #[tokio::test]
+    async fn should_charge_the_creator_of_a_contested_document_both_the_voting_fund_and_the_creation_fee(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        // A copy of DPNS under another id: its domains are contested, and no data trigger
+        // asks for a preorder.
+        let mut contract = json_document_to_contract(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            true,
+            platform_version,
+        )
+        .expect("expected the contested contract");
+        declare_action_fees(
+            &mut contract,
+            "domain",
+            platform_value!({
+                "pricing": "fixed",
+                "create": {"owner": OWNER_PART, "moderators": MODERATORS_PART},
+            }),
+            true,
+        );
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        let domain = contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        let (creator, signer, key) = setup_identity(&mut platform, 93, dash_to_credits!(1));
+
+        let mut rng = StdRng::seed_from_u64(433);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = domain
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                creator.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+        document
+            .set_id_for_creation(domain, &entropy.0, 1, platform_version)
+            .expect("expected to set the document id");
+        document.set("parentDomainName", "dash".into());
+        document.set("normalizedParentDomainName", "dash".into());
+        document.set("label", "quantum".into());
+        document.set("normalizedLabel", "quantum".into());
+        document.set("records.identity", creator.id().into());
+        document.set("subdomainRules.allowSubdomains", false.into());
+
+        let creation = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            domain,
+            entropy.0,
+            &key,
+            1,
+            0,
+            None,
+            &signer,
+            platform_version,
+            agreeing_to(domain, DocumentTransitionActionType::Create),
+        )
+        .await
+        .expect("expected the creation");
+        let voting_fund = platform_version
+            .fee_version
+            .vote_resolution_fund_fees
+            .contested_document_vote_resolution_fund_required_amount;
+
+        assert_check_tx_valid_at_all_levels(
+            &platform,
+            &creation
+                .serialize_to_bytes()
+                .expect("expected to serialize"),
+            "a contested creation owing a creation fee",
+        );
+        let tx = platform.drive.grove.start_transaction();
+        let creator_before = balance_of(&platform, &creator, &tx, platform_version);
+        let credits_before = credits_in_trees_of(&platform, &tx, platform_version);
+
+        let result = process_alone(
+            &platform,
+            &creation,
+            &BlockInfo::default(),
+            &tx,
+            platform_version,
+        );
+
+        let SuccessfulExecution { fee_result, .. } = &result else {
+            panic!("expected the creation to execute, got {result:?}");
+        };
+        let gas = fee_result.total_base_fee();
+        assert_eq!(
+            balance_of(&platform, &creator, &tx, platform_version),
+            creator_before - voting_fund - OWNER_PART - MODERATORS_PART - gas,
+            "the creator pays the voting fund, the creation fee and the gas"
+        );
+        assert_eq!(
+            pots_of(&platform, contract.id(), &tx, platform_version),
+            (OWNER_PART, MODERATORS_PART)
+        );
+        // Only the gas leaves the trees; the voting fund and the fee only move.
+        assert_eq!(
+            credits_in_trees_of(&platform, &tx, platform_version),
+            credits_before - gas
+        );
     }
 }
