@@ -50,6 +50,12 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
     /// by bumping the signer's contract nonce, and a refused claim leaves the pot's last claim
     /// epoch alone.
     ///
+    /// The moderators pot of an elected contract is read first for its seated charter (the
+    /// `byTargetContract` query, billed) whoever claims, since any identity may be on a seated
+    /// team: with one seated, the claim is the team's (see `claim_seated_moderators_pot_v0`),
+    /// and without, the interim team's as the declaration names it. A claim refused for a
+    /// signer who is neither therefore pays that query too.
+    ///
     /// The action carries what each recipient is paid, so Drive pays the pot out without
     /// reading it again, and the mempool, which transforms without a state validation stage,
     /// refuses with the same consensus codes as a block.
@@ -184,10 +190,10 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
 
 /// The claim of the moderators pot of an elected contract with a seated charter: the
 /// signer is the leader or an active member of the seated team, the pot was not claimed in
-/// this epoch yet, and the proposal's reward split pays someone at least a credit. The
-/// split reads the team, the proposal and the team's moderation action counts, all billed,
-/// and the claim resets the counts. Every refusal is paid for by bumping the signer's
-/// contract nonce.
+/// this epoch yet, and the proposal's reward split pays someone at least a credit. The team
+/// is read once (the charter's removals and additions), then the pot, the proposal and the
+/// team's moderation action counts, all billed, and the claim resets the counts. Every
+/// refusal is paid for by bumping the signer's contract nonce.
 #[allow(clippy::too_many_arguments)]
 fn claim_seated_moderators_pot_v0<C: CoreRPCLike>(
     transition: &ContractFeeClaimTransition,
@@ -214,15 +220,17 @@ fn claim_seated_moderators_pot_v0<C: CoreRPCLike>(
         ))
     };
 
-    // The interim moderators, the owner among them, claim no more once a charter is seated.
-    if !charter.seats(
+    // The team is read once: whether the claimant is on it, and who the split pays. The
+    // interim moderators, the owner among them, claim no more once a charter is seated.
+    let members = charter.fetch_active_members(
         platform.drive,
-        claimant_id,
+        max_added_moderators,
         epoch,
         execution_context,
         tx,
         platform_version,
-    )? {
+    )?;
+    if claimant_id != charter.leader_id && !members.contains(&claimant_id) {
         return refuse(ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into());
     }
 
@@ -242,7 +250,8 @@ fn claim_seated_moderators_pot_v0<C: CoreRPCLike>(
         );
     }
 
-    let settlement = charter.settle_moderators_pot(
+    let settlement = charter.settle_moderators_pot_among(
+        &members,
         platform.drive,
         contract_id,
         fee_pot.credits,

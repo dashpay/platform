@@ -34,8 +34,8 @@ use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::moderation_charter::{
     property_names, ElectedCharter, SubmittedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
-    ELECTED_CHARTER_DOCUMENT_TYPE_NAME, FULL_MODERATORS_SHARE,
-    REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+    ELECTED_CHARTER_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+    SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
@@ -188,24 +188,15 @@ impl SeatedModerationCharter {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<u8, Error> {
-        let proposal = self.fetch_proposal_document(
-            drive,
-            epoch,
-            execution_context,
-            transaction,
-            platform_version,
-        )?;
-        // The share alone is read: nothing else of the proposal decides the discount. The
-        // schema bounds it to 0 to 100 and leaves it out for the full amount.
-        let share = proposal
-            .properties()
-            .get_optional_integer::<u8>(property_names::MODERATORS_SHARE)
-            .map_err(|_| {
-                Error::Execution(ExecutionError::DriveIncoherence(
-                    "a stored moderation charter proposal's share is not a percentage",
-                ))
-            })?;
-        Ok(share.unwrap_or(FULL_MODERATORS_SHARE))
+        Ok(self
+            .fetch_proposal(
+                drive,
+                epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            )?
+            .moderators_share_or_full())
     }
 
     /// The proposal the team runs on: its reasons, its share and its reward split. One read of
@@ -218,31 +209,6 @@ impl SeatedModerationCharter {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SubmittedCharter, Error> {
-        let proposal = self.fetch_proposal_document(
-            drive,
-            epoch,
-            execution_context,
-            transaction,
-            platform_version,
-        )?;
-        // The schema admitted the proposal when it was filed, so it reads.
-        SubmittedCharter::from_document_properties(proposal.properties())
-            .into_data()
-            .map_err(|_| {
-                Error::Execution(ExecutionError::DriveIncoherence(
-                    "a stored moderation charter proposal does not read as one",
-                ))
-            })
-    }
-
-    fn fetch_proposal_document(
-        &self,
-        drive: &Drive,
-        epoch: &Epoch,
-        execution_context: &mut StateTransitionExecutionContext,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, Error> {
         let contract = drive
             .cache
             .system_data_contracts
@@ -251,7 +217,7 @@ impl SeatedModerationCharter {
             contract.document_type_for_name(SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME)?;
         // The elected charter's reference proved the proposal when the charter was filed, and
         // a proposal can not be deleted.
-        fetch_document_with_id(
+        let proposal = fetch_document_with_id(
             drive,
             &contract,
             document_type,
@@ -263,7 +229,15 @@ impl SeatedModerationCharter {
         )?
         .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
             "the proposal of a seated charter is not stored",
-        )))
+        )))?;
+        // The schema admitted the proposal when it was filed, so it reads.
+        SubmittedCharter::from_document_properties(proposal.properties())
+            .into_data()
+            .map_err(|_| {
+                Error::Execution(ExecutionError::DriveIncoherence(
+                    "a stored moderation charter proposal does not read as one",
+                ))
+            })
     }
 
     /// The active members of the team besides the leader ([`ElectedCharter::active_members`]):
@@ -358,6 +332,34 @@ impl SeatedModerationCharter {
             transaction,
             platform_version,
         )?;
+        self.settle_moderators_pot_among(
+            &members,
+            drive,
+            contract_id,
+            pot_credits,
+            max_added_moderators,
+            epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// [`SeatedModerationCharter::settle_moderators_pot`] with the active members already read
+    /// ([`SeatedModerationCharter::fetch_active_members`]): reads the proposal and the counts.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn settle_moderators_pot_among(
+        &self,
+        members: &BTreeSet<Identifier>,
+        drive: &Drive,
+        contract_id: Identifier,
+        pot_credits: Credits,
+        max_added_moderators: u16,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ModeratorsPotSettlement, Error> {
         let proposal = self.fetch_proposal(
             drive,
             epoch,
@@ -380,7 +382,7 @@ impl SeatedModerationCharter {
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
         let payouts = proposal
             .reward_split
-            .payouts(pot_credits, self.leader_id, &members, &action_counts)
+            .payouts(pot_credits, self.leader_id, members, &action_counts)
             .map_err(|_| {
                 Error::Execution(ExecutionError::DriveIncoherence(
                     "a stored moderation charter proposal's reward split adds up to 100",

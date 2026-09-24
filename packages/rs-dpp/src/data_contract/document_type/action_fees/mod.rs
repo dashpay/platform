@@ -129,22 +129,22 @@ impl ContractFeePot {
     }
 
     /// The identities whose balances the proof of a claim of this pot of `contract` by
-    /// `claimant_id` shows: the recipients, or for the moderators pot of an elected contract
-    /// the claimant alone. The team a seated charter pays is the charter contract's, which the
-    /// contract does not say, so neither the prover nor the verifier could name it; the
-    /// claimant, a member of whichever team claimed, is in the transition.
+    /// `claimant_id` shows: the recipients the contract names, when the claimant is one of
+    /// them, as it is for every claim of the owner pot, of a declared team's moderators pot and
+    /// of an elected contract's interim team before a charter is seated. Otherwise the claimant
+    /// alone: the claimant of an elected contract's moderators pot is then on the seated team,
+    /// which the charter contract names and the contract does not, so neither the prover nor
+    /// the verifier could list the other payees from the contract.
     pub fn claim_proof_identities(
         &self,
         contract: &DataContract,
         claimant_id: Identifier,
     ) -> BTreeSet<Identifier> {
-        let elected = contract
-            .config()
-            .moderation()
-            .is_some_and(|moderation| moderation.moderators.elected().is_some());
-        match self {
-            ContractFeePot::Moderators if elected => BTreeSet::from([claimant_id]),
-            _ => self.recipients(contract),
+        let recipients = self.recipients(contract);
+        if recipients.contains(&claimant_id) {
+            recipients
+        } else {
+            BTreeSet::from([claimant_id])
         }
     }
 }

@@ -141,6 +141,24 @@ fn should_create_the_action_counts_tree_with_an_elected_contract_only() {
         )
         .expect("expected to insert the contract");
     assert!(!has_counts_tree(&drive, owned_contract.id()));
+
+    // A contract without the tree (an elected one stored before the counts existed reads the
+    // same) has no counts rather than a failing read.
+    let epoch = Epoch::new(0).expect("epoch");
+    let (_, count) = drive
+        .fetch_contract_moderation_action_count_with_fee(
+            owned_contract.id(),
+            member(1),
+            &epoch,
+            None,
+            platform_version,
+        )
+        .expect("expected the read to find no tree");
+    assert_eq!(count, None);
+    assert!(drive
+        .fetch_contract_moderation_action_counts(owned_contract.id(), 31, None, platform_version)
+        .expect("expected the read to find no tree")
+        .is_empty());
 }
 
 #[test]
@@ -185,7 +203,7 @@ fn should_write_read_and_reset_the_action_counts() {
             platform_version,
         )
         .expect("expected to read a count");
-    assert_eq!(count, 5);
+    assert_eq!(count, Some(5));
     let (_, count) = drive
         .fetch_contract_moderation_action_count_with_fee(
             contract_id,
@@ -195,7 +213,7 @@ fn should_write_read_and_reset_the_action_counts() {
             platform_version,
         )
         .expect("expected to read a count");
-    assert_eq!(count, 0, "a member that did not act has no count");
+    assert_eq!(count, Some(0), "a member that did not act has no count");
 
     // The limit bounds the read.
     assert_eq!(

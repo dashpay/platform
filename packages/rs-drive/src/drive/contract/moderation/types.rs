@@ -99,6 +99,10 @@ pub const ESTIMATED_CONTRACT_WARNINGS_PER_ENTRY: u32 = 2;
 /// The most bytes a reason's code takes in an entry: the tag and the u16.
 pub const CONTRACT_MODERATION_REASON_CODE_MAX_SIZE: u32 = 3;
 
+/// The bytes a reason's reason document id takes in an entry. Every entry a seated elected team
+/// writes carries one, so an entry whose value is not known is estimated with it.
+pub const CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE: u32 = 32;
+
 /// The length a reason's text is estimated at when it is not known: a sentence. Estimating
 /// every entry at the longest reason the protocol admits made the dry-run processing fee of a
 /// moderation some 25 times the applied one.
@@ -108,8 +112,9 @@ pub const ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE: u32 = 128;
 /// write walks past, and the entry a delete removes. An entry being written is priced by its
 /// own size.
 pub fn estimated_entry_value_size(list: ContractModerationList) -> u32 {
-    let reason_size =
-        CONTRACT_MODERATION_REASON_CODE_MAX_SIZE + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE;
+    let reason_size = CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
+        + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
+        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE;
     match list {
         ContractModerationList::Banlist => reason_size,
         ContractModerationList::Suspensions => CONTRACT_SUSPENSION_UNTIL_SIZE as u32 + reason_size,
@@ -219,6 +224,7 @@ const RESTORED: u8 = 1;
 pub fn estimated_document_removal_value_size() -> u32 {
     (CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + CONTRACT_DOCUMENT_RESTORATION_SIZE) as u32
         + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
+        + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
         + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
 }
 

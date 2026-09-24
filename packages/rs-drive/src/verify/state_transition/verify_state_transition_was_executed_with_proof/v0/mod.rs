@@ -1375,9 +1375,10 @@ impl Drive {
                         contract_id
                     )),
                 ))?;
-                // The prover's identities: the moderators pot of an elected contract proves
-                // the claimant's balance alone (a contract fee claim exists from protocol
-                // version 14 only, so no earlier proof changes).
+                // The prover's identities: the recipients the contract names when the claimant
+                // is one, the claimant alone otherwise (a seated moderation team's member). A
+                // contract fee claim exists from protocol version 14 only, so no earlier proof
+                // changes.
                 let recipients: Vec<[u8; 32]> = pot
                     .claim_proof_identities(&contract, transition.owner_id())
                     .into_iter()

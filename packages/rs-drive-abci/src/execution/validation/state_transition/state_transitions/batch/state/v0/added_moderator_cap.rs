@@ -27,22 +27,17 @@
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::seated_moderation_charter::count_added_moderators;
-use crate::execution::validation::state_transition::state_transitions::batch::fetch_document_with_id;
+use crate::execution::validation::state_transition::state_transitions::batch::state::v0::seated_charter_reads::{
+    SeatedCharterRead, SeatedCharterReads,
+};
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::contract_moderation::ModerationCharterAddedModeratorLimitReachedError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::v2::DataContractConfigGettersV2;
-use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
 use dpp::moderation_charter::{
-    property_names, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
-    MODERATION_CHARTERS_CONTRACT_ID,
+    property_names, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
 };
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -67,11 +62,14 @@ impl AddedModeratorCap {
     /// counts it otherwise. Call it only for a create state validation accepted. A no-op, with
     /// nothing read, for every other create.
     ///
-    /// The reads are billed: the elected charter by id, its target contract, and the additions
-    /// of the charter, at most the cap of them.
+    /// The reads are billed: the elected charter by id and its target contract (once per batch,
+    /// shared with the settle the addition forces), and the additions of the charter, at most
+    /// the cap of them.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn validate_and_record_create(
         &mut self,
         create_action: &DocumentCreateTransitionAction,
+        seated_charters: &mut SeatedCharterReads,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
@@ -95,58 +93,19 @@ impl AddedModeratorCap {
                 ))
             })?;
 
-        let charters_contract = &base.data_contract_fetch_info_ref().contract;
-        let elected_charter = fetch_document_with_id(
-            platform.drive,
-            charters_contract,
-            charters_contract.document_type_for_name(ELECTED_CHARTER_DOCUMENT_TYPE_NAME)?,
+        let SeatedCharterRead {
+            charter,
+            max_added_moderators,
+        } = seated_charters.read(
             elected_charter_id,
+            platform,
             epoch,
             execution_context,
             transaction,
             platform_version,
-        )?
-        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "the elected charter an addedModerator refers to was found by its reference",
-        )))?;
-        let target_contract_id = elected_charter
-            .properties()
-            .get_identifier(property_names::TARGET_CONTRACT_ID)
-            .map_err(|_| {
-                Error::Execution(ExecutionError::DriveIncoherence(
-                    "a stored elected charter names its target contract",
-                ))
-            })?;
-
-        // The fee this call returns is billed, never the one a cached fetch info carries,
-        // which depends on the cache.
-        let (fee, target_contract) = platform.drive.get_contract_with_fetch_info_and_fee(
-            target_contract_id.to_buffer(),
-            Some(epoch),
-            false,
-            transaction,
-            platform_version,
         )?;
-        let fee = fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "fee must exist when fetching a contract with an epoch",
-        )))?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-        // A charter is only filed for a contract that declares elected moderation (its
-        // `electionOpen` requirement), which is fixed at the contract's creation, and a contract
-        // is never deleted.
-        let max_added_moderators = target_contract
-            .as_ref()
-            .and_then(|fetch_info| {
-                fetch_info
-                    .contract
-                    .config()
-                    .moderation()
-                    .and_then(|moderation| moderation.moderators.elected())
-                    .map(|elected| elected.max_added_moderators)
-            })
-            .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
-                "the target of a stored elected charter declares elected moderation",
-            )))?;
+        let target_contract_id = charter.charter.target_contract_id;
+        let max_added_moderators = *max_added_moderators;
 
         let accepted_in_batch = self
             .accepted_in_batch

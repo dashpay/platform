@@ -44,10 +44,11 @@ impl DriveHighLevelOperationConverter for BatchTransitionAction {
             // its state validation settled and the reset of the action counts, operations on
             // other keys than the change's own.
             1 => {
-                let owner_id = self.owner_id();
-                let lapsed_suspensions = self.lapsed_suspensions().clone();
-                let settlements = self.moderators_pot_settlements().to_vec();
-                let transitions = self.transitions_owned();
+                let mut action = self;
+                let owner_id = action.owner_id();
+                let lapsed_suspensions = action.lapsed_suspensions().clone();
+                let settlements = action.take_moderators_pot_settlements();
+                let transitions = action.transitions_owned();
                 let mut operations = settlements
                     .into_iter()
                     .map(|settlement| settlement.into_drive_operations())

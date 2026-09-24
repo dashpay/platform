@@ -115,7 +115,9 @@ impl Drive {
 
     /// Reads one member's moderation action count on the elected contract `contract_id`, with
     /// the fee of the read: 0 when the member signed no counted action since the moderators pot
-    /// was last settled.
+    /// was last settled, `None` when the contract has no counts tree (an elected contract
+    /// stored before the counts existed, on a development network), in which case its team's
+    /// actions are not counted. The read of every count likewise finds none there.
     ///
     /// # Parameters
     ///
@@ -127,7 +129,8 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Ok((FeeResult, u32))` with the fee and the count.
+    /// * `Ok((FeeResult, Option<u32>))` with the fee and the count, `None` without a counts
+    ///   tree.
     /// * `Err(Error)` when the version is unknown, the read fails or the count is malformed.
     pub fn fetch_contract_moderation_action_count_with_fee(
         &self,
@@ -136,7 +139,7 @@ impl Drive {
         epoch: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(FeeResult, u32), Error> {
+    ) -> Result<(FeeResult, Option<u32>), Error> {
         match platform_version
             .drive
             .methods

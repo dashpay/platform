@@ -966,7 +966,12 @@ impl<'a> Moderators<'a> {
             platform_version,
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-        Ok(action.with_moderation_action_count(count.saturating_add(1)))
+        // A contract stored elected before the counts existed has nowhere to count: its team's
+        // actions go uncounted, and a settle splits the action share equally.
+        Ok(match count {
+            Some(count) => action.with_moderation_action_count(count.saturating_add(1)),
+            None => action,
+        })
     }
 
     /// Whether a seated team lacks `ability`: on `document_type_name` for a deletion or a

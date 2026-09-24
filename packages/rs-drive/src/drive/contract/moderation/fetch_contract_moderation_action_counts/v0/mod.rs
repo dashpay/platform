@@ -35,13 +35,19 @@ impl Drive {
                 offset: None,
             },
         };
-        let (results, _) = self.grove_get_raw_path_query(
+        let results = match self.grove_get_raw_path_query(
             &path_query,
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
             drive_operations,
             &platform_version.drive,
-        )?;
+        ) {
+            Ok((results, _)) => results,
+            // An elected contract stored before the counts existed has no tree: no counts. The
+            // cost of the lookup is billed all the same.
+            Err(error) if is_missing_counts_tree(&error) => return Ok(BTreeMap::new()),
+            Err(error) => return Err(error),
+        };
         results
             .to_key_elements()
             .into_iter()
@@ -73,25 +79,55 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<u32, Error> {
+    ) -> Result<Option<u32>, Error> {
         let path = contract_moderation_action_counts_path(contract_id.as_slice());
-        self.grove_get_raw_optional_item(
+        // The plain read tells a member without a count (the key is missing) from a contract
+        // without the tree (its parent is), at the cost of the one read the optional read
+        // would make: GroveDB's optional read finds nothing either way.
+        let element = match self.grove_get_raw(
             (&path).into(),
             identity_id.as_slice(),
             DirectQueryType::StatefulDirectQuery,
             transaction,
             drive_operations,
             &platform_version.drive,
-        )?
-        .map(|value| {
-            decode_moderation_action_count(&value).map_err(|description| {
-                Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "moderation action count of {} on contract {} is malformed: {}",
-                    identity_id, contract_id, description
-                )))
-            })
-        })
-        .transpose()
-        .map(Option::unwrap_or_default)
+        ) {
+            Ok(element) => element,
+            Err(Error::GroveDB(error)) if matches!(*error, grovedb::Error::PathKeyNotFound(_)) => {
+                return Ok(Some(0))
+            }
+            // An elected contract stored before the counts existed has no tree to count in.
+            // The cost of the lookup is billed all the same.
+            Err(error) if is_missing_counts_tree(&error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let malformed = |description: String| {
+            Error::Drive(DriveError::CorruptedDriveState(format!(
+                "moderation action count of {} on contract {} is malformed: {}",
+                identity_id, contract_id, description
+            )))
+        };
+        match element {
+            Some(Element::Item(value, _)) => decode_moderation_action_count(&value)
+                .map(Some)
+                .map_err(malformed),
+            Some(_) => Err(malformed("not an item".to_string())),
+            None => Ok(Some(0)),
+        }
     }
+}
+
+/// Whether `error` is GroveDB not finding the counts tree of a contract: one stored, elected
+/// already, before protocol version 14 counted actions (a development network's), which
+/// `insert_contract_moderation_trees` did not give one.
+fn is_missing_counts_tree(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::GroveDB(error) if matches!(
+            **error,
+            grovedb::Error::PathParentLayerNotFound(_)
+                | grovedb::Error::PathNotFound(_)
+                | grovedb::Error::InvalidParentLayerPath(_)
+        )
+    )
 }

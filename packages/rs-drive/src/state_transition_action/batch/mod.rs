@@ -275,6 +275,13 @@ impl BatchTransitionAction {
         }
     }
 
+    /// Takes the settles of moderators pots out of the batch, for its conversion to operations
+    pub fn take_moderators_pot_settlements(&mut self) -> Vec<ModeratorsPotSettlement> {
+        match self {
+            BatchTransitionAction::V0(v0) => std::mem::take(&mut v0.moderators_pot_settlements),
+        }
+    }
+
     /// Records the settles of moderators pots the batch forces before it changes a seated
     /// team
     pub fn set_moderators_pot_settlements(&mut self, settlements: Vec<ModeratorsPotSettlement>) {

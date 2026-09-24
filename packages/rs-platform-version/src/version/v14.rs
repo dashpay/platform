@@ -1100,11 +1100,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     created or deleted settles the pot first, to the team as it was, by a
 ///     hook in the batch's `validate_state` v0 beside the cap on additions: it
 ///     ignores the once-per-epoch limit and writes no last claim. The proof of a
-///     claim of an elected contract's moderators pot shows the claimant's
-///     balance alone. A moderation reason gains `reasonDocumentId` (tag bit 2
-///     where it is stored), and a seated team's ban, suspension, warning or
-///     deletion must name a `reason` document its proposal lists
-///     (`ModerationReasonNotListedError`, 41203). No table moves but the four
+///     claim by a seated team's member, whom the contract does not name as a
+///     recipient, shows the claimant's balance alone. A moderation reason gains
+///     `reasonDocumentId` (tag bit 2 where it is stored), and a seated team's
+///     ban, suspension, warning or deletion must name a `reason` document its
+///     proposal lists (`ModerationReasonNotListedError`, 41203). No table moves
+///     but the four
 ///     new Drive method slots, `0` at every version.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)

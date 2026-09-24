@@ -16,7 +16,7 @@
 //! state validation (and for an addition the cap on additions) accepted it, and the batch
 //! carries what it pays, for the batch converter to write before the change. Like the cap it
 //! runs in state validation, which check tx does not run for a batch: the mempool admits the
-//! change without reading the pot. At most one settle per target contract per batch: a later
+//! change without reading the pot, and prices it without the settle's reads and writes. At most one settle per target contract per batch: a later
 //! change of the same batch finds the pot paid out and the counts reset. That is dormant while
 //! `max_transitions_in_documents_batch` is 1, as it is at every protocol version.
 //!
@@ -33,12 +33,13 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::validation::state_transition::common::seated_moderation_charter::fetch_moderation_charter_by_id;
 use crate::execution::validation::state_transition::state_transitions::batch::fetch_document_with_id;
+use crate::execution::validation::state_transition::state_transitions::batch::state::v0::seated_charter_reads::{
+    SeatedCharterRead, SeatedCharterReads,
+};
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
@@ -70,11 +71,13 @@ impl ModeratorsPotSettles {
     /// every other transition. Call it only for a transition state validation accepted.
     ///
     /// The reads are billed: for a delete the team change being deleted, the elected charter by
-    /// id, its target contract, the pot, and what the settle reads (the team, the proposal and
-    /// the action counts).
+    /// id and its target contract (once per batch, shared with the cap on additions), the pot,
+    /// and what the settle reads (the team, the proposal and the action counts).
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn settle_before_team_change(
         &mut self,
         transition: &BatchedTransitionAction,
+        seated_charters: &mut SeatedCharterReads,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
@@ -128,51 +131,23 @@ impl ModeratorsPotSettles {
         };
 
         // A team change can only name a stored elected charter, which is a seated one: only a
-        // contest's winner is ever written to the type's storage.
-        let charter = fetch_moderation_charter_by_id(
-            platform.drive,
+        // contest's winner is ever written to the type's storage. The cap on additions read it
+        // already for an addition.
+        let SeatedCharterRead {
+            charter,
+            max_added_moderators,
+        } = seated_charters.read(
             elected_charter_id,
+            platform,
             epoch,
             execution_context,
             transaction,
             platform_version,
-        )?
-        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "the elected charter a moderation team change refers to was found by its reference",
-        )))?;
+        )?;
         let target_contract_id = charter.charter.target_contract_id;
         if !self.settled_targets.insert(target_contract_id) {
             return Ok(());
         }
-
-        // The fee this call returns is billed, never the one a cached fetch info carries,
-        // which depends on the cache.
-        let (fee, target_contract) = platform.drive.get_contract_with_fetch_info_and_fee(
-            target_contract_id.to_buffer(),
-            Some(epoch),
-            false,
-            transaction,
-            platform_version,
-        )?;
-        let fee = fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "fee must exist when fetching a contract with an epoch",
-        )))?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-        // A charter is only filed for a contract that declares elected moderation, which is
-        // fixed at the contract's creation, and a contract is never deleted.
-        let max_added_moderators = target_contract
-            .as_ref()
-            .and_then(|fetch_info| {
-                fetch_info
-                    .contract
-                    .config()
-                    .moderation()
-                    .and_then(|moderation| moderation.moderators.elected())
-                    .map(|elected| elected.max_added_moderators)
-            })
-            .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
-                "the target of a stored elected charter declares elected moderation",
-            )))?;
 
         let (fee, fee_pot) = platform.drive.fetch_contract_fee_pot_with_fee(
             target_contract_id,
@@ -187,7 +162,7 @@ impl ModeratorsPotSettles {
             platform.drive,
             target_contract_id,
             fee_pot.credits,
-            max_added_moderators,
+            *max_added_moderators,
             epoch,
             execution_context,
             transaction,
