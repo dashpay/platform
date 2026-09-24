@@ -13,8 +13,15 @@ The schema carries almost every rule through its keywords: typed arrays with
 a reference per element, a reference resolved through a unique index
 (`lookup`), `distinctFrom`, key requirements on key references, the
 `encryptedFor` envelope, `maxBytes` for the description's 4096-byte cap and a
-`propertyConstraints` rule holding the reward split to 100, so
-`SubmittedCharter` in `rs-dpp` only reads a proposal when a team is seated.
+`propertyConstraints` rule holding the reward split to 100. What it cannot say,
+the cap on additions, is checked by the batch's state validation, and
+`SubmittedCharter` in `rs-dpp` only reads a proposal.
+
+Seating writes nothing. Awarding the contest for a target writes the winning
+`electedCharter` here, the only one ever written for that target, and the
+target's moderation paths read it: its team moderates instead of the interim
+moderators, is protected, and may charge its proposal's `moderatorsShare` of a
+declared moderators fee (see [the protocol guide](../../docs/protocol/moderation-charters.md#seating)).
 
 ## `reason`
 
@@ -87,7 +94,7 @@ Once an elected charter is seated, its team can change without a new vote:
 
 | Type | Written by | Properties | Rules |
 | --- | --- | --- | --- |
-| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter, a consensus rule that comes with seating |
+| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter, ever filed, a consensus rule of the batch's state validation (41202) |
 | `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is not the leader |
 | `resignationRequest` | a member of the team | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The writer is in the charter's `members` or was added (`ownerRefersTo` with `anyOf`); a message only the leader can read; deletable, which withdraws it; the leader acts on it with a removal |
 

@@ -522,7 +522,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     accumulates for the team to come, and with the types not yet usable
 ///     `contract_moderation_gate` v0 refuses, paid, every document transition
 ///     of a moderated type (`ContractModeratedDocumentTypeNotYetUsableError`,
-///     41200). No election exists yet.
+///     41200) until a charter is seated (item 40).
 ///
 /// 23. **Contested indexes without a Lock choice, and ties to the earliest
 ///     contender**: a contested unique index may declare `"resolution": 1`,
@@ -961,25 +961,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     charter's `members` and a lookup of an `addedModerator`, items 33 to
 ///     35) and which carries a message encrypted to the leader; the leader acts
 ///     on it with a removal. The cap on
-///     additions, the target's `maxAddedModerators`, is a consensus rule of the
-///     seating pull request.
+///     additions, the target's `maxAddedModerators`, is a consensus rule of
+///     item 40.
 ///     Its `byTargetContract` index is a contested unique index
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
 ///     (`moderation_charters: 1`), and
 ///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
-///     on the step the seating path will run on a proposal, which reads it
-///     (basic error 11000) and holds no rule of its own: the reward split sums
-///     to 100 through the contract's `propertyConstraints` rule (item 39), so
-///     11001 is no longer produced, and the description fits 4096 bytes through
-///     the schema's own `maxBytes` (item 38); every document validation checks
-///     both. Genesis registers it on chains born at this
-///     version (`create_genesis_state` v1, behind the app-connect branch),
-///     `transition_to_version_14` inserts it on upgrade, and the Drive system
-///     contract cache serves it from this version
-///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Seating a
-///     winning team comes in a later pull request.
+///     on reading a proposal (basic error 11000), which holds no rule of its
+///     own: the reward split sums to 100 through the contract's
+///     `propertyConstraints` rule (item 39), so 11001 is no longer produced,
+///     and the description fits 4096 bytes through the schema's own `maxBytes`
+///     (item 38); every document validation checks both. Genesis registers it
+///     on chains born at this version (`create_genesis_state` v1, behind the
+///     app-connect branch), `transition_to_version_14` inserts it on upgrade,
+///     and the Drive system contract cache serves it from this version
+///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Item 40 seats
+///     the winning team.
 ///
 /// 38. **`maxBytes` on strings**: a property keyword for the bound plain JSON
 ///     Schema cannot count, the most UTF-8 bytes a string may take
@@ -1029,6 +1028,39 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     update. The moderation charters contract declares its first one: a
 ///     `submittedCharter`'s `rewardSplit` members add up to 100, which
 ///     `validate_submitted_charter` therefore no longer checks (11001).
+///
+/// 40. **Elected moderation teams moderate from their stored charter**: seating
+///     writes nothing. Awarding the contest of item 37 writes the winning
+///     `electedCharter`, the only one ever stored for its target, so the
+///     charter seated on an elected contract is the one the charter contract's
+///     `byTargetContract` index finds, and the moderation paths read it, each
+///     read a billed document query of the system contract. Once one is seated,
+///     only its team moderates the contract: the leader (the charter's owner)
+///     and the active members (its `members` and additions, less removals),
+///     each alone, found by at most two point reads of the unique
+///     `addedModerator` and `removedModerator` indexes; the interim moderators
+///     are refused (41101). The team holds the abilities the declaration gives
+///     it: a deletion or restore needs `deleteDocuments` on the type, a list
+///     action the ability on some moderated type
+///     (`ContractModerationAbilityNotGrantedError`, 41201). The leader and the
+///     active members are protected (41102), with the owner when the
+///     declaration says so, and the interim moderators no longer are. A
+///     `notYetUsable` interim stops blocking the moderated types
+///     (`contract_moderation_gate` v0). An `addedModerator` past the target's
+///     `maxAddedModerators` additions ever filed for the charter is refused,
+///     paid (`ModerationCharterAddedModeratorLimitReachedError`, 41202), by a
+///     hook in the batch's `validate_state` v0 that only a create of the
+///     charter contract reaches. A document action on a moderated type may
+///     agree to the seated proposal's `moderatorsShare` of the declared
+///     moderators part (rounded down) instead of the whole, and is charged
+///     that: the batch transformer (state v2) reads the charter and its
+///     proposal only for such an agreement, and advanced structure validation
+///     and every recheck judge it (`DocumentActionFeeModeratorsShareMismatchError`,
+///     40139, for any other lower amount or with no seated charter). The
+///     interim team's claim of the moderators pot is refused once a charter is
+///     seated (41113). No table moves: every generation involved is unreleased,
+///     but for the shipped batch `validate_state` v0, which no batch of an
+///     earlier version reaches through the new hook.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

@@ -9,9 +9,11 @@ the same version branch as the app-connect contract), an older chain inserts it
 on the upgrade to 14 (`transition_to_version_14`), and the Drive system contract
 cache and the trusted context provider serve it from 14 on.
 
-Seating does not exist yet. Until it does, an awarded elected charter is stored
-but seats no team, and nothing counts additions against `maxAddedModerators`;
-both come with the seating pull request.
+Seating writes nothing. Awarding the contest for a target writes the winning
+`electedCharter` to this contract's storage, the only one ever written there
+for that target, so the charter seated on a contract is the one
+`byTargetContract` finds, and the target's moderation paths read it from here
+(see [Seating](#seating)).
 
 - Contract ID: `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`
 - Owner: the all-zero system identity
@@ -75,7 +77,7 @@ bound to it, the key join requests are encrypted to.
 | `targetContractId` | identifier, required, `refersTo: { "type": "contract", "contractRequirements": { "moderation": "elected" } }` | The contract the team proposes to moderate; a target that does not exist refuses the create (40120), one that does not declare elected moderation refuses it with `ReferencedContractRequirementNotMetError` (40135) |
 | `description` | string, 1 to 4096 characters and at most 4096 bytes (`maxBytes`), required | What the team would moderate and how, for joiners and voters. Informational |
 | `reasons` | typed array of at most 64 unique identifiers, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; empty is allowed, a team that can take no action; a missing reason refuses the create, naming the element (`reasons[2]`) |
-| `moderatorsShare` | integer 0 to 100 | The percentage of each moderated document type's declared moderators fee the team takes. Absent is the full amount; a lower number is a discount; 0 is a team that will not moderate and takes no rewards |
+| `moderatorsShare` | integer 0 to 100 | The percentage of each moderated document type's declared moderators fee the team takes, rounded down to the credit. Absent is the full amount; a lower number is a discount an action may agree to once the team is seated; 0 is a team that will not moderate and takes no rewards |
 | `rewardSplit` | object, required | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members, and the share split by each member's action count. The sum is the type's `propertyConstraints` rule `rewardSplitIsWhole`, checked on every create (`DocumentPropertyConstraintViolatedError`, 10422) |
 
 Indexes: `byTargetContract` (`targetContractId`, `$createdAt`) lists the
@@ -147,8 +149,13 @@ at a time, and a removal is final.
 `maxAddedModerators`: how many members a seated team's leader may add, 0 when
 left out and at most `SystemLimits::max_contract_moderation_added_moderators`
 (15). It counts additions ever filed against a charter, so a removal frees no
-slot. The schema cannot count documents, so a consensus
-rule refuses an addition over the cap; it comes with the seating pull request.
+slot. The schema cannot count documents, so a consensus rule refuses an
+addition over the cap, paid, with `ModerationCharterAddedModeratorLimitReachedError`
+(41202): the batch's state validation reads the charter, its target and at most
+the cap's number of additions, all billed, once the addition's own references
+passed. Like a unique index conflict, it is judged in the block and not in the
+mempool, which runs no state validation for a batch: an addition over the cap
+is admitted and then refused, paid.
 
 ## The contest
 
@@ -170,8 +177,45 @@ with no Lock choice, so the contest always ends with a winner, a tie goes to
 the earliest contender, and a contest with a single contender at the end of the
 join window is awarded at once. An elected charter create opens or joins that
 contest for its target contract. Reading the join window, the vote window and
-the fund from the target contract comes with the seating, in a later pull
-request.
+the fund from the target contract comes in a later pull request.
+
+## Seating
+
+Nothing is written when a contest is awarded, and nothing is copied under the
+moderated contract: the charter seated on a contract is its `electedCharter`
+in this contract's storage, found through `byTargetContract` (only a contest's
+winner is ever written there, and in protocol version 14 a seat is never
+replaced). The moderation paths of the target read it:
+
+- **Moderation.** Once a charter is seated, only its team moderates the
+  target: the leader and the active members, each alone. The interim
+  moderators, the owner among them, are refused
+  (`IdentityNotContractModeratorError`, 41101); before a charter is seated the
+  interim rules apply as they did. The signer check lists no team: the leader
+  is the charter's owner, an elected member costs a point read of
+  `removedModerator`, anyone else a point read of `addedModerator` and, when
+  there is one, of `removedModerator` (both unique on `electedCharterId` and
+  `memberId`).
+- **Abilities.** The team holds the abilities the target's declaration gives
+  it: a deletion or a restore needs `deleteDocuments` on the type, a list
+  action the ability on some moderated type
+  (`ContractModerationAbilityNotGrantedError`, 41201 otherwise).
+- **Protection.** The leader and the active members can be neither put on a
+  list nor have their documents deleted (41102), and the owner too when the
+  declaration protects it.
+- **The interim block.** A `notYetUsable` interim stops blocking the
+  moderated types.
+- **Fees.** An action agreeing to the declared moderators fee reads no
+  charter. One agreeing to less must agree to exactly the seated proposal's
+  `moderatorsShare` of it (rounded down to the credit) and is charged that,
+  at the cost of the charter lookup and the proposal fetch
+  (`DocumentActionFeeModeratorsShareMismatchError`, 40139, for any other
+  amount, and for a discount with no seated charter).
+- **The pot.** The interim team's claim of the moderators pot is refused once
+  a charter is seated (41113); the pot waits for the seated team, whose claim
+  comes in a later pull request.
+- **Resignations.** A `resignationRequest` changes nothing by itself: the
+  leader acts on it with a `removedModerator`.
 
 ## Validation beyond the schema
 
@@ -180,15 +224,18 @@ written, the description's 4096-byte cap and the reward split's sum included:
 `maxBytes` refuses a longer description with
 `DocumentPropertyMaxBytesExceededError` (10421), and the `propertyConstraints`
 rule `rewardSplitIsWhole` refuses a split that does not add up to 100 with
-`DocumentPropertyConstraintViolatedError` (10422). `validate_submitted_charter`
-in `rs-dpp` (`packages/rs-dpp/src/moderation_charter/`) only reads a proposal,
-without reading state, for the path that seats a team:
+`DocumentPropertyConstraintViolatedError` (10422). The cap on additions is the
+exception (see above). `validate_submitted_charter` in `rs-dpp`
+(`packages/rs-dpp/src/moderation_charter/`) only reads a proposal, without
+reading state:
 
 | Rule | Error | Code |
 | --- | --- | --- |
 | A property is missing or of the wrong type | `ModerationCharterMalformedFieldError` | 11000 |
 
-`ElectedCharter` reads an elected charter's properties for the same path.
+`ElectedCharter` reads an elected charter's properties, and
+`moderation_charter::moderators_share_of` applies a proposal's share to a
+declared moderators fee.
 
 ## Reading and writing from a client
 

@@ -4,6 +4,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::seated_moderation_charter::fetch_seated_moderation_charter;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
@@ -13,6 +14,9 @@ use dpp::consensus::state::contract_moderation::{
     ContractFeesNothingToClaimError,
 };
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::fee::Credits;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
@@ -104,6 +108,32 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
         // declares no moderation has no team, so nobody claims its moderators pot.
         let recipients = pot.recipients(&contract_fetch_info.contract);
         if !recipients.contains(&claimant_id) {
+            return refuse(
+                ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into(),
+            );
+        }
+        // The recipients of an elected contract's moderators pot are its interim team, who may
+        // claim it only until a charter is seated (decentralized moderation teams): from
+        // then on the pot is the seated team's, and it accumulates for that team, unsettled,
+        // as it does under an interim that names nobody. Whether one is seated is read, billed,
+        // only for an interim recipient.
+        let elected = contract_fetch_info
+            .contract
+            .config()
+            .moderation()
+            .is_some_and(|moderation| moderation.moderators.elected().is_some());
+        if pot == ContractFeePot::Moderators
+            && elected
+            && fetch_seated_moderation_charter(
+                platform.drive,
+                contract_id,
+                &block_info.epoch,
+                execution_context,
+                tx,
+                platform_version,
+            )?
+            .is_some()
+        {
             return refuse(
                 ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into(),
             );

@@ -33,7 +33,8 @@ pub(super) struct ContractModerationRefusal<'a> {
 pub(super) trait BatchTransitionContractModerationGate {
     /// Gates the document transitions of `owner_id` against one contract: on the interim
     /// block of an elected declaration that names no interim moderators, which refuses every
-    /// transition of a moderated document type until a team is seated, and on the contract's
+    /// transition of a moderated document type until a charter is seated on the contract (read
+    /// from the moderation charters contract), and on the contract's
     /// moderation lists. Returns the refusal when the block covers a transition, or when the
     /// signer is banned or under a live suspension and asks for anything but deletions;
     /// `None` to carry on with every transition. A suspension found lapsed is recorded in
@@ -399,8 +400,9 @@ mod tests {
 
     /// An elected contract whose interim names nobody: a create on the moderated type is
     /// refused with its nonce bump, a create on another type passes, and the lists are read
-    /// once for the batch, for the transition that passes. A batch on the moderated type
-    /// alone reads nothing.
+    /// once for the batch, for the transition that passes. Whether a charter is seated is read
+    /// once too, since the block applies to one of them; a batch on the moderated type alone
+    /// reads that and nothing else.
     #[tokio::test]
     async fn should_block_the_moderated_types_of_an_elected_contract_in_its_interim() {
         use crate::execution::validation::state_transition::tests::setup_identity;
@@ -517,7 +519,8 @@ mod tests {
                 .collect()
         }
 
-        // Both types: the moderated one refused, the other passed, one read.
+        // Both types: the moderated one refused, the other passed; the charter lookup and the
+        // lists read.
         let document_transitions = by_type(&transitions);
         let mut execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
@@ -545,9 +548,9 @@ mod tests {
             .map(|transition| transition.base().identity_contract_nonce())
             .collect();
         assert_eq!(passed, vec![2]);
-        assert_eq!(execution_context.operations_slice().len(), 1);
+        assert_eq!(execution_context.operations_slice().len(), 2);
 
-        // The moderated type alone: refused without a read.
+        // The moderated type alone: refused after the charter lookup, without reading the lists.
         let document_transitions = by_type(&transitions[..1]);
         let mut execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
@@ -567,6 +570,6 @@ mod tests {
         .expect("expected the moderated type to be refused");
         assert!(refusal.passed.is_empty());
         assert_eq!(refusal.refused.errors.len(), 1);
-        assert!(execution_context.operations_slice().is_empty());
+        assert_eq!(execution_context.operations_slice().len(), 1);
     }
 }

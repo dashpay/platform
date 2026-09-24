@@ -73,6 +73,8 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod seated_team;
+
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
 const CONTRACT_MODERATION_REASON_TOO_LONG: u32 = 10903;

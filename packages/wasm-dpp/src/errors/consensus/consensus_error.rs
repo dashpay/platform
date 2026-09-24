@@ -101,6 +101,7 @@ use dpp::consensus::basic::moderation_charter::{
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
+    ContractModerationAbilityNotGrantedError, ModerationCharterAddedModeratorLimitReachedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -151,6 +152,7 @@ use dpp::consensus::state::document::document_immutable_property_changed_error::
 use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use dpp::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
 use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -701,6 +703,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentListInvalidError(e) => {
             generic_consensus_error!(ReferencedDocumentListInvalidError, e).into()
+        }
+        StateError::ContractModerationAbilityNotGrantedError(e) => {
+            generic_consensus_error!(ContractModerationAbilityNotGrantedError, e).into()
+        }
+        StateError::ModerationCharterAddedModeratorLimitReachedError(e) => {
+            generic_consensus_error!(ModerationCharterAddedModeratorLimitReachedError, e).into()
+        }
+        StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
+            generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()
         }
     }
 }

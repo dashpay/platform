@@ -20,15 +20,24 @@
 //! The team that acts is the leader plus [`ElectedCharter::active_members`]: the elected
 //! members and the additions, less the removals.
 //!
+//! Seating writes nothing. Awarding the contest for a target writes the winning
+//! `electedCharter` to the contract's storage, the only one ever written there for that target
+//! (contenders live in the contest, and in protocol version 14 a seat is never replaced), so the
+//! charter seated on a contract is the one its `byTargetContract` index finds. The moderation
+//! paths of the target read it from there: its team moderates, its proposal's
+//! [`SubmittedCharter::moderators_share`] discounts the moderators part of an action fee
+//! ([`moderators_share_of`]), and its additions are capped by the target's
+//! `maxAddedModerators`.
+//!
 //! The schema carries almost every rule through its keywords (references, lookups, key
 //! requirements, `distinctFrom`, `maxBytes` for the description's byte cap, and the
 //! `propertyConstraints` rule holding the reward split to 100). What it cannot say is here:
 //! [`SubmittedCharter`] and [`ElectedCharter`] read the documents' properties, and
-//! [`validate_submitted_charter`] reads a proposal for the path that seats a team. Nothing here
-//! reads state.
+//! [`validate_submitted_charter`] reads a proposal. Nothing here reads state.
 
 mod v0;
 
+use crate::balances::credits::Credits;
 use crate::consensus::basic::moderation_charter::ModerationCharterMalformedFieldError;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::ProtocolError;
@@ -62,6 +71,21 @@ pub const RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME: &str = "resignationRequest";
 
 /// The moderators share a proposal takes when it declares none: the full declared fee.
 pub const FULL_MODERATORS_SHARE: u8 = 100;
+
+/// The moderators part a seated charter's team charges for an action whose document type
+/// declares `declared_moderators`: `moderators_share` percent of it, rounded down to the credit.
+/// A document action on a type the target moderates may agree to exactly this amount instead
+/// of the declared one; it is then charged this amount, and nothing else below the declared
+/// amount is accepted. A share of 100 (or none declared) gives the declared amount itself.
+pub fn moderators_share_of(declared_moderators: Credits, moderators_share: u8) -> Credits {
+    let share = (declared_moderators as u128) * (moderators_share as u128)
+        / (FULL_MODERATORS_SHARE as u128);
+    // At most 100 percent of an amount that fits, so the share fits; a stored share over 100
+    // is refused by the schema, and is held at the declared amount if one ever got through.
+    Credits::try_from(share)
+        .unwrap_or(declared_moderators)
+        .min(declared_moderators)
+}
 
 /// The properties of the charter document types.
 pub mod property_names {

@@ -112,6 +112,9 @@ impl ContractFeePot {
     /// The identities a payout of this pot of `contract` goes to: the contract owner for the
     /// owner pot, the contract's moderation team for the moderators pot, which is empty for a
     /// contract that declares no moderation. Only a recipient may claim the pot.
+    ///
+    /// For an elected contract this is the interim's team, which may claim the moderators pot
+    /// only until a charter is seated on the contract; the claim reads whether one is.
     pub fn recipients(&self, contract: &DataContract) -> BTreeSet<Identifier> {
         let owner_id = contract.owner_id();
         match self {
