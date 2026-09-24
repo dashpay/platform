@@ -569,6 +569,10 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_document_value_depth: None,
         max_typed_array_items: 1024,
         max_references_per_document: 256,
+        max_reference_operands: 4,
+        max_reference_expression_depth: 4,
+        max_property_constraints: 16,
+        max_property_constraint_nodes: 32,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         // Load-bearing for state correctness, not just for throughput — see
         // SystemLimits::max_transitions_in_documents_batch. Raising it here
@@ -597,6 +601,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         min_contract_moderation_challenge_cool_down_seconds: 1_209_600,
         max_contract_moderation_challenge_cool_down_seconds: 94_608_000,
         contract_document_restore_window_ms: 604_800_000,
+        max_contract_moderation_added_moderators: 15,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,

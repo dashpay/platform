@@ -54,10 +54,24 @@ use crate::version::system_limits::SystemLimits;
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
 ///   earlier tables, whose parsers never read it).
 /// * References (protocol version 14): one document of a document type carries at most 256
-///   references, counted at registration as one per property with `refersTo` and
-///   `maxItems` per typed array whose elements declare one (`max_references_per_document`,
+///   references, counted at registration as one per property with `refersTo`, one for the
+///   type's `ownerRefersTo` and `maxItems` per typed array whose elements declare one
+///   (`max_references_per_document`,
 ///   backfilled into the earlier tables, whose parsers never read it). Each reference is a
 ///   billed state read when the document is written.
+/// * Reference expressions (protocol version 14): a `refersTo` `anyOf` or `allOf` list holds at
+///   most 4 operands (`max_reference_operands`) and they nest at most 4 combinators deep
+///   (`max_reference_expression_depth`), both backfilled into the earlier tables, whose parsers
+///   never read them; every leaf counts against `max_references_per_document`.
+/// * Property constraints (protocol version 14): a document type declares at most 16
+///   `propertyConstraints` rules (`max_property_constraints`) of at most 32 nodes each
+///   (`max_property_constraint_nodes`), both backfilled into the earlier tables, whose
+///   parsers never read them. The rules read no state, so these two bound the arithmetic
+///   one document write causes.
+/// * Moderation charters (protocol version 14): an elected moderation declaration lets a
+///   seated team's leader add at most 15 members (`max_contract_moderation_added_moderators`),
+///   which joined this table in place while protocol version 14 was unreleased. A charter's
+///   description cap is the charter schema's own `maxBytes`, not a limit here.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -66,7 +80,11 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
-    max_state_transition_size: 20480, //20 KiB
+    max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
+    max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
+    max_property_constraints: 16, // propertyConstraints (new in v14): contract registration caps the rules one document type declares
+    max_property_constraint_nodes: 32, // propertyConstraints (new in v14): contract registration caps the nodes (comparison, operators, properties, values) of one rule
+    max_state_transition_size: 20480,  //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,
@@ -93,6 +111,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,        // 7 days
+    max_contract_moderation_added_moderators: 15,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

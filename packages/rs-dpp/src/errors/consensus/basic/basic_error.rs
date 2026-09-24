@@ -54,6 +54,7 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
+    DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
     DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
     InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
@@ -90,6 +91,9 @@ use crate::consensus::basic::identity::{
     WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use crate::consensus::basic::moderation_charter::{
+    ModerationCharterMalformedFieldError, ModerationCharterRewardSplitNotOneHundredError,
+};
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputOutputBalanceMismatchError,
@@ -813,8 +817,24 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidEncryptedPropertyShapeError(InvalidEncryptedPropertyShapeError),
 
+    // Moderation charters (protocol version 14).
+    #[error(transparent)]
+    ModerationCharterMalformedFieldError(ModerationCharterMalformedFieldError),
+
+    #[error(transparent)]
+    ModerationCharterRewardSplitNotOneHundredError(ModerationCharterRewardSplitNotOneHundredError),
+
+    // A string over the `maxBytes` its property declares (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyMaxBytesExceededError(DocumentPropertyMaxBytesExceededError),
+
+    // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyConstraintViolatedError(DocumentPropertyConstraintViolatedError),
+
     #[error(transparent)]
     TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
+
 }
 
 impl From<BasicError> for ConsensusError {
@@ -826,6 +846,7 @@ impl From<BasicError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use platform_value::Identifier;
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
@@ -924,13 +945,47 @@ mod tests {
             )),
             195
         );
+        // Moderation charters (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterMalformedFieldError(
+                ModerationCharterMalformedFieldError::new(
+                    "rewardSplit".to_string(),
+                    "reason".to_string()
+                )
+            )),
+            196
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterRewardSplitNotOneHundredError(
+                ModerationCharterRewardSplitNotOneHundredError::new(10, 40, 40)
+            )),
+            197
+        );
+        // A string over its property's `maxBytes` (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyMaxBytesExceededError(
+                DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4097, 4096)
+            )),
+            198
+        );
+        // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyConstraintViolatedError(
+                DocumentPropertyConstraintViolatedError::new(
+                    "order".to_string(),
+                    "depositCoversOrder".to_string(),
+                    PropertyConstraintViolation::NotMet,
+                )
+            )),
+            199
+        );
         // A token opting into a shielded pool keeps no freeze rules (protocol version 14): the
         // tail of the enum.
         assert_eq!(
             discriminant_of(BasicError::TokenShieldedPoolIncompatibleRulesError(
                 TokenShieldedPoolIncompatibleRulesError::new(0, "freezeRules".to_string())
             )),
-            196
+            200
         );
     }
 }

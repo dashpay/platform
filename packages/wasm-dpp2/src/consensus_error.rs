@@ -28,7 +28,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentReferenceErrorCodeWasm {
     /// The referenced identity, contract, token or document (permanent or
-    /// deletable) does not exist.
+    /// deletable) does not exist, or a `listElement` value is not an element
+    /// of the list it must be in (or was set while the property finding the
+    /// list's document was not).
     ReferencedEntityNotFound = 40120,
     /// A `permanentDocument` or `deletableDocument` reference names a
     /// document type the referenced contract does not define, or the
@@ -62,11 +64,24 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// meet what the reference's `keyRequirements` require of it: its
     /// purpose, or a binding to a document type of the declaring contract.
     ReferencedIdentityKeyRequirementNotMet = 40136,
+    /// A `refersTo` lookup into a document type of another contract cannot
+    /// resolve there, reported at contract registration: the named index is
+    /// missing or not unique, the keys do not cover it exactly, or a source
+    /// holds a different kind of value than its index property. (A lookup into
+    /// the declaring contract is refused by the contract parse instead.)
+    ReferencedDocumentLookupInvalid = 40137,
+    /// A `refersTo: listElement` whose list lives in a document type of
+    /// another contract cannot be served by it, reported at contract
+    /// registration: that type's documents can be deleted, the list is not a
+    /// stored typed array of identifiers of it, or a replace could change the
+    /// list. (A list in the declaring contract is refused by the contract parse
+    /// instead.)
+    ReferencedDocumentListInvalid = 40138,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131, 40135 or 40136.
+    /// is not in the 40120-40125 range, 40131 or 40135-40138.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -78,6 +93,8 @@ impl DocumentReferenceErrorCodeWasm {
             40131 => Some(Self::ReferencedDocumentTypeNotDeletable),
             40135 => Some(Self::ReferencedContractRequirementNotMet),
             40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
+            40137 => Some(Self::ReferencedDocumentLookupInvalid),
+            40138 => Some(Self::ReferencedDocumentListInvalid),
             _ => None,
         }
     }
@@ -184,6 +201,76 @@ impl DocumentEncryptionErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by the `maxBytes` check, which runs from
+/// protocol version 14 onward wherever a document is validated, on every
+/// create and replace included.
+///
+/// Branch on an error's `code` against these instead of matching its
+/// message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentMaxBytesErrorCode.MaxBytesExceeded) {
+///     // a string is longer in UTF-8 bytes than its property's maxBytes
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentMaxBytesErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentMaxBytesErrorCodeWasm {
+    /// A string, or an element of a typed array of strings, is longer in
+    /// UTF-8 bytes than the `maxBytes` its property declares. `maxLength`
+    /// counts characters, which are up to four bytes each.
+    MaxBytesExceeded = 10421,
+}
+
+impl DocumentMaxBytesErrorCodeWasm {
+    /// The maxBytes error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10421 => Some(Self::MaxBytesExceeded),
+            _ => None,
+        }
+    }
+}
+
+/// Consensus error codes emitted by the `propertyConstraints` check, which
+/// runs from protocol version 14 onward wherever a document is validated, on
+/// every create and replace included.
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentPropertyConstraintErrorCode.DocumentPropertyConstraintViolated) {
+///     // the document breaks one of its type's rules; the message names it
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentPropertyConstraintErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentPropertyConstraintErrorCodeWasm {
+    /// The written document breaks a rule of its document type's
+    /// `propertyConstraints`: the comparison does not hold, or evaluating it
+    /// overflowed, divided by zero, raised to a negative power or read a value
+    /// that is not an integer.
+    DocumentPropertyConstraintViolated = 10422,
+}
+
+impl DocumentPropertyConstraintErrorCodeWasm {
+    /// The propertyConstraints error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10422 => Some(Self::DocumentPropertyConstraintViolated),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -237,6 +324,20 @@ impl ConsensusErrorWasm {
     pub fn document_encryption_error_code(&self) -> Option<DocumentEncryptionErrorCodeWasm> {
         DocumentEncryptionErrorCodeWasm::from_code(self.0.code())
     }
+    /// The maxBytes error this is, or `undefined` when it is not code 10421.
+    #[wasm_bindgen(getter = "documentMaxBytesErrorCode")]
+    pub fn document_max_bytes_error_code(&self) -> Option<DocumentMaxBytesErrorCodeWasm> {
+        DocumentMaxBytesErrorCodeWasm::from_code(self.0.code())
+    }
+
+    /// The propertyConstraints error this is, or `undefined` when it is not
+    /// code 10422.
+    #[wasm_bindgen(getter = "documentPropertyConstraintErrorCode")]
+    pub fn document_property_constraint_error_code(
+        &self,
+    ) -> Option<DocumentPropertyConstraintErrorCodeWasm> {
+        DocumentPropertyConstraintErrorCodeWasm::from_code(self.0.code())
+    }
 }
 
 impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
@@ -245,6 +346,8 @@ impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 mod tests {
     use super::*;
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+    use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
+    use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -356,6 +459,66 @@ mod tests {
         assert_eq!(DocumentEncryptionErrorCodeWasm::from_code(10419), None);
     }
 
+    /// Built from the real DPP error rather than a code literal, like the
+    /// encryption test above.
+    #[test]
+    fn should_mirror_the_dpp_error_in_the_max_bytes_error_code() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::DocumentPropertyMaxBytesExceededError;
+
+        let error = ConsensusError::from(BasicError::DocumentPropertyMaxBytesExceededError(
+            DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4098, 4096),
+        ));
+
+        assert_eq!(
+            DocumentMaxBytesErrorCodeWasm::MaxBytesExceeded as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_max_bytes_error_code(),
+            Some(DocumentMaxBytesErrorCodeWasm::MaxBytesExceeded)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentMaxBytesErrorCodeWasm::from_code(10420), None);
+    }
+
+    /// Built from the real DPP error rather than a code literal, like the
+    /// encryption test above.
+    #[test]
+    fn should_mirror_the_dpp_property_constraint_error_code() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::{
+            DocumentPropertyConstraintViolatedError, PropertyConstraintViolation,
+        };
+
+        let error: ConsensusError = BasicError::DocumentPropertyConstraintViolatedError(
+            DocumentPropertyConstraintViolatedError::new(
+                "order".to_string(),
+                "depositCoversOrder".to_string(),
+                PropertyConstraintViolation::NotMet,
+            ),
+        )
+        .into();
+
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::from_code(error.code()),
+            Some(DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated)
+        );
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_property_constraint_error_code(),
+            Some(DocumentPropertyConstraintErrorCodeWasm::DocumentPropertyConstraintViolated)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(
+            DocumentPropertyConstraintErrorCodeWasm::from_code(10420),
+            None
+        );
+    }
+
     /// The six reference-validation errors, paired with the JS enum variant
     /// each is advertised to be.
     ///
@@ -401,6 +564,28 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedIdentityKeyRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedDocumentLookupInvalidError(
+                    ReferencedDocumentLookupInvalidError::new(
+                        "electedCharter.members".to_string(),
+                        "bySubmittedCharter".to_string(),
+                        "is not unique".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentLookupInvalid,
+            ),
+            (
+                StateError::ReferencedDocumentListInvalidError(
+                    ReferencedDocumentListInvalidError::new(
+                        "resignation.memberId".to_string(),
+                        "members".to_string(),
+                        "is not a typed array of identifiers".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentListInvalid,
             ),
             (
                 StateError::ReferencedDocumentTypeNotFoundError(
@@ -499,7 +684,7 @@ mod tests {
 
     #[test]
     fn codes_outside_the_reference_range_are_not_claimed() {
-        for code in [40119, 40126, 40137, 0, 40200] {
+        for code in [40119, 40126, 40139, 0, 40200] {
             assert_eq!(DocumentReferenceErrorCodeWasm::from_code(code), None);
         }
     }

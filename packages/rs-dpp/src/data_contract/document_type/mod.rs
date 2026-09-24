@@ -7,6 +7,7 @@ mod index;
 pub mod methods;
 pub use index::*;
 mod index_level;
+pub mod property_constraints;
 pub use index_level::IndexLevel;
 pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
@@ -105,6 +106,21 @@ pub(crate) mod property_names {
     pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
     pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
     pub const REFERS_TO: &str = "refersTo";
+    /// Doctype-level `refersTo` declaration whose value is the document's
+    /// `$ownerId`, the writer, rather than a property's value, only on a type
+    /// whose documents cannot change owner. Meta-schema v3+ (protocol version
+    /// 14). See `parse_doctype_reference` in `try_from_schema`.
+    pub const OWNER_REFERS_TO: &str = "ownerRefersTo";
+    /// Doctype-level `refersTo` declaration whose value is the document's
+    /// `$creatorId`, its creator, only on a type that records creator ids (a
+    /// transferable or tradeable one). Meta-schema v3+ (protocol version 14).
+    /// See `parse_doctype_reference` in `try_from_schema`.
+    pub const CREATOR_REFERS_TO: &str = "creatorRefersTo";
+    /// Doctype-level object of named rules, each a comparison of two integer
+    /// expressions over the document's integer properties that every created or
+    /// replaced document must meet. Meta-schema v3+ (protocol version 14). See
+    /// `parse_property_constraints` in `property_constraints`.
+    pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";
     pub const DISTINCT_FROM: &str = "distinctFrom";
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
@@ -114,6 +130,18 @@ pub(crate) mod property_names {
     /// [`KEY_ID_PROPERTY`]; a declaration carries one or the other.
     pub const IDENTITY_PROPERTY: &str = "identityProperty";
     pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
+    /// `refersTo` on a document reference: the unique index of the referenced
+    /// document type the referenced document is found through, and the key.
+    /// Meta-schema v3+ (protocol version 14).
+    pub const LOOKUP: &str = "lookup";
+    /// `lookup`: the name of the referenced document type's unique index.
+    pub const LOOKUP_INDEX: &str = "index";
+    /// `lookup`: every index property mapped to its referring-side source.
+    pub const LOOKUP_KEYS: &str = "keys";
+    /// `refersTo: listElement`: the typed array of identifiers, on the
+    /// referenced document type, the value must be an element of.
+    /// Meta-schema v3+ (protocol version 14).
+    pub const IN_LIST: &str = "inList";
     pub const CONTRACT_REQUIREMENTS: &str = "contractRequirements";
     pub const MODERATION: &str = "moderation";
     pub const MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
@@ -136,6 +164,11 @@ pub(crate) mod property_names {
     pub const SENDER_KEY: &str = "senderKey";
     /// `encryptedFor`: the scheme name, one of `EncryptionScheme::ALL`.
     pub const SCHEME: &str = "scheme";
+    /// Property-level integer on a string property, or on the `items` of a
+    /// typed array of strings: the most UTF-8 bytes a value may hold.
+    /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
+    /// `try_from_schema`.
+    pub const MAX_BYTES: &str = "maxBytes";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";

@@ -1,8 +1,10 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::seated_moderation_charter::fetch_seated_moderation_charter;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
@@ -12,6 +14,9 @@ use dpp::consensus::state::contract_moderation::{
     ContractFeesNothingToClaimError,
 };
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::fee::Credits;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
@@ -39,9 +44,9 @@ pub(in crate::execution::validation::state_transition::state_transitions::contra
 impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransition {
     /// Reads the contract and the pot and settles the payout: the signer is a recipient of the
     /// pot, the pot was not claimed in this epoch yet, and it holds enough to pay every
-    /// recipient something. Every refusal after the contract is found is paid for by bumping
-    /// the signer's contract nonce, and a refused claim leaves the pot's last claim epoch
-    /// alone.
+    /// recipient something. Every refusal, a contract that does not exist included, is paid for
+    /// by bumping the signer's contract nonce, and a refused claim leaves the pot's last claim
+    /// epoch alone.
     ///
     /// The action carries what each recipient is paid, so Drive pays the pot out without
     /// reading it again, and the mempool, which transforms without a state validation stage,
@@ -58,24 +63,25 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
         let claimant_id = self.owner_id();
         let pot = self.pot();
 
-        let Some(contract_fetch_info) = platform
-            .drive
-            .get_contract_with_fetch_info_and_fee(
+        let (contract_fetch_fee, maybe_contract_fetch_info) =
+            platform.drive.get_contract_with_fetch_info_and_fee(
                 contract_id.to_buffer(),
                 Some(&block_info.epoch),
                 false,
                 tx,
                 platform_version,
-            )?
-            .1
-        else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                DataContractNotPresentError::new(contract_id).into(),
-            ));
-        };
-        if let Some(fee) = contract_fetch_info.fee.clone() {
-            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-        }
+            )?;
+        // The read is billed from the fee this call returns, whether the contract was pulled
+        // from disk, was in the cache or does not exist. The fee a cached fetch info carries is
+        // only there when that entry was built with an epoch, which differs from node to node,
+        // so billing it would make the fee, and the app hash, depend on the cache.
+        let contract_fetch_fee =
+            contract_fetch_fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "fee must exist for the contract fetch of a contract fee claim transition",
+            )))?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+            contract_fetch_fee,
+        ));
 
         let bump_action = || {
             StateTransitionAction::BumpIdentityDataContractNonceAction(
@@ -91,11 +97,43 @@ impl ContractFeeClaimStateTransitionStateValidationV0 for ContractFeeClaimTransi
             ))
         };
 
+        // Paid like every other refusal: the signer is authenticated and the lookup happened,
+        // as for a contract update of a contract that does not exist.
+        let Some(contract_fetch_info) = maybe_contract_fetch_info else {
+            return refuse(DataContractNotPresentError::new(contract_id).into());
+        };
+
         // Only who a payout of the pot goes to may claim it: the contract owner for the owner
         // pot, a member of the moderation team for the moderators pot. A contract that
         // declares no moderation has no team, so nobody claims its moderators pot.
         let recipients = pot.recipients(&contract_fetch_info.contract);
         if !recipients.contains(&claimant_id) {
+            return refuse(
+                ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into(),
+            );
+        }
+        // The recipients of an elected contract's moderators pot are its interim team, who may
+        // claim it only until a charter is seated (decentralized moderation teams): from
+        // then on the pot is the seated team's, and it accumulates for that team, unsettled,
+        // as it does under an interim that names nobody. Whether one is seated is read, billed,
+        // only for an interim recipient.
+        let elected = contract_fetch_info
+            .contract
+            .config()
+            .moderation()
+            .is_some_and(|moderation| moderation.moderators.elected().is_some());
+        if pot == ContractFeePot::Moderators
+            && elected
+            && fetch_seated_moderation_charter(
+                platform.drive,
+                contract_id,
+                &block_info.epoch,
+                execution_context,
+                tx,
+                platform_version,
+            )?
+            .is_some()
+        {
             return refuse(
                 ContractFeeClaimNotAllowedError::new(contract_id, pot, claimant_id).into(),
             );

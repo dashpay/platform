@@ -6,6 +6,10 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_value_depth: None,
     max_typed_array_items: 1024,
     max_references_per_document: 256,
+    max_reference_operands: 4,
+    max_reference_expression_depth: 4,
+    max_property_constraints: 16,
+    max_property_constraint_nodes: 32,
     max_state_transition_size: 20480, //20 KiB
     // TODO: this is currently capped at 1 because the batch state-transition
     // pipeline has known correctness issues with multi-transition batches:
@@ -58,6 +62,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,        // 7 days
+    max_contract_moderation_added_moderators: 15,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

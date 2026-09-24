@@ -1519,6 +1519,7 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
             dpp::data_contract::document_type::StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                max_bytes: None,
             },
         )),
         _ => None,
@@ -3527,6 +3528,7 @@ mod tests {
         let ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         let ops = allowed_ops_for_type(&ty);
         assert!(ops.contains(&super::StartsWith));
@@ -3596,6 +3598,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         assert!(WhereOperator::StartsWith.value_shape_ok(&Value::Text("abc".into()), &str_ty));
         assert!(!WhereOperator::StartsWith.value_shape_ok(&Value::I64(1), &str_ty));
@@ -3623,6 +3626,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         assert!(WhereOperator::LessThan.value_shape_ok(&Value::Text("a".into()), &str_ty));
         assert!(!WhereOperator::LessThan.value_shape_ok(&Value::I64(1), &str_ty));
@@ -4204,6 +4208,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
 
         let good = Value::Array(vec![Value::Text("aaa".into()), Value::Text("zzz".into())]);

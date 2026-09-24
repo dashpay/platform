@@ -5555,6 +5555,7 @@ mod tests {
     mod permanent_document_reference_declarations {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::errors::DataContractError;
         use drive::util::test_helpers::setup_contract;
 
         const FOREIGN_CONTRACT_PATH: &str =
@@ -5564,6 +5565,15 @@ mod tests {
         /// fixture, with the foreign permanent-document fixture contract
         /// already in state, and returns the execution result.
         async fn run_contract_create(fixture_path: &str) -> StateTransitionExecutionResult {
+            run_contract_create_with_foreign(fixture_path, FOREIGN_CONTRACT_PATH).await
+        }
+
+        /// [`run_contract_create`] with the contract at `foreign_contract_path`
+        /// in state instead.
+        async fn run_contract_create_with_foreign(
+            fixture_path: &str,
+            foreign_contract_path: &str,
+        ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -5575,7 +5585,7 @@ mod tests {
 
             setup_contract(
                 &platform.drive,
-                FOREIGN_CONTRACT_PATH,
+                foreign_contract_path,
                 None,
                 None,
                 None::<fn(&mut DataContract)>,
@@ -5689,6 +5699,142 @@ mod tests {
                     ),
                     ..
                 }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_contract_with_owner_references() {
+            // `ownerRefersTo` on three types: a lookup into a permanent type of
+            // the same contract, the same with a propertyAgreement whose
+            // referring side is the writer (`$ownerId`, the reference's own
+            // value), and an identity target; `creatorRefersTo` on two
+            // transferable types, a lookup and an identity target
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_contract_with_reference_expressions() {
+            // `anyOf`s of two lookups on a property and on the elements of a
+            // typed array, of an identity and a document id, and of two lookups
+            // one of which carries a propertyAgreement, an `allOf`, and nested
+            // expressions down to the depth limit: every leaf is checked as it
+            // would be declared alone
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-reference-expression.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_an_owner_reference_to_an_unknown_document_type_at_its_owner_path() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$ownerId" && e.document_type_name() == "ghost"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_whose_expression_leaf_names_an_unknown_document_type() {
+            // A leaf nested in `anyOf[1].allOf[1]` names `removedModerator`,
+            // which the contract does not define: every leaf must be a
+            // declaration that could hold, and the error names it by where it
+            // sits
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-reference-expression-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(e)
+                    ),
+                    ..
+                } if e.path() == "resignation.memberId.anyOf[1].allOf[1]"
+                    && e.document_type_name() == "removedModerator"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_creator_reference_to_an_unknown_document_type_at_its_creator_path()
+        {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-refers-to-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$creatorId" && e.document_type_name() == "ghost"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_an_owner_reference_to_a_deletable_type_at_its_owner_path() {
+            // A permanentDocument lookup into a type of the same contract that
+            // allows deletion: the contract parse leaves it to registration
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-deletable-target.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeDeletableError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$ownerId" && e.document_type_name() == "moderator"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_an_owner_reference_property_agreement_at_its_owner_path() {
+            // The referring side names a property the declaring type does not
+            // have; `$ownerId` there would have been admitted
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-agreement-invalid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$ownerId" && e.referring_property() == "missing"
             );
         }
 
@@ -5818,6 +5964,46 @@ mod tests {
             );
         }
 
+        /// No stored document carries a transient value, so an agreement with
+        /// one on the referenced side could only hold for a referring document
+        /// omitting its own side, and a required one never. A property inside a
+        /// transient object is dropped with the object.
+        #[tokio::test]
+        async fn should_reject_agreement_on_a_transient_referenced_property() {
+            for fixture in [
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referenced.json",
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referenced-object.json",
+            ] {
+                let result = run_contract_create(fixture).await;
+
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                        ),
+                        ..
+                    } if error.reason().contains("the referenced property is transient"),
+                    "{fixture}"
+                );
+            }
+        }
+
+        /// The referring side is judged on the transition, so a transient one is
+        /// a write gate and registers.
+        #[tokio::test]
+        async fn should_register_agreement_on_a_transient_referring_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-transient-referring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
         /// `refersTo` on the items of a typed array registers with every target
         /// the fixture uses: permanent and deletable document elements, an
         /// agreement keyed by the writer and one on a schema property.
@@ -5932,6 +6118,29 @@ mod tests {
                     ),
                     ..
                 }
+            );
+        }
+
+        /// `$id`, the referenced document's own id, is an identifier like
+        /// `$ownerId` and `$creatorId`: an agreement pair facing it with a
+        /// string could never hold.
+        #[tokio::test]
+        async fn should_reject_an_id_agreement_facing_a_non_identifier_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-id-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referring_property() == "authorId"
+                    && e.referenced_property() == "$id"
+                    && e.reason().contains("$ownerId, $creatorId and $id are identifiers")
             );
         }
 
@@ -6142,6 +6351,59 @@ mod tests {
             );
         }
 
+        /// A stored key id whose identity is transient names no key a reader
+        /// could find, whichever side declares the pair: `identityProperty` on
+        /// the key id, or `keyIdProperty` on the identity.
+        #[tokio::test]
+        async fn should_reject_a_stored_key_id_paired_with_a_transient_identity() {
+            for (fixture, key_id_property) in [
+                (
+                    "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key-transient-identity.json",
+                    "recipientKeyId",
+                ),
+                (
+                    "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-transient-identity.json",
+                    "toKeyIndex",
+                ),
+                (
+                    "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key-transient-object.json",
+                    "recipientKeyId",
+                ),
+            ] {
+                let result = run_contract_create(fixture).await;
+
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::ReferencedKeyIdPropertyInvalidError(e)
+                        ),
+                        ..
+                    } if e.key_id_property() == key_id_property
+                        && e.message().contains("transient or inside a transient object"),
+                    "{fixture}"
+                );
+            }
+        }
+
+        /// With the key id transient too, nothing unreadable is stored: the
+        /// pair is judged on the transition alone, in either form.
+        #[tokio::test]
+        async fn should_register_a_key_reference_whose_key_id_and_identity_are_both_transient() {
+            for fixture in [
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key-transient-pair.json",
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-transient-pair.json",
+            ] {
+                let result = run_contract_create(fixture).await;
+
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "{fixture}"
+                );
+            }
+        }
+
         #[tokio::test]
         async fn should_reject_key_reference_naming_an_identity_property_with_its_own_key_reference(
         ) {
@@ -6176,6 +6438,157 @@ mod tests {
                     ),
                     ..
                 }
+            );
+        }
+
+        /// The contract whose `joinRequest` type, unique on
+        /// (`submittedCharterId`, `$ownerId`), the lookup registration
+        /// fixtures reference from another contract.
+        const LOOKUP_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup.json";
+
+        #[tokio::test]
+        async fn should_reject_an_owner_lookup_into_another_contract_at_its_owner_path() {
+            // `joinRequest` of the lookup contract has no `byMessage` index
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-refers-to-registration-foreign-lookup-invalid.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "note.$ownerId" && e.index() == "byMessage"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_a_lookup_into_a_unique_index_of_another_contract() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup-registration-foreign-valid.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_lookup_naming_an_index_another_contract_does_not_have() {
+            // Only registration sees the other contract's indexes: the contract
+            // parse cannot, so this is a state error
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup-registration-foreign-missing-index.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "vote.voterId"
+                    && e.index() == "byMessage"
+                    && e.reason().contains("has no index named \"byMessage\"")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_lookup_into_a_non_unique_index_of_the_same_contract() {
+            // The contract parse sees the referenced type of the same contract,
+            // and refuses the declaration before any state is read
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup-registration-own-not-unique.json",
+                LOOKUP_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains("index \"byCharter\" of \"ballot\" is not unique")
+            );
+        }
+
+        /// The contract whose immutable, permanent `electedCharter` type holds the
+        /// `members` list the list element registration fixtures read from another
+        /// contract.
+        const LIST_ELEMENT_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element.json";
+
+        #[tokio::test]
+        async fn should_register_a_list_element_reading_a_list_of_another_contract() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-registration-foreign-valid.json",
+                LIST_ELEMENT_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_list_element_naming_a_property_of_another_contract_that_is_no_list(
+        ) {
+            // Only registration sees the other contract's document type: the
+            // contract parse cannot, so this is a state error
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-registration-foreign-not-a-list.json",
+                LIST_ELEMENT_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentListInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "ballot.voterId"
+                    && e.in_list() == "submittedCharterId"
+                    && e.reason().contains("is not a typed array of identifiers")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_list_element_reading_a_replaceable_list_of_the_same_contract() {
+            // The contract parse sees the list's document type of the same
+            // contract, and refuses the declaration before any state is read
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-registration-own-mutable.json",
+                LIST_ELEMENT_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains(
+                    "refersTo listElement: \"members\" of \"electedCharter\" can be changed by a replace"
+                )
             );
         }
     }

@@ -1,0 +1,147 @@
+{
+  "$formatVersion": "1",
+  "id": "6oNWBfpK67vSDUSQoEiSyCfBKaaS63LV5iYnyvx43yfR",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "joinRequest": {
+      "type": "object",
+      "canBeDeleted": false,
+      "documentsMutable": false,
+      "properties": {
+        "submittedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "message": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "indices": [
+        {
+          "name": "bySubmittedCharter",
+          "properties": [
+            {
+              "submittedCharterId": "asc"
+            },
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "submittedCharterId",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "addedModerator": {
+      "type": "object",
+      "canBeDeleted": false,
+      "documentsMutable": false,
+      "properties": {
+        "submittedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "moderatorId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1
+        }
+      },
+      "indices": [
+        {
+          "name": "byModerator",
+          "properties": [
+            {
+              "submittedCharterId": "asc"
+            },
+            {
+              "moderatorId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "submittedCharterId",
+        "moderatorId"
+      ],
+      "additionalProperties": false
+    },
+    "resignation": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "submittedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        },
+        "memberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2,
+          "refersTo": {
+            "anyOf": [
+              {
+                "type": "permanentDocument",
+                "documentType": "joinRequest",
+                "lookup": {
+                  "index": "bySubmittedCharter",
+                  "keys": {
+                    "submittedCharterId": "submittedCharterId",
+                    "$ownerId": "."
+                  }
+                }
+              },
+              {
+                "allOf": [
+                  {
+                    "type": "identity"
+                  },
+                  {
+                    "type": "permanentDocument",
+                    "documentType": "removedModerator"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "submittedCharterId",
+        "title"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

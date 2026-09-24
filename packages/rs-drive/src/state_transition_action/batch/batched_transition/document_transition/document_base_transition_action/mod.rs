@@ -1,5 +1,6 @@
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::platform_value::Identifier;
 
 use crate::state_transition_action::shielded::ShieldedActionNote;
@@ -8,7 +9,7 @@ use crate::util::batch::DriveOperation;
 use crate::util::batch::DriveOperation::TokenOperation;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
+
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -103,15 +104,6 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
         }
     }
 
-    fn declared_action_fee(&self) -> Option<(ActionFeePricing, DocumentActionFee)> {
-        match self {
-            DocumentBaseTransitionAction::V0(v0) => v0
-                .declared_action_fee
-                .as_deref()
-                .map(|declared| (declared.pricing, declared.fee)),
-        }
-    }
-
     fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee> {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.declared_action_fee.as_deref().copied(),
@@ -122,6 +114,21 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.shielded_token_payment.as_deref(),
         }
+    }
+
+    fn agrees_to_a_moderators_discount(&self) -> bool {
+        let Some(declared) = self.declared_action_fee_with_agreement() else {
+            return false;
+        };
+        declared.agreement.is_some_and(|agreement| {
+            agreement.discounts_moderators_of(declared.pricing, declared.fee)
+        }) && self
+            .data_contract_fetch_info_ref()
+            .contract
+            .config()
+            .moderation()
+            .and_then(|moderation| moderation.moderators.elected())
+            .is_some_and(|elected| elected.moderates_document_type(self.document_type_name()))
     }
 }
 

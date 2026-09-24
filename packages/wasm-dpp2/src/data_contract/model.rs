@@ -159,6 +159,11 @@ export type ContractModerators =
        */
       electionDelay?: number;
       /**
+       * How many members a seated team's leader may add after the election, each one an
+       * identity that asked to join the team's proposal; 0 when left out, at most 15.
+       */
+      maxAddedModerators?: number;
+      /**
        * The moderated document types of the contract, each with the non-empty abilities a
        * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
        * keeps, `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay
@@ -698,8 +703,9 @@ impl DataContractWasm {
         Ok(DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), identity_nonce).into())
     }
 
-    /// All `refersTo` declarations of one document type, in schema property
-    /// order.
+    /// All `refersTo` declarations of one document type: its `ownerRefersTo`
+    /// or `creatorRefersTo` first, at the path `$ownerId` or `$creatorId`,
+    /// then the properties' own in schema property order.
     ///
     /// Returns an empty array when the document type declares none. Throws
     /// when the contract has no document type by that name — an empty array

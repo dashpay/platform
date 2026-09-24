@@ -8,9 +8,12 @@ use crate::drive::RootTree;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/contract/paths.rs";
-const CONTRACT_FLAGS: &str =
-    "The owner is the contract owner, and the epoch the one the contract was \
-     created in. System contracts created at genesis carry no flags.";
+/// The flags of the elements written with a contract, shared by every area that describes one
+pub(crate) const CONTRACT_FLAGS: &str =
+    "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 \
+     and 13 registered carry them (wallet utils, token history, keyword search and document \
+     history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state \
+     transitions and later upgrades write none.";
 const REMOVAL_FLAGS: &str =
     "The owner is the moderator who deleted the document. They pay for the record, \
      which nothing deletes or replaces.";

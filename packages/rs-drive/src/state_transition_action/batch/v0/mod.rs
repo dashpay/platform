@@ -5,6 +5,8 @@ use crate::state_transition_action::batch::{
 use dpp::prelude::FeeMultiplier;
 use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
+use dpp::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
+use dpp::moderation_charter::moderators_share_of;
 use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::ConsensusError;
@@ -45,6 +47,12 @@ pub struct BatchTransitionActionV0 {
     /// fee priced by it. The fees themselves are not kept: they are read off the transitions
     /// when the batch executes, after state validation had its say on each of them.
     pub action_fee_multiplier_permille: Option<FeeMultiplier>,
+    /// The moderators share of the seated moderation charter of each elected contract on whose
+    /// moderated document types some document transition of the batch agrees to a discounted
+    /// moderators part, read by the batch transformer from protocol version 14: `None` when no
+    /// charter is seated on the contract. Empty for a batch that asks for no discount, which
+    /// reads nothing.
+    pub seated_moderators_shares: BTreeMap<Identifier, Option<u8>>,
 
     /// The contracts, among those the batch touches, on which the transformer found the batch
     /// owner's suspension lapsed (protocol version 14). Each such suspension is deleted when
@@ -77,7 +85,31 @@ impl BatchTransitionActionV0 {
                 )
                 .into()));
             };
-            if !agreement.matches_declared(declared.pricing, declared.fee) {
+            if base.agrees_to_a_moderators_discount() {
+                // Less than the declared moderators part, on a type an elected contract
+                // moderates: exactly the share the contract's seated charter takes of it, and
+                // nothing without a seated charter.
+                let moderators_share = *self
+                    .seated_moderators_shares
+                    .get(&base.data_contract_id())
+                    .ok_or(ProtocolError::CorruptedCodeExecution(
+                        "the batch transformer reads the seated moderators share of every \
+                         contract a document transition agrees to a discount on"
+                            .to_string(),
+                    ))?;
+                let offered = moderators_share
+                    .map(|share| moderators_share_of(declared.fee.moderators, share));
+                if offered != Some(agreement.moderators()) {
+                    return Ok(Err(DocumentActionFeeModeratorsShareMismatchError::new(
+                        document_type_name(),
+                        action(),
+                        declared.fee.moderators,
+                        agreement.moderators(),
+                        moderators_share,
+                    )
+                    .into()));
+                }
+            } else if !agreement.matches_declared(declared.pricing, declared.fee) {
                 return Ok(Err(DocumentActionFeeAgreementMismatchError::new(
                     document_type_name(),
                     action(),

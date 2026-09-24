@@ -263,6 +263,7 @@ mod tests {
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -353,6 +354,85 @@ mod tests {
 
             assert!(!result.is_valid());
             assert_state_consensus_errors!(result, DataContractIsReadonlyError, 1);
+        }
+
+        /// Stored documents are encoded by the `transient` list, so an update
+        /// may not change it. The schema compatibility check had no rule for
+        /// the keyword and failed with an internal error, dropping the
+        /// transition unpaid; it now reports an incompatible schema change.
+        #[test]
+        pub fn should_refuse_an_update_changing_the_transient_list_as_an_incompatible_schema() {
+            let platform_version = PlatformVersion::latest();
+            let TestData {
+                mut data_contract,
+                platform,
+            } = setup_test();
+            apply_contract(&platform, &data_contract, Default::default());
+
+            let mut updated_document = data_contract
+                .document_type_for_name("niceDocument")
+                .expect("the fixture's niceDocument")
+                .schema()
+                .clone();
+            updated_document
+                .set_value("transient", platform_value!(["name"]))
+                .expect("the transient list sets");
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("to be able to set document schema");
+
+            let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract,
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
+                signature: BinaryData::new(vec![0; 65]),
+                signature_public_key_id: 0,
+            };
+
+            let state = platform.state.load();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
+            let result = DataContractUpdateTransition::V0(state_transition)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &BlockInfo::default(),
+                    &mut execution_context,
+                    None,
+                )
+                .expect("a transient change is a consensus error, not an internal one");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.document_type_name() == "niceDocument"
+                    && e.operation() == "add"
+                    && e.property_path() == "/transient"
+            );
         }
 
         #[test]
@@ -4077,6 +4157,7 @@ mod tests {
     mod permanent_document_reference_declarations {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::errors::DataContractError;
         use drive::util::test_helpers::setup_contract;
 
         const V1_PATH: &str =
@@ -4089,6 +4170,18 @@ mod tests {
         /// from the given fixture at version 2 and returns the execution
         /// result.
         async fn run_contract_update(updated_fixture_path: &str) -> StateTransitionExecutionResult {
+            run_contract_update_from(V1_PATH, updated_fixture_path, true).await
+        }
+
+        /// [`run_contract_update`] from the contract at `v1_path`. The updated
+        /// fixture is only checked by the test itself when
+        /// `validate_updated_fixture` is set: one the contract parse refuses
+        /// has to reach the node to be refused there.
+        async fn run_contract_update_from(
+            v1_path: &str,
+            updated_fixture_path: &str,
+            validate_updated_fixture: bool,
+        ) -> StateTransitionExecutionResult {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_genesis_state();
@@ -4110,7 +4203,7 @@ mod tests {
                 None,
             );
 
-            let mut contract = json_document_to_contract(V1_PATH, true, platform_version)
+            let mut contract = json_document_to_contract(v1_path, true, platform_version)
                 .expect("expected to get data contract");
 
             contract.set_owner_id(identity.id());
@@ -4128,9 +4221,12 @@ mod tests {
                 )
                 .expect("expected to apply contract successfully");
 
-            let mut updated_contract =
-                json_document_to_contract(updated_fixture_path, true, platform_version)
-                    .expect("expected to get updated data contract");
+            let mut updated_contract = json_document_to_contract(
+                updated_fixture_path,
+                validate_updated_fixture,
+                platform_version,
+            )
+            .expect("expected to get updated data contract");
 
             updated_contract.set_owner_id(identity.id());
             updated_contract
@@ -4214,6 +4310,51 @@ mod tests {
                     ),
                     ..
                 }
+            );
+        }
+
+        /// The contract whose immutable `electedCharter` holds the `members`
+        /// list, updated below with an `appeal` type reading it.
+        const LIST_ELEMENT_V1_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element.json";
+
+        #[tokio::test]
+        async fn should_update_contract_adding_a_list_element_into_a_fixed_list() {
+            let result = run_contract_update_from(
+                LIST_ELEMENT_V1_PATH,
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-update-good.json",
+                true,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_update_adding_a_list_element_into_a_property_that_is_no_list(
+        ) {
+            // The updated contract's parse runs the list checks as a
+            // registration's does
+            let result = run_contract_update_from(
+                LIST_ELEMENT_V1_PATH,
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-list-element-update-bad.json",
+                false,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains(
+                    "document type \"appeal\" property \"appellantId\" refersTo listElement: \"title\" of \"electedCharter\" is not a typed array of identifiers"
+                )
             );
         }
     }

@@ -14,11 +14,15 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 #[cfg(feature = "validation")]
-use crate::consensus::basic::document::InvalidEncryptedPropertyShapeError;
+use crate::consensus::basic::document::{
+    DocumentPropertyMaxBytesExceededError, InvalidEncryptedPropertyShapeError,
+};
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::methods::versioned_methods::DocumentTypeV0MethodsVersioned;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
 #[cfg(feature = "validation")]
@@ -128,6 +132,94 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
                     )
                     .into(),
                 );
+            }
+        }
+        SimpleConsensusValidationResult::new()
+    }
+
+    /// Checks every string `properties` (the document's properties map) supplies for a
+    /// string declaring `maxBytes` against it, counting UTF-8 bytes: the property's value,
+    /// or every element of a typed array of strings, whose error names the element
+    /// (`tags[2]`). A declared property the document leaves out is not checked, and a value
+    /// that is not a string holds no bytes to count: the JSON schema validation that
+    /// `DataContract::validate_document_properties` runs alongside refuses it.
+    ///
+    /// Versioned on `validate_max_bytes` in the document type method versions: `None`
+    /// before protocol version 14 returns an empty result, which keeps the shipped document
+    /// validation that calls it inert.
+    #[cfg(feature = "validation")]
+    fn validate_max_bytes_properties(
+        &self,
+        properties: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_max_bytes
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_max_bytes_properties_v0(properties)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_max_bytes_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    fn validate_max_bytes_properties_v0(
+        &self,
+        properties: &Value,
+    ) -> SimpleConsensusValidationResult {
+        let over = |path: String, value: &Value, max_bytes: u16| {
+            let length = value.as_text()?.len();
+            (length > max_bytes as usize).then(|| {
+                DocumentPropertyMaxBytesExceededError::new(
+                    path,
+                    u32::try_from(length).unwrap_or(u32::MAX),
+                    max_bytes,
+                )
+            })
+        };
+        for (path, property) in self.flattened_properties() {
+            // A lookup error (an intermediate that is not a map) reads as absent: the schema
+            // validation refuses that shape on its own
+            let error = match &property.property_type {
+                DocumentPropertyType::String(StringPropertySizes {
+                    max_bytes: Some(max_bytes),
+                    ..
+                }) => {
+                    let Ok(Some(value)) = properties.get_optional_value_at_path(path) else {
+                        continue;
+                    };
+                    over(path.clone(), value, *max_bytes)
+                }
+                // A typed array declares on its items: every element is bounded on its own
+                DocumentPropertyType::TypedArray(typed_array) => {
+                    let DocumentPropertyType::String(StringPropertySizes {
+                        max_bytes: Some(max_bytes),
+                        ..
+                    }) = typed_array.item_type.as_ref()
+                    else {
+                        continue;
+                    };
+                    let Ok(Some(Value::Array(elements))) =
+                        properties.get_optional_value_at_path(path)
+                    else {
+                        continue;
+                    };
+                    elements.iter().enumerate().find_map(|(index, element)| {
+                        over(format!("{path}[{index}]"), element, *max_bytes)
+                    })
+                }
+                _ => continue,
+            };
+            if let Some(error) = error {
+                return SimpleConsensusValidationResult::new_with_error(error.into());
             }
         }
         SimpleConsensusValidationResult::new()
@@ -580,6 +672,43 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             Some(0) => Ok(self.validate_distinct_from_properties_v0(data, owner_id)),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_distinct_from_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Judges a document's properties, `data` (a map), against every rule of the document
+    /// type's `propertyConstraints`, in name order: the first rule it breaks fails with
+    /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the
+    /// comparison does not hold, or evaluating it overflowed, divided by zero, raised to a
+    /// negative power or read a value that is not an integer). A property the document
+    /// leaves out counts as 0, or as its `ifAbsent` value. Reads the properties alone:
+    /// `DataContract::validate_document_properties` runs it after the schema validation,
+    /// so document create and replace, and every client validating a document, apply it.
+    ///
+    /// `None` in the version table (protocol versions before 14) selects the behavior of
+    /// the versions that predate the keyword: nothing is checked, as no parsed document
+    /// type carries a rule there.
+    fn validate_property_constraints(
+        &self,
+        data: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_property_constraints
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_property_constraints_v0(data)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_property_constraints".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

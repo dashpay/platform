@@ -2734,7 +2734,7 @@
               "EpochOwned",
               "None"
             ],
-            "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+            "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
             "since": 1,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2757,7 +2757,7 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                 "value": "serialized DataContract",
                 "since": 1,
                 "presence": "always",
@@ -2821,7 +2821,7 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2846,7 +2846,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The owner is the contract owner. System contracts created at genesis carry no flags.",
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                     "since": 1,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/document/paths.rs",
@@ -2875,7 +2875,7 @@
                           "EpochOwned",
                           "None"
                         ],
-                        "flags_note": "The owner is the contract owner. System contracts created at genesis carry no flags.",
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                         "since": 1,
                         "presence": "lazy",
                         "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
@@ -3144,7 +3144,7 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                 "since": 14,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -3166,7 +3166,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                     "since": 14,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -3190,7 +3190,7 @@
                           "EpochOwned",
                           "None"
                         ],
-                        "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                         "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -3259,7 +3259,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                     "value": "u32 big endian",
                     "since": 14,
                     "presence": "always",

@@ -2,9 +2,9 @@
 //! masternodes and evonodes instead of by the contract owner (protocol version 14).
 //!
 //! The declaration is fixed at the contract's creation and never changes: the election
-//! parameters, the document types the team moderates with the abilities a charter may claim
-//! on each, who moderates until the first team is seated, and whether the owner is protected
-//! from the team. A charter does not price the moderators part of a document action: the
+//! parameters, the document types the team moderates with the abilities it holds on each,
+//! who moderates until the first team is seated, and whether the owner is protected from the
+//! team. A charter does not price the moderators part of a document action: the
 //! type's own `actionFees.moderators` amount is the most a team may charge, and a charter
 //! charges a share of it. No election exists yet: until one does, the contract is in its
 //! **interim**,
@@ -38,7 +38,9 @@ pub mod property_names {
     pub const CHALLENGE_COOL_DOWN: &str = "challengeCoolDown";
     /// The election delay, in seconds after the contract's creation
     pub const ELECTION_DELAY: &str = "electionDelay";
-    /// The moderated document types, each with the abilities a charter may claim on it
+    /// How many members a seated team's leader may add after the election
+    pub const MAX_ADDED_MODERATORS: &str = "maxAddedModerators";
+    /// The moderated document types, each with the abilities the seated team holds on it
     pub const MODERATED_DOCUMENT_TYPES: &str = "moderatedDocumentTypes";
     /// The interim moderators
     pub const INTERIM: &str = "interim";
@@ -51,8 +53,9 @@ pub mod property_names {
 }
 
 /// What a moderation team may do to a contract's users and content. The contract declares
-/// which of these a charter may claim on each moderated document type; a seated team has
-/// what its charter claims.
+/// which of these a seated team holds on each moderated document type. A team holds every
+/// ability the declaration gives it; its charter narrows what it may act on only through the
+/// moderation reasons it lists, since every action names one.
 ///
 /// Append-only: the discriminant is stored in every declaration.
 #[derive(
@@ -323,7 +326,14 @@ pub struct ElectedModerators {
     /// case the election may be called at once. A reference declaring
     /// `contractRequirements: { "moderation": "electionOpen" }` is what reads it.
     pub election_delay: Option<u32>,
-    /// The document types the team moderates, each with the abilities a charter may claim
+    /// How many members the leader of a seated team may add after the election, each one
+    /// an identity that asked to join the team's proposal: the additions ever filed against
+    /// a seated charter, so a removal or a resignation frees no slot. 0 when the declaration
+    /// leaves it out, a team then being exactly what was elected; at most
+    /// `SystemLimits::max_contract_moderation_added_moderators`. The moderation charters
+    /// contract's `addedModerator` documents are what it counts.
+    pub max_added_moderators: u16,
+    /// The document types the team moderates, each with the abilities the seated team holds
     /// on it: non-empty, each type a document type of the contract, each ability set
     /// non-empty and backed by the contract (`Ban`, `Suspend` and `Warn` by the list the
     /// contract keeps, `DeleteDocuments` by the type being flagged
@@ -369,16 +379,27 @@ impl ElectedModerators {
             .contains_key(document_type_name)
     }
 
-    /// Whether a charter may claim the ability on the document type
+    /// Whether the seated team holds the ability on the document type
     pub fn allows(&self, document_type_name: &str, ability: ModerationAbility) -> bool {
         self.moderated_document_types
             .get(document_type_name)
             .is_some_and(|abilities| abilities.contains(&ability))
     }
 
+    /// Whether the seated team holds the ability on some moderated document type. The lists
+    /// are contract-wide, so this is what lets the team ban, suspend or warn (and lift each):
+    /// an ability on a type is what the team may do over the documents of that type, and an
+    /// identity is barred from the whole contract.
+    pub fn allows_on_any_type(&self, ability: ModerationAbility) -> bool {
+        self.moderated_document_types
+            .values()
+            .any(|abilities| abilities.contains(&ability))
+    }
+
     /// Whether the interim refuses every document transition of the document type: the
-    /// interim names nobody and the type is moderated. Once a team is seated (not yet
-    /// possible) this ends.
+    /// interim names nobody and the type is moderated. This is the declaration's side only:
+    /// the block ends once a charter is seated on the contract, which only state says, so the
+    /// document gate reads whether one is before it refuses.
     pub fn interim_blocks_document_type(&self, document_type_name: &str) -> bool {
         self.interim.blocks_moderated_document_types()
             && self.moderates_document_type(document_type_name)
@@ -415,6 +436,13 @@ impl ElectedModerators {
             })
         {
             return Some(reason);
+        }
+        let max_added = limits.max_contract_moderation_added_moderators;
+        if self.max_added_moderators > max_added {
+            return Some(format!(
+                "the {} members a leader may add exceed the limit of {max_added}",
+                self.max_added_moderators
+            ));
         }
 
         if self.moderated_document_types.is_empty() {
@@ -476,6 +504,13 @@ impl fmt::Display for ElectedModerators {
                 ", its first election open {delay} seconds after the contract's creation"
             )?;
         }
+        if self.max_added_moderators > 0 {
+            write!(
+                f,
+                ", its leader free to add {} members after the election",
+                self.max_added_moderators
+            )?;
+        }
         Ok(())
     }
 }
@@ -522,6 +557,7 @@ mod tests {
             )]),
             interim: InterimModerators::ContractOwner,
             election_delay: None,
+            max_added_moderators: 0,
             owner_protected: false,
         }
     }
@@ -747,17 +783,57 @@ mod tests {
     }
 
     #[test]
+    fn should_give_a_seated_team_the_abilities_of_any_moderated_type_on_the_lists_only() {
+        let mut declaration = elected();
+        declaration
+            .moderated_document_types
+            .insert("like".to_string(), moderated(&[ModerationAbility::Warn]));
+        declaration.moderated_document_types.insert(
+            "post".to_string(),
+            moderated(&[ModerationAbility::Ban, ModerationAbility::DeleteDocuments]),
+        );
+
+        // The lists are contract-wide: an ability on any moderated type lets the team use it.
+        assert!(declaration.allows_on_any_type(ModerationAbility::Ban));
+        assert!(declaration.allows_on_any_type(ModerationAbility::Warn));
+        assert!(!declaration.allows_on_any_type(ModerationAbility::Suspend));
+        // A deletion is of one type's documents: only where that type carries the ability.
+        assert!(declaration.allows("post", ModerationAbility::DeleteDocuments));
+        assert!(!declaration.allows("like", ModerationAbility::DeleteDocuments));
+        assert!(!declaration.allows("comment", ModerationAbility::Ban));
+    }
+
+    #[test]
+    fn should_bound_the_members_a_leader_may_add() {
+        let max = PlatformVersion::latest()
+            .system_limits
+            .max_contract_moderation_added_moderators;
+        assert_eq!(max, 15);
+        let with = |added: u16| {
+            let mut declaration = elected();
+            declaration.max_added_moderators = added;
+            config(declaration)
+        };
+        assert_eq!(refusal(&with(0)), None);
+        assert_eq!(refusal(&with(max)), None);
+        let over = refusal(&with(max + 1)).expect("refused over the limit");
+        assert!(over.contains("members a leader may add"), "{over}");
+    }
+
+    #[test]
     fn should_round_trip_through_json_and_platform_value() {
         let mut declaration = elected();
         declaration.interim = InterimModerators::AppointedModerators(set(&[1, 2]));
         declaration.owner_protected = true;
         declaration.election_delay = Some(86_400);
+        declaration.max_added_moderators = 3;
         let moderators = ContractModerators::Elected(Box::new(declaration));
 
         let json = serde_json::to_value(&moderators).expect("serialize");
         assert_eq!(json["$type"], "elected");
         assert_eq!(json["joinWindow"], 604_800);
         assert_eq!(json["electionDelay"], 86_400);
+        assert_eq!(json["maxAddedModerators"], 3);
         assert_eq!(
             json["moderatedDocumentTypes"],
             serde_json::json!({ "post": ["ban", "suspend"] })
@@ -802,6 +878,11 @@ mod tests {
         assert!(
             json.get("electionDelay").is_none(),
             "a declaration without a delay serializes none: {json}"
+        );
+        assert_eq!(elected.max_added_moderators, 0);
+        assert!(
+            json.get("maxAddedModerators").is_none(),
+            "a declaration letting no member be added serializes none: {json}"
         );
         assert_eq!(elected.vote_window, DEFAULT_ELECTION_WINDOW_SECONDS);
         assert!(!elected.owner_protected);
@@ -920,6 +1001,13 @@ mod tests {
              first election open 86400 seconds after the contract's creation"
         );
         declaration.election_delay = None;
+        declaration.max_added_moderators = 2;
+        assert_eq!(
+            declaration.to_string(),
+            "an elected moderation team, in its interim moderated by the contract owner, its \
+             leader free to add 2 members after the election"
+        );
+        declaration.max_added_moderators = 0;
         declaration.interim = InterimModerators::NotYetUsable;
         assert_eq!(
             declaration.to_string(),

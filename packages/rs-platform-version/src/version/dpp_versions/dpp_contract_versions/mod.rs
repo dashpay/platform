@@ -88,6 +88,16 @@ pub struct DocumentTypeMethodVersions {
     /// that predate the keyword: the method returns an empty result there, so the
     /// shipped create and replace structure validations that call it are inert.
     pub validate_encrypted_property_shapes: OptionalFeatureVersion,
+    /// `validate_max_bytes_properties`: refuses a document supplying a string longer in
+    /// UTF-8 bytes than the `maxBytes` its property declares. `None` on versions that
+    /// predate the keyword: the method returns an empty result there, so the shipped
+    /// document validation that calls it is inert.
+    pub validate_max_bytes: OptionalFeatureVersion,
+    /// `validate_property_constraints`: refuses a document that breaks one of
+    /// its type's `propertyConstraints`. `None` on versions that predate the
+    /// keyword: the method returns an empty result there, so the shipped
+    /// `DataContract::validate_document_properties` 0 that calls it is inert.
+    pub validate_property_constraints: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -117,12 +127,23 @@ pub struct DocumentTypeSchemaVersions {
     /// `None` on versions that predate the keyword: they ignore it entirely,
     /// exactly as they parsed before it existed.
     pub apply_encrypted_for: OptionalFeatureVersion,
+    /// Folds the `maxBytes` keyword (the most UTF-8 bytes a string property, or
+    /// each string element of a typed array, may hold) into the string's
+    /// `StringPropertySizes`. `None` on versions that predate the keyword: they
+    /// ignore it entirely, exactly as they parsed before it existed.
+    pub apply_max_bytes: OptionalFeatureVersion,
     /// Parses a typed array property (`type: "array"` with an `items`
     /// element schema instead of `byteArray`). `None` on versions that
     /// predate typed arrays: they leave such a property to the scalar
     /// parser, which refuses an array that is not a byte array, exactly as
     /// they parsed before typed arrays existed.
     pub parse_typed_array: OptionalFeatureVersion,
+    /// Parses the doctype-level `propertyConstraints` keyword (named
+    /// comparisons between integer expressions over the document's
+    /// properties) onto the document type, and checks the properties they
+    /// read. `None` on versions that predate the keyword: they ignore it
+    /// entirely, exactly as they parsed before it existed.
+    pub parse_property_constraints: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

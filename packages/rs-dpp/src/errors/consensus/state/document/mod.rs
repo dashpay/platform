@@ -1,5 +1,6 @@
 pub mod document_action_fee_agreement_mismatch_error;
 pub mod document_action_fee_agreement_not_set_error;
+pub mod document_action_fee_moderators_share_mismatch_error;
 pub mod document_action_fee_multiplier_not_tolerated_error;
 pub mod document_already_present_error;
 pub mod document_contest_currently_locked_error;
@@ -20,6 +21,8 @@ pub mod document_timestamps_mismatch_error;
 pub mod duplicate_unique_index_error;
 pub mod invalid_document_revision_error;
 pub mod referenced_contract_requirement_not_met_error;
+pub mod referenced_document_list_invalid_error;
+pub mod referenced_document_lookup_invalid_error;
 pub mod referenced_document_property_agreement_invalid_error;
 pub mod referenced_document_property_mismatch_error;
 pub mod referenced_document_type_deletable_error;

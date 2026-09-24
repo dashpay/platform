@@ -169,6 +169,8 @@ impl ErrorWithCode for BasicError {
             Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
             Self::DocumentPropertyNotDistinctError(_) => 10419,
             Self::InvalidEncryptedPropertyShapeError(_) => 10420,
+            Self::DocumentPropertyMaxBytesExceededError(_) => 10421,
+            Self::DocumentPropertyConstraintViolatedError(_) => 10422,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
@@ -273,6 +275,10 @@ impl ErrorWithCode for BasicError {
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
             Self::ContractModerationReasonTooLongError(_) => 10903,
             Self::InvalidContractModerationReasonDocumentsError(_) => 10904,
+
+            // Moderation Team Errors: 11000-11099
+            Self::ModerationCharterMalformedFieldError(_) => 11000,
+            Self::ModerationCharterRewardSplitNotOneHundredError(_) => 11001,
         }
     }
 }
@@ -363,6 +369,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentActionFeeMultiplierNotToleratedError(_) => 40134,
             Self::ReferencedContractRequirementNotMetError(_) => 40135,
             Self::ReferencedIdentityKeyRequirementNotMetError(_) => 40136,
+            Self::ReferencedDocumentLookupInvalidError(_) => 40137,
+            Self::ReferencedDocumentListInvalidError(_) => 40138,
+            Self::DocumentActionFeeModeratorsShareMismatchError(_) => 40139,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -486,6 +495,8 @@ impl ErrorWithCode for StateError {
 
             // Contract moderation team errors: 41200-41299
             Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
+            Self::ContractModerationAbilityNotGrantedError(_) => 41201,
+            Self::ModerationCharterAddedModeratorLimitReachedError(_) => 41202,
         }
     }
 }
