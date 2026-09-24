@@ -160,24 +160,13 @@ fn should_parse_a_lookup_beside_a_property_agreement() {
 }
 
 #[test]
-fn should_refuse_a_lookup_on_any_reference_but_a_permanent_document_one() {
-    for reference_type in [
-        "identity",
-        "contract",
-        "token",
-        "identityPublicKey",
-        "deletableDocument",
-    ] {
+fn should_refuse_a_lookup_on_any_reference_but_a_document_one() {
+    for reference_type in ["identity", "contract", "token", "identityPublicKey"] {
         let mut refers_to = json!({ "type": reference_type, "lookup": members_lookup() });
         if reference_type == "identityPublicKey" {
             refers_to["keyIdProperty"] = json!("title");
         }
-        let mut schema = charter_contract(refers_to);
-        if reference_type == "deletableDocument" {
-            // A deletable target, so the reference itself is well formed: only
-            // the lookup is out of place
-            refers_to_deletable_join_requests(&mut schema);
-        }
+        let schema = charter_contract(refers_to);
 
         // The meta-schema refuses it under full validation, and the parser on
         // its own without it
@@ -390,6 +379,51 @@ fn should_refuse_a_lookup_reading_the_writer_on_a_type_that_can_change_owner() {
     contract(transferable).expect("a key that does not read the writer holds");
 }
 
+/// A `deletableDocument` reference may find its document through a lookup too: a key into a
+/// deletable type may find a later document once the one it found is deleted, so the reference
+/// means a document with this key exists now, and every replace re-validates it. The
+/// referenced side is checked as it is for a permanent one.
+#[test]
+fn should_parse_a_lookup_on_a_deletable_document_reference_and_check_its_referenced_side() {
+    let deletable_join_request = json!({ "type": "deletableDocument", "documentType": "joinRequest", "lookup": members_lookup() });
+    let mut schema = charter_contract(deletable_join_request);
+    refers_to_deletable_join_requests(&mut schema);
+
+    let parsed = contract(schema.clone()).expect("parses");
+    assert_eq!(
+        member_id_type(&parsed),
+        DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id: None,
+                document_type_name: "joinRequest".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: expected_lookup(&[
+                    (
+                        "submittedCharterId",
+                        LookupKeySource::Property("submittedCharterId".to_string()),
+                    ),
+                    ("$ownerId", LookupKeySource::ReferenceValue),
+                ]),
+            }
+        )
+    );
+
+    let mut moving = schema.clone();
+    moving["documentSchemas"]["joinRequest"]["documentsMutable"] = json!(true);
+    assert_refused(
+        contract(moving),
+        "keys documents by \"submittedCharterId\", which a replace can change",
+    );
+
+    // Once its document is gone the property would have to change to pass again
+    let mut immutable = schema;
+    immutable["documentSchemas"]["electedCharter"]["immutable"] = json!(["memberId"]);
+    assert_refused(
+        contract(immutable),
+        "\"memberId\" is a deletableDocument reference through a lookup",
+    );
+}
+
 /// Makes the fixture's `joinRequest` deletable, the target a
 /// `deletableDocument` reference needs.
 fn refers_to_deletable_join_requests(schema: &mut serde_json::Value) {
@@ -469,18 +503,28 @@ fn should_check_an_element_lookup_as_a_single_one_is_checked() {
         ))),
         "index \"byMessage\" of \"joinRequest\" is not unique",
     );
-    // And never on a deletableDocument reference
+    // And on a deletableDocument reference, whose elements every replace re-validates
     let mut deletable = with_members(json!({
         "type": "deletableDocument",
         "documentType": "joinRequest",
         "lookup": members_lookup()
     }));
     refers_to_deletable_join_requests(&mut deletable);
-    contract(deletable.clone()).expect_err("the meta-schema should refuse it");
-    assert_refused(
-        contract_on(deletable, false, PlatformVersion::latest()),
-        "deletableDocument refersTo does not take lookup",
-    );
+    let parsed = contract(deletable).expect("parses");
+    assert!(matches!(
+        parsed
+            .document_type_for_name("electedCharter")
+            .expect("the electedCharter document type")
+            .flattened_properties()
+            .get("members")
+            .expect("the members property")
+            .property_type
+            .reference(),
+        Some(PropertyReference::Elements {
+            target: DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. },
+            ..
+        })
+    ));
 }
 
 #[test]

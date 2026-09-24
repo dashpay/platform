@@ -144,6 +144,7 @@ fn removal(owner: u8, moderator: u8, text: &str, removed_at: u64) -> ContractDoc
             code: Some(7),
             text: text.to_string(),
             documents: vec![],
+            reason_document_id: None,
         },
         removed_at,
         document_hash: [removed_at as u8; 32],

@@ -23803,6 +23803,7 @@ $root.org = (function() {
                          * @property {number|null} [code] ContractModerationReason code
                          * @property {string|null} [text] ContractModerationReason text
                          * @property {Array.<org.dash.platform.dapi.v0.IContractModerationDocument>|null} [documents] ContractModerationReason documents
+                         * @property {Uint8Array|null} [reasonDocumentId] ContractModerationReason reasonDocumentId
                          */
 
                         /**
@@ -23846,6 +23847,14 @@ $root.org = (function() {
                         ContractModerationReason.prototype.documents = $util.emptyArray;
 
                         /**
+                         * ContractModerationReason reasonDocumentId.
+                         * @member {Uint8Array} reasonDocumentId
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @instance
+                         */
+                        ContractModerationReason.prototype.reasonDocumentId = $util.newBuffer([]);
+
+                        /**
                          * Creates a new ContractModerationReason instance using the specified properties.
                          * @function create
                          * @memberof org.dash.platform.dapi.v0.ContractModerationReason
@@ -23876,6 +23885,8 @@ $root.org = (function() {
                             if (message.documents != null && message.documents.length)
                                 for (var i = 0; i < message.documents.length; ++i)
                                     $root.org.dash.platform.dapi.v0.ContractModerationDocument.encode(message.documents[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            if (message.reasonDocumentId != null && Object.hasOwnProperty.call(message, "reasonDocumentId"))
+                                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.reasonDocumentId);
                             return writer;
                         };
 
@@ -23920,6 +23931,9 @@ $root.org = (function() {
                                     if (!(message.documents && message.documents.length))
                                         message.documents = [];
                                     message.documents.push($root.org.dash.platform.dapi.v0.ContractModerationDocument.decode(reader, reader.uint32()));
+                                    break;
+                                case 4:
+                                    message.reasonDocumentId = reader.bytes();
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -23971,6 +23985,9 @@ $root.org = (function() {
                                         return "documents." + error;
                                 }
                             }
+                            if (message.reasonDocumentId != null && message.hasOwnProperty("reasonDocumentId"))
+                                if (!(message.reasonDocumentId && typeof message.reasonDocumentId.length === "number" || $util.isString(message.reasonDocumentId)))
+                                    return "reasonDocumentId: buffer expected";
                             return null;
                         };
 
@@ -24000,6 +24017,11 @@ $root.org = (function() {
                                     message.documents[i] = $root.org.dash.platform.dapi.v0.ContractModerationDocument.fromObject(object.documents[i]);
                                 }
                             }
+                            if (object.reasonDocumentId != null)
+                                if (typeof object.reasonDocumentId === "string")
+                                    $util.base64.decode(object.reasonDocumentId, message.reasonDocumentId = $util.newBuffer($util.base64.length(object.reasonDocumentId)), 0);
+                                else if (object.reasonDocumentId.length >= 0)
+                                    message.reasonDocumentId = object.reasonDocumentId;
                             return message;
                         };
 
@@ -24021,6 +24043,13 @@ $root.org = (function() {
                             if (options.defaults) {
                                 object.code = 0;
                                 object.text = "";
+                                if (options.bytes === String)
+                                    object.reasonDocumentId = "";
+                                else {
+                                    object.reasonDocumentId = [];
+                                    if (options.bytes !== Array)
+                                        object.reasonDocumentId = $util.newBuffer(object.reasonDocumentId);
+                                }
                             }
                             if (message.code != null && message.hasOwnProperty("code"))
                                 object.code = message.code;
@@ -24031,6 +24060,8 @@ $root.org = (function() {
                                 for (var j = 0; j < message.documents.length; ++j)
                                     object.documents[j] = $root.org.dash.platform.dapi.v0.ContractModerationDocument.toObject(message.documents[j], options);
                             }
+                            if (message.reasonDocumentId != null && message.hasOwnProperty("reasonDocumentId"))
+                                object.reasonDocumentId = options.bytes === String ? $util.base64.encode(message.reasonDocumentId, 0, message.reasonDocumentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.reasonDocumentId) : message.reasonDocumentId;
                             return object;
                         };
 

@@ -615,6 +615,33 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(joinRequest).to.not.have.property('path');
     });
 
+    it('should carry a deletableDocument operand found through a lookup, with its lookup', () => {
+      // The leader takes an added moderator off by deleting the addition
+      const deletable = structuredClone(expressionSchemas);
+      deletable.addedModerator.canBeDeleted = true;
+      const memberId = deletable.resignation.properties.memberId as { refersTo: { anyOf: { type: string }[] } };
+      memberId.refersTo.anyOf[1].type = 'deletableDocument';
+      const contract = buildExpressionContract(deletable);
+      const [member] = contract.documentTypeReferences('resignation') as Reference[];
+
+      const [, addedModerator] = member.anyOf!;
+      expect(addedModerator.type).to.equal('deletableDocument');
+      expect(addedModerator.documentType).to.equal('addedModerator');
+      expect(addedModerator.lookup).to.deep.equal({
+        index: 'byModerator',
+        keys: { moderatorId: '.', submittedCharterId: 'submittedCharterId' },
+      });
+    });
+
+    it('should refuse a deletableDocument operand found by id', () => {
+      const byId = structuredClone(expressionSchemas);
+      byId.addedModerator.canBeDeleted = true;
+      const memberId = byId.resignation.properties.memberId as { refersTo: { anyOf: object[] } };
+      memberId.refersTo.anyOf[1] = { type: 'deletableDocument', documentType: 'addedModerator' };
+
+      expect(() => buildExpressionContract(byId)).to.throw();
+    });
+
     it('should carry an anyOf the elements of a typed array declare', () => {
       const withMembers = structuredClone(expressionSchemas);
       const properties = withMembers.resignation.properties as Record<string, object>;

@@ -32,8 +32,8 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::moderation_charter::{
     moderators_share_of, ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
     ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
-    JOIN_REQUEST_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
-    SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+    JOIN_REQUEST_DOCUMENT_TYPE_NAME, REASON_DOCUMENT_TYPE_NAME,
+    REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -54,6 +54,10 @@ use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use std::sync::Arc;
 
+mod pot;
+mod reasons;
+
+const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
 const MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED: u32 = 41202;
 const DOCUMENT_ACTION_FEE_MODERATORS_SHARE_MISMATCH: u32 = 40139;
@@ -68,6 +72,8 @@ const MODERATORS_PART: Credits = 100_000_000;
 const MODERATORS_SHARE: u8 = 60;
 /// How many members the leader may add after the election.
 const MAX_ADDED_MODERATORS: u16 = 2;
+/// The challenge cool-down of a contestable seat: two weeks.
+const CHALLENGE_COOL_DOWN: u32 = 1_209_600;
 /// When the suspensions of these tests end: after the award too, which the mempool judges
 /// against, the award's block time being the last committed one.
 const LATER: TimestampMillis = 4_000_000_000_000;
@@ -80,11 +86,13 @@ const NOTE: &str = "note";
 
 /// An elected declaration keeping all three lists, moderating `post` with `abilities` and
 /// `reply` with bans, with `interim` until a team is seated, room for `MAX_ADDED_MODERATORS`
-/// additions and the owner protected from the team when `owner_protected`
+/// additions, the owner protected from the team when `owner_protected`, and the seat
+/// contestable after `challenge_cool_down` when there is one
 fn elected_posts(
     interim: InterimModerators,
     abilities: &[ModerationAbility],
     owner_protected: bool,
+    challenge_cool_down: Option<u32>,
 ) -> ContractModerationConfig {
     ContractModerationConfig {
         banlist: true,
@@ -93,7 +101,7 @@ fn elected_posts(
         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down,
             election_delay: None,
             max_added_moderators: MAX_ADDED_MODERATORS,
             moderated_document_types: BTreeMap::from([
@@ -134,6 +142,129 @@ fn discounted() -> Credits {
     moderators_share_of(MODERATORS_PART, MODERATORS_SHARE)
 }
 
+/// The `reason` document the team's proposal lists, which every action of the team in these
+/// tests names.
+const LISTED_REASON: Identifier = Identifier::new([0xE1; 32]);
+/// A `reason` document the team's proposal does not list.
+const UNLISTED_REASON: Identifier = Identifier::new([0xE2; 32]);
+
+/// `action` naming the reason document `reason_document_id`, when it carries a reason
+fn citing(
+    action: ContractUserModerationAction,
+    reason_document_id: Identifier,
+) -> ContractUserModerationAction {
+    match action {
+        ContractUserModerationAction::Ban {
+            identity_id,
+            reason,
+        } => ContractUserModerationAction::Ban {
+            identity_id,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        ContractUserModerationAction::Suspend {
+            identity_id,
+            until,
+            reason,
+        } => ContractUserModerationAction::Suspend {
+            identity_id,
+            until,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        ContractUserModerationAction::Warn {
+            identity_id,
+            reason,
+        } => ContractUserModerationAction::Warn {
+            identity_id,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        ContractUserModerationAction::DeleteDocument {
+            document_type_name,
+            document_id,
+            reason,
+        } => ContractUserModerationAction::DeleteDocument {
+            document_type_name,
+            document_id,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        reversal => reversal,
+    }
+}
+
+// The team's actions name the listed reason: the helpers of the parent module, citing it.
+fn ban_action(identity_id: Identifier) -> ContractUserModerationAction {
+    citing(super::ban_action(identity_id), LISTED_REASON)
+}
+
+fn suspend_action(identity_id: Identifier, until: TimestampMillis) -> ContractUserModerationAction {
+    citing(super::suspend_action(identity_id, until), LISTED_REASON)
+}
+
+fn warn_action(identity_id: Identifier, text: &str) -> ContractUserModerationAction {
+    citing(super::warn_action(identity_id, text), LISTED_REASON)
+}
+
+fn delete_action(
+    document_type_name: &str,
+    document_id: Identifier,
+) -> ContractUserModerationAction {
+    citing(
+        super::delete_action(document_type_name, document_id),
+        LISTED_REASON,
+    )
+}
+
+/// The banlist entry `ban_action` leaves
+fn banned() -> Option<ContractBan> {
+    Some(ContractBan {
+        reason: ban_reason().with_reason_document(LISTED_REASON),
+    })
+}
+
+/// A `reason` document of the charter contract at `reason_id`, owned by `owner`, written to
+/// Drive as a reason create leaves it
+fn write_reason(
+    setup: &Setup,
+    charters: &DataContract,
+    reason_id: Identifier,
+    owner: &Actor,
+    code: &str,
+) {
+    let platform_version = PlatformVersion::latest();
+    let document_type = charters
+        .document_type_for_name(REASON_DOCUMENT_TYPE_NAME)
+        .expect("expected the reason type");
+    let document = Document::V0(DocumentV0 {
+        id: reason_id,
+        owner_id: owner.id(),
+        properties: BTreeMap::from([
+            ("code".to_string(), Value::Text(code.to_string())),
+            ("label".to_string(), Value::Text(format!("Reason {code}"))),
+        ]),
+        created_at: Some(BLOCK_TIME_MS),
+        ..Default::default()
+    });
+    setup
+        .platform
+        .drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, None)),
+                    owner_id: Some(owner.id().to_buffer()),
+                },
+                contract: charters,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("expected to write the reason");
+}
+
 /// A contract with an elected declaration and a team on its way: the leader filed a proposal
 /// and put it to the vote with one member, and three more identities asked to join it. The
 /// contest is open until `award` ends it.
@@ -153,17 +284,43 @@ impl Team {
     }
 
     async fn with_abilities(interim: InterimModerators, abilities: &[ModerationAbility]) -> Self {
-        Self::build(interim, abilities, false).await
+        Self::build(
+            interim,
+            abilities,
+            false,
+            Some(CHALLENGE_COOL_DOWN),
+            vec![LISTED_REASON],
+        )
+        .await
+    }
+
+    /// A team whose proposal lists `reasons`
+    async fn with_reasons(interim: InterimModerators, reasons: Vec<Identifier>) -> Self {
+        Self::build(
+            interim,
+            &ALL_ABILITIES,
+            false,
+            Some(CHALLENGE_COOL_DOWN),
+            reasons,
+        )
+        .await
     }
 
     async fn build(
         interim: InterimModerators,
         abilities: &[ModerationAbility],
         owner_protected: bool,
+        challenge_cool_down: Option<u32>,
+        reasons: Vec<Identifier>,
     ) -> Self {
         let platform_version = PlatformVersion::latest();
         let mut setup = Setup::new_at_with(
-            Some(elected_posts(interim, abilities, owner_protected)),
+            Some(elected_posts(
+                interim,
+                abilities,
+                owner_protected,
+                challenge_cool_down,
+            )),
             platform_version,
             |c| {
                 for (name, pricing) in [(POST, "fixed"), (REPLY, "feeMultiplier"), (NOTE, "fixed")]
@@ -197,10 +354,14 @@ impl Team {
             .load_moderation_charters(platform_version)
             .expect("expected the moderation charters contract");
 
+        // Two grounds anyone may cite; the proposal lists those it was given.
+        for (reason_id, code) in [(LISTED_REASON, "SPM"), (UNLISTED_REASON, "OFF")] {
+            write_reason(&setup, &charters, reason_id, &joiners[2], code);
+        }
         let proposal = SubmittedCharter {
             target_contract_id: setup.contract.id(),
             description: "We keep the posts civil".to_string(),
-            reasons: vec![],
+            reasons,
             moderators_share: Some(MODERATORS_SHARE),
             reward_split: ModerationCharterRewardSplit {
                 leader: 10,
@@ -443,6 +604,11 @@ impl Team {
 
     /// The leader's addition of `actor` to the seated team
     async fn addition_of(&self, actor: &Actor) -> StateTransition {
+        self.added(actor).await.1
+    }
+
+    /// The leader's addition of `actor` to the seated team, and the `addedModerator` it creates
+    async fn added(&self, actor: &Actor) -> (Document, StateTransition) {
         let properties = BTreeMap::from([
             (
                 "electedCharterId".to_string(),
@@ -459,11 +625,16 @@ impl Team {
         ]);
         self.charter_document(&self.leader, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, properties)
             .await
-            .1
     }
 
     /// The leader's removal of `actor` from the seated team
     async fn removal_of(&self, actor: &Actor) -> StateTransition {
+        self.removed(actor).await.1
+    }
+
+    /// The leader's removal of `actor` from the seated team, and the `removedModerator` it
+    /// creates
+    async fn removed(&self, actor: &Actor) -> (Document, StateTransition) {
         let properties = BTreeMap::from([
             (
                 "electedCharterId".to_string(),
@@ -480,7 +651,28 @@ impl Team {
             properties,
         )
         .await
-        .1
+    }
+
+    /// The leader's deletion of its team change `document` of `document_type_name`, which
+    /// undoes it
+    async fn undoing(&self, document_type_name: &str, document: Document) -> StateTransition {
+        let document_type = self
+            .charters
+            .document_type_for_name(document_type_name)
+            .expect("expected the charter document type");
+        BatchTransition::new_document_deletion_transition_from_document(
+            document,
+            document_type,
+            &self.leader.key,
+            self.leader.contract_nonce(),
+            0,
+            None,
+            &self.leader.signer,
+            PlatformVersion::latest(),
+            None,
+        )
+        .await
+        .expect("expected to build the charter document deletion")
     }
 
     /// A post by `actor`, agreeing to `agreement` (`None`: no agreement at all), and the post
@@ -716,10 +908,93 @@ async fn should_seat_the_winner_of_the_contest_and_let_its_team_moderate_instead
     }
 }
 
-/// The leader adds members from the join requests and removes members: an added member
-/// moderates and is protected until it is removed, a removed elected member no longer
-/// moderates and can be moderated, and the leader and the active members can be neither banned
-/// nor have their documents deleted, while the interim moderators and the owner lost that.
+/// A seat is never contested again in protocol version 14, whatever the target declares:
+/// challenges come later, so once a charter is seated another leader's elected charter for the
+/// same target is refused, with the target's seat contestable or not, and the seated charter
+/// keeps the seat.
+#[tokio::test]
+async fn should_keep_the_seat_of_a_seated_team_whether_or_not_it_is_contestable() {
+    let platform_version = PlatformVersion::latest();
+    for challenge_cool_down in [Some(CHALLENGE_COOL_DOWN), None] {
+        let team = Team::build(
+            InterimModerators::ContractOwner,
+            &ALL_ABILITIES,
+            false,
+            challenge_cool_down,
+            vec![LISTED_REASON],
+        )
+        .await;
+        team.award();
+
+        // A rival files its own proposal for the seated target, which a proposal may, and puts
+        // it to the vote.
+        let rival = &team.joiners[0];
+        let target_contract_id = team.setup.contract.id();
+        let proposal = SubmittedCharter {
+            target_contract_id,
+            description: "We would keep the posts civil too".to_string(),
+            reasons: vec![],
+            moderators_share: None,
+            reward_split: ModerationCharterRewardSplit {
+                leader: 100,
+                equal: 0,
+                actions: 0,
+            },
+        };
+        let (proposal, filing) = team
+            .charter_document(
+                rival,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                proposal.to_document_properties(),
+            )
+            .await;
+        team.process_and_commit(&filing);
+        let charter = ElectedCharter {
+            target_contract_id,
+            submitted_charter_id: proposal.id(),
+            members: vec![],
+        };
+        let (_, application) = team
+            .charter_document(
+                rival,
+                ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                charter.to_document_properties(),
+            )
+            .await;
+        let transaction = team.setup.platform.drive.grove.start_transaction();
+        // The seated charter holds the unique index for the target: the contest was awarded.
+        assert_paid_with_code(
+            &team.setup.process(&application, &transaction),
+            DUPLICATE_UNIQUE_INDEX,
+        );
+
+        // The seated charter keeps the seat.
+        let mut reads =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("expected an execution context");
+        let seated = fetch_seated_moderation_charter(
+            &team.setup.platform.drive,
+            target_contract_id,
+            &Default::default(),
+            &mut reads,
+            Some(&transaction),
+            platform_version,
+        )
+        .expect("expected to read the seated charter")
+        .expect("expected a seated charter");
+        assert_eq!(
+            seated.leader_id,
+            team.leader.id(),
+            "seat contestable: {challenge_cool_down:?}"
+        );
+    }
+}
+
+/// The leader adds members from the join requests and removes elected members: an added member
+/// moderates and is protected until the leader deletes its addition, a removed elected member
+/// no longer moderates and can be moderated until the leader deletes the removal, and the
+/// leader and the active members can be neither banned nor have their documents deleted, while
+/// the interim moderators and the owner lost that.
 #[tokio::test]
 async fn should_follow_additions_and_removals_and_protect_the_team() {
     let team = Team::new(InterimModerators::AppointedModerators(
@@ -739,7 +1014,8 @@ async fn should_follow_additions_and_removals_and_protect_the_team() {
         &setup.process(&ban, &transaction),
         IDENTITY_NOT_CONTRACT_MODERATOR,
     );
-    assert_success(&setup.process(&team.addition_of(added).await, &transaction));
+    let (addition, adding) = team.added(added).await;
+    assert_success(&setup.process(&adding, &transaction));
     let ban = setup.moderate(added, ban_action(setup.user.id())).await;
     assert_success(&setup.process(&ban, &transaction));
 
@@ -773,9 +1049,15 @@ async fn should_follow_additions_and_removals_and_protect_the_team() {
         assert_success(&setup.process(&warn, &transaction));
     }
 
-    // Removed, the added member and the elected member moderate no more, and are moderated.
+    // Taken off, the added member by deleting its addition and the elected member by a
+    // removal, they moderate no more, and are moderated.
+    let taking_off = team
+        .undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, addition)
+        .await;
+    assert_success(&setup.process(&taking_off, &transaction));
+    let (removal, removing) = team.removed(&team.member).await;
+    assert_success(&setup.process(&removing, &transaction));
     for removed in [added, &team.member] {
-        assert_success(&setup.process(&team.removal_of(removed).await, &transaction));
         let unban = setup.moderate(removed, unban_action(setup.user.id())).await;
         assert_paid_with_code(
             &setup.process(&unban, &transaction),
@@ -790,37 +1072,83 @@ async fn should_follow_additions_and_removals_and_protect_the_team() {
         .moderate(&team.leader, delete_action(POST, added_post.id()))
         .await;
     assert_success(&setup.process(&delete, &transaction));
+
+    // Deleting the removal puts the elected member back.
+    let reinstating = team
+        .undoing(REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, removal)
+        .await;
+    assert_success(&setup.process(&reinstating, &transaction));
+    let unban = setup
+        .moderate(&team.member, unban_action(setup.user.id()))
+        .await;
+    assert_success(&setup.process(&unban, &transaction));
+    let ban = setup
+        .moderate(&team.leader, ban_action(team.member.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
 }
 
-/// The target's `maxAddedModerators` caps the additions to a seated charter: the Nth passes, the
-/// (N+1)th is refused, paid, and a removal frees no slot.
+/// A removal names an elected member of the charter and nobody else: an added member is taken
+/// off by deleting its addition, and an identity never on the team has nothing to remove.
 #[tokio::test]
-async fn should_cap_the_members_a_leader_adds_and_free_no_slot_on_a_removal() {
+async fn should_remove_only_an_elected_member() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    team.award();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let added = &team.joiners[0];
+    assert_success(&setup.process(&team.addition_of(added).await, &transaction));
+    for never_elected in [added, &team.joiners[1]] {
+        assert_paid_with_code(
+            &setup.process(&team.removal_of(never_elected).await, &transaction),
+            REFERENCED_ENTITY_NOT_FOUND,
+        );
+    }
+    // The added member is still on the team.
+    let ban = setup.moderate(added, ban_action(setup.user.id())).await;
+    assert_success(&setup.process(&ban, &transaction));
+}
+
+/// The target's `maxAddedModerators` caps the additions a seated charter holds: the Nth passes,
+/// the (N+1)th is refused, paid, and deleting an addition frees its slot.
+#[tokio::test]
+async fn should_cap_the_members_a_leader_adds_and_free_a_slot_when_an_addition_is_deleted() {
     let team = Team::new(InterimModerators::ContractOwner).await;
     let setup = &team.setup;
     team.award();
 
     let transaction = setup.platform.drive.grove.start_transaction();
     let [first, second, third] = &team.joiners;
-    assert_success(&setup.process(&team.addition_of(first).await, &transaction));
+    let (first_addition, adding_first) = team.added(first).await;
+    assert_success(&setup.process(&adding_first, &transaction));
     assert_success(&setup.process(&team.addition_of(second).await, &transaction));
     let over_the_cap = team.addition_of(third).await;
     assert_paid_with_code(
         &setup.process(&over_the_cap, &transaction),
         MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED,
     );
-
-    assert_success(&setup.process(&team.removal_of(first).await, &transaction));
-    let after_a_removal = team.addition_of(third).await;
-    assert_paid_with_code(
-        &setup.process(&after_a_removal, &transaction),
-        MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED,
-    );
-    // The third joiner never made it onto the team.
+    // The third joiner did not make it onto the team.
     let ban = setup.moderate(third, ban_action(setup.user.id())).await;
     assert_paid_with_code(
         &setup.process(&ban, &transaction),
         IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+
+    let taking_off_first = team
+        .undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, first_addition)
+        .await;
+    assert_success(&setup.process(&taking_off_first, &transaction));
+    assert_success(&setup.process(&team.addition_of(third).await, &transaction));
+    let ban = setup.moderate(third, ban_action(setup.user.id())).await;
+    assert_success(&setup.process(&ban, &transaction));
+    // The team is full again.
+    assert_paid_with_code(
+        &setup.process(&team.addition_of(first).await, &transaction),
+        MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED,
     );
 }
 
@@ -1087,7 +1415,14 @@ async fn should_stop_the_interim_team_claiming_the_moderators_pot_once_a_charter
 /// deleted, and it does not moderate.
 #[tokio::test]
 async fn should_protect_the_owner_from_a_seated_team_when_the_declaration_says_so() {
-    let team = Team::build(InterimModerators::ContractOwner, &ALL_ABILITIES, true).await;
+    let team = Team::build(
+        InterimModerators::ContractOwner,
+        &ALL_ABILITIES,
+        true,
+        Some(CHALLENGE_COOL_DOWN),
+        vec![LISTED_REASON],
+    )
+    .await;
     let setup = &team.setup;
     let owner_post = team.posted_by(&setup.owner).await;
     team.award();

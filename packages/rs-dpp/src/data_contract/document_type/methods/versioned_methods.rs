@@ -21,7 +21,9 @@ use crate::fee::Credits;
 use crate::identity::TimestampMillis;
 use crate::prelude::{BlockHeight, CoreBlockHeight};
 use crate::validation::SimpleConsensusValidationResult;
-use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use crate::voting::vote_polls::contested_document_resource_vote_poll::{
+    required_vote_resolution_fund, ContestedDocumentResourceVotePoll,
+};
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use chrono::Utc;
@@ -361,14 +363,19 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// Figures out the prefunded voting balance (v0) for a document in a document type
-    fn contested_vote_poll_for_document_v0(&self, document: &Document) -> Option<VotePoll> {
-        self.contested_vote_poll_for_document_properties_v0(document.properties())
+    fn contested_vote_poll_for_document_v0(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        self.contested_vote_poll_for_document_properties_v0(document.properties(), platform_version)
     }
 
     fn contested_vote_poll_for_document_properties_v0(
         &self,
         document_properties: &BTreeMap<String, Value>,
-    ) -> Option<VotePoll> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
         self.indexes()
             .values()
             .find(|index| {
@@ -392,14 +399,24 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
-                let index_values = index.extract_values(document_properties);
-                VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
-                    contract_id: self.data_contract_id(),
-                    document_type_name: self.name().clone(),
-                    index_name: index.name.clone(),
-                    index_values,
-                })
+                // Identifier values are written one way from protocol version 14, so every
+                // contender of a contest names it with the same poll; before 14 they are taken
+                // as given, as they always were
+                let index_values = index.extract_contested_values(
+                    document_properties,
+                    self.flattened_properties(),
+                    platform_version,
+                )?;
+                Ok(VotePoll::ContestedDocumentResourceVotePoll(
+                    ContestedDocumentResourceVotePoll {
+                        contract_id: self.data_contract_id(),
+                        document_type_name: self.name().clone(),
+                        index_name: index.name.clone(),
+                        index_values,
+                    },
+                ))
             })
+            .transpose()
     }
 
     fn index_for_types_v0(
@@ -674,12 +691,16 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
+                // A moderation election is prefunded with the moderation fund. Every schedule
+                // before protocol version 14 carries the contested document fund there, so
+                // the amount is unchanged wherever this ran before
                 (
                     index.name.clone(),
-                    platform_version
-                        .fee_version
-                        .vote_resolution_fund_fees
-                        .contested_document_vote_resolution_fund_required_amount,
+                    required_vote_resolution_fund(
+                        &self.data_contract_id(),
+                        self.name(),
+                        platform_version,
+                    ),
                 )
             })
     }

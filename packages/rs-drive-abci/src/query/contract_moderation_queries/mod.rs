@@ -74,6 +74,7 @@ pub(super) fn reason_to_response(
                 document_id: document.document_id.to_vec(),
             })
             .collect(),
+        reason_document_id: reason.reason_document_id.map(|id| id.to_vec()),
     }
 }
 
@@ -256,6 +257,7 @@ pub(super) mod tests {
                     code: Some(SUSPENSION_REASON_CODE),
                     text: SUSPENSION_REASON.to_string(),
                     documents: vec![],
+                    reason_document_id: None,
                 },
                 false,
                 contract.owner_id(),

@@ -737,6 +737,7 @@ fn suspension_reason() -> ContractModerationReason {
         code: Some(7),
         text: "flooding".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 
@@ -1792,6 +1793,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
         code: Some(u16::MAX),
         text: "flooding the feed".to_string(),
         documents: vec![],
+        reason_document_id: None,
     };
     let transaction = setup.platform.drive.grove.start_transaction();
     let suspend = setup
@@ -2236,6 +2238,7 @@ fn deletion_reason() -> ContractModerationReason {
         code: Some(3),
         text: "spam".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 
@@ -3064,7 +3067,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down: Some(1_209_600),
             moderated_document_types: moderated
                 .iter()
                 .map(|name| {
@@ -3140,7 +3143,11 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
     };
     let mut longer_cool_down = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
     if let ContractModerators::Elected(declaration) = &mut longer_cool_down.moderators {
-        declaration.challenge_cool_down += 1;
+        declaration.challenge_cool_down = declaration.challenge_cool_down.map(|c| c + 1);
+    }
+    let mut permanent_seat = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+    if let ContractModerators::Elected(declaration) = &mut permanent_seat.moderators {
+        declaration.challenge_cool_down = None;
     }
     let mut protected_owner = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
     if let ContractModerators::Elected(declaration) = &mut protected_owner.moderators {
@@ -3148,6 +3155,7 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
     }
     for (moderation, what) in [
         (longer_cool_down, "a longer cool-down"),
+        (permanent_seat, "the seat made uncontestable"),
         (protected_owner, "the owner flag turned on"),
         (
             elected(
@@ -3329,7 +3337,7 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
             "a vote window under a day",
         ),
         (
-            with(|d| d.challenge_cool_down = 94_608_001),
+            with(|d| d.challenge_cool_down = Some(94_608_001)),
             "a cool-down over three years",
         ),
         (
@@ -3377,6 +3385,16 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
         .set_config(contract.config().clone().with_moderation(Some(with(|d| {
             d.join_window = 86_400;
             d.vote_window = 86_400;
+        }))));
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    // A seat that can not be contested again has no cool-down to bound.
+    setup
+        .contract
+        .set_config(contract.config().clone().with_moderation(Some(with(|d| {
+            d.challenge_cool_down = None;
         }))));
     let create = setup
         .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())

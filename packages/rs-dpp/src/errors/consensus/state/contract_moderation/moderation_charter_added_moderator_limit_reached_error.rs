@@ -10,7 +10,7 @@ use thiserror::Error;
 
 /// An `addedModerator` of the moderation charters contract for a seated charter that already
 /// has as many additions as its target contract's elected declaration allows
-/// (`maxAddedModerators`). Additions ever filed count, so a removal frees no slot.
+/// (`maxAddedModerators`). The additions that exist count: deleting one frees its slot.
 #[derive(
     Error,
     Debug,

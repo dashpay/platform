@@ -54,6 +54,10 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   to 1 so a contract whose tokens release at the same time queues the
 ///   shared release-time tree once. v0 queued it once per token in one batch,
 ///   which a node verifying batch consistency refuses as an internal error.
+/// * **Moderation election windows**: the same V4 table adds
+///   `insert_contested.fetch_charter_election_windows` (`None` before), so
+///   an `electedCharter` contest runs on the join and vote windows of its
+///   target contract instead of the generic ones.
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {

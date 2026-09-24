@@ -327,8 +327,8 @@ mod moderation_charters_tests {
     use crate::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use crate::identity::Purpose;
     use crate::moderation_charter::{
-        property_names, validate_submitted_charter, ElectedCharter, ModerationCharterRewardSplit,
-        SubmittedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+        property_names, ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
+        ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
         JOIN_REQUEST_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
         REASON_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
         RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
@@ -441,11 +441,18 @@ mod moderation_charters_tests {
                 MODERATION_CHARTERS_CONTRACT_ID
             );
             assert!(!document_type.documents_mutable(), "{name} is immutable");
-            // A resignation request is withdrawn by deleting it; nothing refers to it
+            // A team change is undone by deleting it: an addition takes the member off, a
+            // removal puts them back, a resignation request is withdrawn. What makes the
+            // charter is final.
             assert_eq!(
                 document_type.documents_can_be_deleted(),
-                name == RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
-                "{name}: only a resignation request can be deleted"
+                [
+                    ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+                    REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+                    RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+                ]
+                .contains(&name),
+                "{name}: only the team changes can be deleted"
             );
         }
     }
@@ -704,10 +711,9 @@ mod moderation_charters_tests {
             vec![],
             "the encoded proposal passes the schema"
         );
-        let read = validate_submitted_charter(document.properties(), PlatformVersion::latest())
-            .expect("validation executes")
+        let read = SubmittedCharter::from_document_properties(document.properties())
             .into_data()
-            .expect("the proposal is valid");
+            .expect("the proposal reads");
         assert_eq!(read, proposal);
     }
 
@@ -914,8 +920,8 @@ mod moderation_charters_tests {
     }
 
     /// After the election the leader adds members from the same join requests and removes
-    /// members, and a member leaves on its own: each change is written once per member, and
-    /// only by the one entitled to it.
+    /// elected members, and a member asks to leave: each change is written once per member,
+    /// and only by the one entitled to it.
     #[test]
     fn should_let_only_the_leader_change_the_team_and_only_a_member_resign() {
         let contract = contract();
@@ -973,6 +979,26 @@ mod moderation_charters_tests {
             }
             other => panic!("addedModerator.memberId: {other:?}"),
         }
+        // Only an elected member can be removed; an added one is taken off by deleting the
+        // addition
+        match reference(
+            &contract,
+            REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+            property_names::MEMBER_ID,
+        ) {
+            PropertyReference::Value(DocumentPropertyReferenceTarget::ListElement(listed)) => {
+                assert_eq!(
+                    listed.document_type_name,
+                    ELECTED_CHARTER_DOCUMENT_TYPE_NAME
+                );
+                assert_eq!(listed.in_list, property_names::MEMBERS);
+                assert_eq!(
+                    listed.document_id_property(),
+                    Some(property_names::ELECTED_CHARTER_ID)
+                );
+            }
+            other => panic!("removedModerator.memberId: {other:?}"),
+        }
         for type_name in [
             ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
             REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
@@ -1022,7 +1048,8 @@ mod moderation_charters_tests {
     }
 
     /// Only a member of the seated team may ask to leave: the writer is listed in the elected
-    /// charter's `members`, or the leader added it after the election. The request is
+    /// charter's `members`, or the leader added it after the election and has not deleted the
+    /// addition. The request is
     /// deletable, which withdraws it, and carries a message only the leader can read.
     #[test]
     fn should_let_only_a_team_member_ask_to_leave() {
@@ -1038,7 +1065,7 @@ mod moderation_charters_tests {
             );
         };
         match operands.operands() {
-            [DocumentPropertyReferenceTarget::ListElement(listed), DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            [DocumentPropertyReferenceTarget::ListElement(listed), DocumentPropertyReferenceTarget::DeletableDocumentLookup {
                 document_type_name,
                 lookup,
                 ..

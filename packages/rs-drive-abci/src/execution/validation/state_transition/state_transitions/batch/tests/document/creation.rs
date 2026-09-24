@@ -3361,9 +3361,26 @@ mod creation_tests {
 
     #[tokio::test]
     async fn test_that_a_contested_document_can_not_be_added_to_after_a_week() {
-        let platform_version = PlatformVersion::latest();
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: the join check reads the generic join window there too; the
+    /// target contract's window of a moderation election is read only from 14 on.
+    #[tokio::test]
+    async fn should_refuse_joining_a_contest_after_the_join_window_protocol_version_13() {
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(13).await;
+    }
+
+    async fn run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -5703,7 +5720,7 @@ mod creation_tests {
                             moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                                 join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                                 vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                                challenge_cool_down: 1_209_600,
+                                challenge_cool_down: Some(1_209_600),
                                 election_delay,
                                 max_added_moderators: 0,
                                 moderated_document_types: BTreeMap::from([(

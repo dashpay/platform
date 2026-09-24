@@ -12,10 +12,11 @@
 //!   only the leader can read;
 //! - an `electedCharter` is a proposal put to the vote with its team, chosen from the identities
 //!   that asked to join it. Creating one opens or joins the contest for the target contract;
-//! - once a charter is seated, its leader may add members from the same join requests, up to
-//!   the target's `maxAddedModerators` (`addedModerator`), and remove members
-//!   (`removedModerator`); a member asks to leave with a `resignationRequest`, which the
-//!   leader acts on with a removal and the member withdraws by deleting it.
+//! - once a charter is seated, its leader may add members from the same join requests, at most
+//!   the target's `maxAddedModerators` at a time (`addedModerator`, taken back by deleting it),
+//!   and remove elected members (`removedModerator`, undone by deleting it); a member asks to
+//!   leave with a `resignationRequest`, which the leader acts on and the member withdraws by
+//!   deleting it.
 //!
 //! The team that acts is the leader plus [`ElectedCharter::active_members`]: the elected
 //! members and the additions, less the removals.
@@ -31,18 +32,17 @@
 //!
 //! The schema carries almost every rule through its keywords (references, lookups, key
 //! requirements, `distinctFrom`, `maxBytes` for the description's byte cap, and the
-//! `propertyConstraints` rule holding the reward split to 100). What it cannot say is here:
-//! [`SubmittedCharter`] and [`ElectedCharter`] read the documents' properties, and
-//! [`validate_submitted_charter`] reads a proposal. Nothing here reads state.
+//! `propertyConstraints` rule holding the reward split to 100). What is here only reads:
+//! [`SubmittedCharter`] and [`ElectedCharter`] read the documents' properties. Nothing here
+//! reads state.
 
-mod v0;
+mod reward_split;
 
 use crate::balances::credits::Credits;
 use crate::consensus::basic::moderation_charter::ModerationCharterMalformedFieldError;
-use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use crate::ProtocolError;
+use crate::data_contract::document_type::contested_index_identifier;
+use crate::validation::ConsensusValidationResult;
 use platform_value::{Identifier, IdentifierBytes32, Value, ValueMap};
-use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The id of the moderation charters system contract, `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
@@ -71,6 +71,35 @@ pub const RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME: &str = "resignationRequest";
 
 /// The moderators share a proposal takes when it declares none: the full declared fee.
 pub const FULL_MODERATORS_SHARE: u8 = 100;
+
+/// Whether a contest on the contested index of `document_type_name` in the contract
+/// `contract_id` is a moderation election: an `electedCharter` of the moderation charters
+/// contract, contending for the seat of its target contract. A moderation election runs on the
+/// join and vote windows its target declares and is prefunded with the moderation fund; every
+/// other contest keeps the generic windows and fund.
+pub fn is_charter_election(contract_id: &Identifier, document_type_name: &str) -> bool {
+    *contract_id == MODERATION_CHARTERS_CONTRACT_ID
+        && document_type_name == ELECTED_CHARTER_DOCUMENT_TYPE_NAME
+}
+
+/// The contract a moderation election contends for: the single value of the contested index's
+/// key, `targetContractId`, in any form validation accepts for an identifier (from protocol
+/// version 14 a contest's index values are written as `Value::Identifier` anyway, see
+/// `Index::extract_contested_values`). `None` for every other contest, and for index values
+/// that do not name one contract, a base58 string included.
+pub fn charter_election_target(
+    contract_id: &Identifier,
+    document_type_name: &str,
+    index_values: &[Value],
+) -> Option<Identifier> {
+    if !is_charter_election(contract_id, document_type_name) {
+        return None;
+    }
+    match index_values {
+        [target] => contested_index_identifier(target).map(Identifier::new),
+        _ => None,
+    }
+}
 
 /// The moderators part a seated charter's team charges for an action whose document type
 /// declares `declared_moderators`: `moderators_share` percent of it, rounded down to the credit.
@@ -103,15 +132,18 @@ pub mod property_names {
     pub const MEMBER_ID: &str = "memberId";
 }
 
-/// How a team splits every claim of the moderators pot: three percentages summing to 100.
+/// How a team splits every settle of the moderators pot, a claim or a change of the team: three
+/// percentages summing to 100.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModerationCharterRewardSplit {
     /// The share of the leader.
     pub leader: u8,
-    /// The share split equally between the members other than the leader.
+    /// The share split equally between the members other than the leader; the leader's when
+    /// it has no member.
     pub equal: u8,
-    /// The share split between the members by the moderation actions each signed since the
-    /// last claim.
+    /// The share split between the team, the leader included, by the moderation actions each
+    /// signed since the pot was last settled, or equally when nobody acted. See
+    /// [`ModerationCharterRewardSplit::payouts`].
     pub actions: u8,
 }
 
@@ -196,8 +228,9 @@ impl SubmittedCharter {
     /// Reads a proposal out of the properties of a `submittedCharter` document.
     ///
     /// The result carries a consensus error, never a proposal, when a property is missing or
-    /// of the wrong type. The proposal's own rules are checked by
-    /// [`SubmittedCharter::validate`]; [`validate_submitted_charter`] does both.
+    /// of the wrong type. The proposal's rules are the contract's own keywords (the reward
+    /// split's `propertyConstraints` rule `rewardSplitIsWhole`, the description's `maxBytes`),
+    /// checked wherever the document is validated, not here.
     pub fn from_document_properties(
         properties: &BTreeMap<String, Value>,
     ) -> ConsensusValidationResult<Self> {
@@ -294,43 +327,18 @@ impl SubmittedCharter {
         }
         properties
     }
-
-    /// Checks the proposal's own rules. None is left: the reward split's sum is the
-    /// contract's `propertyConstraints` rule `rewardSplitIsWhole` and the description's
-    /// 4096-byte cap its `maxBytes`, both checked wherever the document is validated. The
-    /// versioned step stays for the path that seats a team.
-    pub fn validate(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        match platform_version
-            .dpp
-            .validation
-            .data_contract
-            .validate_moderation_charter
-        {
-            Some(0) => Ok(self.validate_v0()),
-            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "SubmittedCharter::validate".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-            None => Err(ProtocolError::NotSupported(format!(
-                "moderation charters do not exist at protocol version {}",
-                platform_version.protocol_version
-            ))),
-        }
-    }
 }
 
 impl ElectedCharter {
     /// The members a seated team acts with besides its leader, `leader_id`: the elected
     /// members and those the leader added after the election, less those the leader removed.
     /// `added` and `removed` are the `memberId`s of the charter's `addedModerator` and
-    /// `removedModerator` documents. A removal is final, so the order the documents were
-    /// filed in does not matter. A `resignationRequest` changes nothing by itself: the leader
-    /// acts on it with a removal. The leader is never among the result: neither list may
-    /// name it.
+    /// `removedModerator` documents that exist now: the leader takes an addition back by
+    /// deleting it, and a removal, which only names an elected member, puts the member back
+    /// when it is deleted. A removal wins over an addition of the same member, so the order
+    /// the documents were filed in does not matter. A `resignationRequest` changes nothing by
+    /// itself: the leader acts on it by deleting the member's addition or removing an elected
+    /// member. The leader is never among the result: neither list may name it.
     pub fn active_members<'a>(
         &self,
         leader_id: Identifier,
@@ -392,28 +400,6 @@ impl ElectedCharter {
                 identifier_list_value(&self.members),
             ),
         ])
-    }
-}
-
-/// Reads a proposal out of the properties of a `submittedCharter` document and checks its own
-/// rules. The result carries the proposal when it passes, and the first error it fails on
-/// otherwise.
-pub fn validate_submitted_charter(
-    properties: &BTreeMap<String, Value>,
-    platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<SubmittedCharter>, ProtocolError> {
-    let result = SubmittedCharter::from_document_properties(properties);
-    if !result.is_valid_with_data() {
-        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
-    }
-    let charter = result.into_data()?;
-    let validation = charter.validate(platform_version)?;
-    if validation.is_valid() {
-        Ok(ConsensusValidationResult::new_with_data(charter))
-    } else {
-        Ok(ConsensusValidationResult::new_with_errors(
-            validation.errors,
-        ))
     }
 }
 

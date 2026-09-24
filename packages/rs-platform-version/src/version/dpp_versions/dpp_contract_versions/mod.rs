@@ -98,6 +98,11 @@ pub struct DocumentTypeMethodVersions {
     /// keyword: the method returns an empty result there, so the shipped
     /// `DataContract::validate_document_properties` 0 that calls it is inert.
     pub validate_property_constraints: OptionalFeatureVersion,
+    /// `Index::extract_contested_values`: writes an identifier property given as bytes or as
+    /// an array of byte values as `Value::Identifier` in a contest's index values, so every
+    /// contender names one contest with one poll. `None` on versions that predate it, where
+    /// the values are taken as given.
+    pub canonical_contested_index_values: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

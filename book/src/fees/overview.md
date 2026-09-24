@@ -137,6 +137,24 @@ to prevent namespace squatting:
 
 Before protocol version 9, all registration fees were zero.
 
+### Contest Funds
+
+A document create that opens or joins a contest (a contested unique index)
+prefunds the masternode votes: the amount leaves the contender's balance for the
+contest's prefunded balance, each vote takes a fixed cost from it, and what is
+left when the contest ends is released as processing fees. The amounts are
+`VoteResolutionFundFees` in the fee version:
+
+| Component | Protocol versions 1 to 13 | Protocol version 14 |
+|---|---|---|
+| Contested document fund (DPNS and every other contest) | 0.2 Dash | 0.1 Dash |
+| Moderation election fund (an `electedCharter` application) | none exist | 0.5 Dash |
+| One vote | 0.0001 Dash | 0.00002 Dash |
+
+`required_vote_resolution_fund` in `rs-dpp` picks between the two funds; the
+schedules before 14 carry the contested document amount in the moderation
+field, so the choice changes nothing there.
+
 ## User Fee Increase
 
 Every state transition carries a `user_fee_increase` field (a `UserFeeIncrease`

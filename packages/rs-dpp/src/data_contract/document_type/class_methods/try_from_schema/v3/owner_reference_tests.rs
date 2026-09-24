@@ -303,11 +303,11 @@ fn should_refuse_an_owner_or_creator_reference_to_a_target_its_identity_can_neve
             ),
             (
                 json!({ "type": "permanentDocument", "documentType": "addedModerator" }),
-                "takes a permanentDocument reference only with a lookup",
+                "takes a document reference only with a lookup",
             ),
             (
                 json!({ "type": "deletableDocument", "documentType": "post" }),
-                "does not take a deletableDocument reference",
+                "takes a document reference only with a lookup",
             ),
         ] {
             let schema = contract_declaring(declaration.clone());
@@ -792,7 +792,73 @@ fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_lea
                 full_validation,
                 PlatformVersion::latest(),
             ),
-            "ownerRefersTo anyOf[1] takes a permanentDocument reference only with a lookup",
+            "ownerRefersTo anyOf[1] takes a document reference only with a lookup",
         );
     }
+}
+
+/// The moderation charters' resignation: an added moderator is taken off the team by
+/// deleting its addition, so the writer's membership may be a deletable document that exists
+/// now. `ownerRefersTo` takes a `deletableDocument` found through a lookup, alone or as an
+/// operand; `creatorRefersTo` does not, since the creator's document could be deleted after
+/// a transfer, leaving the new owner unable to replace theirs.
+#[test]
+fn should_parse_an_owner_reference_to_a_deletable_document_found_through_a_lookup() {
+    let deletable_added_moderator = json!({
+        "type": "deletableDocument",
+        "documentType": "addedModerator",
+        "lookup": added_moderator_lookup()
+    });
+    let with_deletable_additions = |mut schema: serde_json::Value| {
+        schema["documentSchemas"]["addedModerator"]["canBeDeleted"] = json!(true);
+        schema
+    };
+
+    for owner_refers_to in [
+        deletable_added_moderator.clone(),
+        json!({ "anyOf": [{ "type": "identity" }, deletable_added_moderator.clone()] }),
+    ] {
+        for full_validation in [true, false] {
+            let parsed = contract_on(
+                with_deletable_additions(charter_contract(owner_refers_to.clone())),
+                full_validation,
+                PlatformVersion::latest(),
+            )
+            .unwrap_or_else(|e| panic!("{owner_refers_to} should parse: {e}"));
+            let target = owner_reference(&parsed).expect("the owner reference");
+            assert!(
+                target.leaves().into_iter().any(|leaf| matches!(
+                    leaf,
+                    DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                        document_type_name,
+                        ..
+                    } if document_type_name == "addedModerator"
+                )),
+                "{owner_refers_to}: {target:?}"
+            );
+        }
+    }
+
+    // The meta-schema refuses it on the creator at registration, and the parser on the
+    // stored path, alone or as an operand
+    let schema = with_deletable_additions(creator_contract(deletable_added_moderator.clone()));
+    let error = contract(schema.clone()).expect_err("the meta-schema should refuse it");
+    assert!(
+        is_json_schema_error(&error),
+        "expected a meta-schema error, got {error}"
+    );
+    assert_refused(
+        contract_on(schema, false, PlatformVersion::latest()),
+        "creatorRefersTo does not take a deletableDocument reference",
+    );
+    assert_refused(
+        contract_on(
+            with_deletable_additions(creator_contract(json!({
+                "anyOf": [{ "type": "identity" }, deletable_added_moderator]
+            }))),
+            false,
+            PlatformVersion::latest(),
+        ),
+        "creatorRefersTo anyOf[1] does not take a deletableDocument reference",
+    );
 }

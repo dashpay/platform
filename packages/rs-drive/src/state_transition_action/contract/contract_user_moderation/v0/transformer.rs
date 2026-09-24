@@ -38,6 +38,7 @@ impl ContractUserModerationTransitionActionV0 {
             }),
             document_deletion: None,
             document_restoration: None,
+            moderation_action_count: None,
             user_fee_increase: *user_fee_increase,
         }
     }

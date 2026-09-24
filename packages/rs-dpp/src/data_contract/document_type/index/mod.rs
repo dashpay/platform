@@ -25,10 +25,12 @@ use std::cmp::Ordering;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
+mod extract_contested_values;
 pub mod preallocation;
 pub mod random_index;
 pub mod time_range;
 
+pub use extract_contested_values::contested_index_identifier;
 pub use preallocation::{PreallocatedKeySource, PreallocationBinding};
 pub use time_range::TimeRangeTransform;
 
@@ -2637,7 +2639,7 @@ mod tests {
         }
     }
 
-    fn make_index(name: &str, properties: Vec<(&str, bool)>, unique: bool) -> Index {
+    pub(super) fn make_index(name: &str, properties: Vec<(&str, bool)>, unique: bool) -> Index {
         Index {
             name: name.to_string(),
             properties: properties

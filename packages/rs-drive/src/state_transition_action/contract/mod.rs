@@ -6,3 +6,5 @@ pub mod contract_user_moderation;
 pub mod data_contract_create;
 /// update
 pub mod data_contract_update;
+/// the settle of an elected contract's moderators pot
+pub mod moderators_pot_settlement;

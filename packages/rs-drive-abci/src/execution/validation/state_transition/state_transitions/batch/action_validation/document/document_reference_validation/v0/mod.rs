@@ -603,8 +603,14 @@ fn binds_a_changed_property(
         // another missing document) fails the existence check. A writer gate
         // is therefore never evaluated against a missing document: it is
         // checked against the new target, or not at all once the reference
-        // is cleared.
-        DocumentPropertyReferenceTarget::DeletableDocument { .. } => true,
+        // is cleared. Through a lookup the same holds, the document the key
+        // finds now being the target: an expression holding one is
+        // re-validated on every replace through the walk below, and an
+        // `ownerRefersTo` one gates every replace on the writer's document
+        // still existing. Reached from protocol version 14 only, the version
+        // whose parser produces it.
+        DocumentPropertyReferenceTarget::DeletableDocument { .. }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => true,
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property, ..
         } => is_changed_field(changed_fields, key_id_property),
@@ -830,6 +836,7 @@ fn validate_reference_target_v0(
         DocumentPropertyReferenceTarget::PermanentDocument { .. }
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
         | DocumentPropertyReferenceTarget::DeletableDocument { .. }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
         | DocumentPropertyReferenceTarget::ListElement(_) => {
             let Some(DocumentReferenceDeclaration {
                 contract_id: referenced_contract_id,

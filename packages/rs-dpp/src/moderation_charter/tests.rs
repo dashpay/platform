@@ -1,12 +1,12 @@
 use super::{
-    moderators_share_of, property_names, validate_submitted_charter, ElectedCharter,
-    ModerationCharterRewardSplit, SubmittedCharter, FULL_MODERATORS_SHARE,
+    charter_election_target, moderators_share_of, property_names, ElectedCharter,
+    ModerationCharterRewardSplit, SubmittedCharter, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+    FULL_MODERATORS_SHARE, MODERATION_CHARTERS_CONTRACT_ID, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
 use crate::balances::credits::MAX_CREDITS;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use platform_value::{Identifier, Value};
-use platform_version::version::PlatformVersion;
 
 fn proposal() -> SubmittedCharter {
     SubmittedCharter {
@@ -19,15 +19,6 @@ fn proposal() -> SubmittedCharter {
             equal: 40,
             actions: 50,
         },
-    }
-}
-
-fn first_basic_error(
-    result: &crate::validation::ConsensusValidationResult<SubmittedCharter>,
-) -> &BasicError {
-    match result.errors.first() {
-        Some(ConsensusError::BasicError(error)) => error,
-        other => panic!("expected a basic error, got {other:?}"),
     }
 }
 
@@ -64,27 +55,14 @@ fn should_read_a_zero_share_as_zero() {
 }
 
 #[test]
-fn should_accept_a_proposal_without_reasons() {
+fn should_read_a_proposal_without_reasons() {
     let proposal = SubmittedCharter {
         reasons: vec![],
         ..proposal()
     };
-    let result = validate_submitted_charter(
-        &proposal.to_document_properties(),
-        PlatformVersion::latest(),
-    )
-    .expect("validation executes");
-    assert!(result.is_valid_with_data());
-}
-
-#[test]
-fn should_accept_a_valid_proposal() {
-    let result = validate_submitted_charter(
-        &proposal().to_document_properties(),
-        PlatformVersion::latest(),
-    )
-    .expect("validation executes");
-    assert!(result.is_valid_with_data(), "{:?}", result.errors);
+    let read = SubmittedCharter::from_document_properties(&proposal.to_document_properties());
+    assert!(read.is_valid_with_data(), "{:?}", read.errors);
+    assert_eq!(read.into_data().expect("data"), proposal);
 }
 
 #[test]
@@ -120,12 +98,6 @@ fn should_refuse_a_missing_or_mistyped_property() {
             BasicError::ModerationCharterMalformedFieldError(e)
         )) if e.field() == property_names::REASONS
     ));
-}
-
-#[test]
-fn should_refuse_to_validate_below_protocol_version_14() {
-    let platform_version = PlatformVersion::get(13).expect("version 13");
-    assert!(proposal().validate(platform_version).is_err());
 }
 
 #[test]
@@ -173,7 +145,7 @@ fn should_combine_the_elected_members_the_additions_and_the_removals() {
         [id(3), id(4), id(5)].into()
     );
 
-    // A removal is final: an addition of a removed member does not bring it back
+    // A removal wins over an addition of the same elected member
     assert_eq!(
         charter.active_members(leader, &[id(2)], &[id(2)]),
         [id(3), id(4)].into()
@@ -184,6 +156,68 @@ fn should_combine_the_elected_members_the_additions_and_the_removals() {
         charter.active_members(leader, &[leader], &[]),
         [id(2), id(3), id(4)].into()
     );
+}
+
+#[test]
+fn should_read_a_charter_election_target_from_every_accepted_identifier_form() {
+    let target = Identifier::new([0x7A; 32]);
+    let target_of = |contract_id: &Identifier, document_type_name: &str, value: Value| {
+        charter_election_target(contract_id, document_type_name, &[value])
+    };
+
+    // Every form validation accepts for an identifier property
+    for value in [
+        Value::Identifier([0x7A; 32]),
+        Value::Bytes32([0x7A; 32]),
+        Value::Bytes(vec![0x7A; 32]),
+        Value::Array(vec![Value::U8(0x7A); 32]),
+        Value::Array(vec![Value::U64(0x7A); 32]),
+    ] {
+        assert_eq!(
+            target_of(
+                &MODERATION_CHARTERS_CONTRACT_ID,
+                ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                value
+            ),
+            Some(target)
+        );
+    }
+
+    // The same contract written as base58 text, an array holding a value that is not a byte,
+    // a short byte string, another type of the charter contract, and another contract
+    for (contract_id, document_type_name, value) in [
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Text(bs58::encode([0x7A; 32]).into_string()),
+        ),
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Array(
+                std::iter::once(Value::U64(256))
+                    .chain(std::iter::repeat_n(Value::U8(0x7A), 31))
+                    .collect(),
+            ),
+        ),
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Bytes(vec![0x7A; 31]),
+        ),
+        (
+            MODERATION_CHARTERS_CONTRACT_ID,
+            SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Identifier([0x7A; 32]),
+        ),
+        (
+            Identifier::new([0x01; 32]),
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            Value::Identifier([0x7A; 32]),
+        ),
+    ] {
+        assert_eq!(target_of(&contract_id, document_type_name, value), None);
+    }
 }
 
 #[test]

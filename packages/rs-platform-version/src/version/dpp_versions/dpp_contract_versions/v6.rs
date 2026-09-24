@@ -119,6 +119,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             validate_encrypted_property_shapes: Some(0), // changed: refuses an `encryptedFor` property whose bytes are not the shape its scheme produces; None before this version returns an empty result
             validate_max_bytes: Some(0), // changed: refuses a string longer in UTF-8 bytes than its property's `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421); None before this version returns an empty result
             validate_property_constraints: Some(0), // changed: `validate_property_constraints` refuses a created or replaced document that breaks one of its type's `propertyConstraints` (DocumentPropertyConstraintViolatedError, 10422); None before this version returns an empty result
+            canonical_contested_index_values: Some(0), // new: identifier index values of a contest are written as identifiers
         },
     },
     token_versions: TokenVersions {

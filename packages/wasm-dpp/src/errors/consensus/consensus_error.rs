@@ -102,6 +102,7 @@ use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
     ContractModerationAbilityNotGrantedError, ModerationCharterAddedModeratorLimitReachedError,
+    ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -717,6 +718,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ModerationCharterAddedModeratorLimitReachedError(e) => {
             generic_consensus_error!(ModerationCharterAddedModeratorLimitReachedError, e).into()
+        }
+        StateError::ModerationReasonNotListedError(e) => {
+            generic_consensus_error!(ModerationReasonNotListedError, e).into()
         }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()

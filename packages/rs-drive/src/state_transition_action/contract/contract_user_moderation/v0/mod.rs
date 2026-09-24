@@ -32,6 +32,12 @@ pub struct ContractUserModerationTransitionActionV0 {
     /// what a document restore read and decoded when the transition was validated, `None`
     /// for every other action
     pub document_restoration: Option<ContractDocumentRestorationContext>,
+    /// the signer's count of moderation actions on the elected contract since its moderators
+    /// pot was last settled, this action included, when the signer is on the contract's seated
+    /// team and the action counts (a ban, a suspension, a warning or a document deletion);
+    /// `None` otherwise. Read when the transition was validated, so Drive writes it without
+    /// reading again
+    pub moderation_action_count: Option<u32>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }

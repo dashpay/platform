@@ -2808,6 +2808,13 @@ export class ContractModerationReason extends jspb.Message {
   setDocumentsList(value: Array<ContractModerationDocument>): void;
   addDocuments(value?: ContractModerationDocument, index?: number): ContractModerationDocument;
 
+  hasReasonDocumentId(): boolean;
+  clearReasonDocumentId(): void;
+  getReasonDocumentId(): Uint8Array | string;
+  getReasonDocumentId_asU8(): Uint8Array;
+  getReasonDocumentId_asB64(): string;
+  setReasonDocumentId(value: Uint8Array | string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ContractModerationReason.AsObject;
   static toObject(includeInstance: boolean, msg: ContractModerationReason): ContractModerationReason.AsObject;
@@ -2823,6 +2830,7 @@ export namespace ContractModerationReason {
     code: number,
     text: string,
     documentsList: Array<ContractModerationDocument.AsObject>,
+    reasonDocumentId: Uint8Array | string,
   }
 }
 

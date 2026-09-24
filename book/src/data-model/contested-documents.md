@@ -13,6 +13,13 @@ document's owner may not be joined by the same identity twice.
 
 The index's `contested.resolution` says how the contest is decided.
 
+From protocol version 14, an identifier property among the index values is written as an
+identifier in the poll (`Index::extract_contested_values`), whether the document gave it as an
+identifier, as 32 bytes or as an array of byte values. The index keys store all of these alike,
+but a poll is hashed from its values, and that hash keys the contest's prefunded balance and end
+date: two contenders writing the same identifier two ways would otherwise split one contest into
+two polls. Before 14 the values are taken as given.
+
 ## Resolution 0: masternode vote
 
 The DPNS rule. The choices are a contender, abstain, or **lock**, which gives the value to nobody.
@@ -32,6 +39,26 @@ end of the join window when the contest opens; the first additional contender mo
 poll duration, which opens the vote window. `getVotePollsByEndDate` shows whichever end applies.
 
 The moderation charters contract uses this resolution to elect moderation teams.
+
+## Moderation elections
+
+An `electedCharter` contest of the moderation charters contract (protocol version 14), keyed by
+the target contract id, is a **moderation election** and does not take the generic parameters:
+
+- Its join window and vote window are the `joinWindow` and `voteWindow` of the target contract's
+  elected moderation declaration (one day to four weeks each, one week by default), on every
+  network. A single applicant wins when the join window closes; a second applicant moves the end
+  to the join window plus the vote window. A late applicant is refused with
+  `DocumentContestNotJoinableError` naming the target's join window.
+- Each application prefunds the votes with the moderation fund, 0.5 Dash
+  (`moderation_vote_resolution_fund_required_amount`), instead of the contested document fund.
+
+The target's declaration is read, and billed, when an application opens the contest and when a
+later one joins it; it is frozen at the target's creation, so both reads agree. Nothing at the
+end of a contest reads the target: the end date was written when the contest opened or was
+joined. A target that is missing or declares something else leaves a contest on the generic
+windows instead of failing, and the application's own reference validation refuses it. Every
+other contest, DPNS included, keeps the generic windows and fund.
 
 ## Ties
 

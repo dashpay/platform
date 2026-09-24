@@ -474,7 +474,7 @@ fn validate_reference_target_declaration_v0(
         ));
     }
 
-    // A lookup, only ever on a permanentDocument reference, must
+    // A lookup, on a document reference of either kind, must
     // resolve in the referenced document type: a unique index its keys
     // cover exactly, filled from sources of the right kinds, with a key
     // that stays with the document it found. The contract parse checks

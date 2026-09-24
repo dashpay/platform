@@ -18,7 +18,7 @@
 //! * [`Sdk::fetch_join_requests`]: the join requests for a proposal
 //!   (`joinRequest.bySubmittedCharter`), one page at a time.
 //! * [`Sdk::fetch_pending_resignation_requests`]: the resignation requests for a charter
-//!   whose writer the leader has not removed yet.
+//!   whose writer is still on the team.
 //!
 //! [`Sdk::build_join_request`] and [`Sdk::build_resignation_request`] build the two documents
 //! whose message only the leader reads, encrypted with the generic

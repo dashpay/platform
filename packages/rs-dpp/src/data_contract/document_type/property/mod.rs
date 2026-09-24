@@ -807,9 +807,9 @@ pub enum DocumentPropertyReferenceTarget {
     /// expect the reference to resolve to nothing. It can not come back
     /// pointing at something else: a document id commits to the nonce of
     /// its create transition, so an id is produced at most once and a
-    /// reference means that one document or nothing (which is why there is
-    /// no lookup form of it: a key could find a new document once the one it
-    /// found is deleted). A WRITER may not leave
+    /// reference means that one document or nothing (its lookup form,
+    /// [`Self::DeletableDocumentLookup`], promises less: a key may find a new
+    /// document once the one it found is deleted). A WRITER may not leave
     /// it that way: every replace of the referring document re-validates
     /// the reference, so a dead one has to be repointed at a document that
     /// exists or cleared (on an `immutable` property, clearing is the only
@@ -836,9 +836,7 @@ pub enum DocumentPropertyReferenceTarget {
     /// the agreement pairs are checked against the document found, and the
     /// key must stay with that document (its parts cannot be changed by a
     /// replace, a transfer or a purchase), so the reference can not dangle
-    /// either. There is no deletable form: a key into a deletable type could
-    /// find a new document once the one it found is deleted, where an id is
-    /// produced at most once.
+    /// either. Its deletable form is [`Self::DeletableDocumentLookup`].
     ///
     /// A variant of its own rather than a field of
     /// [`Self::PermanentDocument`], appended as this enum's rule requires: an
@@ -898,6 +896,35 @@ pub enum DocumentPropertyReferenceTarget {
     /// earlier variant keeps its consensus encoding.
     #[serde(rename = "listElement")]
     ListElement(ListElementReference),
+    /// A `deletableDocument` reference declared with a `lookup`: the value is
+    /// one part of a key, as for [`Self::PermanentDocumentLookup`], into a
+    /// document type whose documents CAN be deleted. The document the key
+    /// finds must exist, and the agreement pairs hold against it, when the
+    /// referring document is written, and every replace re-validates it, as a
+    /// [`Self::DeletableDocument`] reference is. It promises less than the id
+    /// form: once the document it found is deleted, the same key may find
+    /// another one filed later, so the reference says "a document with this
+    /// key exists now", not "this document". That is what a membership gate
+    /// needs, such as "the writer is currently an added moderator of this
+    /// charter" (`ownerRefersTo`, the one doctype reference that takes it).
+    /// An immutable property can not hold one (a replace could neither keep a
+    /// dead one nor clear it), and it may be an operand of a reference
+    /// expression, which is then re-validated on every replace as well.
+    ///
+    /// Appended, so every earlier variant keeps its consensus encoding. It
+    /// serializes under the `deletableDocument` tag, with a `lookup` field.
+    #[serde(rename = "deletableDocument")]
+    DeletableDocumentLookup {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+        /// See [`Self::PermanentDocument`]'s `property_agreement`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
+        /// How the referenced document is found.
+        lookup: DocumentReferenceLookup,
+    },
 }
 
 /// The declaration content every document reference target shares:
@@ -923,7 +950,8 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// or must allow it (`deletableDocument`)
     pub permanent: bool,
     /// How the referenced document is found when the value is not its id
-    /// ([`DocumentPropertyReferenceTarget::PermanentDocumentLookup`]); `None`
+    /// ([`DocumentPropertyReferenceTarget::PermanentDocumentLookup`] and
+    /// [`DocumentPropertyReferenceTarget::DeletableDocumentLookup`]); `None`
     /// when the value is the referenced document's id. Only
     /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
     /// returns a declaration carrying one.
@@ -990,6 +1018,19 @@ impl DocumentPropertyReferenceTarget {
                 property_agreement,
                 permanent: false,
                 lookup: None,
+                in_list: None,
+            }),
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id,
+                document_type_name,
+                property_agreement,
+                lookup,
+            } => Some(DocumentReferenceDeclaration {
+                contract_id: *contract_id,
+                document_type_name,
+                property_agreement,
+                permanent: false,
+                lookup: Some(lookup),
                 in_list: None,
             }),
             DocumentPropertyReferenceTarget::ListElement(reference) => {
@@ -1312,6 +1353,18 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             } => write_document_reference(
                 f,
                 "permanent",
+                *contract_id,
+                document_type_name,
+                Some(lookup),
+            ),
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id,
+                document_type_name,
+                lookup,
+                ..
+            } => write_document_reference(
+                f,
+                "deletable",
                 *contract_id,
                 document_type_name,
                 Some(lookup),
@@ -9605,7 +9658,7 @@ mod tests {
                     moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                         join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                         vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                        challenge_cool_down: 1_209_600,
+                        challenge_cool_down: Some(1_209_600),
                         election_delay: None,
                         max_added_moderators: 0,
                         moderated_document_types: BTreeMap::from([(
@@ -9689,7 +9742,7 @@ mod tests {
                         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                            challenge_cool_down: 1_209_600,
+                            challenge_cool_down: Some(1_209_600),
                             election_delay,
                             max_added_moderators: 0,
                             moderated_document_types: BTreeMap::from([(
@@ -10334,6 +10387,15 @@ mod tests {
                 property_agreement: [("electedCharterId".to_string(), "$id".to_string())].into(),
                 in_list: "members".to_string(),
             }),
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+                lookup: DocumentReferenceLookup {
+                    index: "byOwner".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            },
         ];
 
         for target in &targets {
@@ -10347,6 +10409,9 @@ mod tests {
                 DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => {
                     "permanentDocument"
+                }
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => {
+                    "deletableDocument"
                 }
                 // Not a `type`: the schema declares them under their own keys
                 DocumentPropertyReferenceTarget::ListElement(_) => "listElement",

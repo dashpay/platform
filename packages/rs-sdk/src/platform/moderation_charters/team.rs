@@ -116,20 +116,17 @@ mod tests {
 
     #[test]
     fn should_combine_members_additions_and_removals_as_active_members_does() {
-        // Elected 2, 3, 4; added 5, 6; removed 3 (elected) and 6 (added) and 9 (never on it)
+        // Elected 2, 3, 4; added 5 and 6; 3 removed. An addition the leader deleted, or a
+        // removal, is not read at all.
         let (document, charter) = elected_charter(&[2, 3, 4]);
         let added = [change(0x50, CHARTER, 5), change(0x51, CHARTER, 6)];
-        let removed = [
-            change(0x60, CHARTER, 3),
-            change(0x61, CHARTER, 6),
-            change(0x62, CHARTER, 9),
-        ];
+        let removed = [change(0x60, CHARTER, 3)];
 
         let team = ModerationTeam::from_documents(&document, &added, &removed).expect("reads");
 
-        let expected = charter.active_members(id(LEADER), &[id(5), id(6)], &[id(3), id(6), id(9)]);
+        let expected = charter.active_members(id(LEADER), &[id(5), id(6)], &[id(3)]);
         assert_eq!(team.members, expected);
-        assert_eq!(team.members, BTreeSet::from([id(2), id(4), id(5)]));
+        assert_eq!(team.members, BTreeSet::from([id(2), id(4), id(5), id(6)]));
         assert_eq!(team.leader_id, id(LEADER));
         assert_eq!(team.elected_charter_id, id(CHARTER));
         assert_eq!(team.submitted_charter_id, id(0xBB));

@@ -439,7 +439,7 @@ mod tests {
                 moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                     join_window: 604_800,
                     vote_window: 604_800,
-                    challenge_cool_down: 1_209_600,
+                    challenge_cool_down: Some(1_209_600),
                     moderated_document_types: BTreeMap::from([(
                         "niceDocument".to_string(),
                         BTreeSet::from([ModerationAbility::Ban]),

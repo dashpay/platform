@@ -294,7 +294,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: Some(0),
+                    advanced_structure: Some(1), // a key proof of possession failure is refused unpaid
                     identity_signatures: Some(0),
                     nonce: Some(0),
                     state: 1,

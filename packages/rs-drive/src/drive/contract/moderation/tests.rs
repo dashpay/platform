@@ -954,6 +954,7 @@ fn should_charge_a_ban_by_the_length_of_its_reason() {
         code: Some(u16::MAX),
         text: "x".repeat(max_length),
         documents: vec![],
+        reason_document_id: None,
     };
     let estimated = ban(0x62, &longest, false);
     let full = ban(0x62, &longest, true);

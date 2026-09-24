@@ -75,6 +75,7 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
             validate_encrypted_property_shapes: None,
             validate_max_bytes: None,
             validate_property_constraints: None,
+            canonical_contested_index_values: None,
         },
     },
     token_versions: TokenVersions {

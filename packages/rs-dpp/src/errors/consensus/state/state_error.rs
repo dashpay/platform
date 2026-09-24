@@ -13,7 +13,7 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
-    ModerationCharterAddedModeratorLimitReachedError,
+    ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
@@ -617,6 +617,11 @@ pub enum StateError {
     #[error(transparent)]
     DocumentActionFeeModeratorsShareMismatchError(DocumentActionFeeModeratorsShareMismatchError),
 
+    // A seated moderation team's action names a reason its proposal lists (protocol version
+    // 14).
+    #[error(transparent)]
+    ModerationReasonNotListedError(ModerationReasonNotListedError),
+
     // NOTE: `StateError` is bincode-encoded positionally, so a new variant MUST be appended at
     // the tail: inserting mid-enum shifts the wire discriminant of every variant after it and
     // mis-decodes errors already encoded. The error code in `codes.rs` is independent of order.
@@ -628,6 +633,7 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenShieldedPaymentNotRequiredError(TokenShieldedPaymentNotRequiredError),
+
 }
 
 impl From<StateError> for ConsensusError {
@@ -740,6 +746,19 @@ mod tests {
                 }
             )),
             9
+        );
+        // A deletable document found through a lookup is appended after it
+        assert_eq!(
+            target_variant(&DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: DocumentReferenceLookup {
+                    index: "byOwner".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            }),
+            10
         );
     }
 
@@ -1284,12 +1303,20 @@ mod tests {
             149
         );
 
+        // A seated moderation team's action names a reason its proposal lists (protocol
+        // version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ModerationReasonNotListedError(
+                ModerationReasonNotListedError::new(group_id, identity_id, None)
+            )),
+            150
+        );
         // Token shielded pools (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
                 TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
             )),
-            150
+            151
         );
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPaymentAmountMismatchError(
@@ -1300,7 +1327,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            151
+            152
         );
         assert_eq!(
             discriminant_of(StateError::TokenShieldedPaymentNotRequiredError(
@@ -1309,7 +1336,7 @@ mod tests {
                     "create".to_string(),
                 )
             )),
-            152
+            153
         );
     }
 }

@@ -1,4 +1,6 @@
-use crate::drive::contract::paths::{contract_moderation_list_key, contract_other_path};
+use crate::drive::contract::paths::{
+    contract_moderation_list_key, contract_other_path, CONTRACT_MODERATION_ACTION_COUNTS_KEY,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -43,6 +45,19 @@ impl Drive {
             self.batch_insert_empty_tree(
                 contract_other_path,
                 DriveKeyInfo::KeyRef(contract_moderation_list_key(list)),
+                storage_flags,
+                batch_operations,
+                &platform_version.drive,
+            )?;
+        }
+
+        // An elected contract's seated team counts its moderation actions between two settles
+        // of the moderators pot. Elected moderation is declared at creation and never entered
+        // by an update, so the tree is created here, with the lists, and never lazily.
+        if moderation.moderators.elected().is_some() {
+            self.batch_insert_empty_tree(
+                contract_other_path,
+                DriveKeyInfo::KeyRef(&[CONTRACT_MODERATION_ACTION_COUNTS_KEY]),
                 storage_flags,
                 batch_operations,
                 &platform_version.drive,

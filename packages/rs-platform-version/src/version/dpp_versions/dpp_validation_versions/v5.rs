@@ -24,9 +24,6 @@ pub const DPP_VALIDATION_VERSIONS_V5: DPPValidationVersions = DPPValidationVersi
         validate_config_update: 2,
         validate_once_per_identity_distribution: Some(0),
         validate_token_config_update: 1,
-        // Moderation charters: the charter system contract and the pure-data rules of a
-        // charter exist from this protocol version on.
-        validate_moderation_charter: Some(0),
         ..DPP_VALIDATION_VERSIONS_V4.data_contract
     },
     document_type: DocumentTypeValidationVersions {

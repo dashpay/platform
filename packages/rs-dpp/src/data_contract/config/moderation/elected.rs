@@ -2,11 +2,12 @@
 //! masternodes and evonodes instead of by the contract owner (protocol version 14).
 //!
 //! The declaration is fixed at the contract's creation and never changes: the election
-//! parameters, the document types the team moderates with the abilities it holds on each,
-//! who moderates until the first team is seated, and whether the owner is protected from the
-//! team. A charter does not price the moderators part of a document action: the
-//! type's own `actionFees.moderators` amount is the most a team may charge, and a charter
-//! charges a share of it. No election exists yet: until one does, the contract is in its
+//! parameters, whether the seat can be contested again once a team is seated, the document
+//! types the team moderates with the abilities it holds on each, who moderates until the
+//! first team is seated, and whether the owner is protected from the team. A charter does
+//! not price the moderators part of a document action: the type's own
+//! `actionFees.moderators` amount is the most a team may charge, and a charter charges a
+//! share of it. No election exists yet: until one does, the contract is in its
 //! **interim**,
 //! moderated by the interim moderators the declaration names, or by nobody: with the
 //! moderated types not yet usable, or usable and unmoderated meanwhile.
@@ -34,7 +35,9 @@ pub mod property_names {
     pub const JOIN_WINDOW: &str = "joinWindow";
     /// The vote window, in seconds
     pub const VOTE_WINDOW: &str = "voteWindow";
-    /// The challenge cool-down, in seconds
+    /// Whether the seat can be contested again once a team is seated
+    pub const SEAT_CONTESTABLE: &str = "seatContestable";
+    /// The challenge cool-down, in seconds, of a contestable seat
     pub const CHALLENGE_COOL_DOWN: &str = "challengeCoolDown";
     /// The election delay, in seconds after the contract's creation
     pub const ELECTION_DELAY: &str = "electionDelay";
@@ -315,11 +318,21 @@ pub struct ElectedModerators {
     /// How long, in seconds, masternodes vote once the join window closed. The same bounds
     /// and default.
     pub vote_window: u32,
-    /// How long, in seconds, a seated team is safe from a challenge after a seat change.
+    /// Whether the seat can be contested again once a team is seated, and if so how long,
+    /// in seconds, a seated team is safe from a challenge after a seat change.
+    ///
+    /// `Some` when the seat is contestable (`seatContestable: true` on the wire, with the
+    /// cool-down as `challengeCoolDown`), within
     /// `SystemLimits::min_contract_moderation_challenge_cool_down_seconds` to
     /// `SystemLimits::max_contract_moderation_challenge_cool_down_seconds` (two weeks to
-    /// three years), always declared.
-    pub challenge_cool_down: u32,
+    /// three years). `None` when it is not (`seatContestable: false`, no `challengeCoolDown`):
+    /// the first team seated keeps the seat for good, whatever becomes of its leader. One
+    /// field rather than a flag beside a cool-down, so the two can not disagree.
+    ///
+    /// Nothing reads it yet: challenges come after protocol version 14, and until they do a
+    /// seat is never contested again, whatever this says. The key exists now because the
+    /// declaration is frozen at the contract's creation.
+    pub challenge_cool_down: Option<u32>,
     /// How long, in seconds after the contract's creation, before the first charter may be
     /// filed against the contract: the notice the contract gives before its first election
     /// can be called. Unbounded, and `None` when the declaration leaves it out, in which
@@ -327,8 +340,8 @@ pub struct ElectedModerators {
     /// `contractRequirements: { "moderation": "electionOpen" }` is what reads it.
     pub election_delay: Option<u32>,
     /// How many members the leader of a seated team may add after the election, each one
-    /// an identity that asked to join the team's proposal: the additions ever filed against
-    /// a seated charter, so a removal or a resignation frees no slot. 0 when the declaration
+    /// an identity that asked to join the team's proposal: the additions a seated charter
+    /// holds at a time, the leader taking one back by deleting it. 0 when the declaration
     /// leaves it out, a team then being exactly what was elected; at most
     /// `SystemLimits::max_contract_moderation_added_moderators`. The moderation charters
     /// contract's `addedModerator` documents are what it counts.
@@ -353,6 +366,12 @@ pub struct ElectedModerators {
 }
 
 impl ElectedModerators {
+    /// Whether the seat can be contested again once a team is seated: the declaration's
+    /// `seatContestable`. A challenge will be allowed only on a contract that says so.
+    pub fn seat_contestable(&self) -> bool {
+        self.challenge_cool_down.is_some()
+    }
+
     /// Whether the first election may be called at `block_time_ms` on a contract created at
     /// `contract_created_at`: the declaration has no election delay, or the delay has passed
     /// since the creation. An elected declaration is made at the contract's creation and
@@ -407,9 +426,9 @@ impl ElectedModerators {
 
     /// The pure-data rules of the declaration beyond those every moderator kind shares (a
     /// named set non-empty and within the limit, checked on the interim set by the caller):
-    /// the windows and the cool-down within the limits, the moderated set non-empty, each
-    /// of its types a document type of the contract with a non-empty ability set the
-    /// contract backs. The first rule broken is the reason returned.
+    /// the windows, and the cool-down of a contestable seat, within the limits, the moderated
+    /// set non-empty, each of its types a document type of the contract with a non-empty
+    /// ability set the contract backs. The first rule broken is the reason returned.
     pub(super) fn validation_error(
         &self,
         config: &ContractModerationConfig,
@@ -427,12 +446,15 @@ impl ElectedModerators {
         if let Some(reason) = within("join window", self.join_window, window_min, window_max)
             .or_else(|| within("vote window", self.vote_window, window_min, window_max))
             .or_else(|| {
-                within(
-                    "challenge cool-down",
-                    self.challenge_cool_down,
-                    limits.min_contract_moderation_challenge_cool_down_seconds,
-                    limits.max_contract_moderation_challenge_cool_down_seconds,
-                )
+                // A seat that can not be contested has no cool-down to bound
+                self.challenge_cool_down.and_then(|cool_down| {
+                    within(
+                        "challenge cool-down",
+                        cool_down,
+                        limits.min_contract_moderation_challenge_cool_down_seconds,
+                        limits.max_contract_moderation_challenge_cool_down_seconds,
+                    )
+                })
             })
         {
             return Some(reason);
@@ -498,6 +520,13 @@ impl fmt::Display for ElectedModerators {
             "an elected moderation team, in its interim moderated by {}",
             self.interim
         )?;
+        match self.challenge_cool_down {
+            Some(cool_down) => write!(
+                f,
+                ", its seat open to a challenge {cool_down} seconds after each seat change"
+            )?,
+            None => write!(f, ", its seat never contested once a team is seated")?,
+        }
         if let Some(delay) = self.election_delay {
             write!(
                 f,
@@ -545,12 +574,12 @@ mod tests {
     }
 
     /// A declaration within every bound: both lists, bans and suspensions allowed, `post`
-    /// moderated, the owner in the interim.
+    /// moderated, the owner in the interim, the seat contestable two weeks after a change.
     fn elected() -> ElectedModerators {
         ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down: Some(1_209_600),
             moderated_document_types: BTreeMap::from([(
                 "post".to_string(),
                 moderated(&[ModerationAbility::Ban, ModerationAbility::Suspend]),
@@ -629,7 +658,7 @@ mod tests {
         };
         let join = |d: &mut ElectedModerators, s: u32| d.join_window = s;
         let vote = |d: &mut ElectedModerators, s: u32| d.vote_window = s;
-        let cool_down = |d: &mut ElectedModerators, s: u32| d.challenge_cool_down = s;
+        let cool_down = |d: &mut ElectedModerators, s: u32| d.challenge_cool_down = Some(s);
         for (name, field, min, max) in [
             (
                 "join window",
@@ -652,6 +681,18 @@ mod tests {
             let above = refusal(&with(field, max + 1)).expect("refused above the maximum");
             assert!(above.contains(name), "{above}");
         }
+    }
+
+    #[test]
+    fn should_bound_the_cool_down_of_a_contestable_seat_only() {
+        let mut permanent = elected();
+        permanent.challenge_cool_down = None;
+        assert!(!permanent.seat_contestable());
+        assert_eq!(refusal(&config(permanent)), None);
+
+        let contestable = elected();
+        assert!(contestable.seat_contestable());
+        assert_eq!(refusal(&config(contestable)), None);
     }
 
     #[test]
@@ -832,6 +873,8 @@ mod tests {
         let json = serde_json::to_value(&moderators).expect("serialize");
         assert_eq!(json["$type"], "elected");
         assert_eq!(json["joinWindow"], 604_800);
+        assert_eq!(json["seatContestable"], true);
+        assert_eq!(json["challengeCoolDown"], 1_209_600);
         assert_eq!(json["electionDelay"], 86_400);
         assert_eq!(json["maxAddedModerators"], 3);
         assert_eq!(
@@ -863,16 +906,119 @@ mod tests {
     }
 
     #[test]
+    fn should_round_trip_each_value_of_seat_contestable_through_json_and_platform_value() {
+        for challenge_cool_down in [Some(1_209_600), Some(94_608_000), None] {
+            let mut declaration = elected();
+            declaration.challenge_cool_down = challenge_cool_down;
+            let moderators = ContractModerators::Elected(Box::new(declaration));
+
+            let json = serde_json::to_value(&moderators).expect("serialize");
+            assert_eq!(
+                json["seatContestable"],
+                challenge_cool_down.is_some(),
+                "{json}"
+            );
+            assert_eq!(
+                json.get("challengeCoolDown").and_then(|v| v.as_u64()),
+                challenge_cool_down.map(u64::from),
+                "the cool-down is on the wire exactly when the seat is contestable: {json}"
+            );
+            let back: ContractModerators = serde_json::from_value(json).expect("from json");
+            assert_eq!(back, moderators);
+
+            let value = platform_value::to_value(&moderators).expect("to value");
+            assert_eq!(
+                value
+                    .get_optional_bool("seatContestable")
+                    .expect("a bool")
+                    .expect("always present"),
+                challenge_cool_down.is_some()
+            );
+            let back: ContractModerators = platform_value::from_value(value).expect("from value");
+            assert_eq!(back, moderators);
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_declaration_without_seat_contestable() {
+        for cool_down in [Some(1_209_600), None] {
+            let mut json = serde_json::json!({
+                "$type": "elected",
+                "moderatedDocumentTypes": { "post": ["ban"] },
+                "interim": { "$type": "contractOwner" },
+            });
+            if let Some(cool_down) = cool_down {
+                json["challengeCoolDown"] = cool_down.into();
+            }
+            let error = serde_json::from_value::<ContractModerators>(json.clone())
+                .expect_err("refused without the key")
+                .to_string();
+            assert!(error.contains("missing field `seatContestable`"), "{error}");
+
+            let value = platform_value::to_value(&json).expect("to value");
+            assert!(
+                platform_value::from_value::<ContractModerators>(value).is_err(),
+                "{json}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_require_the_cool_down_of_a_contestable_seat_and_refuse_it_on_a_permanent_one() {
+        let with = |seat_contestable: bool, cool_down: Option<u32>| {
+            let mut json = serde_json::json!({
+                "$type": "elected",
+                "seatContestable": seat_contestable,
+                "moderatedDocumentTypes": { "post": ["ban"] },
+                "interim": { "$type": "contractOwner" },
+            });
+            if let Some(cool_down) = cool_down {
+                json["challengeCoolDown"] = cool_down.into();
+            }
+            serde_json::from_value::<ContractModerators>(json).map_err(|e| e.to_string())
+        };
+
+        let contestable = with(true, Some(1_209_600)).expect("accepted");
+        assert_eq!(
+            contestable.elected().map(|e| e.challenge_cool_down),
+            Some(Some(1_209_600))
+        );
+        let permanent = with(false, None).expect("accepted");
+        assert_eq!(
+            permanent.elected().map(|e| e.challenge_cool_down),
+            Some(None)
+        );
+        assert_eq!(
+            permanent.elected().map(ElectedModerators::seat_contestable),
+            Some(false)
+        );
+
+        let missing = with(true, None).expect_err("a contestable seat needs its cool-down");
+        assert!(
+            missing.contains("missing field `challengeCoolDown`"),
+            "{missing}"
+        );
+        let stray = with(false, Some(1_209_600)).expect_err("a permanent seat has no cool-down");
+        assert!(
+            stray.contains("only valid with `seatContestable: true`"),
+            "{stray}"
+        );
+        // Not even a zero one
+        assert!(with(false, Some(0)).is_err());
+    }
+
+    #[test]
     fn should_default_the_windows_and_the_flag_and_refuse_a_misspelled_key() {
         let minimal = serde_json::json!({
             "$type": "elected",
-            "challengeCoolDown": 1_209_600,
+            "seatContestable": false,
             "moderatedDocumentTypes": { "post": ["ban"] },
             "interim": { "$type": "notYetUsable" },
         });
         let parsed: ContractModerators = serde_json::from_value(minimal).expect("deserialize");
         let elected = parsed.elected().expect("elected");
         assert_eq!(elected.join_window, DEFAULT_ELECTION_WINDOW_SECONDS);
+        assert_eq!(elected.challenge_cool_down, None);
         assert_eq!(elected.election_delay, None);
         let json = serde_json::to_value(&parsed).expect("serialize");
         assert!(
@@ -897,15 +1043,32 @@ mod tests {
         );
 
         let refused = [
-            // The cool-down has no default.
+            // The cool-down of a contestable seat has no default.
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
+                "moderatedDocumentTypes": { "post": ["ban"] },
+                "interim": { "$type": "contractOwner" },
+            }),
+            // Nor has whether the seat is contestable.
+            serde_json::json!({
+                "$type": "elected",
+                "challengeCoolDown": 1_209_600,
+                "moderatedDocumentTypes": { "post": ["ban"] },
+                "interim": { "$type": "contractOwner" },
+            }),
+            // It is a boolean.
+            serde_json::json!({
+                "$type": "elected",
+                "seatContestable": 1,
+                "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner" },
             }),
             // A misspelled key is refused, not dropped.
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
                 "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner" },
@@ -914,12 +1077,14 @@ mod tests {
             // So is one inside the interim, and an unknown interim kind.
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
                 "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner", "identity": [] },
             }),
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
                 "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "seatedTeam" },
@@ -927,6 +1092,7 @@ mod tests {
             // An unknown ability.
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
                 "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": { "post": ["silence"] },
                 "interim": { "$type": "contractOwner" },
@@ -934,6 +1100,7 @@ mod tests {
             // A charter does not price actions: fee maximums are no key of the declaration.
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
                 "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": { "post": ["ban"] },
                 "moderatorsActionFeeMaximums": { "post": { "create": 1 } },
@@ -942,6 +1109,7 @@ mod tests {
             // The abilities live under each moderated type, not beside them.
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
                 "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": ["post"],
                 "abilities": ["ban"],
@@ -949,8 +1117,10 @@ mod tests {
             }),
             // The elected keys under another kind, and `identities` under elected.
             serde_json::json!({ "$type": "contractOwner", "ownerProtected": true }),
+            serde_json::json!({ "$type": "appointedModerators", "identities": [], "seatContestable": false }),
             serde_json::json!({
                 "$type": "elected",
+                "seatContestable": true,
                 "challengeCoolDown": 1_209_600,
                 "moderatedDocumentTypes": { "post": ["ban"] },
                 "interim": { "$type": "contractOwner" },
@@ -992,33 +1162,43 @@ mod tests {
         let mut declaration = elected();
         assert_eq!(
             ContractModerators::Elected(Box::new(declaration.clone())).to_string(),
-            "an elected moderation team, in its interim moderated by the contract owner"
+            "an elected moderation team, in its interim moderated by the contract owner, its \
+             seat open to a challenge 1209600 seconds after each seat change"
+        );
+        declaration.challenge_cool_down = None;
+        assert_eq!(
+            declaration.to_string(),
+            "an elected moderation team, in its interim moderated by the contract owner, its \
+             seat never contested once a team is seated"
         );
         declaration.election_delay = Some(86_400);
         assert_eq!(
             declaration.to_string(),
             "an elected moderation team, in its interim moderated by the contract owner, its \
-             first election open 86400 seconds after the contract's creation"
+             seat never contested once a team is seated, its first election open 86400 \
+             seconds after the contract's creation"
         );
         declaration.election_delay = None;
         declaration.max_added_moderators = 2;
         assert_eq!(
             declaration.to_string(),
             "an elected moderation team, in its interim moderated by the contract owner, its \
-             leader free to add 2 members after the election"
+             seat never contested once a team is seated, its leader free to add 2 members \
+             after the election"
         );
         declaration.max_added_moderators = 0;
         declaration.interim = InterimModerators::NotYetUsable;
         assert_eq!(
             declaration.to_string(),
             "an elected moderation team, in its interim moderated by nobody, its moderated \
-             document types not yet usable"
+             document types not yet usable, its seat never contested once a team is seated"
         );
         declaration.interim = InterimModerators::NoModeration;
         assert_eq!(
             declaration.to_string(),
             "an elected moderation team, in its interim moderated by nobody, its moderated \
-             document types unmoderated meanwhile"
+             document types unmoderated meanwhile, its seat never contested once a team is \
+             seated"
         );
         assert_eq!(
             ModerationAbility::DeleteDocuments.to_string(),

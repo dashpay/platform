@@ -23,7 +23,12 @@ interface ModerationOptions {
   document?: Uint8Array | null;
   until?: bigint;
   /** `null` leaves the reason out; left undefined, a ban, a suspend and a warn get `REASON` */
-  reason?: { code?: number; text: string; documents?: { documentTypeName: string; documentId: string }[] } | null;
+  reason?: {
+    code?: number;
+    text: string;
+    documents?: { documentTypeName: string; documentId: string }[];
+    reasonDocumentId?: string;
+  } | null;
   identityContractNonce?: bigint;
   userFeeIncrease?: number;
 }
@@ -207,6 +212,20 @@ describe('ContractUserModeration', () => {
         documents,
       });
       // A reason about no document carries no `documents`, as before.
+      expect(createTransition().reason).to.deep.equal({ code: null, text: 'spam' });
+    });
+
+    it('should name the reason document a reason is taken on, and leave it out when none', () => {
+      const reason = { text: 'spam', reasonDocumentId: DOCUMENT_ID };
+      const transition = createTransition({ action: 'ban', reason });
+
+      expect(transition.reason).to.deep.equal({ code: null, ...reason });
+      expect(transition.toJSON().action.reason).to.deep.equal({ code: null, ...reason });
+      expect(wasm.ContractUserModeration.fromBytes(transition.toBytes()).reason).to.deep.equal({
+        code: null,
+        ...reason,
+      });
+      // A reason naming no reason document carries no `reasonDocumentId`, as before.
       expect(createTransition().reason).to.deep.equal({ code: null, text: 'spam' });
     });
 

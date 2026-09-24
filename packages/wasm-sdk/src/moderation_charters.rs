@@ -323,8 +323,9 @@ impl WasmSdk {
     }
 
     /// The resignation requests for a seated charter the leader has not acted on: those whose
-    /// writer the charter has no removal for. A withdrawn request is deleted, so it is not
-    /// among them either.
+    /// writer is still on the team (an added member is taken off by deleting its addition, an
+    /// elected one by a removal). A withdrawn request is deleted, so it is not among them
+    /// either.
     ///
     /// @param electedCharterId - The seated charter, an `electedCharter` document.
     #[wasm_bindgen(

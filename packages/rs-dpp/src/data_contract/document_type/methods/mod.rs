@@ -611,7 +611,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .methods
             .contested_vote_poll_for_document
         {
-            0 => Ok(self.contested_vote_poll_for_document_v0(document)),
+            0 => self.contested_vote_poll_for_document_v0(document, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "contested_vote_poll_for_document".to_string(),
                 known_versions: vec![0],
@@ -632,7 +632,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .methods
             .contested_vote_poll_for_document
         {
-            0 => Ok(self.contested_vote_poll_for_document_properties_v0(document_properties)),
+            0 => self.contested_vote_poll_for_document_properties_v0(
+                document_properties,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "contested_vote_poll_for_document_properties".to_string(),
                 known_versions: vec![0],

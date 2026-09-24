@@ -6306,12 +6306,14 @@ typedef struct ContractModerationDocument__storage_ {
 @dynamic hasCode, code;
 @dynamic text;
 @dynamic documentsArray, documentsArray_Count;
+@dynamic hasReasonDocumentId, reasonDocumentId;
 
 typedef struct ContractModerationReason__storage_ {
   uint32_t _has_storage_[1];
   uint32_t code;
   NSString *text;
   NSMutableArray *documentsArray;
+  NSData *reasonDocumentId;
 } ContractModerationReason__storage_;
 
 // This method is threadsafe because it is initially called
@@ -6346,6 +6348,15 @@ typedef struct ContractModerationReason__storage_ {
         .offset = (uint32_t)offsetof(ContractModerationReason__storage_, documentsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "reasonDocumentId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ContractModerationReason_FieldNumber_ReasonDocumentId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(ContractModerationReason__storage_, reasonDocumentId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

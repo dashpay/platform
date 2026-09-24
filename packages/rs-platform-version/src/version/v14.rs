@@ -176,7 +176,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `verify_ranked_top_k_proof`. All are 0 today. The same table bumps the
 ///   four index walkers to v2 and the document update walker to v1 for the
 ///   shared-prefix fix; those same walker versions carry the time-range
-///   bucket fan-out, so both features gate on one table entry.
+///   bucket fan-out, so both features gate on one table entry. It also sets
+///   `insert_contested.fetch_charter_election_windows` to `Some(0)`: a
+///   moderation election (an `electedCharter` contest) runs on its target
+///   contract's join and vote windows, which the document create join check
+///   and the contested insert read.
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
 ///   opening two routes on the v1 document-query handler: the ranked path
@@ -207,6 +211,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `$ownerId` declarations against the new owner.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
+/// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` also bumps the identity create from
+///   addresses `advanced_structure` 0 → 1: a key whose proof of possession fails
+///   is refused unpaid instead of charging the inputs a penalty, since the
+///   address witnesses do not sign those proofs. v13 keeps the paid refusal of v0.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
@@ -501,8 +509,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
 ///     declaration is frozen: the join and vote windows (one day to four weeks,
-///     one week by default) and the challenge cool-down (two weeks to three
-///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; an optional,
+///     one week by default), in seconds and bounded by `SYSTEM_LIMITS_V4`;
+///     whether the seat can be contested again once a team is seated
+///     (`seatContestable`, required with no default), and for a contestable
+///     seat the challenge cool-down (`challengeCoolDown`, in seconds, two weeks
+///     to three years, refused on a seat that can not be contested; in Rust
+///     one `Option<u32>`), which nothing reads until challenges come after
+///     this version, a seat never being contested again here; an optional,
 ///     unbounded election delay in seconds after the contract's creation
 ///     before the first charter may be filed (`electionDelay`, read by the
 ///     `moderation: "electionOpen"` reference requirement of item 24); how many
@@ -765,8 +778,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a key assembled from the referring document. `keys` maps every index
 ///     property to a property path of the referring type, `$ownerId` or `.`
 ///     (the value, or the element, exactly once). A `deletableDocument`
-///     reference takes none: a key into a deletable type could find a new
-///     document once the one it found is deleted. Generation 3 of the parser
+///     reference may take one too (`DeletableDocumentLookup`, appended): it
+///     then means a document with this key exists now, since the key may find
+///     a later document once the one it found is deleted, so every replace
+///     re-validates it, an immutable property may not hold it, and it is the
+///     one deletable form a reference expression and `ownerRefersTo` (never
+///     `creatorRefersTo`) take. Generation 3 of the parser
 ///     checks on every parse that each property a key reads is a stored,
 ///     required, single value of the referring type;
 ///     `create_document_types_from_document_schemas` 1, edited in place like
@@ -802,9 +819,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     target keeps its variant and its encoding; decoding refuses a nesting
 ///     deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH`, 16, so the bytes of
 ///     a consensus error cannot recurse without bound). An operand is a leaf,
-///     an `identity` or a `permanentDocument` (by id or with a `lookup`, item
-///     32), or an expression of the other combinator; a list names two or more
-///     operands. `contract`, `token`, `deletableDocument` and
+///     an `identity`, a `permanentDocument` (by id or with a `lookup`, item
+///     32), a `listElement`, a `deletableDocument` with a `lookup` (which
+///     re-validates the expression on every replace), or an expression of the
+///     other combinator; a list names two or more operands. `contract`,
+///     `token`, `deletableDocument` by id and
 ///     `identityPublicKey` leaves, the key id form, a combinator directly
 ///     inside the same combinator and keys beside a combinator are refused on
 ///     every parse. Registration caps a list at
@@ -838,9 +857,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     keyword (meta-schema v3, which reuses the property declaration by
 ///     `$ref`), whose value is the document's `$ownerId`, the writer, instead
 ///     of a property's: a single target, or a reference expression (item 33)
-///     whose every leaf is one of the two targets that can hold a writer:
+///     whose every leaf is one of the targets that can hold a writer:
 ///     `identity`, and a `permanentDocument` found through a `lookup`, where
-///     `.` is the writer; `contract`, `token` and a document by id (which the
+///     `.` is the writer (and, for the writer alone, a `deletableDocument`
+///     found through one, item 32); `contract`, `token` and a document by id (which the
 ///     writer's identity id never is) and `identityPublicKey` (which needs a
 ///     key id) are refused, as a leaf too. Parser generation 3 reads it from
 ///     the stored schema once the core parse has run the meta-schema, on
@@ -960,7 +980,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 37. **The moderation charters system contract**
 ///     (`SystemDataContract::ModerationCharters`, schema v1, the first piece of
 ///     decentralized moderation teams) carries seven document types, all
-///     immutable and all but `resignationRequest` undeletable. A `reason` is a ground for a moderation
+///     immutable, the four a charter is made of undeletable and the three team
+///     changes deletable. A `reason` is a ground for a moderation
 ///     action, keyed by its owner and a three-letter `code` unique among the
 ///     owner's reasons. A `submittedCharter` is a leader's proposal to
 ///     moderate one contract on that contract's own terms: its
@@ -981,28 +1002,29 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     which filed a join request for that proposal (item 32, a lookup through
 ///     the join request's unique index) and none of which is the leader
 ///     (item 26). Once a charter is seated, its leader adds members from the
-///     same join requests (`addedModerator`, the same lookup) and removes
-///     members (`removedModerator`), each once per member and charter (unique
-///     indexes), removals final, so the team that acts is the leader plus the
-///     elected members and the additions less the removals
-///     (`ElectedCharter::active_members`). A member asks to leave with a
-///     deletable `resignationRequest`, which only a member may file
-///     (`ownerRefersTo` with an `anyOf` of a `listElement` into the elected
-///     charter's `members` and a lookup of an `addedModerator`, items 33 to
-///     35) and which carries a message encrypted to the leader; the leader acts
-///     on it with a removal. The cap on
+///     same join requests (`addedModerator`, the same lookup) and takes them
+///     back by deleting the addition, and removes elected members
+///     (`removedModerator`, whose `memberId` is a `listElement` of the
+///     charter's `members`), putting one back by deleting the removal; each
+///     exists at most once per member and charter (unique indexes), so the
+///     team that acts is the leader plus the elected members less the
+///     removals plus the additions (`ElectedCharter::active_members`). A
+///     member asks to leave with a deletable `resignationRequest`, which only
+///     a member may file (`ownerRefersTo` with an `anyOf` of a `listElement`
+///     into the elected charter's `members` and a `deletableDocument` lookup
+///     of an `addedModerator`, items 32 to 35) and which carries a message
+///     encrypted to the leader; the leader acts on it by deleting the addition
+///     or removing an elected member. The cap on
 ///     additions, the target's `maxAddedModerators`, is a consensus rule of
 ///     item 40.
 ///     Its `byTargetContract` index is a contested unique index
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
-///     (`moderation_charters: 1`), and
-///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
-///     on reading a proposal (basic error 11000), which holds no rule of its
-///     own: the reward split sums to 100 through the contract's
-///     `propertyConstraints` rule (item 39), so 11001 is no longer produced,
-///     and the description fits 4096 bytes through the schema's own `maxBytes`
+///     (`moderation_charters: 1`). A proposal holds no rule beyond its schema:
+///     the reward split sums to 100 through the contract's
+///     `propertyConstraints` rule (item 39), so 11001 is never produced, and
+///     the description fits 4096 bytes through the schema's own `maxBytes`
 ///     (item 38); every document validation checks both. Genesis registers it
 ///     on chains born at this version (`create_genesis_state` v1, behind the
 ///     app-connect branch), `transition_to_version_14` inserts it on upgrade,
@@ -1056,8 +1078,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     nothing stored. They are fixed when the document type is created: a
 ///     changed `propertyConstraints` is an incompatible schema change on
 ///     update. The moderation charters contract declares its first one: a
-///     `submittedCharter`'s `rewardSplit` members add up to 100, which
-///     `validate_submitted_charter` therefore no longer checks (11001).
+///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
+///     charter-specific check, whose error 11001 keeps its place in
+///     `BasicError` but is never produced.
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
@@ -1066,9 +1089,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `byTargetContract` index finds, and the moderation paths read it, each
 ///     read a billed document query of the system contract. Once one is seated,
 ///     only its team moderates the contract: the leader (the charter's owner)
-///     and the active members (its `members` and additions, less removals),
-///     each alone, found by at most two point reads of the unique
-///     `addedModerator` and `removedModerator` indexes; the interim moderators
+///     and the active members (its `members` less removals, plus additions),
+///     each alone, found by one point read of the unique `removedModerator`
+///     index for an elected member or of `addedModerator` for anyone else; the
+///     interim moderators
 ///     are refused (41101). The team holds the abilities the declaration gives
 ///     it: a deletion or restore needs `deleteDocuments` on the type, a list
 ///     action the ability on some moderated type
@@ -1077,7 +1101,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaration says so, and the interim moderators no longer are. A
 ///     `notYetUsable` interim stops blocking the moderated types
 ///     (`contract_moderation_gate` v0). An `addedModerator` past the target's
-///     `maxAddedModerators` additions ever filed for the charter is refused,
+///     `maxAddedModerators` additions the charter holds is refused,
 ///     paid (`ModerationCharterAddedModeratorLimitReachedError`, 41202), by a
 ///     hook in the batch's `validate_state` v0 that only a create of the
 ///     charter contract reaches. A document action on a moderated type may
@@ -1091,6 +1115,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     seated (41113). No table moves: every generation involved is unreleased,
 ///     but for the shipped batch `validate_state` v0, which no batch of an
 ///     earlier version reaches through the new hook.
+///
+/// 41. **A seated team's pot, action counts and reasons**: the leader or an
+///     active member of a seated team claims the moderators pot for the team,
+///     and it is split by the proposal's `rewardSplit`: the leader share to the
+///     leader, the equal share between the other members (the leader's when it
+///     has none), and the action share between the whole team by each one's
+///     count of bans, suspensions, warnings and document deletions since the
+///     last settle, equally when nobody acted. Every part rounds down and the
+///     remainder stays in the pot. The counts are `member id -> u32` items
+///     without storage flags under key `48` of an elected contract's other tree,
+///     created with the contract (`insert_contract_moderation_trees` v0), and
+///     every settle deletes them. An `addedModerator` or `removedModerator`
+///     created or deleted settles the pot first, to the team as it was, by a
+///     hook in the batch's `validate_state` v0 beside the cap on additions: it
+///     ignores the once-per-epoch limit and writes no last claim. The proof of a
+///     claim by a seated team's member, whom the contract does not name as a
+///     recipient, shows the claimant's balance alone. A moderation reason gains
+///     `reasonDocumentId` (tag bit 2 where it is stored), and a seated team's
+///     ban, suspension, warning or deletion must name a `reason` document its
+///     proposal lists (`ModerationReasonNotListedError`, 41203). No table moves
+///     but the four
+///     new Drive method slots, `0` at every version.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -1185,7 +1231,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; registration surcharge for once-per-identity token distributions
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -1201,12 +1247,9 @@ mod tests {
     fn should_change_only_the_contested_document_and_once_per_identity_fees_at_protocol_14() {
         for protocol_version in 1..14 {
             let version = PlatformVersion::get(protocol_version).expect("known protocol version");
+            let fund_fees = &version.fee_version.vote_resolution_fund_fees;
             assert_eq!(
-                version
-                    .fee_version
-                    .vote_resolution_fund_fees
-                    .contested_document_vote_resolution_fund_required_amount,
-                20_000_000_000,
+                fund_fees.contested_document_vote_resolution_fund_required_amount, 20_000_000_000,
                 "protocol {protocol_version} must preserve the 0.2 DASH contribution"
             );
             assert_eq!(
@@ -1216,6 +1259,13 @@ mod tests {
                     .contested_document_single_vote_cost,
                 10_000_000,
                 "protocol {protocol_version} must preserve the 0.0001 DASH vote"
+            );
+            // No moderation election exists before 14; its amount is the contested one, so
+            // a shipped path choosing between the two cannot change what it charges
+            assert_eq!(
+                fund_fees.moderation_vote_resolution_fund_required_amount,
+                fund_fees.contested_document_vote_resolution_fund_required_amount,
+                "protocol {protocol_version}"
             );
         }
 
@@ -1227,6 +1277,10 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_single_vote_cost = 2_000_000;
+        // An application in a moderation election prefunds its masternode votes with 0.5 DASH
+        expected_fees
+            .vote_resolution_fund_fees
+            .moderation_vote_resolution_fund_required_amount = 50_000_000_000;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(

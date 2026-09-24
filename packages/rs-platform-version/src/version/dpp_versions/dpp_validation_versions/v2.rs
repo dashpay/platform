@@ -21,7 +21,6 @@ pub const DPP_VALIDATION_VERSIONS_V2: DPPValidationVersions = DPPValidationVersi
         validate_token_config_groups_exist: 0,
         validate_localizations: 0,
         validate_once_per_identity_distribution: None,
-        validate_moderation_charter: None,
     },
     document_type: DocumentTypeValidationVersions {
         validate_update: 0,
