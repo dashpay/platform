@@ -71,10 +71,13 @@ mod tests {
     use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
     use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+    use dpp::fee::fee_result::refunds::FeeRefunds;
     use dpp::fee::Credits;
     use dpp::version::mocks::fee_test::TEST_FEE_VERSION_DOUBLED_STORAGE_RATE;
     use dpp::version::mocks::v2_test::TEST_PLATFORM_V2;
-    use grovedb_costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
+    use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
+        NoStorageRemoval, SectionedStorageRemoval,
+    };
     use grovedb_costs::storage_cost::StorageCost;
     use grovedb_costs::OperationCost;
     use intmap::IntMap;
@@ -323,6 +326,95 @@ mod tests {
                 None,
             )
             .expect_err("a later generation cannot price refunds without the history");
+
+            assert!(
+                matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+                "calculate_fee {calculate_fee}: unexpected error {error}"
+            );
+        }
+    }
+
+    /// An ephemeral (TTL) batch adding 100 bytes, as TTL batch application and estimation
+    /// produce it.
+    fn ephemeral_operation() -> LowLevelDriveOperation {
+        LowLevelDriveOperation::CalculatedEphemeralCostOperation(OperationCost {
+            storage_cost: StorageCost {
+                added_bytes: 100,
+                replaced_bytes: 0,
+                removed_bytes: NoStorageRemoval,
+            },
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn should_bill_ephemeral_bytes_to_processing_through_both_generations() {
+        // A TTL write must never be charged as permanent storage, whichever generation the
+        // platform version selects. Both generations produce the same fee result: zero storage
+        // fee and the ephemeral bytes fee inside processing.
+        let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+        let results: Vec<FeeResult> = [0, 1]
+            .into_iter()
+            .map(|calculate_fee| {
+                let platform_version = platform_version_with_doubled_storage_rate(calculate_fee);
+                Drive::calculate_fee(
+                    None,
+                    Some(vec![ephemeral_operation()]),
+                    &epoch,
+                    EPOCHS_PER_ERA,
+                    &platform_version,
+                    None,
+                )
+                .expect("ephemeral operations never need the fee history")
+            })
+            .collect();
+
+        let ephemeral_rate = TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+            .storage
+            .ttl_ephemeral_disk_usage_credit_per_byte;
+        for (calculate_fee, fee_result) in results.iter().enumerate() {
+            assert_eq!(fee_result.storage_fee, 0, "calculate_fee {calculate_fee}");
+            assert_eq!(
+                fee_result.processing_fee,
+                100 * ephemeral_rate
+                    + 100
+                        * TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                            .storage
+                            .storage_processing_credit_per_byte,
+                "calculate_fee {calculate_fee}"
+            );
+            assert_eq!(fee_result.fee_refunds, FeeRefunds::default());
+        }
+        assert_eq!(results[0], results[1]);
+    }
+
+    #[test]
+    fn should_reject_a_sectioned_removal_on_an_ephemeral_batch_through_both_generations() {
+        let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+        let history = boundary_history();
+        for calculate_fee in [0, 1] {
+            let platform_version = platform_version_with_doubled_storage_rate(calculate_fee);
+            let mut removal = BTreeMap::new();
+            removal.insert(IDENTITY, IntMap::from_iter([(5u16, 100u32)]));
+            let operation =
+                LowLevelDriveOperation::CalculatedEphemeralCostOperation(OperationCost {
+                    storage_cost: StorageCost {
+                        added_bytes: 0,
+                        replaced_bytes: 0,
+                        removed_bytes: SectionedStorageRemoval(removal),
+                    },
+                    ..Default::default()
+                });
+
+            let error = Drive::calculate_fee(
+                None,
+                Some(vec![operation]),
+                &epoch,
+                EPOCHS_PER_ERA,
+                &platform_version,
+                Some(&history),
+            )
+            .expect_err("TTL subtrees carry no storage flags");
 
             assert!(
                 matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),

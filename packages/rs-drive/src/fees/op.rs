@@ -373,8 +373,11 @@ impl LowLevelDriveOperation {
     /// Should only be used by Calculate fee (generation 1).
     ///
     /// Identical to `consume_to_fees_v0` except that refunds go through
-    /// `FeeRefunds::from_storage_removal_v1`. The fee version number 1 arm keeps pricing against
-    /// an empty history, so on every schedule shipped so far the two generations agree.
+    /// `FeeRefunds::from_storage_removal_v1`. Ephemeral (TTL) operations keep generation 0's
+    /// pricing: added bytes bill to processing at the ephemeral rate, never to storage, and a
+    /// sectioned removal on an ephemeral batch is an error. The fee version number 1 arm keeps
+    /// pricing against an empty history, so on every schedule shipped so far the two
+    /// generations agree.
     pub fn consume_to_fees_v1(
         drive_operations: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
@@ -390,6 +393,46 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
+                CalculatedEphemeralCostOperation(cost) => {
+                    // TTL'd-subtree bytes: the added bytes bill to
+                    // PROCESSING at the ephemeral rate instead of to
+                    // storage — they provably live at most `ttl` plus a
+                    // bounded drainage lag, so the perpetual-retention
+                    // storage price does not apply. No refunds by
+                    // construction: TTL elements carry no storage flags,
+                    // so their removal can only ever be basic.
+                    let ephemeral_bytes_fee = (cost.storage_cost.added_bytes as u64)
+                        .checked_mul(
+                            fee_version
+                                .storage
+                                .ttl_ephemeral_disk_usage_credit_per_byte,
+                        )
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow pricing ephemeral bytes",
+                        )))?;
+                    let processing_fee = cost
+                        .ephemeral_cost(fee_version)?
+                        .checked_add(ephemeral_bytes_fee)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow adding ephemeral bytes fee",
+                        )))?;
+                    let removed_bytes_from_system = match cost.storage_cost.removed_bytes {
+                        NoStorageRemoval => 0,
+                        BasicStorageRemoval(amount) => amount,
+                        SectionedStorageRemoval(_) => {
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "TTL'd subtrees carry no storage flags, so an ephemeral \
+                                 batch cannot produce sectioned (refundable) removal",
+                            )))
+                        }
+                    };
+                    Ok(FeeResult {
+                        storage_fee: 0,
+                        processing_fee,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system,
+                    })
+                }
                 _ => {
                     let cost = operation.operation_cost()?;
                     // There is no need for a checked multiply here because added bytes are u64 and
@@ -2973,23 +3016,51 @@ mod tests {
                 .collect()
         }
 
-        /// Runs the requested generation of `consume_to_fees`.
-        fn consume(
+        /// An ephemeral (TTL) batch adding 100 bytes and removing 30 basic bytes.
+        fn ephemeral_operation() -> LowLevelDriveOperation {
+            CalculatedEphemeralCostOperation(OperationCost {
+                storage_cost: StorageCost {
+                    added_bytes: 100,
+                    replaced_bytes: 0,
+                    removed_bytes: BasicStorageRemoval(30),
+                },
+                ..Default::default()
+            })
+        }
+
+        /// An ephemeral (TTL) batch that claims a sectioned removal, which TTL subtrees can
+        /// never produce.
+        fn ephemeral_operation_with_sectioned_removal() -> LowLevelDriveOperation {
+            let mut removal = BTreeMap::new();
+            removal.insert(IDENTITY, IntMap::from_iter([(5u16, 100u32)]));
+            CalculatedEphemeralCostOperation(OperationCost {
+                storage_cost: StorageCost {
+                    added_bytes: 100,
+                    replaced_bytes: 0,
+                    removed_bytes: SectionedStorageRemoval(removal),
+                },
+                ..Default::default()
+            })
+        }
+
+        /// Runs the requested generation of `consume_to_fees` on one operation.
+        fn consume_operation(
             generation: u16,
+            operation: LowLevelDriveOperation,
             fee_version: &FeeVersion,
             previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
         ) -> Result<FeeResult, Error> {
             let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
             let results = match generation {
                 0 => LowLevelDriveOperation::consume_to_fees_v0(
-                    vec![removal_operation()],
+                    vec![operation],
                     &epoch,
                     EPOCHS_PER_ERA,
                     fee_version,
                     previous_fee_versions,
                 ),
                 1 => LowLevelDriveOperation::consume_to_fees_v1(
-                    vec![removal_operation()],
+                    vec![operation],
                     &epoch,
                     EPOCHS_PER_ERA,
                     fee_version,
@@ -3001,6 +3072,68 @@ mod tests {
                 .into_iter()
                 .next()
                 .expect("one operation, one result"))
+        }
+
+        /// Runs the requested generation of `consume_to_fees` on the removal operation.
+        fn consume(
+            generation: u16,
+            fee_version: &FeeVersion,
+            previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        ) -> Result<FeeResult, Error> {
+            consume_operation(
+                generation,
+                removal_operation(),
+                fee_version,
+                previous_fee_versions,
+            )
+        }
+
+        #[test]
+        fn should_bill_ephemeral_bytes_to_processing_at_the_ephemeral_rate_in_both_generations() {
+            // TTL subtree bytes never pay the perpetual storage price. Both generations must
+            // price them identically: no storage fee, processing carries the ephemeral bytes
+            // fee on top of the operation's ephemeral cost, no refunds, basic removal reported.
+            let expected_processing = ephemeral_operation()
+                .operation_cost()
+                .expect("calculated cost")
+                .ephemeral_cost(&FEE_VERSION1)
+                .expect("ephemeral cost")
+                + 100
+                    * FEE_VERSION1
+                        .storage
+                        .ttl_ephemeral_disk_usage_credit_per_byte;
+
+            for generation in [0, 1] {
+                let fee_result =
+                    consume_operation(generation, ephemeral_operation(), &FEE_VERSION1, None)
+                        .expect("ephemeral operations never need the fee history");
+
+                assert_eq!(fee_result.storage_fee, 0, "generation {generation}");
+                assert_eq!(
+                    fee_result.processing_fee, expected_processing,
+                    "generation {generation}"
+                );
+                assert_eq!(fee_result.fee_refunds, FeeRefunds::default());
+                assert_eq!(fee_result.removed_bytes_from_system, 30);
+            }
+        }
+
+        #[test]
+        fn should_reject_a_sectioned_removal_on_an_ephemeral_batch_in_both_generations() {
+            let history = boundary_history();
+            for generation in [0, 1] {
+                let error = consume_operation(
+                    generation,
+                    ephemeral_operation_with_sectioned_removal(),
+                    &FEE_VERSION1,
+                    Some(&history),
+                )
+                .expect_err("TTL subtrees carry no storage flags");
+                assert!(
+                    matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+                    "generation {generation}: unexpected error {error}"
+                );
+            }
         }
 
         #[test]
