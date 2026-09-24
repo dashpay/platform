@@ -10,6 +10,7 @@ use dpp::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::reference_lookup::owner_can_change;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceLookup, DocumentTypeRef,
@@ -231,6 +232,11 @@ fn validate_document_type_references_v0(
     // The documents this write's references fetch by id, shared among them
     let mut fetched_documents = FetchedDocuments::default();
 
+    // Whether a replace may be written by an owner other than the one who
+    // wrote a reference: a transfer or a purchase hands the document on
+    // without any write. Both flags are immutable on contract update
+    let writer_can_change = owner_can_change(document_type);
+
     // A reference is the writer's (`ownerRefersTo`, whose value is the
     // document's `$ownerId` and which the errors name by that path), the
     // creator's (`creatorRefersTo`, `$creatorId`), an identifier property's
@@ -304,13 +310,16 @@ fn validate_document_type_references_v0(
             // the reference; replacing that sibling must re-validate the
             // reference even when the reference property itself is untouched
             // (see `binds_a_changed_property`, which also covers the writer
-            // gates and deletableDocument targets re-checked on every
-            // replace). The same rules hold for the elements of a typed
-            // array, which share one declaration: the array is one field, so
-            // a replace that changes it re-validates the elements the stored
-            // list did not hold, and a changed bound property, a writer gate
-            // or a deletableDocument target re-validates them all.
-            let bound_property_changed = binds_a_changed_property(reference_target, changed);
+            // gates, the contract owner requirements and the
+            // deletableDocument targets re-checked on every replace). The
+            // same rules hold for the elements of a typed array, which share
+            // one declaration: the array is one field, so a replace that
+            // changes it re-validates the elements the stored list did not
+            // hold, and a changed bound property, a writer gate, a contract
+            // owner requirement or a deletableDocument target re-validates
+            // them all.
+            let bound_property_changed =
+                binds_a_changed_property(reference_target, changed, writer_can_change);
             if !is_changed_field(changed, path) && !bound_property_changed {
                 continue;
             }
@@ -418,9 +427,10 @@ fn validate_document_type_references_v0(
             // only because it changed leaves out the elements the stored
             // list already held, unchanged references, as an unchanged
             // single reference is left alone; a changed bound property,
-            // a writer gate or a deletableDocument target re-validates
-            // them all. An element repeating an earlier one has its
-            // outcome already, so it is not fetched again
+            // a writer gate, a contract owner requirement or a
+            // deletableDocument target re-validates them all. An element
+            // repeating an earlier one has its outcome already, so it is
+            // not fetched again
             let mut checked: BTreeSet<[u8; 32]> = BTreeSet::new();
             if !bound_property_changed {
                 if let Some(Ok(Some(Value::Array(stored_elements)))) =
@@ -569,14 +579,18 @@ impl FetchedDocuments {
 /// replace: the writer is transition metadata that never appears among the
 /// changed fields, and either document may have been transferred since the
 /// last write, so a replace of an unrelated field by a now-unauthorized owner
-/// must still fail. A lookup whose key reads `$ownerId` needs no such rule:
-/// its declaring type can be neither transferred nor traded (registration
-/// refuses it otherwise), so the writer never moves. A reference expression
-/// (`anyOf` / `allOf`) is re-validated when any of its leaves would be, and
-/// then as a whole: which operands hold may have changed.
+/// must still fail. A contract reference's `owner` requirement relates the
+/// writer to the referenced contract, so it is re-checked on every replace
+/// too, when `writer_can_change`: the declaring type's documents can be
+/// transferred or traded. A lookup whose key reads `$ownerId` needs no such
+/// rule: its declaring type can be neither transferred nor traded
+/// (registration refuses it otherwise), so the writer never moves. A
+/// reference expression (`anyOf` / `allOf`) is re-validated when any of its
+/// leaves would be, and then as a whole: which operands hold may have changed.
 fn binds_a_changed_property(
     reference_target: &DocumentPropertyReferenceTarget,
     changed_fields: &BTreeSet<String>,
+    writer_can_change: bool,
 ) -> bool {
     match reference_target {
         DocumentPropertyReferenceTarget::PermanentDocument {
@@ -624,16 +638,40 @@ fn binds_a_changed_property(
                 is_referring_system_agreement_property(referring_property)
                     || is_changed_field(changed_fields, referring_property)
             }),
-        DocumentPropertyReferenceTarget::Identity
-        | DocumentPropertyReferenceTarget::Contract { .. }
-        | DocumentPropertyReferenceTarget::Token => false,
+        // A contract reference's `owner` requirement is judged against the
+        // writer, transition metadata: a transfer or a purchase hands the
+        // document to an owner the requirement never checked, without any
+        // write, so on a type whose documents can change owner the
+        // reference is re-validated on every replace, as a writer gate is,
+        // and the new owner has to repoint it at a contract that meets the
+        // requirement for them (or clear it, where it is optional). On any
+        // other type every replace is written by the owner the requirement
+        // was checked against, and a contract's owner never changes, so the
+        // outcome stands and no contract fetch is billed for it. The other
+        // requirements (moderation, minimumAgeSeconds,
+        // minimumSecondsSinceUpdate, readonly, keepsHistory, ownerProtected)
+        // are facts about the referenced contract, not the writer: they
+        // never bring a reference back and stay checked when the reference
+        // is written, a create or a replace changing it. A reference the
+        // owner requirement brings back is checked whole, as a writer
+        // gate's is. In place in generation 0, reached from protocol version
+        // 14 only: the document create and replace state validations that
+        // call this validation run at that version alone, and only its
+        // parser produces `contractRequirements`
+        DocumentPropertyReferenceTarget::Contract {
+            contract_requirements,
+        } => writer_can_change && contract_requirements.owner.is_some(),
+        DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => false,
         // In place in generation 0, reached from protocol version 14 only,
-        // the only version whose parser produces an expression
+        // the only version whose parser produces an expression. A contract
+        // target is never an operand (the parser combines identity and
+        // document targets only), but the flag is passed down so an operand
+        // is judged as the same target alone
         DocumentPropertyReferenceTarget::AnyOf(operands)
         | DocumentPropertyReferenceTarget::AllOf(operands) => operands
             .operands()
             .iter()
-            .any(|operand| binds_a_changed_property(operand, changed_fields)),
+            .any(|operand| binds_a_changed_property(operand, changed_fields, writer_can_change)),
     }
 }
 

@@ -50,11 +50,16 @@ pub(crate) trait DocumentReferenceValidation {
     /// those fields are validated. A reference also counts as changed when a
     /// property bound to it changed: a `propertyAgreement` referring property
     /// or an `identityPublicKey` key id property. A writer gate, an agreement
-    /// keyed by `$ownerId`, is validated on every replace regardless.
+    /// keyed by `$ownerId`, is validated on every replace regardless, and so
+    /// is a `contract` reference whose `contractRequirements` carry an
+    /// `owner` requirement on a document type whose documents can be
+    /// transferred or traded, since the requirement is judged against the
+    /// writer.
     /// `stored_values` (replace transitions) holds the stored value of each
     /// changed property: a changed typed array of references re-validates
     /// only the elements the stored list did not hold, unless a bound
-    /// property changed, a writer gate applies or its target is deletable.
+    /// property changed, a writer gate or such an owner requirement applies
+    /// or its target is deletable.
     ///
     /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
     /// whose referring side is `$ownerId` compares it, an `identityPublicKey`
