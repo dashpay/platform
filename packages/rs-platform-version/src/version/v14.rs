@@ -1112,6 +1112,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     but the four
 ///     new Drive method slots, `0` at every version.
 ///
+/// 42. **An epoch payout credits each identity once**:
+///     `add_epoch_pool_to_proposers_payout_operations` v1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) adds up everything a payout owes an
+///     identity, its reward shares and its own proposer payout, before building
+///     its balance operation. Generation 0 built one operation per share and per
+///     proposer, each computed from the balance before the batch, so an identity
+///     owed two credits in one payout received only one of them. No reward share
+///     document can be written at any protocol version so far, so no payout made
+///     before this version is affected.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

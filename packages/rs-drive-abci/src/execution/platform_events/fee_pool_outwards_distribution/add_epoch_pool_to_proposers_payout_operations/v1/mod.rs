@@ -26,7 +26,14 @@ impl<C> Platform<C> {
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
     /// Returns the number of proposers to be paid out.
-    pub(super) fn add_epoch_pool_to_proposers_payout_operations_v0(
+    ///
+    /// Generation 1 (protocol version 14) credits each identity once, with everything this payout
+    /// owes it. Every `AddToIdentityBalance` is converted against the state before the batch and
+    /// writes the balance it computes, so two of them for one identity (two masternodes naming the
+    /// same `payToId`, or a proposer that is also a `payToId`) each wrote the previous balance plus
+    /// their own credit, and only one of those writes landed. Generation 0 built one operation per
+    /// share and per proposer.
+    pub(super) fn add_epoch_pool_to_proposers_payout_operations_v1(
         &self,
         unpaid_epoch: &UnpaidEpoch,
         core_block_rewards: Credits,
@@ -34,7 +41,7 @@ impl<C> Platform<C> {
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(StorageAndProcessingPoolCredits, BTreeMap<Identifier, u64>), Error> {
-        let mut drive_operations = vec![];
+        let mut credits_per_identity: BTreeMap<Identifier, Credits> = BTreeMap::new();
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
         let storage_and_processing_fees = self
@@ -133,10 +140,7 @@ impl<C> Platform<C> {
                     "overflow when subtracting for the masternode share leftover",
                 )))?;
 
-                drive_operations.push(IdentityOperation(AddToIdentityBalance {
-                    identity_id: pay_to_id.to_buffer(),
-                    added_balance: share_payout,
-                }));
+                add_owed_credits(&mut credits_per_identity, pay_to_id, share_payout)?;
             }
 
             remaining_payouts = remaining_payouts
@@ -151,11 +155,22 @@ impl<C> Platform<C> {
                 masternode_payout_leftover
             };
 
-            drive_operations.push(IdentityOperation(AddToIdentityBalance {
-                identity_id: proposer_tx_hash.to_buffer(),
-                added_balance: proposer_payout,
-            }));
+            add_owed_credits(
+                &mut credits_per_identity,
+                *proposer_tx_hash,
+                proposer_payout,
+            )?;
         }
+
+        let drive_operations = credits_per_identity
+            .into_iter()
+            .map(|(identity_id, added_balance)| {
+                IdentityOperation(AddToIdentityBalance {
+                    identity_id: identity_id.to_buffer(),
+                    added_balance,
+                })
+            })
+            .collect();
 
         let operations = self.drive.convert_drive_operations_to_grove_operations(
             drive_operations,
@@ -168,6 +183,21 @@ impl<C> Platform<C> {
 
         Ok((storage_and_processing_fees, proposers.into_iter().collect()))
     }
+}
+
+/// Adds `credits` to what the payout owes `identity_id`.
+fn add_owed_credits(
+    credits_per_identity: &mut BTreeMap<Identifier, Credits>,
+    identity_id: Identifier,
+    credits: Credits,
+) -> Result<(), Error> {
+    let owed = credits_per_identity.entry(identity_id).or_default();
+    *owed = owed
+        .checked_add(credits)
+        .ok_or(Error::Execution(ExecutionError::Overflow(
+            "overflow when adding up the payouts of one identity",
+        )))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -196,7 +226,6 @@ mod tests {
         #[test]
         fn test_payout_to_proposers() {
             let platform = TestPlatformBuilder::new()
-                .with_initial_protocol_version(13)
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
@@ -294,7 +323,7 @@ mod tests {
             };
 
             let proposers_paid_count = platform
-                .add_epoch_pool_to_proposers_payout_operations_v0(
+                .add_epoch_pool_to_proposers_payout_operations_v1(
                     &unpaid_epoch.into(),
                     0,
                     &transaction,

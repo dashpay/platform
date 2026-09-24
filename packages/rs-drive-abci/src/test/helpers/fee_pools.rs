@@ -58,7 +58,7 @@ use drive::util::storage_flags::StorageFlags;
 use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
 
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
-fn create_test_mn_share_document(
+pub fn create_test_mn_share_document(
     drive: &Drive,
     contract: &DataContract,
     identity_id: Identifier,
