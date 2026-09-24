@@ -1092,7 +1092,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -1116,12 +1116,24 @@ mod tests {
                 20_000_000_000,
                 "protocol {protocol_version} must preserve the 0.2 DASH contribution"
             );
+            assert_eq!(
+                version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_single_vote_cost,
+                10_000_000,
+                "protocol {protocol_version} must preserve the 0.0001 DASH vote"
+            );
         }
 
         let mut expected_fees = PLATFORM_V13.fee_version.clone();
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        // A masternode vote costs a fifth of what it did: 0.00002 DASH from the contest's fund
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_single_vote_cost = 2_000_000;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(
