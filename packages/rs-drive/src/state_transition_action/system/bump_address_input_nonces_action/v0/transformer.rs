@@ -4,7 +4,6 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use crate::state_transition_action::address_funds::address_funds_transfer::v0::AddressFundsTransferTransitionActionV0;
-use crate::state_transition_action::identity::identity_create_from_addresses::v0::IdentityCreateFromAddressesTransitionActionV0;
 use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
 use crate::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesActionV0;
 use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
@@ -97,31 +96,41 @@ impl BumpAddressInputNoncesActionV0 {
 
     // IdentityCreateFromAddresses transformers
 
-    /// from borrowed IdentityCreateFromAddresses transition
-    /// Subtracts penalty_credits from the input balances (distributed across inputs according to fee strategy)
-    pub fn from_borrowed_identity_create_from_addresses_transition(
+    /// from a failed IdentityCreateFromAddresses transition, given the balances its inputs keep
+    /// after the spend (the balances its action was built with)
+    ///
+    /// A failed identity creation spends nothing, so each input keeps its whole balance: what
+    /// remains after the spend plus the amount it would have spent. Nothing is deducted here: the
+    /// fee, and the penalty the caller adds to the execution context, are taken from these
+    /// balances and booked to the fee pools together, in the order of the transition's fee
+    /// strategy followed by the inputs it does not name.
+    pub fn from_failed_identity_create_from_addresses_transition(
         value: &IdentityCreateFromAddressesTransitionV0,
-        penalty_credits: Credits,
+        inputs_with_remaining_balance: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) -> Self {
-        Self::new_with_penalty(
-            &value.inputs,
-            &value.fee_strategy,
-            penalty_credits,
-            value.user_fee_increase,
-        )
-    }
+        let inputs_with_balance = inputs_with_remaining_balance
+            .iter()
+            .map(|(address, (nonce, remaining_balance))| {
+                let spent = value.inputs.get(address).map_or(0, |(_, amount)| *amount);
+                // The remaining balance is the stored balance minus the amount spent, so the sum
+                // is the stored balance and cannot saturate.
+                (*address, (*nonce, remaining_balance.saturating_add(spent)))
+            })
+            .collect();
 
-    /// from borrowed IdentityCreateFromAddresses transition action
-    pub fn from_borrowed_identity_create_from_addresses_transition_action(
-        value: &IdentityCreateFromAddressesTransitionActionV0,
-        penalty_credits: Credits,
-    ) -> Self {
-        Self::new_with_penalty(
-            &value.inputs_with_remaining_balance,
-            &value.fee_strategy,
-            penalty_credits,
-            value.user_fee_increase,
-        )
+        let mut fee_strategy = value.fee_strategy.clone();
+        for index in (0..value.inputs.len()).filter_map(|index| u16::try_from(index).ok()) {
+            let step = AddressFundsFeeStrategyStep::DeductFromInput(index);
+            if !fee_strategy.contains(&step) {
+                fee_strategy.push(step);
+            }
+        }
+
+        BumpAddressInputNoncesActionV0 {
+            inputs_with_remaining_balance: inputs_with_balance,
+            fee_strategy,
+            user_fee_increase: value.user_fee_increase,
+        }
     }
 
     // IdentityTopUpFromAddresses transformers
@@ -302,60 +311,69 @@ mod tests {
 
     // ---- IdentityCreateFromAddresses ----
 
-    #[test]
-    fn test_from_borrowed_identity_create_from_addresses_transition() {
-        let inputs = make_inputs();
-        let strategy = make_fee_strategy();
-        let transition = IdentityCreateFromAddressesTransitionV0 {
+    fn make_identity_create_from_addresses_transition(
+        fee_strategy: AddressFundsFeeStrategy,
+    ) -> IdentityCreateFromAddressesTransitionV0 {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xAA; 20]), (11_u32, 1000_u64));
+        inputs.insert(PlatformAddress::P2sh([0xBB; 20]), (21_u32, 400_u64));
+        IdentityCreateFromAddressesTransitionV0 {
             public_keys: vec![],
-            inputs: inputs.clone(),
+            inputs,
             output: None,
-            fee_strategy: strategy.clone(),
+            fee_strategy,
             user_fee_increase: TEST_FEE,
             input_witnesses: vec![],
-        };
-        let action =
-            BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition(
-                &transition,
-                200,
-            );
-        assert_eq!(action.user_fee_increase, TEST_FEE);
-        assert_eq!(action.fee_strategy, strategy);
-        let total_remaining: Credits = action
-            .inputs_with_remaining_balance
-            .values()
-            .map(|(_, c)| c)
-            .sum();
-        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
-        assert_eq!(total_remaining, total_original - 200);
+        }
+    }
+
+    /// The balances left after the transition's spend, as its action carries them.
+    fn remaining_after_spend() -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+        let mut remaining = BTreeMap::new();
+        remaining.insert(PlatformAddress::P2pkh([0xAA; 20]), (11_u32, 4000_u64));
+        remaining.insert(PlatformAddress::P2sh([0xBB; 20]), (21_u32, 2600_u64));
+        remaining
     }
 
     #[test]
-    fn test_from_borrowed_identity_create_from_addresses_transition_action() {
-        let inputs = make_inputs();
-        let strategy = make_fee_strategy();
-        let action_v0 = IdentityCreateFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(),
-            output: None,
-            fee_strategy: strategy.clone(),
-            public_keys: vec![],
-            identity_id: Identifier::from([0xCC; 32]),
-            fund_identity_amount: 1000,
-            user_fee_increase: TEST_FEE,
-        };
+    fn should_give_a_failed_identity_create_from_addresses_its_whole_input_balances() {
+        let transition = make_identity_create_from_addresses_transition(make_fee_strategy());
         let action =
-            BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition_action(
-                &action_v0, 300,
+            BumpAddressInputNoncesActionV0::from_failed_identity_create_from_addresses_transition(
+                &transition,
+                &remaining_after_spend(),
             );
+
+        // The remaining balance plus the amount the input would have spent, nothing deducted.
+        let mut expected = BTreeMap::new();
+        expected.insert(PlatformAddress::P2pkh([0xAA; 20]), (11_u32, 5000_u64));
+        expected.insert(PlatformAddress::P2sh([0xBB; 20]), (21_u32, 3000_u64));
+        assert_eq!(action.inputs_with_remaining_balance, expected);
+        assert_eq!(action.fee_strategy, make_fee_strategy());
         assert_eq!(action.user_fee_increase, TEST_FEE);
-        assert_eq!(action.fee_strategy, strategy);
-        let total_remaining: Credits = action
-            .inputs_with_remaining_balance
-            .values()
-            .map(|(_, c)| c)
-            .sum();
-        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
-        assert_eq!(total_remaining, total_original - 300);
+    }
+
+    #[test]
+    fn should_let_every_input_of_a_failed_identity_create_from_addresses_pay_its_fee() {
+        let transition = make_identity_create_from_addresses_transition(vec![
+            AddressFundsFeeStrategyStep::ReduceOutput(0),
+            AddressFundsFeeStrategyStep::DeductFromInput(1),
+        ]);
+        let action =
+            BumpAddressInputNoncesActionV0::from_failed_identity_create_from_addresses_transition(
+                &transition,
+                &remaining_after_spend(),
+            );
+
+        // The transition's own steps first, then the input it does not name.
+        assert_eq!(
+            action.fee_strategy,
+            vec![
+                AddressFundsFeeStrategyStep::ReduceOutput(0),
+                AddressFundsFeeStrategyStep::DeductFromInput(1),
+                AddressFundsFeeStrategyStep::DeductFromInput(0),
+            ]
+        );
     }
 
     // ---- IdentityTopUpFromAddresses ----

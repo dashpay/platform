@@ -546,8 +546,35 @@ pub(in crate::execution) mod tests {
         block_info: BlockInfo,
         platform_state: &PlatformState,
     ) -> (Vec<FeeResult>, ProcessedBlockFeesOutcome) {
-        let platform_version = PlatformVersion::latest();
+        let (execution_results, processed_block_fees) = process_state_transitions_with_results(
+            platform,
+            state_transitions,
+            block_info,
+            platform_state,
+            PlatformVersion::latest(),
+        );
 
+        let fee_results = execution_results.iter().map(|result| {
+            let fee_result = expect_match!(result, StateTransitionExecutionResult::SuccessfulExecution{ fee_result, .. } => fee_result);
+            fee_result.clone()
+        }).collect();
+
+        (fee_results, processed_block_fees)
+    }
+
+    /// Runs the state transitions through a whole block, including the block-end fee
+    /// distribution and sum tree check (a credit imbalance panics here), and commits it. Unlike
+    /// `process_state_transitions` the transitions may fail.
+    pub(in crate::execution) fn process_state_transitions_with_results(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        state_transitions: &[StateTransition],
+        block_info: BlockInfo,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (
+        Vec<StateTransitionExecutionResult>,
+        ProcessedBlockFeesOutcome,
+    ) {
         let raw_state_transitions = state_transitions
             .iter()
             .map(|a| a.serialize_to_bytes().expect("expected to serialize"))
@@ -567,11 +594,6 @@ pub(in crate::execution) mod tests {
                 None,
             )
             .expect("expected to process state transition");
-
-        let fee_results = processing_result.execution_results().iter().map(|result| {
-            let fee_result = expect_match!(result, StateTransitionExecutionResult::SuccessfulExecution{ fee_result, .. } => fee_result);
-            fee_result.clone()
-        }).collect();
 
         // while we have the state transitions executed, we now need to process the block fees
         let block_fees_v0: BlockFeesV0 = processing_result.aggregated_fees().clone().into();
@@ -611,7 +633,10 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit");
 
-        (fee_results, processed_block_fees)
+        (
+            processing_result.into_execution_results(),
+            processed_block_fees,
+        )
     }
 
     pub(in crate::execution) fn fetch_expected_identity_balance(

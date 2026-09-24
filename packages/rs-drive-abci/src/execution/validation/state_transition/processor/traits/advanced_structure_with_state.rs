@@ -100,7 +100,16 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
             }
             StateTransition::IdentityCreateFromAddresses(st) => {
                 let signable_bytes = self.signable_bytes()?;
+                let StateTransitionAction::IdentityCreateFromAddressesAction(
+                    identity_create_from_addresses_action,
+                ) = action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be an identity create from addresses transition action",
+                    )));
+                };
                 st.validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
+                    identity_create_from_addresses_action,
                     signable_bytes,
                     execution_context,
                     platform_version,
