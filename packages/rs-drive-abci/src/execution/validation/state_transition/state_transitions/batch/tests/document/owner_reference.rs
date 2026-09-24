@@ -9,7 +9,9 @@
 //! adds a `propertyAgreement` checked against the moderator the lookup finds,
 //! and `note` declares an identity target, which every writer meets.
 //! `stepDownNotice` composes with `anyOf`: its writer is an added moderator
-//! or the charter's founder (`founderSeat`).
+//! or the charter's founder (`founderSeat`). `seatNotice` may only be written
+//! by the `memberId` of a `deletableSeat`, which the founder can delete to
+//! take the seat back: a `deletableDocument` found through a lookup.
 //! `moderatorBadge` can be transferred, so it declares `creatorRefersTo`
 //! instead: only a seated moderator may mint one, and whoever holds it later,
 //! the check is against that creator. `creatorNote` declares an identity
@@ -388,6 +390,32 @@ mod owner_reference_tests {
                 result,
                 StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
+        }
+
+        /// Deletes `document`, a `type_name` document owned by `who`.
+        async fn delete(
+            &mut self,
+            who: Who,
+            type_name: &str,
+            document: &Document,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let (document_type, writer, _) = self.parts(who, type_name);
+            let nonce = writer.next_nonce();
+            let transition = BatchTransition::new_document_deletion_transition_from_document(
+                document.clone(),
+                document_type,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the delete transition");
+            self.process(&transition)
         }
 
         /// A resignation request by `who` from the elected charter `charter`.
@@ -800,5 +828,93 @@ mod owner_reference_tests {
                 ),
             "expected the last operand's 40120 at $ownerId"
         );
+    }
+
+    /// A writer met through a deletable document found by a lookup, as a moderation charter's
+    /// added moderator the leader can take off: the writer passes while its seat exists, and
+    /// every replace asks again, one leaving the lookup keys alone included, since the seat
+    /// can be deleted. Once it is, the writer can no longer replace the document.
+    #[tokio::test]
+    async fn should_check_a_deletable_owner_lookup_on_every_replace() {
+        let mut fixture = OwnerReferenceFixture::new();
+        let member = fixture.id(Who::Member);
+        let stranger = fixture.id(Who::Stranger);
+        let (seat, result) = fixture
+            .create(
+                Who::Founder,
+                "deletableSeat",
+                &[
+                    ("electedCharterId", id_value(charter_id(1))),
+                    ("memberId", id_value(member)),
+                ],
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let notice_values = [
+            ("electedCharterId", id_value(charter_id(1))),
+            ("text", Value::from("on duty")),
+        ];
+        let (notice, result) = fixture
+            .create(Who::Member, "seatNotice", &notice_values)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let assert_seat_not_found = |result, writer: Identifier| {
+            assert_matches!(
+                result,
+                PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
+                    ..
+                } if e.path() == "$ownerId"
+                    && *e.entity_id() == writer
+                    && matches!(
+                        e.entity_type(),
+                        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                            document_type_name, ..
+                        } if document_type_name == "deletableSeat"
+                    ),
+                "expected 40120 at $ownerId for a deletable seat"
+            );
+        };
+        let (_, result) = fixture
+            .create(Who::Stranger, "seatNotice", &notice_values)
+            .await;
+        assert_seat_not_found(result, stranger);
+
+        // A replace touching nothing the lookup reads still reads the seat
+        let (result, execution_context) = fixture.validate_directly(
+            Who::Member,
+            None,
+            "seatNotice",
+            notice_values
+                .iter()
+                .map(|(property, value)| (property.to_string(), value.clone()))
+                .collect(),
+            Some(BTreeSet::from(["text".to_string()])),
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_matches!(
+            execution_context.operations_slice(),
+            [ValidationOperation::PrecalculatedOperation(fee)] if fee.processing_fee > 0,
+            "the lookup query is billed on every replace"
+        );
+
+        // The founder takes the seat back, and the member's next replace is refused
+        let result = fixture.delete(Who::Founder, "deletableSeat", &seat).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture
+            .replace(Who::Member, "seatNotice", &notice, |notice| {
+                notice.set("text", "off duty".into());
+            })
+            .await;
+        assert_seat_not_found(result, member);
     }
 }

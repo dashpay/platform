@@ -729,6 +729,19 @@ mod tests {
             )),
             9
         );
+        // A deletable document found through a lookup is appended after it
+        assert_eq!(
+            target_variant(&DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: DocumentReferenceLookup {
+                    index: "byOwner".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            }),
+            10
+        );
     }
 
     #[test]

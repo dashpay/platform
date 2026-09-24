@@ -184,6 +184,7 @@ impl DocumentType {
                         contract_id,
                         document_type_name,
                         lookup: Some(lookup),
+                        permanent,
                         ..
                     }) = target.as_any_document_reference()
                     else {
@@ -197,14 +198,18 @@ impl DocumentType {
                     else {
                         continue;
                     };
-                    // A lookup is only declared on a permanentDocument reference, and a
-                    // deletable target fails that reference whatever its indexes say:
-                    // registration reports it (ReferencedDocumentTypeDeletableError), so the
-                    // lookup is not judged against a type it could never reference
+                    // A permanentDocument lookup into a deletable type, or a
+                    // deletableDocument lookup into one that forbids deletion, fails that
+                    // reference whatever its indexes say: registration reports it
+                    // (ReferencedDocumentTypeDeletableError or
+                    // ReferencedDocumentTypeNotDeletableError), so the lookup is not judged
+                    // against a type it could never reference. A deletableDocument lookup
+                    // exists from the same protocol version 14 as every other lookup, so
+                    // this stays inert before it
                     let referenced = referenced_document_type.as_ref();
-                    if referenced.documents_can_be_deleted()
-                        || referenced.documents_can_be_deleted_by_moderators()
-                    {
+                    let deletable = referenced.documents_can_be_deleted()
+                        || referenced.documents_can_be_deleted_by_moderators();
+                    if permanent == deletable {
                         continue;
                     }
                     if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {

@@ -6,8 +6,10 @@ moderation team. It activates at protocol version 14, registered at genesis by
 chains born at 14 and inserted by the upgrade to 14, and has the same ID on
 every network: `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
 
-It has seven document types. All are immutable, and all but `resignationRequest` are undeletable, so
-everything a charter points at, and the charter itself, is a fixed text.
+It has seven document types. All are immutable. The four a charter is made of
+(`reason`, `submittedCharter`, `joinRequest`, `electedCharter`) are
+undeletable, so everything a charter points at, and the charter itself, is a
+fixed text; the three team changes are deletable.
 
 The schema carries almost every rule through its keywords: typed arrays with
 a reference per element, a reference resolved through a unique index
@@ -94,13 +96,13 @@ Once an elected charter is seated, its team can change without a new vote:
 
 | Type | Written by | Properties | Rules |
 | --- | --- | --- | --- |
-| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter, ever filed, a consensus rule of the batch's state validation (41202) |
-| `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is not the leader |
-| `resignationRequest` | a member of the team | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The writer is in the charter's `members` or was added (`ownerRefersTo` with `anyOf`); a message only the leader can read; deletable, which withdraws it; the leader acts on it with a removal |
+| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter at a time, a consensus rule of the batch's state validation (41202); deleting it takes the member off and frees its slot |
+| `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is one of the charter's elected `members` (`listElement`); deleting it puts the member back |
+| `resignationRequest` | a member of the team | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The writer is in the charter's `members` or has an addition now (`ownerRefersTo` with `anyOf`, the addition a `deletableDocument` lookup); a message only the leader can read; deletable, which withdraws it; the leader acts on it by deleting the addition or removing an elected member |
 
-Each is written once per member and charter (unique indexes), and a removal is
-final. The team that acts is the leader plus the elected members and the
-additions, less the removals (`ElectedCharter::active_members` in `rs-dpp`).
+Each exists at most once per member and charter (unique indexes). The team
+that acts is the leader plus the elected members less the removals, plus the
+additions (`ElectedCharter::active_members` in `rs-dpp`).
 
 See [the protocol guide](../../docs/protocol/moderation-charters.md) for
 details.

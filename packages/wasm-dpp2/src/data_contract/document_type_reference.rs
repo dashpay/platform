@@ -194,6 +194,15 @@ export type DocumentPropertyReferenceTarget =
        * Absent — not `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;
+      /**
+       * How the referenced document is found when the property's value is
+       * not its id. See {@link DocumentReferenceLookup}. Absent when the
+       * value is the referenced document's `$id`. With a lookup the
+       * reference means "a document with this key exists now": once the one
+       * it found is deleted the key may find another, and every replace
+       * re-validates it.
+       */
+      lookup?: DocumentReferenceLookup;
     }
   | {
       /**
@@ -246,12 +255,16 @@ export type DocumentPropertyReferenceExpression =
   | { type: 'allOf'; allOf: Array<DocumentPropertyReferenceOperand> };
 
 /**
- * One operand of a reference expression: a leaf, an `identity` or a
- * `permanentDocument` (by id or with a `lookup`) with its own fields, a
+ * One operand of a reference expression: a leaf, an `identity`, a
+ * `permanentDocument` (by id or with a `lookup`), a `listElement` or a
+ * `deletableDocument` with a `lookup` with its own fields, a
  * `propertyAgreement` belonging to its own leaf, or a nested expression.
  */
 export type DocumentPropertyReferenceOperand =
-  | Extract<DocumentPropertyReferenceTarget, { type: 'identity' | 'permanentDocument' }>
+  | Extract<
+      DocumentPropertyReferenceTarget,
+      { type: 'identity' | 'permanentDocument' | 'listElement' | 'deletableDocument' }
+    >
   | DocumentPropertyReferenceExpression;
 
 /**
@@ -265,9 +278,11 @@ export type DocumentPropertyReferenceOperand =
  * a property path of the referring document type, `'$ownerId'` for the
  * referring document's owner, or `'.'` for the value of the property that
  * carries the reference (exactly once). To resolve a reference yourself,
- * query the index with those values: at most one document matches. Only a
- * `permanentDocument` reference carries a lookup, and its key cannot move
- * off the document it found, so it keeps resolving.
+ * query the index with those values: at most one document matches. On a
+ * `permanentDocument` reference the key cannot move off the document it
+ * found, so it keeps resolving; on a `deletableDocument` reference it may
+ * find nothing, or a later document with the same key, once the one it
+ * found is deleted.
  */
 export type DocumentReferenceLookup = {
   index: string;
@@ -291,10 +306,12 @@ export type DocumentPropertyReference = {
    * `"$ownerId"`, which is not a property path: the value it checks is the
    * document's owner. Consensus checks it with the writer's id when a
    * document is created, and when a replace changes a property its `lookup`
-   * or `propertyAgreement` reads; in its `lookup`, `'.'` is the writer. Its
-   * `type` is `identity` or a `permanentDocument` with a `lookup`, the only
-   * targets a writer can be, on a document type whose documents can be
-   * neither transferred nor traded. On a type whose documents can, a
+   * or `propertyAgreement` reads (every replace for a `deletableDocument`
+   * lookup, which gates the writer on its document still existing); in its
+   * `lookup`, `'.'` is the writer. Its `type` is `identity`, a
+   * `permanentDocument` or `deletableDocument` with a `lookup`, or a
+   * `listElement`, the targets a writer can be, on a document type whose
+   * documents can be neither transferred nor traded. On a type whose documents can, a
    * `creatorRefersTo` declaration takes its place, listed first with the
    * path `"$creatorId"`: the same, with the document's creator, who never
    * changes, as the value.
@@ -468,7 +485,8 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::PermanentDocument { .. }
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
-        DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
+        DocumentPropertyReferenceTarget::DeletableDocument { .. }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => "deletableDocument",
         DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
         DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(WasmDppError::generic(format!(
@@ -543,6 +561,12 @@ fn set_reference_target_fields(
             contract_id,
             document_type_name,
             property_agreement,
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id,
+            document_type_name,
+            property_agreement,
+            ..
         } => {
             let effective = contract_id.unwrap_or(declaring_contract_id);
             set_field(
@@ -561,7 +585,8 @@ fn set_reference_target_fields(
             // Present only on a lookup reference, absent when the value is
             // the referenced document's id, as the schema omits it; the
             // sources keep their schema spelling.
-            if let DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. } = target
+            if let DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+            | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. } = target
             {
                 let lookup_object = Object::new();
                 set_field(

@@ -216,15 +216,15 @@ pub(super) fn join_requests_query(
     )
 }
 
-/// The resignation requests among `requests` whose writer is not among `removed`, the
-/// `memberId`s of the charter's removals: the ones the leader has not acted on.
+/// The resignation requests among `requests` whose writer is still on `team`: the ones the
+/// leader has not acted on, by deleting the writer's addition or removing an elected writer.
 pub(super) fn pending_resignation_requests(
     requests: Vec<Document>,
-    removed: &BTreeSet<Identifier>,
+    team: &ModerationTeam,
 ) -> Vec<Document> {
     requests
         .into_iter()
-        .filter(|request| !removed.contains(&request.owner_id()))
+        .filter(|request| team.contains(&request.owner_id()))
         .collect()
 }
 
@@ -382,16 +382,30 @@ impl Sdk {
     }
 
     /// The resignation requests for the charter `elected_charter_id` the leader has not acted
-    /// on: those whose writer the charter has no `removedModerator` for. A withdrawn request is
-    /// deleted, so it is not among them either.
+    /// on: those whose writer is still on the team (the leader takes an added member off by
+    /// deleting its `addedModerator`, and an elected one with a `removedModerator`). A
+    /// withdrawn request is deleted, so it is not among them either. Empty when there is no
+    /// such charter.
     pub async fn fetch_pending_resignation_requests(
         &self,
         elected_charter_id: Identifier,
     ) -> Result<Vec<Document>, Error> {
         let contract = self.fetch_moderation_charters_contract().await?;
-        let (requests, removed) = futures::try_join!(
+        let Some(seated) = self
+            .fetch_elected_charter_of(contract.clone(), elected_charter_id)
+            .await?
+        else {
+            return Ok(vec![]);
+        };
+        let (requests, added, removed) = futures::try_join!(
             self.fetch_every_page(|page| resignation_requests_query(
                 contract.clone(),
+                elected_charter_id,
+                page,
+            )),
+            self.fetch_every_page(|page| team_change_query(
+                contract.clone(),
+                ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
                 elected_charter_id,
                 page,
             )),
@@ -402,10 +416,8 @@ impl Sdk {
                 page,
             )),
         )?;
-        Ok(pending_resignation_requests(
-            requests,
-            &member_ids(&removed)?,
-        ))
+        let team = ModerationTeam::from_documents(&seated.document, &added, &removed)?;
+        Ok(pending_resignation_requests(requests, &team))
     }
 
     /// Every document the query `query_for_page` builds matches, page after page, or an error
@@ -629,11 +641,18 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_only_the_resignation_requests_whose_writer_was_not_removed() {
+    fn should_keep_only_the_resignation_requests_whose_writer_is_still_on_the_team() {
         let requests = vec![document(1, 0xA1), document(2, 0xA2), document(3, 0xA3)];
-        let removed = BTreeSet::from([Identifier::from([0xA2; 32]), Identifier::from([0xFF; 32])]);
+        // 0xA2 was taken off: an elected member removed, or an added one whose addition
+        // was deleted, is no longer among the members either way
+        let team = ModerationTeam {
+            elected_charter_id: Identifier::from([0xE1; 32]),
+            submitted_charter_id: Identifier::from([0xE2; 32]),
+            leader_id: Identifier::from([0xE3; 32]),
+            members: BTreeSet::from([Identifier::from([0xA1; 32]), Identifier::from([0xA3; 32])]),
+        };
 
-        let pending = pending_resignation_requests(requests, &removed);
+        let pending = pending_resignation_requests(requests, &team);
 
         assert_eq!(
             pending
@@ -642,7 +661,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Identifier::from([0xA1; 32]), Identifier::from([0xA3; 32])]
         );
-        assert!(pending_resignation_requests(vec![], &removed).is_empty());
+        assert!(pending_resignation_requests(vec![], &team).is_empty());
     }
 
     #[test]

@@ -8,7 +8,9 @@
 //! protocol version 14 a seat is never replaced. So the charter seated on a contract is the one
 //! `byTargetContract` finds, and its team is its owner, the leader, plus its `members` and the
 //! `memberId` of every `addedModerator` for it, less the `memberId` of every `removedModerator`
-//! for it ([`ElectedCharter::active_members`]). The moderation paths of the target read it from
+//! for it ([`ElectedCharter::active_members`]). An addition is taken back by deleting it and a
+//! removal, which only names an elected member, by deleting it too, so both lists are the
+//! documents that exist now. The moderation paths of the target read it from
 //! there: there is no block-end seating hook and no copy under the moderated contract.
 //!
 //! Every read is a query of the charter contract, served from the system contract cache (it
@@ -94,8 +96,10 @@ pub(crate) fn fetch_seated_moderation_charter(
 
 impl SeatedModerationCharter {
     /// Whether `identity_id` is on the seated team: the leader, or an active member. The
-    /// leader costs nothing more; an elected member costs a point read of its removal, and
-    /// anyone else a point read of its addition and, when there is one, of its removal. Both
+    /// leader costs nothing more. An elected member (one of the charter's `members`) is on
+    /// it unless the leader filed a `removedModerator` for it, and anyone else only while the
+    /// leader's `addedModerator` for it exists: one point read either way, since a removal
+    /// can only name an elected member and an addition is taken back by deleting it. Both
     /// types are unique on the charter and the member, so the team is never listed whole.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn seats(
@@ -110,28 +114,27 @@ impl SeatedModerationCharter {
         if identity_id == self.leader_id {
             return Ok(true);
         }
-        let member_document = |document_type_name: &str,
-                               execution_context: &mut StateTransitionExecutionContext|
-         -> Result<bool, Error> {
-            Ok(!query_charter_documents(
-                drive,
-                document_type_name,
-                [
-                    (property_names::ELECTED_CHARTER_ID, self.id),
-                    (property_names::MEMBER_ID, identity_id),
-                ],
-                1,
-                epoch,
-                execution_context,
-                transaction,
-                platform_version,
-            )?
-            .is_empty())
-        };
-        let joined = self.charter.members.contains(&identity_id)
-            || member_document(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, execution_context)?;
-        // A removal is final: whoever it names is off the team for good.
-        Ok(joined && !member_document(REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, execution_context)?)
+        let (document_type_name, present_means_seated) =
+            if self.charter.members.contains(&identity_id) {
+                (REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, false)
+            } else {
+                (ADDED_MODERATOR_DOCUMENT_TYPE_NAME, true)
+            };
+        let present = !query_charter_documents(
+            drive,
+            document_type_name,
+            [
+                (property_names::ELECTED_CHARTER_ID, self.id),
+                (property_names::MEMBER_ID, identity_id),
+            ],
+            1,
+            epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?
+        .is_empty();
+        Ok(present == present_means_seated)
     }
 
     /// The share of each moderated type's declared moderators fee the team takes: its
@@ -181,9 +184,10 @@ impl SeatedModerationCharter {
 }
 
 /// How many `addedModerator` documents name the elected charter `elected_charter_id`, counted up
-/// to `up_to`: the additions ever filed for it (the type is immutable and undeletable), which the
-/// target's `maxAddedModerators` caps. One billed query of the `byElectedCharterMember` index,
-/// limited to `up_to` documents, so the cost is bounded by the cap.
+/// to `up_to`: the members added to it now (deleting an addition takes the member off and frees
+/// its slot), which the target's `maxAddedModerators` caps. One billed query of the
+/// `byElectedCharterMember` index, limited to `up_to` documents, so the cost is bounded by the
+/// cap.
 pub(crate) fn count_added_moderators(
     drive: &Drive,
     elected_charter_id: Identifier,

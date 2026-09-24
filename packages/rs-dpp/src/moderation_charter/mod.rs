@@ -12,10 +12,11 @@
 //!   only the leader can read;
 //! - an `electedCharter` is a proposal put to the vote with its team, chosen from the identities
 //!   that asked to join it. Creating one opens or joins the contest for the target contract;
-//! - once a charter is seated, its leader may add members from the same join requests, up to
-//!   the target's `maxAddedModerators` (`addedModerator`), and remove members
-//!   (`removedModerator`); a member asks to leave with a `resignationRequest`, which the
-//!   leader acts on with a removal and the member withdraws by deleting it.
+//! - once a charter is seated, its leader may add members from the same join requests, at most
+//!   the target's `maxAddedModerators` at a time (`addedModerator`, taken back by deleting it),
+//!   and remove elected members (`removedModerator`, undone by deleting it); a member asks to
+//!   leave with a `resignationRequest`, which the leader acts on and the member withdraws by
+//!   deleting it.
 //!
 //! The team that acts is the leader plus [`ElectedCharter::active_members`]: the elected
 //! members and the additions, less the removals.
@@ -327,10 +328,12 @@ impl ElectedCharter {
     /// The members a seated team acts with besides its leader, `leader_id`: the elected
     /// members and those the leader added after the election, less those the leader removed.
     /// `added` and `removed` are the `memberId`s of the charter's `addedModerator` and
-    /// `removedModerator` documents. A removal is final, so the order the documents were
-    /// filed in does not matter. A `resignationRequest` changes nothing by itself: the leader
-    /// acts on it with a removal. The leader is never among the result: neither list may
-    /// name it.
+    /// `removedModerator` documents that exist now: the leader takes an addition back by
+    /// deleting it, and a removal, which only names an elected member, puts the member back
+    /// when it is deleted. A removal wins over an addition of the same member, so the order
+    /// the documents were filed in does not matter. A `resignationRequest` changes nothing by
+    /// itself: the leader acts on it by deleting the member's addition or removing an elected
+    /// member. The leader is never among the result: neither list may name it.
     pub fn active_members<'a>(
         &self,
         leader_id: Identifier,

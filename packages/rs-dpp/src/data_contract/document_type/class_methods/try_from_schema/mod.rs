@@ -841,7 +841,16 @@ fn parse_reference_expression_leaf(
     let reference_type = declaration
         .get_str(property_names::TYPE)
         .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-    if let Some(reason) = expression_leaf_refusal_reason(reference_type) {
+    // A deletableDocument leaf through a lookup is an existence check like
+    // the others; it only asks every replace to re-validate the expression
+    let deletable_lookup =
+        reference_type == "deletableDocument" && declaration.contains_key(property_names::LOOKUP);
+    let refusal = if deletable_lookup {
+        None
+    } else {
+        expression_leaf_refusal_reason(reference_type)
+    };
+    if let Some(reason) = refusal {
         return Err(DataContractError::InvalidContractStructure(format!(
             "refersTo {path} is a reference of type {reference_type}, which a reference \
              expression does not take: {reason}"
@@ -867,8 +876,9 @@ fn expression_leaf_refusal_reason(reference_type: &str) -> Option<&'static str> 
     match reference_type {
         _ if COMBINABLE_REFERENCE_TARGET_TYPES.contains(&reference_type) => None,
         "deletableDocument" => Some(
-            "it is re-validated on every replace and may be cleared once its document is \
-             deleted, which assumes the property refers to that one target",
+            "by id it is re-validated on every replace and may be cleared once its document is \
+             deleted, which assumes the property refers to that one target; declare it with a \
+             lookup to combine it",
         ),
         "identityPublicKey" => {
             Some("it pairs the value with a key id property, which no other operand reads")
@@ -933,14 +943,17 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `lookup` finds a referenced DOCUMENT through an index of its type, and
-    // only a permanent one: a key into a deletable type could find a new
-    // document once the one it found is deleted, where an id is produced at
-    // most once. The other targets are found by the value itself
-    if refers_to_map.contains_key(property_names::LOOKUP) && reference_type != "permanentDocument" {
+    // `lookup` finds a referenced DOCUMENT through an index of its type, of
+    // either kind: a permanent one never dangles, and a deletable one is
+    // re-validated on every replace, since a key into a deletable type may
+    // find a new document once the one it found is deleted. The other targets
+    // are found by the value itself
+    if refers_to_map.contains_key(property_names::LOOKUP)
+        && !matches!(reference_type, "permanentDocument" | "deletableDocument")
+    {
         return Err(DataContractError::InvalidContractStructure(format!(
             "{reference_type} refersTo does not take lookup: it is only allowed on \
-             permanentDocument references"
+             permanentDocument and deletableDocument references"
         )));
     }
 
@@ -1010,10 +1023,20 @@ fn parse_reference_target(
                         },
                     }
                 }
-                "deletableDocument" => DocumentPropertyReferenceTarget::DeletableDocument {
-                    contract_id,
-                    document_type_name,
-                    property_agreement,
+                "deletableDocument" => match refers_to_map.get(property_names::LOOKUP) {
+                    Some(lookup_value) => {
+                        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                            contract_id,
+                            document_type_name,
+                            property_agreement,
+                            lookup: parse_document_reference_lookup(lookup_value)?,
+                        }
+                    }
+                    None => DocumentPropertyReferenceTarget::DeletableDocument {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                    },
                 },
                 _ => DocumentPropertyReferenceTarget::ListElement(parse_list_element_reference(
                     refers_to_map,
@@ -1394,11 +1417,6 @@ pub(super) fn parse_doctype_reference(
             "{keyword} does not take a token reference: its value, {value}'s identity id, is \
              never a token id"
         )),
-        Some("deletableDocument") => Some(format!(
-            "{keyword} does not take a deletableDocument reference: its value, {value}'s \
-             identity id, is never a document id, and only a permanentDocument reference takes \
-             the lookup that could find one"
-        )),
         _ => None,
     };
     if let Some(refusal) = refusal {
@@ -1434,16 +1452,33 @@ pub(super) fn parse_doctype_reference(
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
             | DocumentPropertyReferenceTarget::ListElement(_) => {}
-            DocumentPropertyReferenceTarget::PermanentDocument { .. } => {
+            // A deletable document found through a lookup gates the writer on
+            // it existing now, and every replace asks again: the writer never
+            // changes (ownerRefersTo is only on a type whose documents stay
+            // with it), so the gate is the writer's own. The creator's would
+            // outlive a transfer, leaving a new owner unable to replace the
+            // document once the creator's document is gone, so creatorRefersTo
+            // keeps to targets that hold for good
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+                if keyword == property_names::OWNER_REFERS_TO => {}
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} takes a permanentDocument reference only with a lookup: its \
-                     value, {value}'s identity id, is never a document id"
+                    "{keyword}{at} does not take a deletableDocument reference: the creator \
+                     never changes, and a document a transfer handed on could not be replaced \
+                     once the one the lookup found is deleted"
+                )))
+            }
+            DocumentPropertyReferenceTarget::PermanentDocument { .. }
+            | DocumentPropertyReferenceTarget::DeletableDocument { .. } => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "{keyword}{at} takes a document reference only with a lookup: its value, \
+                     {value}'s identity id, is never a document id"
                 )))
             }
             _ => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} takes an identity reference, a permanentDocument reference \
-                     with a lookup or a listElement reference"
+                    "{keyword}{at} takes an identity reference, a document reference with a \
+                     lookup or a listElement reference"
                 )))
             }
         }
@@ -1451,7 +1486,7 @@ pub(super) fn parse_doctype_reference(
     Ok(Some(target))
 }
 
-/// The `lookup` of a `permanentDocument` reference: `index`, the name of an index of the
+/// The `lookup` of a document reference: `index`, the name of an index of the
 /// referenced document type, and `keys`, every property of that index mapped to
 /// its referring-side source (`"."`, `"$ownerId"` or a property path), with `"."`
 /// exactly once. What the names resolve to is checked once the document types

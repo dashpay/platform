@@ -339,7 +339,7 @@ team.leaderId; team.members; team.contains(identityId);
 const proposals = await sdk.moderationCharters.submittedCharters({ targetContractId: contractId, limit: 20 });
 const requests = await sdk.moderationCharters.joinRequests({ submittedCharterId: proposalId });
 
-// Resignation requests the leader has not acted on with a removal yet
+// Resignation requests whose writer is still on the team (the leader has not acted on them)
 const pending = await sdk.moderationCharters.pendingResignationRequests(charter.id);
 ```
 

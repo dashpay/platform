@@ -54,6 +54,7 @@ use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use std::sync::Arc;
 
+const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
 const MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED: u32 = 41202;
 const DOCUMENT_ACTION_FEE_MODERATORS_SHARE_MISMATCH: u32 = 40139;
@@ -443,6 +444,11 @@ impl Team {
 
     /// The leader's addition of `actor` to the seated team
     async fn addition_of(&self, actor: &Actor) -> StateTransition {
+        self.added(actor).await.1
+    }
+
+    /// The leader's addition of `actor` to the seated team, and the `addedModerator` it creates
+    async fn added(&self, actor: &Actor) -> (Document, StateTransition) {
         let properties = BTreeMap::from([
             (
                 "electedCharterId".to_string(),
@@ -459,11 +465,16 @@ impl Team {
         ]);
         self.charter_document(&self.leader, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, properties)
             .await
-            .1
     }
 
     /// The leader's removal of `actor` from the seated team
     async fn removal_of(&self, actor: &Actor) -> StateTransition {
+        self.removed(actor).await.1
+    }
+
+    /// The leader's removal of `actor` from the seated team, and the `removedModerator` it
+    /// creates
+    async fn removed(&self, actor: &Actor) -> (Document, StateTransition) {
         let properties = BTreeMap::from([
             (
                 "electedCharterId".to_string(),
@@ -480,7 +491,28 @@ impl Team {
             properties,
         )
         .await
-        .1
+    }
+
+    /// The leader's deletion of its team change `document` of `document_type_name`, which
+    /// undoes it
+    async fn undoing(&self, document_type_name: &str, document: Document) -> StateTransition {
+        let document_type = self
+            .charters
+            .document_type_for_name(document_type_name)
+            .expect("expected the charter document type");
+        BatchTransition::new_document_deletion_transition_from_document(
+            document,
+            document_type,
+            &self.leader.key,
+            self.leader.contract_nonce(),
+            0,
+            None,
+            &self.leader.signer,
+            PlatformVersion::latest(),
+            None,
+        )
+        .await
+        .expect("expected to build the charter document deletion")
     }
 
     /// A post by `actor`, agreeing to `agreement` (`None`: no agreement at all), and the post
@@ -716,10 +748,11 @@ async fn should_seat_the_winner_of_the_contest_and_let_its_team_moderate_instead
     }
 }
 
-/// The leader adds members from the join requests and removes members: an added member
-/// moderates and is protected until it is removed, a removed elected member no longer
-/// moderates and can be moderated, and the leader and the active members can be neither banned
-/// nor have their documents deleted, while the interim moderators and the owner lost that.
+/// The leader adds members from the join requests and removes elected members: an added member
+/// moderates and is protected until the leader deletes its addition, a removed elected member
+/// no longer moderates and can be moderated until the leader deletes the removal, and the
+/// leader and the active members can be neither banned nor have their documents deleted, while
+/// the interim moderators and the owner lost that.
 #[tokio::test]
 async fn should_follow_additions_and_removals_and_protect_the_team() {
     let team = Team::new(InterimModerators::AppointedModerators(
@@ -739,7 +772,8 @@ async fn should_follow_additions_and_removals_and_protect_the_team() {
         &setup.process(&ban, &transaction),
         IDENTITY_NOT_CONTRACT_MODERATOR,
     );
-    assert_success(&setup.process(&team.addition_of(added).await, &transaction));
+    let (addition, adding) = team.added(added).await;
+    assert_success(&setup.process(&adding, &transaction));
     let ban = setup.moderate(added, ban_action(setup.user.id())).await;
     assert_success(&setup.process(&ban, &transaction));
 
@@ -773,9 +807,15 @@ async fn should_follow_additions_and_removals_and_protect_the_team() {
         assert_success(&setup.process(&warn, &transaction));
     }
 
-    // Removed, the added member and the elected member moderate no more, and are moderated.
+    // Taken off, the added member by deleting its addition and the elected member by a
+    // removal, they moderate no more, and are moderated.
+    let taking_off = team
+        .undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, addition)
+        .await;
+    assert_success(&setup.process(&taking_off, &transaction));
+    let (removal, removing) = team.removed(&team.member).await;
+    assert_success(&setup.process(&removing, &transaction));
     for removed in [added, &team.member] {
-        assert_success(&setup.process(&team.removal_of(removed).await, &transaction));
         let unban = setup.moderate(removed, unban_action(setup.user.id())).await;
         assert_paid_with_code(
             &setup.process(&unban, &transaction),
@@ -790,37 +830,83 @@ async fn should_follow_additions_and_removals_and_protect_the_team() {
         .moderate(&team.leader, delete_action(POST, added_post.id()))
         .await;
     assert_success(&setup.process(&delete, &transaction));
+
+    // Deleting the removal puts the elected member back.
+    let reinstating = team
+        .undoing(REMOVED_MODERATOR_DOCUMENT_TYPE_NAME, removal)
+        .await;
+    assert_success(&setup.process(&reinstating, &transaction));
+    let unban = setup
+        .moderate(&team.member, unban_action(setup.user.id()))
+        .await;
+    assert_success(&setup.process(&unban, &transaction));
+    let ban = setup
+        .moderate(&team.leader, ban_action(team.member.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
 }
 
-/// The target's `maxAddedModerators` caps the additions to a seated charter: the Nth passes, the
-/// (N+1)th is refused, paid, and a removal frees no slot.
+/// A removal names an elected member of the charter and nobody else: an added member is taken
+/// off by deleting its addition, and an identity never on the team has nothing to remove.
 #[tokio::test]
-async fn should_cap_the_members_a_leader_adds_and_free_no_slot_on_a_removal() {
+async fn should_remove_only_an_elected_member() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    team.award();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let added = &team.joiners[0];
+    assert_success(&setup.process(&team.addition_of(added).await, &transaction));
+    for never_elected in [added, &team.joiners[1]] {
+        assert_paid_with_code(
+            &setup.process(&team.removal_of(never_elected).await, &transaction),
+            REFERENCED_ENTITY_NOT_FOUND,
+        );
+    }
+    // The added member is still on the team.
+    let ban = setup.moderate(added, ban_action(setup.user.id())).await;
+    assert_success(&setup.process(&ban, &transaction));
+}
+
+/// The target's `maxAddedModerators` caps the additions a seated charter holds: the Nth passes,
+/// the (N+1)th is refused, paid, and deleting an addition frees its slot.
+#[tokio::test]
+async fn should_cap_the_members_a_leader_adds_and_free_a_slot_when_an_addition_is_deleted() {
     let team = Team::new(InterimModerators::ContractOwner).await;
     let setup = &team.setup;
     team.award();
 
     let transaction = setup.platform.drive.grove.start_transaction();
     let [first, second, third] = &team.joiners;
-    assert_success(&setup.process(&team.addition_of(first).await, &transaction));
+    let (first_addition, adding_first) = team.added(first).await;
+    assert_success(&setup.process(&adding_first, &transaction));
     assert_success(&setup.process(&team.addition_of(second).await, &transaction));
     let over_the_cap = team.addition_of(third).await;
     assert_paid_with_code(
         &setup.process(&over_the_cap, &transaction),
         MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED,
     );
-
-    assert_success(&setup.process(&team.removal_of(first).await, &transaction));
-    let after_a_removal = team.addition_of(third).await;
-    assert_paid_with_code(
-        &setup.process(&after_a_removal, &transaction),
-        MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED,
-    );
-    // The third joiner never made it onto the team.
+    // The third joiner did not make it onto the team.
     let ban = setup.moderate(third, ban_action(setup.user.id())).await;
     assert_paid_with_code(
         &setup.process(&ban, &transaction),
         IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+
+    let taking_off_first = team
+        .undoing(ADDED_MODERATOR_DOCUMENT_TYPE_NAME, first_addition)
+        .await;
+    assert_success(&setup.process(&taking_off_first, &transaction));
+    assert_success(&setup.process(&team.addition_of(third).await, &transaction));
+    let ban = setup.moderate(third, ban_action(setup.user.id())).await;
+    assert_success(&setup.process(&ban, &transaction));
+    // The team is full again.
+    assert_paid_with_code(
+        &setup.process(&team.addition_of(first).await, &transaction),
+        MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED,
     );
 }
 

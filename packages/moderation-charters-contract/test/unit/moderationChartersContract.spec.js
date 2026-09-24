@@ -386,6 +386,10 @@ describe('Moderation Charters Contract', () => {
       expect(validate('addedModerator', await rawAddition()).isValid()).to.be.true();
     });
 
+    it('should be deletable, which takes the member off the team', () => {
+      expect(moderationChartersContractDocumentsSchema.addedModerator.canBeDeleted).to.be.true();
+    });
+
     expectRequired('addedModerator', rawAddition, ['electedCharterId', 'submittedCharterId', 'memberId']);
     expectNoAdditionalProperties('addedModerator', rawAddition, 'power');
   });
@@ -398,6 +402,21 @@ describe('Moderation Charters Contract', () => {
 
     it('should be valid without a resignation', async () => {
       expect(validate('removedModerator', await rawRemoval()).isValid()).to.be.true();
+    });
+
+    it('should be deletable, which puts the member back on the team', () => {
+      expect(moderationChartersContractDocumentsSchema.removedModerator.canBeDeleted).to.be.true();
+    });
+
+    it('should remove only an elected member', () => {
+      const { refersTo } = moderationChartersContractDocumentsSchema.removedModerator.properties.memberId;
+
+      expect(refersTo).to.deep.equal({
+        type: 'listElement',
+        documentType: 'electedCharter',
+        propertyAgreement: { electedCharterId: '$id' },
+        inList: 'members',
+      });
     });
 
     expectRequired('removedModerator', rawRemoval, ['electedCharterId', 'memberId']);
@@ -427,7 +446,7 @@ describe('Moderation Charters Contract', () => {
 
       expect(anyOf.map(({ type, documentType }) => [type, documentType])).to.deep.equal([
         ['listElement', 'electedCharter'],
-        ['permanentDocument', 'addedModerator'],
+        ['deletableDocument', 'addedModerator'],
       ]);
     });
 
