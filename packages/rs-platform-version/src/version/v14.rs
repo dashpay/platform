@@ -509,8 +509,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
 ///     declaration is frozen: the join and vote windows (one day to four weeks,
-///     one week by default) and the challenge cool-down (two weeks to three
-///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; an optional,
+///     one week by default), in seconds and bounded by `SYSTEM_LIMITS_V4`;
+///     whether the seat can be contested again once a team is seated
+///     (`seatContestable`, required with no default), and for a contestable
+///     seat the challenge cool-down (`challengeCoolDown`, in seconds, two weeks
+///     to three years, refused on a seat that can not be contested; in Rust
+///     one `Option<u32>`), which nothing reads until challenges come after
+///     this version, a seat never being contested again here; an optional,
 ///     unbounded election delay in seconds after the contract's creation
 ///     before the first charter may be filed (`electionDelay`, read by the
 ///     `moderation: "electionOpen"` reference requirement of item 24); how many

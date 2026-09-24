@@ -195,6 +195,18 @@ the 0.1 Dash of other contests; what the votes leave is released as processing
 fees when the contest is cleaned up. The target's declaration is read when an
 application opens or joins the contest, never when it ends.
 
+The contested key is the target contract alone, with no round or seat
+component, and it stays so. A contract's seat is filled once: in protocol
+version 14 an elected charter for a target whose seat is taken is refused, paid,
+with `DuplicateUniqueIndexError` (40105), the seated charter holding the index,
+and the seated charter keeps the seat. Challenges come after 14, and a challenge will be
+a new contest on this same unique index, not a document type of its own, open
+only against a target whose elected declaration says its seat can be contested
+(`seatContestable: true`, with the `challengeCoolDown` that must have passed
+since the last seat change). A target declaring `seatContestable: false` keeps
+its first team for good. The key is required on every elected declaration, and
+frozen with it, so it is in place before any challenge can read it.
+
 ## Seating
 
 Nothing is written when a contest is awarded, and nothing is copied under the
