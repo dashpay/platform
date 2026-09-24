@@ -926,7 +926,7 @@ mod refund_tests {
 #[cfg(test)]
 mod fee_generation_boundary {
     use crate::execution::validation::state_transition::tests::{
-        fetch_expected_identity_balance, process_state_transitions_with_platform_version,
+        fetch_expected_identity_balance, process_state_transitions,
         setup_identity_with_system_credits_with_platform_version,
     };
     use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
@@ -1094,6 +1094,17 @@ mod fee_generation_boundary {
             )
             .expect("expected a random document");
 
+        // The id consensus assigns commits to the identity contract nonce, so
+        // the document the test keeps for its lookup and delete must carry it.
+        document
+            .set_id_for_creation(
+                document_type,
+                &entropy.0,
+                identity_contract_nonce,
+                platform_version,
+            )
+            .expect("expected to set the document id");
+
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let documents_batch_create_transition =
@@ -1112,12 +1123,13 @@ mod fee_generation_boundary {
             .await
             .expect("expect to create documents batch transition");
 
-        let (mut fee_results, _) = process_state_transitions_with_platform_version(
+        // The block helper reads the version from `platform_state`, which every
+        // boundary vector sets to the version it processes under.
+        let (mut fee_results, _) = process_state_transitions(
             platform,
             &[documents_batch_create_transition],
             block_info,
             platform_state,
-            platform_version,
         );
 
         assert_credits_balanced(platform, platform_version);
@@ -1152,12 +1164,13 @@ mod fee_generation_boundary {
             .await
             .expect("expect to create documents batch transition");
 
-        let (mut fee_results, _) = process_state_transitions_with_platform_version(
+        // The block helper reads the version from `platform_state`, which every
+        // boundary vector sets to the version it processes under.
+        let (mut fee_results, _) = process_state_transitions(
             platform,
             &[documents_batch_delete_transition],
             block_info,
             platform_state,
-            platform_version,
         );
 
         assert_credits_balanced(platform, platform_version);

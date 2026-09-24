@@ -387,8 +387,9 @@ mod tests {
     mod fee_history {
         use super::*;
         use crate::config::PlatformConfig;
-        use dpp::block::epoch::Epoch;
+        use dpp::block::epoch::{Epoch, EpochIndex};
         use dpp::fee::default_costs::{EpochCosts, KnownCostItem};
+        use dpp::version::fee::FeeVersionNumber;
         use platform_version::version::mocks::fee_doubled_storage_test::{
             TEST_FEE_VERSION_DOUBLED_STORAGE, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE,
         };
@@ -460,33 +461,37 @@ mod tests {
             );
         }
 
-        #[test]
-        fn should_round_trip_the_test_fee_generation_number_through_saved_state() {
+        /// A state at the mock version whose history holds the genesis
+        /// generation and the test generation activated at epoch 3.
+        fn state_with_a_test_generation_boundary() -> PlatformState {
             let mut state = fresh_state(TEST_PROTOCOL_VERSION_4);
-            let first = &PlatformVersion::latest().fee_version;
             state.previous_fee_versions = CachedEpochIndexFeeVersions::from([
-                (GENESIS_EPOCH_INDEX, first.as_static()),
+                (
+                    GENESIS_EPOCH_INDEX,
+                    PlatformVersion::latest().fee_version.as_static(),
+                ),
                 (3, &TEST_FEE_VERSION_DOUBLED_STORAGE),
             ]);
+            state
+        }
 
-            let bytes = state.serialize_to_bytes().expect("state serializes");
-            let restored = PlatformState::versioned_deserialize_trusted(&bytes, &TEST_PLATFORM_V4)
-                .expect("state with a test fee generation number deserializes");
+        fn fee_history_numbers(state: &PlatformState) -> Vec<(EpochIndex, FeeVersionNumber)> {
+            state
+                .previous_fee_versions
+                .iter()
+                .map(|(epoch_index, fee_version)| (*epoch_index, fee_version.fee_version_number))
+                .collect()
+        }
 
-            let numbers = |state: &PlatformState| {
-                state
-                    .previous_fee_versions
-                    .iter()
-                    .map(|(epoch_index, fee_version)| {
-                        (*epoch_index, fee_version.fee_version_number)
-                    })
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(numbers(&restored), numbers(&state));
+        fn assert_fee_history_survived(restored: &PlatformState, original: &PlatformState) {
+            assert_eq!(fee_history_numbers(restored), fee_history_numbers(original));
             assert_eq!(
-                numbers(&restored),
+                fee_history_numbers(restored),
                 vec![
-                    (GENESIS_EPOCH_INDEX, first.fee_version_number),
+                    (
+                        GENESIS_EPOCH_INDEX,
+                        PlatformVersion::latest().fee_version.fee_version_number
+                    ),
                     (3, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE)
                 ]
             );
@@ -496,11 +501,42 @@ mod tests {
                 for cost_item in COST_ITEMS {
                     assert_eq!(
                         epoch.cost_for_known_cost_item(&restored.previous_fee_versions, cost_item),
-                        epoch.cost_for_known_cost_item(&state.previous_fee_versions, cost_item),
+                        epoch.cost_for_known_cost_item(&original.previous_fee_versions, cost_item),
                         "epoch {epoch_index} costs must survive the saved-state round trip"
                     );
                 }
             }
+        }
+
+        /// The standalone record (saved-state structure 0, also written beside
+        /// every checkpoint) resolves a test generation number through the
+        /// registry when it is read back.
+        #[test]
+        fn should_round_trip_the_test_fee_generation_number_through_saved_state() {
+            let state = state_with_a_test_generation_boundary();
+
+            let bytes = state
+                .serialize_standalone_to_bytes()
+                .expect("state serializes");
+            let restored = PlatformState::versioned_deserialize_trusted(&bytes, &TEST_PLATFORM_V4)
+                .expect("state with a test fee generation number deserializes");
+
+            assert_fee_history_survived(&restored, &state);
+        }
+
+        /// The per-block record of saved-state structure 1, the one the latest
+        /// version writes, carries the same numbers and resolves them the same
+        /// way when the state is rebuilt from the record and its entries.
+        #[test]
+        fn should_round_trip_the_test_fee_generation_number_through_the_structure_1_record() {
+            let state = state_with_a_test_generation_boundary();
+
+            let record = PlatformStateForSavingV2::from(&state);
+            let restored = record
+                .into_platform_state(Vec::new(), Vec::new())
+                .expect("state with a test fee generation number rebuilds from its record");
+
+            assert_fee_history_survived(&restored, &state);
         }
     }
 
