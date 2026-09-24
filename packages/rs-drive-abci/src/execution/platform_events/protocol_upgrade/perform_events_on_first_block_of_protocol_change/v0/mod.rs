@@ -2368,7 +2368,11 @@ mod tests {
     #[test]
     fn test_transition_from_version_10_triggers_11_and_12() {
         let platform_version = PlatformVersion::latest();
+        // A chain born at 10, as the events replayed below assume: a chain born at the latest
+        // version already holds contracts that only later versions register, which the version
+        // 12 schema cleanup would strip of keywords it does not know yet.
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(10)
             .build_with_mock_rpc()
             .set_genesis_state();
 
