@@ -10,6 +10,8 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostSettersV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
@@ -55,6 +57,10 @@ pub struct DocumentTypeV2 {
     /// keyword, protocol version 14). Once present they are frozen like the
     /// rest of the list. Every entry is also in `immutable_fields`.
     pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
+    /// The dotted paths of the properties that declare `distinctFrom`
+    /// (protocol version 14), in schema order, so a document write finds
+    /// them without walking every property. Empty on every pre-PV14 contract.
+    pub(in crate::data_contract) distinct_from_fields: Vec<String>,
     /// On an indexOnly type, the top-level properties stored in every entry's
     /// value after the row commitment (the `entryPayload` keyword), in name
     /// order. Empty on every other type and on every pre-PV14 contract.
@@ -144,6 +150,29 @@ pub struct DocumentTypeV2 {
     /// clock: `$updatedAt`, or `$createdAt` when its documents never change
     /// (`apply_can_be_deleted_by_moderators_for`).
     pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
+    /// The `refersTo` declaration whose value is the document's `$ownerId`,
+    /// the writer (`ownerRefersTo` keyword, protocol version 14), `None` when
+    /// the type declares none. Checked with the writer's id as the value, as a
+    /// property reference is checked with the property's value. Only an
+    /// `identity` or a `permanentDocument` lookup target, and only on a type
+    /// whose documents can be neither transferred nor traded, which the parser
+    /// (`parse_owner_reference` and generation 3) enforces.
+    pub(in crate::data_contract) owner_reference: Option<DocumentPropertyReferenceTarget>,
+    /// The `refersTo` declaration whose value is the document's `$creatorId`,
+    /// its creator (`creatorRefersTo` keyword, protocol version 14), `None`
+    /// when the type declares none. The counterpart of
+    /// [`Self::owner_reference`] for a type whose documents can change owner:
+    /// the same two targets, only on a type that records creator ids (a
+    /// transferable or tradeable type of a format-1 contract), where the
+    /// creator never changes.
+    pub(in crate::data_contract) creator_reference: Option<DocumentPropertyReferenceTarget>,
+    /// The rules every created or replaced document must meet, by name, in the
+    /// order they are checked (`propertyConstraints` keyword, protocol version
+    /// 14): each a comparison of two integer expressions over the document's
+    /// integer properties. Empty on document types that declare none. The
+    /// parser (`apply_property_constraints`) holds every property a rule reads
+    /// to be an integer that is neither transient nor inside a transient object.
+    pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -176,8 +205,21 @@ impl crate::data_contract::document_type::accessors::DocumentTypeV1Setters for D
     }
 }
 
+/// The dotted paths of the properties that declare `distinctFrom`, in the
+/// flattened map's (schema) order.
+fn distinct_from_fields_of(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<String> {
+    flattened_properties
+        .iter()
+        .filter(|(_, property)| property.distinct_from.is_some())
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
 impl From<DocumentTypeV0> for DocumentTypeV2 {
     fn from(value: DocumentTypeV0) -> Self {
+        let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -191,6 +233,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            distinct_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
@@ -218,12 +261,16 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            owner_reference: None,
+            creator_reference: None,
+            property_constraints: BTreeMap::new(),
         }
     }
 }
 
 impl From<DocumentTypeV1> for DocumentTypeV2 {
     fn from(value: DocumentTypeV1) -> Self {
+        let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -237,6 +284,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
+            distinct_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
@@ -264,6 +312,9 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            owner_reference: None,
+            creator_reference: None,
+            property_constraints: BTreeMap::new(),
         }
     }
 }

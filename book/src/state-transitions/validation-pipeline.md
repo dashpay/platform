@@ -300,6 +300,13 @@ let action = if state_transition.has_advanced_structure_validation_with_state() 
 
 We will cover `transform_into_action` in detail in the next chapter.
 
+For `IdentityCreateFromAddresses` this stage also checks the proof of possession of each key
+the transition registers. The address witnesses cannot sign those signatures (both sign the
+same bytes), so the owners of the inputs never signed what this check judges. From protocol
+version 14 a failure is therefore refused without a fee, like a failed witness, instead of
+charging the inputs a penalty; check_tx runs this stage for the transition too, so such a
+transition does not reach a block.
+
 ## Stage 10: State Validation
 
 The final validation stage checks for state-level conflicts. Does a data contract

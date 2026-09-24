@@ -1,9 +1,21 @@
+use crate::data_contract::document_type_distinct_from::{
+    DocumentPropertyDistinctFromArrayJs, DocumentPropertyDistinctFromMapJs,
+    distinct_from_for_document_type,
+};
+use crate::data_contract::document_type_encryption::{
+    DocumentPropertyEncryptionArrayJs, DocumentPropertyEncryptionMapJs,
+    encryptions_for_document_type,
+};
 use crate::data_contract::document_type_immutability::{
     DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
     immutable_properties_for_document_type,
 };
 use crate::data_contract::document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs, references_for_document_type,
+};
+use crate::data_contract::document_type_typed_arrays::{
+    DocumentTypedArrayPropertyArrayJs, DocumentTypedArrayPropertyMapJs,
+    typed_arrays_for_document_type,
 };
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
@@ -129,23 +141,27 @@ export interface DataContractConfig {
  * team is seated (no election exists yet) the contract is moderated by its `interim`
  * moderators, or by nobody: with the moderated document types not yet usable (every
  * document transition of one is refused) or used unmoderated meanwhile. Windows and the
- * cool-down are in seconds: the windows one day
- * to four weeks (one week when left out), the cool-down two weeks to three years.
+ * cool-down are in seconds: the windows one day to four weeks (one week when left out), the
+ * cool-down of a contestable seat two weeks to three years.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
   | { $type: "appointedModerators"; identities: string[] }
-  | {
+  | ({
       $type: "elected";
       joinWindow?: number;
       voteWindow?: number;
-      challengeCoolDown: number;
       /**
        * Seconds after the contract's creation before the first charter may be filed
        * against it, unbounded; the election may be called at once when left out. A
        * reference requiring `moderation: 'electionOpen'` reads it.
        */
       electionDelay?: number;
+      /**
+       * How many members a seated team's leader may add after the election, each one an
+       * identity that asked to join the team's proposal; 0 when left out, at most 15.
+       */
+      maxAddedModerators?: number;
       /**
        * The moderated document types of the contract, each with the non-empty abilities a
        * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
@@ -157,7 +173,18 @@ export type ContractModerators =
       interim: InterimModerators;
       /** Whether the owner is protected from the team; false when left out. */
       ownerProtected?: boolean;
-    };
+    } & ElectedModerationSeat);
+
+/**
+ * Whether the seat of an elected contract can be contested again once a team is seated,
+ * required with no default. A contestable seat declares its `challengeCoolDown`: how long a
+ * seated team is safe from a challenge after a seat change. A seat that can not be contested
+ * declares none, and its first team keeps it for good. Challenges come after protocol version
+ * 14: until then a seat is never contested again, whatever this says.
+ */
+export type ElectedModerationSeat =
+  | { seatContestable: true; challengeCoolDown: number }
+  | { seatContestable: false; challengeCoolDown?: never };
 
 /** What a charter may claim on an elected contract. */
 export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn";
@@ -686,8 +713,9 @@ impl DataContractWasm {
         Ok(DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), identity_nonce).into())
     }
 
-    /// All `refersTo` declarations of one document type, in schema property
-    /// order.
+    /// All `refersTo` declarations of one document type: its `ownerRefersTo`
+    /// or `creatorRefersTo` first, at the path `$ownerId` or `$creatorId`,
+    /// then the properties' own in schema property order.
     ///
     /// Returns an empty array when the document type declares none. Throws
     /// when the contract has no document type by that name — an empty array
@@ -730,6 +758,105 @@ impl DataContractWasm {
             let references = references_for_document_type(document_type.as_ref(), self.0.id())?;
             if references.length() > 0 {
                 map.set(&JsValue::from_str(name), &references.into());
+            }
+        }
+
+        Ok(JsValue::from(map).into())
+    }
+
+    /// The `distinctFrom` declarations of one document type, in schema
+    /// property order: each `{ path, distinctFrom }` names an identifier
+    /// property and what its value must differ from, `"$ownerId"` or the
+    /// dotted path of another identifier property of the same type.
+    ///
+    /// Empty when the document type declares none (the normal case). Throws
+    /// when the contract has no document type by that name, so "no such
+    /// type" and "nothing declared" stay distinguishable.
+    ///
+    /// The keyword is only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version reports an
+    /// empty list, which is exactly what consensus enforced at that version,
+    /// while `toJSON()` still shows the raw keyword either way.
+    #[wasm_bindgen(js_name = "documentTypeDistinctFrom")]
+    pub fn document_type_distinct_from(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentPropertyDistinctFromArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let declarations = distinct_from_for_document_type(document_type)?;
+        Ok(JsValue::from(declarations).into())
+    }
+
+    /// Every document type that declares at least one `distinctFrom`, keyed
+    /// by document type name.
+    ///
+    /// Document types with no declarations are omitted, so an empty `Map`
+    /// means "this contract declares no distinctFrom at all".
+    #[wasm_bindgen(getter = "documentDistinctFrom")]
+    pub fn document_distinct_from(&self) -> WasmDppResult<DocumentPropertyDistinctFromMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let declarations = distinct_from_for_document_type(document_type.as_ref())?;
+            if declarations.length() > 0 {
+                map.set(&JsValue::from_str(name), &declarations.into());
+            }
+        }
+
+        Ok(JsValue::from(map).into())
+    }
+
+    /// All `encryptedFor` declarations of one document type, in schema
+    /// property order: which byte array properties are encrypted, for whom,
+    /// under which key ids and under which scheme.
+    ///
+    /// Returns an empty array when the document type declares none. Throws
+    /// when the contract has no document type by that name, so "no such
+    /// type" and "nothing encrypted" stay distinguishable.
+    ///
+    /// The keyword is only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version reports
+    /// none, which is exactly what consensus enforced at that version, while
+    /// `toJSON()` still shows the raw keyword either way.
+    #[wasm_bindgen(js_name = "documentTypeEncryptedProperties")]
+    pub fn document_type_encrypted_properties(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentPropertyEncryptionArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let encryptions = encryptions_for_document_type(document_type)?;
+        Ok(JsValue::from(encryptions).into())
+    }
+
+    /// Every document type that declares at least one encrypted property,
+    /// keyed by document type name.
+    ///
+    /// Document types with no declarations are omitted, so an empty `Map`
+    /// means "this contract declares no encrypted property at all".
+    #[wasm_bindgen(getter = "documentEncryptedProperties")]
+    pub fn document_encrypted_properties(&self) -> WasmDppResult<DocumentPropertyEncryptionMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let encryptions = encryptions_for_document_type(document_type.as_ref())?;
+            if encryptions.length() > 0 {
+                map.set(&JsValue::from_str(name), &encryptions.into());
             }
         }
 
@@ -785,6 +912,55 @@ impl DataContractWasm {
             }
             let properties = immutable_properties_for_document_type(document_type.as_ref(), name)?;
             map.set(&JsValue::from_str(name), &properties.into());
+        }
+
+        Ok(JsValue::from(map).into())
+    }
+
+    /// Every typed array property of one document type (`type: "array"`
+    /// with an `items` element schema), in schema property order: `{ path,
+    /// items, minItems?, maxItems?, uniqueItems }`.
+    ///
+    /// Returns an empty array when the document type declares none. Throws
+    /// when the contract has no document type by that name, so "no such
+    /// type" and "no typed arrays" stay distinguishable.
+    ///
+    /// Typed arrays are only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version cannot
+    /// carry one: the parsers of those versions refuse an array that is not
+    /// a byte array.
+    #[wasm_bindgen(js_name = "documentTypeTypedArrays")]
+    pub fn document_type_typed_arrays(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentTypedArrayPropertyArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let typed_arrays = typed_arrays_for_document_type(document_type, self.0.id())?;
+        Ok(JsValue::from(typed_arrays).into())
+    }
+
+    /// Every document type that declares at least one typed array property,
+    /// keyed by document type name.
+    ///
+    /// Document types with none are omitted, so an empty `Map` means "this
+    /// contract declares no typed arrays at all".
+    #[wasm_bindgen(getter = "documentTypedArrays")]
+    pub fn document_typed_arrays(&self) -> WasmDppResult<DocumentTypedArrayPropertyMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let typed_arrays = typed_arrays_for_document_type(document_type.as_ref(), self.0.id())?;
+            if typed_arrays.length() > 0 {
+                map.set(&JsValue::from_str(name), &typed_arrays.into());
+            }
         }
 
         Ok(JsValue::from(map).into())

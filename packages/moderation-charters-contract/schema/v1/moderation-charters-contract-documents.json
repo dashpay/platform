@@ -1,0 +1,641 @@
+{
+  "reason": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "indices": [
+      {
+        "name": "byOwnerCode",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "code": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "code": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 3,
+        "pattern": "^[A-Z]{3}$",
+        "description": "Three uppercase letters, unique per owner",
+        "position": 0
+      },
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "position": 1
+      },
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "position": 2
+      }
+    },
+    "required": [
+      "$createdAt",
+      "code",
+      "label"
+    ],
+    "additionalProperties": false,
+    "description": "A ground for a moderation action"
+  },
+  "submittedCharter": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "requiresIdentityDecryptionBoundedKey": 1,
+    "indices": [
+      {
+        "name": "byTargetContract",
+        "properties": [
+          {
+            "targetContractId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwner",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "targetContractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "contract",
+          "contractRequirements": {
+            "moderation": "elected"
+          }
+        },
+        "description": "The contract to moderate",
+        "position": 0
+      },
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "maxBytes": 4096,
+        "position": 1
+      },
+      "reasons": {
+        "type": "array",
+        "minItems": 0,
+        "maxItems": 64,
+        "uniqueItems": true,
+        "items": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "reason"
+          }
+        },
+        "description": "Reasons the team may act on; none means it cannot act",
+        "position": 2
+      },
+      "moderatorsShare": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Percent of the declared moderators fee taken; absent is 100, 0 takes no rewards",
+        "position": 3
+      },
+      "rewardSplit": {
+        "type": "object",
+        "properties": {
+          "leader": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "position": 0
+          },
+          "equal": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Split equally among the other members",
+            "position": 1
+          },
+          "actions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Split by action count",
+            "position": 2
+          }
+        },
+        "required": [
+          "leader",
+          "equal",
+          "actions"
+        ],
+        "additionalProperties": false,
+        "description": "Percentages summing to 100",
+        "position": 4
+      }
+    },
+    "required": [
+      "$createdAt",
+      "targetContractId",
+      "description",
+      "reasons",
+      "rewardSplit"
+    ],
+    "propertyConstraints": {
+      "rewardSplitIsWhole": {
+        "equal": [
+          {
+            "add": [
+              "rewardSplit.leader",
+              "rewardSplit.equal",
+              "rewardSplit.actions"
+            ]
+          },
+          100
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "description": "A proposal to moderate a contract"
+  },
+  "joinRequest": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "requiresIdentityEncryptionBoundedKey": 1,
+    "indices": [
+      {
+        "name": "bySubmittedCharter",
+        "properties": [
+          {
+            "submittedCharterId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          }
+        ],
+        "unique": true
+      },
+      {
+        "name": "byOwner",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "submittedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "submittedCharter",
+          "propertyAgreement": {
+            "recipientId": "$ownerId"
+          }
+        },
+        "position": 0
+      },
+      "recipientId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "identityPublicKey",
+          "keyIdProperty": "recipientKeyId",
+          "keyRequirements": {
+            "purpose": "decryption",
+            "boundTo": "submittedCharter"
+          }
+        },
+        "description": "The proposal's leader",
+        "position": 1
+      },
+      "recipientKeyId": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295,
+        "position": 2
+      },
+      "senderKeyId": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295,
+        "refersTo": {
+          "type": "identityPublicKey",
+          "identityProperty": "$ownerId",
+          "keyRequirements": {
+            "purpose": "encryption",
+            "boundTo": "joinRequest"
+          }
+        },
+        "position": 3
+      },
+      "encryptedMessage": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 1040,
+        "encryptedFor": {
+          "recipient": "recipientId",
+          "recipientKey": "recipientKeyId",
+          "senderKey": "senderKeyId",
+          "scheme": "ecdh-secp256k1-aes256-cbc"
+        },
+        "description": "Readable by the leader only",
+        "position": 4
+      }
+    },
+    "required": [
+      "$createdAt",
+      "submittedCharterId",
+      "recipientId",
+      "recipientKeyId",
+      "senderKeyId",
+      "encryptedMessage"
+    ],
+    "additionalProperties": false,
+    "description": "An offer to join a proposal's team"
+  },
+  "electedCharter": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "indices": [
+      {
+        "name": "byTargetContract",
+        "properties": [
+          {
+            "targetContractId": "asc"
+          }
+        ],
+        "unique": true,
+        "contested": {
+          "resolution": 1,
+          "description": "Contest for the moderation seat"
+        }
+      },
+      {
+        "name": "bySubmittedCharter",
+        "properties": [
+          {
+            "submittedCharterId": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "targetContractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "contract",
+          "contractRequirements": {
+            "moderation": "electionOpen"
+          }
+        },
+        "position": 0
+      },
+      "submittedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "submittedCharter",
+          "propertyAgreement": {
+            "$ownerId": "$ownerId",
+            "targetContractId": "targetContractId"
+          }
+        },
+        "position": 1
+      },
+      "members": {
+        "type": "array",
+        "minItems": 0,
+        "maxItems": 15,
+        "uniqueItems": true,
+        "items": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "distinctFrom": "$ownerId",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "joinRequest",
+            "lookup": {
+              "index": "bySubmittedCharter",
+              "keys": {
+                "submittedCharterId": "submittedCharterId",
+                "$ownerId": "."
+              }
+            }
+          }
+        },
+        "description": "Team besides the leader, each with a join request",
+        "position": 2
+      }
+    },
+    "required": [
+      "$createdAt",
+      "targetContractId",
+      "submittedCharterId",
+      "members"
+    ],
+    "additionalProperties": false,
+    "description": "A proposal put to the vote with its team"
+  },
+  "addedModerator": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "indices": [
+      {
+        "name": "byElectedCharterMember",
+        "properties": [
+          {
+            "electedCharterId": "asc"
+          },
+          {
+            "memberId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "electedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "$ownerId": "$ownerId",
+            "submittedCharterId": "submittedCharterId"
+          }
+        },
+        "description": "The seated charter; only its leader may add",
+        "position": 0
+      },
+      "submittedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": 1
+      },
+      "memberId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "distinctFrom": "$ownerId",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "joinRequest",
+          "lookup": {
+            "index": "bySubmittedCharter",
+            "keys": {
+              "submittedCharterId": "submittedCharterId",
+              "$ownerId": "."
+            }
+          }
+        },
+        "description": "An identity that asked to join the proposal",
+        "position": 2
+      }
+    },
+    "required": [
+      "$createdAt",
+      "electedCharterId",
+      "submittedCharterId",
+      "memberId"
+    ],
+    "additionalProperties": false,
+    "description": "A member the leader adds after the election, at most the target's maxAddedModerators at a time; deleting it takes the member off the team"
+  },
+  "removedModerator": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "indices": [
+      {
+        "name": "byElectedCharterMember",
+        "properties": [
+          {
+            "electedCharterId": "asc"
+          },
+          {
+            "memberId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "electedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "$ownerId": "$ownerId"
+          }
+        },
+        "description": "The seated charter; only its leader may remove",
+        "position": 0
+      },
+      "memberId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "distinctFrom": "$ownerId",
+        "refersTo": {
+          "type": "listElement",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "electedCharterId": "$id"
+          },
+          "inList": "members"
+        },
+        "description": "An elected member of the charter; an added one is taken off by deleting its addition",
+        "position": 1
+      }
+    },
+    "required": [
+      "$createdAt",
+      "electedCharterId",
+      "memberId"
+    ],
+    "additionalProperties": false,
+    "description": "An elected member the leader takes off the team; deleting it puts them back"
+  },
+  "resignationRequest": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "ownerRefersTo": {
+      "anyOf": [
+        {
+          "type": "listElement",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "electedCharterId": "$id"
+          },
+          "inList": "members"
+        },
+        {
+          "type": "deletableDocument",
+          "documentType": "addedModerator",
+          "lookup": {
+            "index": "byElectedCharterMember",
+            "keys": {
+              "electedCharterId": "electedCharterId",
+              "memberId": "."
+            }
+          }
+        }
+      ]
+    },
+    "indices": [
+      {
+        "name": "byElectedCharterOwner",
+        "properties": [
+          {
+            "electedCharterId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "electedCharterId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "permanentDocument",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "recipientId": "$ownerId"
+          }
+        },
+        "position": 0
+      },
+      "recipientId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "identityPublicKey",
+          "keyIdProperty": "recipientKeyId",
+          "keyRequirements": {
+            "purpose": "decryption",
+            "boundTo": "submittedCharter"
+          }
+        },
+        "description": "The leader",
+        "position": 1
+      },
+      "recipientKeyId": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295,
+        "position": 2
+      },
+      "senderKeyId": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295,
+        "refersTo": {
+          "type": "identityPublicKey",
+          "identityProperty": "$ownerId",
+          "keyRequirements": {
+            "purpose": "encryption",
+            "boundTo": "joinRequest"
+          }
+        },
+        "position": 3
+      },
+      "encryptedMessage": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 1040,
+        "encryptedFor": {
+          "recipient": "recipientId",
+          "recipientKey": "recipientKeyId",
+          "senderKey": "senderKeyId",
+          "scheme": "ecdh-secp256k1-aes256-cbc"
+        },
+        "description": "Why the member leaves, readable by the leader only",
+        "position": 4
+      }
+    },
+    "required": [
+      "$createdAt",
+      "electedCharterId",
+      "recipientId",
+      "recipientKeyId",
+      "senderKeyId",
+      "encryptedMessage"
+    ],
+    "additionalProperties": false,
+    "description": "A member asking to leave; the leader removes them, and deleting it withdraws the request"
+  }
+}

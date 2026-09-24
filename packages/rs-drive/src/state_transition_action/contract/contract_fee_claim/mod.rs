@@ -75,6 +75,13 @@ impl ContractFeeClaimTransitionAction {
         }
     }
 
+    /// The members whose moderation action counts the claim resets
+    pub fn settled_action_counts(&self) -> &[Identifier] {
+        match self {
+            ContractFeeClaimTransitionAction::V0(action) => &action.settled_action_counts,
+        }
+    }
+
     /// fee multiplier
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {

@@ -82,6 +82,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
             add_contested_vote_subtree_for_non_identities_operations: 0,
+            fetch_charter_election_windows: None,
         },
         update: DriveDocumentUpdateMethodVersions {
             add_update_multiple_documents_operations: 0,

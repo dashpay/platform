@@ -53,7 +53,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10200-10277 | Data Contract | `DataContractMaxDepthExceedError` (10200), `DuplicateIndexError` (10201), `InvalidDataContractIdError` (10204), `DataContractInvalidRequiredFieldsUpdateError` (10276), `PreProgrammedDistributionAmountOverLimitError` (10277) |
 | 10350-10359 | Groups | `GroupPositionDoesNotExistError` (10350), `GroupExceedsMaxMembersError` (10354) |
 | 10360-10367 | Contract Groups | `ContractGroupMembershipsOverLimitError` (10360), `InvalidContractGroupAdminsError` (10364), `InvalidContractGroupDescriptionLengthError` (10367); 10365 unassigned |
-| 10400-10418 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401) |
+| 10400-10422 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401), `DocumentPropertyNotDistinctError` (10419), `InvalidEncryptedPropertyShapeError` (10420), `DocumentPropertyMaxBytesExceededError` (10421), `DocumentPropertyConstraintViolatedError` (10422) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |
 | 10500-10535 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
 | 10600-10603 | State Transition | `InvalidStateTransitionTypeError` (10600), `StateTransitionMaxSizeExceededError` (10602) |
@@ -107,7 +107,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | Range | Category | Examples |
 |-------|----------|----------|
 | 40000-40009 | Data Contract | `DataContractAlreadyPresentError` (40000), `DataContractIsReadonlyError` (40001), `DataContractNotFoundError` (40008) |
-| 40100-40134 | Documents | `DocumentAlreadyPresentError` (40100), `DocumentNotFoundError` (40101), `DuplicateUniqueIndexError` (40105), `DocumentActionFeeAgreementNotSetError` (40132), `DocumentActionFeeAgreementMismatchError` (40133), `DocumentActionFeeMultiplierNotToleratedError` (40134) |
+| 40100-40139 | Documents | `DocumentAlreadyPresentError` (40100), `DocumentNotFoundError` (40101), `DuplicateUniqueIndexError` (40105), `DocumentActionFeeAgreementNotSetError` (40132), `DocumentActionFeeAgreementMismatchError` (40133), `DocumentActionFeeMultiplierNotToleratedError` (40134), `DocumentActionFeeModeratorsShareMismatchError` (40139) |
 | 40200-40217 | Identity | `IdentityAlreadyExistsError` (40200), `InvalidIdentityRevisionError` (40203), `IdentityInsufficientBalanceError` (40210) |
 | 40300-40307 | Voting | `MasternodeNotFoundError` (40300), `MasternodeVoteAlreadyPresentError` (40304), `VoteChoiceNotAllowedForVotePollError` (40307) |
 | 40400-40401 | Prefunded Balances | `PrefundedSpecializedBalanceInsufficientError` (40400) |
@@ -118,7 +118,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | 40900-40904 | Shielded | `InvalidAnchorError` (40900), `NullifierAlreadySpentError` (40901), `InsufficientShieldedFeeError` (40904) |
 | 41000-41003 | Contract Groups | `ContractGroupAlreadyExistsError` (41000), `ContractGroupNotFoundError` (41001), `IdentityNotContractGroupOwnerOrAdminError` (41002), `ContractGroupAdminNotFoundError` (41003) |
 | 41100-41122 | Contract Moderation | `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110), `ContractFeesAlreadyClaimedThisEpochError` (41111), `ContractFeesNothingToClaimError` (41112), `ContractFeeClaimNotAllowedError` (41113), `ContractModerationCounterpartyBarredError` (41114), `DocumentTypeNotDeletableByModeratorsError` (41115), `DocumentModerationWindowElapsedError` (41116), `ContractUserNotWarnedError` (41117), `ContractUserWarningLimitReachedError` (41118), `ContractDocumentRemovalNotFoundError` (41119), `DocumentRestoreWindowElapsedError` (41120), `DocumentRestoreHashMismatchError` (41121), `ContractDocumentAlreadyRestoredError` (41122) |
-| 41200-41299 | Contract Moderation Teams | `ContractModeratedDocumentTypeNotYetUsableError` (41200) |
+| 41200-41299 | Contract Moderation Teams | `ContractModeratedDocumentTypeNotYetUsableError` (41200), `ContractModerationAbilityNotGrantedError` (41201), `ModerationCharterAddedModeratorLimitReachedError` (41202), `ModerationReasonNotListedError` (41203) |
 
 Notice how the `DataTriggerError` sub-enum has its own `ErrorWithCode` implementation that the `StateError` delegates to:
 

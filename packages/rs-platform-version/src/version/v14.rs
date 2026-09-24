@@ -176,7 +176,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `verify_ranked_top_k_proof`. All are 0 today. The same table bumps the
 ///   four index walkers to v2 and the document update walker to v1 for the
 ///   shared-prefix fix; those same walker versions carry the time-range
-///   bucket fan-out, so both features gate on one table entry.
+///   bucket fan-out, so both features gate on one table entry. It also sets
+///   `insert_contested.fetch_charter_election_windows` to `Some(0)`: a
+///   moderation election (an `electedCharter` contest) runs on its target
+///   contract's join and vote windows, which the document create join check
+///   and the contested insert read.
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
 ///   opening two routes on the v1 document-query handler: the ranked path
@@ -199,8 +203,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   reference checks, re-validates a `refersTo: deletableDocument`
 ///   reference on every replace (a dead one must be repointed or cleared),
 ///   and lets an `immutable` one be cleared once its target is deleted.
+///   Document create structure validation 1 and replace structure
+///   validation 0 (extended in place) refuse a `distinctFrom` identifier
+///   property equal to the value it must differ from
+///   (`DocumentPropertyNotDistinctError`, 10419); transfer and purchase
+///   structure validation 0, extended in place, judge the stored document's
+///   `$ownerId` declarations against the new owner.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
+/// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` also bumps the identity create from
+///   addresses `advanced_structure` 0 → 1: a key whose proof of possession fails
+///   is refused unpaid instead of charging the inputs a penalty, since the
+///   address witnesses do not sign those proofs. v13 keeps the paid refusal of v0.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
@@ -495,13 +509,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
 ///     declaration is frozen: the join and vote windows (one day to four weeks,
-///     one week by default) and the challenge cool-down (two weeks to three
-///     years), all in seconds and bounded by `SYSTEM_LIMITS_V4`; an optional,
+///     one week by default), in seconds and bounded by `SYSTEM_LIMITS_V4`;
+///     whether the seat can be contested again once a team is seated
+///     (`seatContestable`, required with no default), and for a contestable
+///     seat the challenge cool-down (`challengeCoolDown`, in seconds, two weeks
+///     to three years, refused on a seat that can not be contested; in Rust
+///     one `Option<u32>`), which nothing reads until challenges come after
+///     this version, a seat never being contested again here; an optional,
 ///     unbounded election delay in seconds after the contract's creation
 ///     before the first charter may be filed (`electionDelay`, read by the
-///     `moderation: "electionOpen"` reference requirement of item 24); the document
-///     types the team moderates, each with the abilities a charter may claim on
-///     it; who moderates until the first team is seated (the owner, an
+///     `moderation: "electionOpen"` reference requirement of item 24); how many
+///     members a seated team's leader may add after the election
+///     (`maxAddedModerators`, 0 when left out, at most
+///     `SYSTEM_LIMITS_V4.max_contract_moderation_added_moderators`, 15); the
+///     document types the team moderates, each with the abilities the seated
+///     team holds on it; who moderates until the first team is seated (the owner, an
 ///     appointed set, or nobody, with the moderated types not yet usable or
 ///     used unmoderated meanwhile); and whether the owner is protected from the
 ///     team. `validate_moderation_config` v0 checks
@@ -513,7 +535,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     accumulates for the team to come, and with the types not yet usable
 ///     `contract_moderation_gate` v0 refuses, paid, every document transition
 ///     of a moderated type (`ContractModeratedDocumentTypeNotYetUsableError`,
-///     41200). No election exists yet.
+///     41200) until a charter is seated (item 40).
 ///
 /// 23. **Contested indexes without a Lock choice, and ties to the earliest
 ///     contender**: a contested unique index may declare `"resolution": 1`,
@@ -556,12 +578,547 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ReferencedContractRequirementNotMetError` (40135). A changed
 ///     `contractRequirements` is an incompatible schema change on update.
 ///
+/// 25. **Typed arrays of scalars in document schemas**: a document property
+///     may be `type: "array"` with an `items` element schema instead of
+///     `byteArray` (meta-schema v3, `parse_typed_array` 0,
+///     `DocumentPropertyType::TypedArray`). An element is an integer, a
+///     number, a string, a boolean, a byte array or an identifier; objects
+///     and arrays of arrays are refused. On the array `minItems` and
+///     `maxItems` count elements, `maxItems` is required (with `minItems`
+///     not above it) and at most `SYSTEM_LIMITS_V4.max_typed_array_items`
+///     (1024), and `uniqueItems` refuses a document repeating an element. An
+///     element's `enum` has members of the element type only (none on a byte
+///     array or identifier element), and an integer element's `minimum` and
+///     `maximum` are integers; the parser reads them so random documents stay
+///     inside them. The array is stored inline, a varint element count followed by the
+///     elements, each encoded exactly as a required scalar property of its
+///     type: an identifier element is 32 raw bytes, an integer element takes
+///     the width its bounds give it, a fixed-size byte array element is raw.
+///     A contract update may not change how an element encodes
+///     (`validate_update` 1). The array cannot be an index property or one
+///     side of a `propertyAgreement`. Its identifier and byte array elements
+///     are conversion paths (`find_identifier_and_binary_paths` 1). A byte array
+///     refuses `items`, and an identifier (a byte array with the identifier
+///     `contentMediaType`) now refuses `uniqueItems`, which would demand that
+///     no byte repeat.
+///
+/// 26. **Distinct identifier properties**: the `distinctFrom` property
+///     keyword (meta-schema v3, `apply_distinct_from` 0, `DistinctFrom` on
+///     `DocumentProperty`) requires an identifier property's value to differ
+///     from the value of a named property of the same document, or from the
+///     document's `$ownerId`; on the `items` of a typed array of identifiers
+///     it binds every element. A pure structure rule: document create
+///     structure validation 1 and replace structure validation 0 call
+///     `validate_distinct_from_properties` (`validate_distinct_from` 0) on the
+///     transition's data and owner id after the schema validation, transfer
+///     and purchase structure validation 0 call it on the stored document and
+///     its new owner (the three generation-0 modules were extended in place:
+///     the call is inert before this version, where no property carries the
+///     keyword), and each refuses an equal pair with
+///     `DocumentPropertyNotDistinctError` (10419); an absent named property
+///     passes. The parser checks the target at contract
+///     registration and update (it must exist, be an identifier and not be
+///     the declaring property), and a changed `distinctFrom` is an
+///     incompatible schema change on update.
+///
+/// 27. **`encryptedFor` on byte array properties**: a byte array property may
+///     declare how its ciphertext was produced, so wallets read the recipe
+///     from the contract instead of a side channel: `recipient` (an identifier
+///     property of the same document type, or `$ownerId`), `recipientKey` and
+///     `senderKey` (integer properties of the same type bounded to u32,
+///     carrying key ids) and `scheme` (`ecdh-secp256k1-aes256-cbc`, the
+///     dashpay contact request scheme: a 16-byte IV followed by AES-256-CBC
+///     with PKCS7 padding under the ECDH shared key). Meta-schema v3 admits it
+///     on byte arrays that are not identifiers, `apply_encrypted_for` 0 parses
+///     it onto `DocumentProperty::encrypted_for` and checks the three named
+///     properties exist with the right types at registration. Document create
+///     structure validation 1 and replace structure validation 0 (extended in
+///     place, inert before this version) call
+///     `validate_encrypted_property_shapes` (`validate_encrypted_property_shapes`
+///     0, `None` before this version) to check the ciphertext shape of every declared property a transition supplies,
+///     at least the IV plus one block and a multiple of the block, and refuse
+///     it with `InvalidEncryptedPropertyShapeError` (10420). Nothing else about
+///     the ciphertext is verifiable on chain. A changed `encryptedFor` is an
+///     incompatible schema change on update.
+///
+/// 28. **Property and document type names are word characters only**:
+///     meta-schema v3 refuses `-` in a property name (top-level or nested,
+///     and in the property paths of `refersTo` declarations) and generation
+///     3 of the document type parser refuses it in a document type name,
+///     under full validation. Every earlier meta-schema and generation
+///     admitted `-`, which the dotted and `list[]` path syntax was never
+///     written for; a census of every contract create and update on mainnet
+///     and testnet (2026-09-23) found no name carrying one, so nothing stored
+///     is affected. Stored contracts are read as they are.
+///
+/// 29. **Identity key references may require a purpose and a document type
+///     bound**: an `identityPublicKey` `refersTo` declaration may carry
+///     `keyRequirements`, what the referenced key must be beyond existing and
+///     not being disabled, with `purpose` (the key's purpose, by its wire name,
+///     any but `system`) and `boundTo` (the key's contract bounds must be
+///     exactly the declaring contract and the named document type of it) as
+///     the requirements (meta-schema v3, `apply_property_reference` 0,
+///     `IdentityKeyReferenceRequirements` on
+///     `DocumentPropertyReferenceTarget::IdentityPublicKey`).
+///     `create_document_types_from_document_schemas` 1, edited in place (the
+///     check is inert before this version, where no parsed reference carries
+///     requirements), refuses a contract whose `boundTo` names a document type
+///     it does not have or one no key of the required purpose can be bound
+///     to, so the check never needs a second contract fetch and a declared
+///     requirement can be met. The document reference validation
+///     checks the requirements against the key it fetched for the existence
+///     check, so they cost no further read, and refuses the first unmet one
+///     with `ReferencedIdentityKeyRequirementNotMetError` (40136). A changed
+///     `keyRequirements` is an incompatible schema change on update.
+///
+/// 30. **Key references on the key id property**: an `identityPublicKey`
+///     `refersTo` declaration may sit on the key id property itself, an
+///     integer with `minimum` 0 and `maximum` 4294967295 (a `KeyID` is a
+///     `u32`), naming through `identityProperty` whose key the value is:
+///     `"$ownerId"` (the writer), `"$creatorId"` (the document's creator,
+///     only on a document type that records creator ids) or the path of an
+///     identifier property of the same document type (which must exist, be
+///     an identifier and not carry an `identityPublicKey` reference of its
+///     own); the last two are checked at contract registration (40125). The
+///     declaration takes no `keyIdProperty`; the identifier form is unchanged
+///     and every other `refersTo` form stays identifier-only (meta-schema v3,
+///     `apply_property_reference` 0, `DocumentPropertyType::KeyIdWithReference`
+///     over `KeyReferenceIdentityProperty`). At document create and replace the
+///     reference validation reads the key id from the property, resolves the
+///     identity (the writer, the creator the action carries, or the named
+///     property's value; a key id set while that property is unset, or on a
+///     document that records no creator, one written before its type recorded
+///     creator ids, being refused with 40125) and fetches that key, so the key
+///     fetch is the only read; a key that does not exist refuses the write,
+///     paid, with
+///     `ReferencedIdentityKeyNotFoundError` (40123) and a disabled one with
+///     `ReferencedIdentityKeyDisabledError` (40124), as for the identifier
+///     form. A replace re-validates `$ownerId` touched or not, as the
+///     `$ownerId` writer gate is, since the writer may not be the one who
+///     wrote the key id; `$creatorId` when the key id changed; a property
+///     path when the key id or that property changed (a transfer itself is
+///     never checked: the reference governs writing, not holding). A
+///     `keyIdProperty` may not name a property carrying this form (40125 at
+///     registration). `keyRequirements` (item 29) sit on this form exactly
+///     as on the identifier form, checked by the same key check and by the
+///     same `boundTo` registration rule. Adding it to, removing it from or
+///     changing it on an existing property is an incompatible schema change
+///     on update, like the rest of a `refersTo`; a property an update adds
+///     may carry it, so a `$creatorId` one can meet documents written before
+///     their type recorded creator ids.
+///
+/// 31. **`refersTo` on the elements of a typed array**: an identifier element
+///     of a typed array may carry a `refersTo` declaration on its `items`,
+///     which every element then declares (meta-schema v3 `documentArrayItem`
+///     reuses the property `refersTo` definition by `$ref` and refuses
+///     `identityPublicKey` in both forms, which pair one key id with the
+///     reference).
+///     `parse_typed_array` 0 folds it into the element through the same
+///     `apply_property_reference` 0 a scalar identifier goes through, so the
+///     element is `IdentifierWithReference(target)` inside `item_type`, and
+///     `DocumentPropertyType::reference` reports either kind. Contract
+///     registration (`data_contract_reference_validation` 0) checks the
+///     declaration as a single one, and document create state validation 2
+///     and replace state validation 1 (`document_reference_validation` 0,
+///     extended in place: both are only reached from protocol version 14,
+///     where the element arm is the only new path) check every element as a
+///     single reference, refusing the first that fails with that
+///     reference's error (40120, 40127, 40135 and the rest), its path the
+///     element's list path (`reasons[2]`). A replace re-validates the
+///     elements of a changed list the stored list did not hold (the replace
+///     action carries `stored_changed_values`), and all of them when a
+///     property bound by a `propertyAgreement` changed, for a `$ownerId`
+///     agreement or for `deletableDocument` elements. A repeated element and
+///     a foreign contract holding the referenced document type are fetched
+///     once per list. Registration caps the references one document
+///     can carry at `SYSTEM_LIMITS_V4.max_references_per_document` (256; one
+///     per property declaring a reference, key id references of item 30
+///     included, `maxItems` per typed array of referencing elements;
+///     backfilled into the earlier tables), and
+///     refuses an `immutable` property holding a `deletableDocument`
+///     reference no replace could clear (a typed array of them, or a single
+///     one inside an immutable object), which could never be replaced once
+///     a target is deleted. A changed
+///     element `refersTo` is an incompatible schema change on update.
+///
+/// 32. **Document references resolved through a unique index**: a
+///     `permanentDocument` `refersTo`, on an identifier property or on the
+///     elements of a typed array (item 31), may carry a `lookup`
+///     (meta-schema v3, `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::PermanentDocumentLookup`, so an id
+///     reference keeps its variant and its encoding): the value is then
+///     not the referenced document's id, and the referenced document is the
+///     one the named unique index of the referenced document type finds for
+///     a key assembled from the referring document. `keys` maps every index
+///     property to a property path of the referring type, `$ownerId` or `.`
+///     (the value, or the element, exactly once). A `deletableDocument`
+///     reference may take one too (`DeletableDocumentLookup`, appended): it
+///     then means a document with this key exists now, since the key may find
+///     a later document once the one it found is deleted, so every replace
+///     re-validates it, an immutable property may not hold it, and it is the
+///     one deletable form a reference expression and `ownerRefersTo` (never
+///     `creatorRefersTo`) take. Generation 3 of the parser
+///     checks on every parse that each property a key reads is a stored,
+///     required, single value of the referring type;
+///     `create_document_types_from_document_schemas` 1, edited in place like
+///     for item 29 (inert before this version, where no parsed reference
+///     carries a lookup), checks a lookup into a document type of the same
+///     contract under full validation (the index exists, is unique, carries
+///     no `timeRange` and is not on an indexOnly type, the keys cover it
+///     exactly, every source shares its index property's value kind, and the
+///     key cannot move off the document it found: its schema properties are
+///     immutable, and `$ownerId` is only a part on a type that is neither
+///     transferable nor tradeable), and the contract reference validation
+///     checks one into another contract, refusing it with
+///     `ReferencedDocumentLookupInvalidError` (40137). The document
+///     reference validation (generation 0, reached only from this version)
+///     queries the index for each value's key, billed as a document fetch,
+///     refuses a write with no match with `ReferencedEntityNotFoundError`
+///     (40120, an element named by its list path), checks a
+///     `propertyAgreement` against the document found, and on replace
+///     re-validates when a property the key reads changed. A key may read
+///     `$ownerId` only on a referring type that is neither transferable nor
+///     tradeable, checked on every parse. A changed `lookup` is an
+///     incompatible schema change on update. Chained queries and composite
+///     by-id joins refuse a lookup reference as a join property, and
+///     preallocated indexes are never bound through one.
+/// 33. **Reference expressions (`anyOf` / `allOf`)**: a `refersTo`, on an
+///     identifier property or on the elements of a typed array (item 31), may
+///     be `{ "anyOf": [operand, ...] }`, holding if at least one operand
+///     holds, or `{ "allOf": [operand, ...] }`, holding if every operand holds
+///     for the same value, in place of one target (meta-schema v3, which
+///     admits either combinator only as the declaration's one key,
+///     `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::AnyOf` and `AllOf`, so every single
+///     target keeps its variant and its encoding; decoding refuses a nesting
+///     deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH`, 16, so the bytes of
+///     a consensus error cannot recurse without bound). An operand is a leaf,
+///     an `identity`, a `permanentDocument` (by id or with a `lookup`, item
+///     32), a `listElement`, a `deletableDocument` with a `lookup` (which
+///     re-validates the expression on every replace), or an expression of the
+///     other combinator; a list names two or more operands. `contract`,
+///     `token`, `deletableDocument` by id and
+///     `identityPublicKey` leaves, the key id form, a combinator directly
+///     inside the same combinator and keys beside a combinator are refused on
+///     every parse. Registration caps a list at
+///     `SYSTEM_LIMITS_V4.max_reference_operands` (4) and the nesting at
+///     `max_reference_expression_depth` (4 combinators on any path to a leaf),
+///     both backfilled into the earlier tables, refuses two alike operands of
+///     one list (a leaf naming the declaring contract explicitly counting as
+///     the one omitting it), counts every leaf against
+///     `max_references_per_document`, and checks each leaf as the same
+///     declaration alone (`create_document_types_from_document_schemas` 1 and
+///     `data_contract_reference_validation` 0, both walking
+///     `DocumentPropertyReferenceTarget::leaves_with_paths`, which is the
+///     declaration itself at an empty path for a single target, so their
+///     output is unchanged where no expression can parse), a failing leaf
+///     named by where it sits (`resignation.memberId.anyOf[1].allOf[0]`). The
+///     document reference validation (`document_reference_validation` 0,
+///     reached only from this version) evaluates each value operand by operand
+///     in declared order: an `anyOf` stops at the first operand that holds and
+///     otherwise refuses with the last operand's error, an `allOf` stops at the
+///     first that fails and refuses with its error, so a refusal is always a
+///     leaf's own error and no new error exists; every read is billed, the
+///     failed operands' included. A `propertyAgreement` belongs to its leaf and
+///     is checked only against that leaf's document. A replace re-validates an
+///     expression when its value, or a property one of its leaves binds,
+///     changed. A changed expression is an incompatible schema change on
+///     update. Chained queries and composite by-id joins refuse an expression
+///     join property, and preallocated indexes are never bound through one.
+/// 34. **References on the document's writer or creator (`ownerRefersTo`,
+///     `creatorRefersTo`)**: a document type may declare one `refersTo`
+///     declaration of its own, under the doctype-level `ownerRefersTo`
+///     keyword (meta-schema v3, which reuses the property declaration by
+///     `$ref`), whose value is the document's `$ownerId`, the writer, instead
+///     of a property's: a single target, or a reference expression (item 33)
+///     whose every leaf is one of the targets that can hold a writer:
+///     `identity`, and a `permanentDocument` found through a `lookup`, where
+///     `.` is the writer (and, for the writer alone, a `deletableDocument`
+///     found through one, item 32); `contract`, `token` and a document by id (which the
+///     writer's identity id never is) and `identityPublicKey` (which needs a
+///     key id) are refused, as a leaf too. Parser generation 3 reads it from
+///     the stored schema once the core parse has run the meta-schema, on
+///     every parse, through the same `apply_property_reference` 0 an
+///     identifier property's goes through, onto
+///     `DocumentTypeV2::owner_reference`, and refuses it on a type whose
+///     documents can be transferred or traded, since neither is a write. Every
+///     enumeration of a type's references goes through
+///     `DocumentTypeRef::reference_declarations`, which yields it first: its
+///     lookup's referring side is checked on every parse, a lookup into a
+///     type of the same contract by
+///     `create_document_types_from_document_schemas` 1 (edited in place like
+///     for item 29, inert before this version, whose parsers never set an
+///     owner reference), and the whole declaration at registration by the
+///     contract reference validation (`data_contract_reference_validation` 0,
+///     extended in place, only reached from this version), which names it
+///     `<documentType>.$ownerId` and lets its `propertyAgreement` name the
+///     writer on the referring side. It counts one against
+///     `max_references_per_document`. Document create state validation 2 and
+///     replace state validation 1 (`document_reference_validation` 0, extended
+///     in place, both only reached from this version) check the writer against
+///     the target exactly as a property's value is checked: on every create,
+///     and on a replace under the rules of its target (a changed property its
+///     lookup or a `propertyAgreement` reads, every replace for a `$ownerId`
+///     pair), and refuse the write with the error the target reports for a
+///     property (40120 and the rest) at the path `$ownerId`; an `identity`
+///     target fetches nothing, the transition having proved the writer exists.
+///     Adding, removing or changing it is an incompatible schema change on
+///     update (`validate_schema_compatibility` 1 freezes it as the shared rule
+///     set freezes `refersTo`). Its counterpart for a type whose documents can
+///     be transferred or traded is `creatorRefersTo`, whose value is the
+///     document's `$creatorId`, the creator, which never changes: the same
+///     two targets (`.` the creator), only on a type that records creator ids
+///     (`should_use_creator_id`: a transferable or tradeable type of a
+///     format-1 contract), so a type declares at most one of the two; stored
+///     as `DocumentTypeV2::creator_reference`, enumerated second by
+///     `reference_declarations`, named `$creatorId` (and
+///     `<documentType>.$creatorId` at registration), checked against the
+///     writer on a create and the stored creator on a replace under the same
+///     rules, never on a transfer or a purchase, and frozen on update the same
+///     way.
+/// 35. **References to an element of a list of a referenced document**: a
+///     new `refersTo` target, `listElement` (meta-schema v3,
+///     `apply_property_reference` 0, parsed to the appended
+///     `DocumentPropertyReferenceTarget::ListElement`, so every earlier
+///     variant keeps its encoding), on an identifier property, on the
+///     elements of a typed array (item 31), as a leaf of a reference
+///     expression (item 33), or on the writer or the creator (item 34, whose
+///     identity then must be listed; a third target those two take next to
+///     `identity` and a `permanentDocument` lookup, since an identity id can
+///     be an element of a list of identities): the value must be an element
+///     of the typed array
+///     of identifiers `inList` held by one document of `documentType`, the
+///     document whose `$id` the `propertyAgreement` pair with `$id` on the
+///     referenced side reads from an identifier property of the referring
+///     type (stored, optional or not; generation 3 of the parser checks it
+///     under full validation). `$id` joins `$ownerId` and `$creatorId` as a
+///     referenced-side agreement name for every document reference. In every
+///     other respect a list element is a document reference: `contractId`,
+///     `documentType` and its other agreement pairs are checked at
+///     registration as a `permanentDocument`'s are (the type must forbid
+///     deletion), and the list must be a stored typed array of identifiers
+///     fixed once a document is written (the type is immutable or lists the
+///     list's top-level property under `immutable`).
+///     `create_document_types_from_document_schemas` 1, edited in place like
+///     for items 29 and 32 (inert before this version, where no parsed
+///     reference is a list element), checks a list in the same contract
+///     under full validation, and the contract reference validation checks
+///     one in another contract, refusing it with
+///     `ReferencedDocumentListInvalidError` (40138). The document reference
+///     validation (generation 0, reached only from this version) fetches the
+///     list's document by the `$id` pair's value, once per write and shared
+///     with any other reference of the same document (every by-id document
+///     fetch of one write is now memoized), checks the other pairs against it,
+///     and refuses a value the list does not hold, or one set while the `$id`
+///     property is not, with `ReferencedEntityNotFoundError` (40120, the list
+///     element declaration as its entity type, an element named by its list
+///     path); the list is collected once, each value a set lookup. A replace
+///     checks it again when its value or a referring side of any pair
+///     changed, as every agreement is. Each value counts against
+///     `SystemLimits::max_references_per_document` like every other
+///     reference. A changed `listElement` is an incompatible schema change on
+///     update.
+///
+///
+/// 36. **Transient properties are never stored**: a transient property is
+///     judged on the transition and dropped before its document is stored.
+///     Up to v13 only a create dropped it and a replace stored whatever it
+///     carried; `document_from_replace_transition_action` 1 (paired with the
+///     contract-version stamp, edited in place, only selected by this
+///     version) drops the transient values of a replace by top-level name as
+///     a create does. The rules that read a stored value refuse a transient
+///     one, by the property's path and every enclosing object's
+///     (`is_transient`): at registration (parser generation 3 under full
+///     validation) every `transient` entry must name a top-level property,
+///     since Drive drops values by top-level name, and no index may read a
+///     transient property, which every document would leave in the index's
+///     null branch; a lookup's referenced side refuses such an index too
+///     (`referenced_side_error`); the contract reference validation
+///     (`data_contract_reference_validation` 0, extended in place, only
+///     reached from this version) refuses a `propertyAgreement` whose
+///     referenced property is transient, which no stored document carries,
+///     and a key reference that stores the key id while its identity is
+///     transient, in either form (`identityProperty` on the key id,
+///     `keyIdProperty` on the identity). A transient referring side of an
+///     agreement stays allowed: it is a write gate, judged on the
+///     transition. Changing the `transient` list on contract update was an
+///     unsupported keyword to the schema compatibility check, an internal
+///     error that dropped the transition unpaid; `validate_schema_compatibility`
+///     1 freezes the set of names it lists (sorted and deduplicated before
+///     the diff, so a reordering is no change) as it freezes `refersTo`, an
+///     incompatible schema change.
+///     A census of every mainnet and testnet contract (2026-09-23) found
+///     `transient` only on DPNS-shaped `domain` types, which are immutable,
+///     index no transient property and list top-level properties only.
+///
+/// 37. **The moderation charters system contract**
+///     (`SystemDataContract::ModerationCharters`, schema v1, the first piece of
+///     decentralized moderation teams) carries seven document types, all
+///     immutable, the four a charter is made of undeletable and the three team
+///     changes deletable. A `reason` is a ground for a moderation
+///     action, keyed by its owner and a three-letter `code` unique among the
+///     owner's reasons. A `submittedCharter` is a leader's proposal to
+///     moderate one contract on that contract's own terms: its
+///     `targetContractId` refers to a contract declaring elected moderation
+///     (item 24, `moderation: "elected"`, so teams form during the contract's
+///     election delay), its `reasons` are a typed array (item 25) of
+///     references to reasons (item 31), and it carries an optional
+///     `moderatorsShare` and a `rewardSplit`. A `joinRequest` is an identity's
+///     offer to serve on a proposal, one per identity per proposal, whose
+///     `recipientId` must be the proposal's owner (`propertyAgreement`) and
+///     name a decryption key bound to `submittedCharter` (item 29), whose
+///     `senderKeyId` is an encryption key of the writer bound to `joinRequest`
+///     (item 30) and whose `encryptedMessage` declares its envelope (item 27).
+///     An `electedCharter` is a proposal put to the vote with its team: only
+///     the proposal's owner may create one, for the proposal's own target
+///     (`propertyAgreement`), its `targetContractId` requires
+///     `moderation: "electionOpen"`, and its `members` are identities each of
+///     which filed a join request for that proposal (item 32, a lookup through
+///     the join request's unique index) and none of which is the leader
+///     (item 26). Once a charter is seated, its leader adds members from the
+///     same join requests (`addedModerator`, the same lookup) and takes them
+///     back by deleting the addition, and removes elected members
+///     (`removedModerator`, whose `memberId` is a `listElement` of the
+///     charter's `members`), putting one back by deleting the removal; each
+///     exists at most once per member and charter (unique indexes), so the
+///     team that acts is the leader plus the elected members less the
+///     removals plus the additions (`ElectedCharter::active_members`). A
+///     member asks to leave with a deletable `resignationRequest`, which only
+///     a member may file (`ownerRefersTo` with an `anyOf` of a `listElement`
+///     into the elected charter's `members` and a `deletableDocument` lookup
+///     of an `addedModerator`, items 32 to 35) and which carries a message
+///     encrypted to the leader; the leader acts on it by deleting the addition
+///     or removing an elected member. The cap on
+///     additions, the target's `maxAddedModerators`, is a consensus rule of
+///     item 40.
+///     Its `byTargetContract` index is a contested unique index
+///     with `"resolution": 1`, the masternode vote without a Lock choice of
+///     item 23, so an elected charter create opens or joins the contest for
+///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
+///     (`moderation_charters: 1`). A proposal holds no rule beyond its schema:
+///     the reward split sums to 100 through the contract's
+///     `propertyConstraints` rule (item 39), so 11001 is never produced, and
+///     the description fits 4096 bytes through the schema's own `maxBytes`
+///     (item 38); every document validation checks both. Genesis registers it
+///     on chains born at this version (`create_genesis_state` v1, behind the
+///     app-connect branch), `transition_to_version_14` inserts it on upgrade,
+///     and the Drive system contract cache serves it from this version
+///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Item 40 seats
+///     the winning team.
+///
+/// 38. **`maxBytes` on strings**: a property keyword for the bound plain JSON
+///     Schema cannot count, the most UTF-8 bytes a string may take
+///     (`maxLength` counts characters, which are up to four bytes each). It
+///     goes on a string property, or on the `items` of a typed array of
+///     strings where it bounds every element, and is 1 to 65535 and no lower
+///     than `minLength`, checked at registration. Meta-schema v3 admits it and
+///     `apply_max_bytes` 0 folds it into `StringPropertySizes::max_bytes`, so
+///     `max_byte_size`, `max_size` and random documents respect it. The
+///     document validation (`DataContract::validate_document_properties` 0,
+///     extended in place, inert before this version) calls
+///     `validate_max_bytes_properties` (`validate_max_bytes` 0, `None` before
+///     this version) after the JSON schema, on every create and replace and in
+///     every client that validates a document, and refuses a longer value with
+///     `DocumentPropertyMaxBytesExceededError` (10421, naming the element as
+///     `tags[2]` for an item). On update it moves like `maxLength`: it may be
+///     raised or removed, not added or lowered. The moderation charters
+///     contract (item 37) declares it on the proposal's description, replacing
+///     the charter-specific description check, its error 11002 and
+///     `SystemLimits::max_moderation_charter_description_length`.
+///
+/// 39. **Property constraints**: the doctype-level `propertyConstraints`
+///     keyword (meta-schema v3, `parse_property_constraints` 0) names rules a
+///     document's integer properties must meet, each a comparison (`equal`,
+///     `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
+///     `greaterThanOrEqual`) of two integer expressions built from integer
+///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
+///     `modulo` and `power`. A property the document leaves out counts as 0,
+///     or as the value of an `ifAbsent` operand naming it. Arithmetic is exact
+///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
+///     negative), and an overflow, a zero divisor, a negative exponent or a
+///     value that is not an integer refuses the document rather than wrapping.
+///     The parser checks that every path names an integer property that is
+///     neither transient nor inside a transient object, and that no operand
+///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
+///     parse, and under full validation the limits
+///     `SystemLimits::max_property_constraints` (16 rules) and
+///     `max_property_constraint_nodes` (32 per rule).
+///     `DataContract::validate_document_properties` 0 (extended in place, inert
+///     before this version) calls `validate_property_constraints`
+///     (`validate_property_constraints` 0) after the schema validation, so
+///     document create and replace, and any client validating a document,
+///     refuse a broken rule with `DocumentPropertyConstraintViolatedError`
+///     (10422), naming the rule and why. The rules read no state and change
+///     nothing stored. They are fixed when the document type is created: a
+///     changed `propertyConstraints` is an incompatible schema change on
+///     update. The moderation charters contract declares its first one: a
+///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
+///     charter-specific check, whose error 11001 keeps its place in
+///     `BasicError` but is never produced.
+///
+/// 40. **Elected moderation teams moderate from their stored charter**: seating
+///     writes nothing. Awarding the contest of item 37 writes the winning
+///     `electedCharter`, the only one ever stored for its target, so the
+///     charter seated on an elected contract is the one the charter contract's
+///     `byTargetContract` index finds, and the moderation paths read it, each
+///     read a billed document query of the system contract. Once one is seated,
+///     only its team moderates the contract: the leader (the charter's owner)
+///     and the active members (its `members` less removals, plus additions),
+///     each alone, found by one point read of the unique `removedModerator`
+///     index for an elected member or of `addedModerator` for anyone else; the
+///     interim moderators
+///     are refused (41101). The team holds the abilities the declaration gives
+///     it: a deletion or restore needs `deleteDocuments` on the type, a list
+///     action the ability on some moderated type
+///     (`ContractModerationAbilityNotGrantedError`, 41201). The leader and the
+///     active members are protected (41102), with the owner when the
+///     declaration says so, and the interim moderators no longer are. A
+///     `notYetUsable` interim stops blocking the moderated types
+///     (`contract_moderation_gate` v0). An `addedModerator` past the target's
+///     `maxAddedModerators` additions the charter holds is refused,
+///     paid (`ModerationCharterAddedModeratorLimitReachedError`, 41202), by a
+///     hook in the batch's `validate_state` v0 that only a create of the
+///     charter contract reaches. A document action on a moderated type may
+///     agree to the seated proposal's `moderatorsShare` of the declared
+///     moderators part (rounded down) instead of the whole, and is charged
+///     that: the batch transformer (state v2) reads the charter and its
+///     proposal only for such an agreement, and advanced structure validation
+///     and every recheck judge it (`DocumentActionFeeModeratorsShareMismatchError`,
+///     40139, for any other lower amount or with no seated charter). The
+///     interim team's claim of the moderators pot is refused once a charter is
+///     seated (41113). No table moves: every generation involved is unreleased,
+///     but for the shipped batch `validate_state` v0, which no batch of an
+///     earlier version reaches through the new hook.
+///
+/// 41. **A seated team's pot, action counts and reasons**: the leader or an
+///     active member of a seated team claims the moderators pot for the team,
+///     and it is split by the proposal's `rewardSplit`: the leader share to the
+///     leader, the equal share between the other members (the leader's when it
+///     has none), and the action share between the whole team by each one's
+///     count of bans, suspensions, warnings and document deletions since the
+///     last settle, equally when nobody acted. Every part rounds down and the
+///     remainder stays in the pot. The counts are `member id -> u32` items
+///     without storage flags under key `48` of an elected contract's other tree,
+///     created with the contract (`insert_contract_moderation_trees` v0), and
+///     every settle deletes them. An `addedModerator` or `removedModerator`
+///     created or deleted settles the pot first, to the team as it was, by a
+///     hook in the batch's `validate_state` v0 beside the cap on additions: it
+///     ignores the once-per-epoch limit and writes no last claim. The proof of a
+///     claim by a seated team's member, whom the contract does not name as a
+///     recipient, shows the claimant's balance alone. A moderation reason gains
+///     `reasonDocumentId` (tag bit 2 where it is stored), and a seated team's
+///     ban, suspension, warning or deletion must name a `reason` document its
+///     proposal lists (`ModerationReasonNotListedError`, 41203). No table moves
+///     but the four
+///     new Drive method slots, `0` at every version.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
 /// ephemeral key and encrypted grant in `entryPayload`. Genesis registers it on
 /// chains born at this version; `transition_to_version_14` inserts it on upgrade.
 /// The Drive and trusted SDK caches serve it only from protocol version 14.
+///
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
@@ -648,7 +1205,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -664,13 +1221,25 @@ mod tests {
     fn should_change_only_the_contested_document_and_once_per_identity_fees_at_protocol_14() {
         for protocol_version in 1..14 {
             let version = PlatformVersion::get(protocol_version).expect("known protocol version");
+            let fund_fees = &version.fee_version.vote_resolution_fund_fees;
+            assert_eq!(
+                fund_fees.contested_document_vote_resolution_fund_required_amount, 20_000_000_000,
+                "protocol {protocol_version} must preserve the 0.2 DASH contribution"
+            );
             assert_eq!(
                 version
                     .fee_version
                     .vote_resolution_fund_fees
-                    .contested_document_vote_resolution_fund_required_amount,
-                20_000_000_000,
-                "protocol {protocol_version} must preserve the 0.2 DASH contribution"
+                    .contested_document_single_vote_cost,
+                10_000_000,
+                "protocol {protocol_version} must preserve the 0.0001 DASH vote"
+            );
+            // No moderation election exists before 14; its amount is the contested one, so
+            // a shipped path choosing between the two cannot change what it charges
+            assert_eq!(
+                fund_fees.moderation_vote_resolution_fund_required_amount,
+                fund_fees.contested_document_vote_resolution_fund_required_amount,
+                "protocol {protocol_version}"
             );
         }
 
@@ -678,6 +1247,14 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        // A masternode vote costs a fifth of what it did: 0.00002 DASH from the contest's fund
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_single_vote_cost = 2_000_000;
+        // An application in a moderation election prefunds its masternode votes with 0.5 DASH
+        expected_fees
+            .vote_resolution_fund_fees
+            .moderation_vote_resolution_fund_required_amount = 50_000_000_000;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(

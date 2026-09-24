@@ -209,13 +209,14 @@ mod tests {
         let mut declaration = ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down: Some(1_209_600),
             moderated_document_types: BTreeMap::from([(
                 "post".to_string(),
                 BTreeSet::from([ModerationAbility::Ban]),
             )]),
             interim: InterimModerators::ContractOwner,
             election_delay: None,
+            max_added_moderators: 0,
             owner_protected: false,
         };
         modify(&mut declaration);
@@ -239,11 +240,15 @@ mod tests {
         assert!(kept.is_valid(), "{:?}", kept.errors);
 
         type Change = (&'static str, fn(&mut ElectedModerators));
-        let changes: [Change; 8] = [
+        let changes: [Change; 10] = [
             ("join window", |d| d.join_window += 1),
             ("vote window", |d| d.vote_window += 1),
-            ("challenge cool-down", |d| d.challenge_cool_down += 1),
+            ("seat made permanent", |d| d.challenge_cool_down = None),
+            ("challenge cool-down", |d| {
+                d.challenge_cool_down = d.challenge_cool_down.map(|cool_down| cool_down + 1)
+            }),
             ("election delay", |d| d.election_delay = Some(1)),
+            ("added moderators", |d| d.max_added_moderators = 1),
             ("moderated set", |d| {
                 d.moderated_document_types
                     .insert("like".to_string(), BTreeSet::from([ModerationAbility::Ban]));
@@ -273,6 +278,17 @@ mod tests {
                 result.errors
             );
         }
+
+        // Nor can a seat that can not be contested be opened to challenges
+        let permanent = elected(|d| d.challenge_cool_down = None);
+        let kept = permanent.validate_update_v2(&permanent, contract_id, platform_version);
+        assert!(kept.is_valid(), "{:?}", kept.errors);
+        let opened = permanent.validate_update_v2(&unchanged, contract_id, platform_version);
+        assert!(
+            format!("{:?}", opened.errors).contains("can not change its elected"),
+            "{:?}",
+            opened.errors
+        );
     }
 
     #[test]

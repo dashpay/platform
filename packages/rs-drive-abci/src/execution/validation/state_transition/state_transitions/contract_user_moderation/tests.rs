@@ -52,9 +52,7 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
-};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract;
@@ -74,6 +72,8 @@ use rand::SeedableRng;
 use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+
+mod seated_team;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
@@ -501,14 +501,22 @@ impl Setup {
             platform_version,
         )
         .expect("expected the proof to verify");
-        match outcome {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedContractDocumentRemoval(
-                    contract_id,
-                    document_type_name,
-                    _,
-                    removal,
-                ),
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            outcome
+        );
+        assert_eq!(
+            outcome.owner_balance().is_some(),
+            platform_version.drive.methods.prove.prove_state_transition >= 1,
+            "the proof carries the moderator's balance exactly from prover version 1"
+        );
+        match outcome.into_result() {
+            StateTransitionProofResult::VerifiedContractDocumentRemoval(
+                contract_id,
+                document_type_name,
+                _,
+                removal,
             ) => {
                 assert_eq!(contract_id, self.contract.id());
                 assert_eq!(document_type_name, POST);
@@ -654,10 +662,20 @@ impl Setup {
             platform_version,
         )
         .expect("expected the proof to verify");
-        match outcome {
-            StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedContractModerationListStatuses(_, _, status),
-            ) => status,
+        assert!(
+            !outcome.is_execution_proved(),
+            "expected AffectedState, got {:?}",
+            outcome
+        );
+        assert_eq!(
+            outcome.owner_balance().is_some(),
+            platform_version.drive.methods.prove.prove_state_transition >= 1,
+            "the proof carries the moderator's balance exactly from prover version 1"
+        );
+        match outcome.into_result() {
+            StateTransitionProofResult::VerifiedContractModerationListStatuses(_, _, status) => {
+                status
+            }
             other => panic!("expected a moderation status, got {other:?}"),
         }
     }
@@ -719,6 +737,7 @@ fn suspension_reason() -> ContractModerationReason {
         code: Some(7),
         text: "flooding".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 
@@ -1774,6 +1793,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
         code: Some(u16::MAX),
         text: "flooding the feed".to_string(),
         documents: vec![],
+        reason_document_id: None,
     };
     let transaction = setup.platform.drive.grove.start_transaction();
     let suspend = setup
@@ -2218,6 +2238,7 @@ fn deletion_reason() -> ContractModerationReason {
         code: Some(3),
         text: "spam".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 
@@ -3046,7 +3067,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
         moderators: ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-            challenge_cool_down: 1_209_600,
+            challenge_cool_down: Some(1_209_600),
             moderated_document_types: moderated
                 .iter()
                 .map(|name| {
@@ -3058,6 +3079,7 @@ fn elected(interim: InterimModerators, moderated: &[&str]) -> ContractModeration
                 .collect(),
             interim,
             election_delay: None,
+            max_added_moderators: 0,
             owner_protected: false,
         })),
     }
@@ -3121,7 +3143,11 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
     };
     let mut longer_cool_down = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
     if let ContractModerators::Elected(declaration) = &mut longer_cool_down.moderators {
-        declaration.challenge_cool_down += 1;
+        declaration.challenge_cool_down = declaration.challenge_cool_down.map(|c| c + 1);
+    }
+    let mut permanent_seat = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+    if let ContractModerators::Elected(declaration) = &mut permanent_seat.moderators {
+        declaration.challenge_cool_down = None;
     }
     let mut protected_owner = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
     if let ContractModerators::Elected(declaration) = &mut protected_owner.moderators {
@@ -3129,6 +3155,7 @@ async fn should_let_the_owner_moderate_an_elected_contract_in_its_interim() {
     }
     for (moderation, what) in [
         (longer_cool_down, "a longer cool-down"),
+        (permanent_seat, "the seat made uncontestable"),
         (protected_owner, "the owner flag turned on"),
         (
             elected(
@@ -3310,7 +3337,7 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
             "a vote window under a day",
         ),
         (
-            with(|d| d.challenge_cool_down = 94_608_001),
+            with(|d| d.challenge_cool_down = Some(94_608_001)),
             "a cool-down over three years",
         ),
         (
@@ -3358,6 +3385,16 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
         .set_config(contract.config().clone().with_moderation(Some(with(|d| {
             d.join_window = 86_400;
             d.vote_window = 86_400;
+        }))));
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    // A seat that can not be contested again has no cool-down to bound.
+    setup
+        .contract
+        .set_config(contract.config().clone().with_moderation(Some(with(|d| {
+            d.challenge_cool_down = None;
         }))));
     let create = setup
         .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())

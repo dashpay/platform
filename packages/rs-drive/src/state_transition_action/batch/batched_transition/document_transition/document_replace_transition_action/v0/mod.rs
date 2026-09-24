@@ -52,6 +52,13 @@ pub struct DocumentReplaceTransitionActionV0 {
     /// pointed at is gone: the stored value is the only record of what
     /// that was.
     pub removed_identifier_fields: BTreeMap<String, Identifier>,
+    /// The stored value of each `changed_data_fields` property the stored
+    /// document held (the changed and the removed ones, not the added ones).
+    /// Read by the reference validation, which re-validates only the
+    /// elements of a changed typed array of references that the stored list
+    /// did not already hold, as an unchanged single reference is not
+    /// re-validated either.
+    pub stored_changed_values: BTreeMap<String, Value>,
     /// Creator id
     pub creator_id: Option<Identifier>,
 }
@@ -99,6 +106,8 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
     /// The identifier each removed top-level property held in the stored
     /// document
     fn removed_identifier_fields(&self) -> &BTreeMap<String, Identifier>;
+    /// The stored value of each changed property the stored document held
+    fn stored_changed_values(&self) -> &BTreeMap<String, Value>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
 

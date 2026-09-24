@@ -39,6 +39,14 @@ pub struct DriveContractModerationMethodVersions {
     pub prove_contract_document_removals: FeatureVersion,
     pub insert_contract_document_removal_trees: FeatureVersion,
     pub add_estimation_costs_for_contract_document_removal: FeatureVersion,
+    /// Writes a seated moderation team member's count of moderation actions since the last
+    /// settle of the moderators pot (`[64, id, 2, 48]`, protocol version 14)
+    pub set_contract_moderation_action_count: FeatureVersion,
+    /// Reads every moderation action count of an elected contract
+    pub fetch_contract_moderation_action_counts: FeatureVersion,
+    /// Deletes moderation action counts: the reset at a settle of the moderators pot
+    pub remove_contract_moderation_action_counts: FeatureVersion,
+    pub add_estimation_costs_for_contract_moderation_action_counts: FeatureVersion,
 }
 
 /// Drive methods for the two fee pots a contract's document action fees accumulate in

@@ -2,9 +2,12 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::{
     GasPayer, ResolvedContractGroupMemberships, ResolvedGasSponsor,
 };
+use crate::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
 use dpp::prelude::FeeMultiplier;
 use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
+use dpp::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
+use dpp::moderation_charter::moderators_share_of;
 use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::ConsensusError;
@@ -44,12 +47,26 @@ pub struct BatchTransitionActionV0 {
     /// fee priced by it. The fees themselves are not kept: they are read off the transitions
     /// when the batch executes, after state validation had its say on each of them.
     pub action_fee_multiplier_permille: Option<FeeMultiplier>,
+    /// The moderators share of the seated moderation charter of each elected contract on whose
+    /// moderated document types some document transition of the batch agrees to a discounted
+    /// moderators part, read by the batch transformer from protocol version 14: `None` when no
+    /// charter is seated on the contract. Empty for a batch that asks for no discount, which
+    /// reads nothing.
+    pub seated_moderators_shares: BTreeMap<Identifier, Option<u8>>,
 
     /// The contracts, among those the batch touches, on which the transformer found the batch
     /// owner's suspension lapsed (protocol version 14). Each such suspension is deleted when
     /// the batch executes: the first document transition after a suspension lapses sweeps it.
     /// Only ever the owner's own: the identity is not stored, so nothing can queue another's.
     pub lapsed_suspensions: BTreeSet<Identifier>,
+
+    /// The settles of elected contracts' moderators pots the batch forces before it changes a
+    /// seated team (protocol version 14): an `addedModerator` or `removedModerator` of the
+    /// moderation charters contract created or deleted pays the pot out to the team as it was
+    /// before the change, by its proposal's reward split, and resets the action counts. Set
+    /// by the batch's state validation, which reads the team, the pot and the counts; empty
+    /// for every other batch.
+    pub moderators_pot_settlements: Vec<ModeratorsPotSettlement>,
 }
 
 impl BatchTransitionActionV0 {
@@ -76,7 +93,31 @@ impl BatchTransitionActionV0 {
                 )
                 .into()));
             };
-            if !agreement.matches_declared(declared.pricing, declared.fee) {
+            if base.agrees_to_a_moderators_discount() {
+                // Less than the declared moderators part, on a type an elected contract
+                // moderates: exactly the share the contract's seated charter takes of it, and
+                // nothing without a seated charter.
+                let moderators_share = *self
+                    .seated_moderators_shares
+                    .get(&base.data_contract_id())
+                    .ok_or(ProtocolError::CorruptedCodeExecution(
+                        "the batch transformer reads the seated moderators share of every \
+                         contract a document transition agrees to a discount on"
+                            .to_string(),
+                    ))?;
+                let offered = moderators_share
+                    .map(|share| moderators_share_of(declared.fee.moderators, share));
+                if offered != Some(agreement.moderators()) {
+                    return Ok(Err(DocumentActionFeeModeratorsShareMismatchError::new(
+                        document_type_name(),
+                        action(),
+                        declared.fee.moderators,
+                        agreement.moderators(),
+                        moderators_share,
+                    )
+                    .into()));
+                }
+            } else if !agreement.matches_declared(declared.pricing, declared.fee) {
                 return Ok(Err(DocumentActionFeeAgreementMismatchError::new(
                     document_type_name(),
                     action(),

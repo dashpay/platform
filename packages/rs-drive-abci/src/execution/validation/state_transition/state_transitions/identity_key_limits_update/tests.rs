@@ -26,9 +26,7 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::state_transition::identity_key_limits_update_transition::methods::IdentityKeyLimitsUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_key_limits_update_transition::v0::IdentityKeyLimitsUpdateTransitionV0;
 use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
-use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
-};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::{StateTransition, StateTransitionSingleSigned};
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
@@ -705,11 +703,19 @@ async fn should_prove_the_rewritten_key() {
     );
     // The proof shows the resulting key, not the nonce, so it authenticates the affected
     // state rather than this exact transition.
-    let StateTransitionProofOutcome::AffectedState(
-        StateTransitionProofResult::VerifiedPartialIdentity(identity),
-    ) = outcome
+    assert!(
+        !outcome.is_execution_proved(),
+        "expected AffectedState, got {:?}",
+        outcome
+    );
+    assert_eq!(
+        outcome.owner_balance().is_some(),
+        version.drive.methods.prove.prove_state_transition >= 1,
+        "the proof carries the owner's balance exactly from prover version 1"
+    );
+    let StateTransitionProofResult::VerifiedPartialIdentity(identity) = outcome.into_result()
     else {
-        panic!("expected the affected state to be proved, got {outcome:?}");
+        panic!("expected the affected state to be proved as a partial identity");
     };
     let key = &identity.loaded_public_keys[&LIMITED_KEY_ID];
     assert_eq!(key.total_budget(), Some(BUDGET * 2));

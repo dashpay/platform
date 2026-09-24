@@ -99,6 +99,10 @@ pub const ESTIMATED_CONTRACT_WARNINGS_PER_ENTRY: u32 = 2;
 /// The most bytes a reason's code takes in an entry: the tag and the u16.
 pub const CONTRACT_MODERATION_REASON_CODE_MAX_SIZE: u32 = 3;
 
+/// The bytes a reason's reason document id takes in an entry. Every entry a seated elected team
+/// writes carries one, so an entry whose value is not known is estimated with it.
+pub const CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE: u32 = 32;
+
 /// The length a reason's text is estimated at when it is not known: a sentence. Estimating
 /// every entry at the longest reason the protocol admits made the dry-run processing fee of a
 /// moderation some 25 times the applied one.
@@ -108,8 +112,9 @@ pub const ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE: u32 = 128;
 /// write walks past, and the entry a delete removes. An entry being written is priced by its
 /// own size.
 pub fn estimated_entry_value_size(list: ContractModerationList) -> u32 {
-    let reason_size =
-        CONTRACT_MODERATION_REASON_CODE_MAX_SIZE + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE;
+    let reason_size = CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
+        + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
+        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE;
     match list {
         ContractModerationList::Banlist => reason_size,
         ContractModerationList::Suspensions => CONTRACT_SUSPENSION_UNTIL_SIZE as u32 + reason_size,
@@ -181,6 +186,26 @@ impl ContractDocumentRemovalEntry {
     }
 }
 
+/// The stored size of a moderation action count: a u32, big-endian.
+pub const CONTRACT_MODERATION_ACTION_COUNT_SIZE: usize = 4;
+
+/// Encodes a moderation action count.
+pub fn encode_moderation_action_count(count: u32) -> Vec<u8> {
+    count.to_be_bytes().to_vec()
+}
+
+/// Decodes a moderation action count.
+pub fn decode_moderation_action_count(value: &[u8]) -> Result<u32, String> {
+    let bytes: [u8; CONTRACT_MODERATION_ACTION_COUNT_SIZE] = value.try_into().map_err(|_| {
+        format!(
+            "moderation action count holds {} bytes, expected {}",
+            value.len(),
+            CONTRACT_MODERATION_ACTION_COUNT_SIZE
+        )
+    })?;
+    Ok(u32::from_be_bytes(bytes))
+}
+
 /// The stored size of what a document removal starts with: the document owner's id, the
 /// moderator's id, the removal time as a u64, the hash of the removed document and the tag
 /// byte that says whether a restoration follows.
@@ -199,6 +224,7 @@ const RESTORED: u8 = 1;
 pub fn estimated_document_removal_value_size() -> u32 {
     (CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + CONTRACT_DOCUMENT_RESTORATION_SIZE) as u32
         + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
+        + CONTRACT_MODERATION_REASON_DOCUMENT_ID_SIZE
         + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
 }
 
@@ -288,19 +314,23 @@ pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, 
     })
 }
 
-/// The tag byte of a reason: bit 0 says a code follows, bit 1 that documents follow.
+/// The tag byte of a reason: bit 0 says a code follows, bit 1 that documents follow, bit 2
+/// that a reason document id follows.
 const REASON_WITHOUT_CODE: u8 = 0;
 const REASON_WITH_CODE: u8 = 1;
 const REASON_WITH_DOCUMENTS: u8 = 2;
+const REASON_WITH_REASON_DOCUMENT: u8 = 4;
 
 /// Encodes a banlist entry: its reason.
 ///
-/// A reason is a tag byte (bit 0: a code, bit 1: documents), the code as two big-endian bytes
+/// A reason is a tag byte (bit 0: a code, bit 1: documents, bit 2: a reason document), the
+/// code as two big-endian bytes when the tag says so, the 32-byte id of the reason document
 /// when the tag says so, then, when the tag says so, the documents it cites as their count in
 /// one byte followed by each one's type name (its length in one byte, then the name) and its
 /// 32-byte id, and the text as UTF-8 up to the end of the value. A reason is always written
 /// with its tag; a value without one is an entry from before reasons existed and decodes as
-/// the empty reason, and a tag without bit 1 is a reason from before documents could be cited.
+/// the empty reason, a tag without bit 1 is a reason from before documents could be cited, and
+/// a tag without bit 2 one from before a reason could name a reason document.
 pub fn encode_ban(reason: &ContractModerationReason) -> Vec<u8> {
     let mut value = Vec::with_capacity(reason_encoded_size(reason));
     encode_reason_into(reason, &mut value);
@@ -420,7 +450,14 @@ fn reason_encoded_size(reason: &ContractModerationReason) -> usize {
             .map(|document| 1 + document.document_type_name.len() + 32)
             .sum::<usize>()
     };
-    1 + if reason.code.is_some() { 2 } else { 0 } + documents_size + reason.text.len()
+    1 + if reason.code.is_some() { 2 } else { 0 }
+        + if reason.reason_document_id.is_some() {
+            32
+        } else {
+            0
+        }
+        + documents_size
+        + reason.text.len()
 }
 
 fn encode_reason_into(reason: &ContractModerationReason, value: &mut Vec<u8>) {
@@ -431,9 +468,15 @@ fn encode_reason_into(reason: &ContractModerationReason, value: &mut Vec<u8>) {
     if !reason.documents.is_empty() {
         tag |= REASON_WITH_DOCUMENTS;
     }
+    if reason.reason_document_id.is_some() {
+        tag |= REASON_WITH_REASON_DOCUMENT;
+    }
     value.push(tag);
     if let Some(code) = reason.code {
         value.extend_from_slice(&code.to_be_bytes());
+    }
+    if let Some(reason_document_id) = reason.reason_document_id {
+        value.extend_from_slice(reason_document_id.as_slice());
     }
     if !reason.documents.is_empty() {
         // The count and each name fit a byte: the reason's validation bounds both, so a
@@ -456,7 +499,7 @@ fn decode_reason(value: &[u8]) -> Result<ContractModerationReason, String> {
     let Some((&tag, mut rest)) = value.split_first() else {
         return Ok(ContractModerationReason::default());
     };
-    if tag & !(REASON_WITH_CODE | REASON_WITH_DOCUMENTS) != 0 {
+    if tag & !(REASON_WITH_CODE | REASON_WITH_DOCUMENTS | REASON_WITH_REASON_DOCUMENT) != 0 {
         return Err(format!("moderation reason has unknown tag {}", tag));
     }
     let code = if tag & REASON_WITH_CODE != 0 {
@@ -465,6 +508,15 @@ fn decode_reason(value: &[u8]) -> Result<ContractModerationReason, String> {
         };
         rest = after;
         Some(u16::from_be_bytes(*code))
+    } else {
+        None
+    };
+    let reason_document_id = if tag & REASON_WITH_REASON_DOCUMENT != 0 {
+        let Some((id, after)) = rest.split_first_chunk::<32>() else {
+            return Err("moderation reason is cut short inside its reason document id".to_string());
+        };
+        rest = after;
+        Some(Identifier::from(*id))
     } else {
         None
     };
@@ -503,6 +555,7 @@ fn decode_reason(value: &[u8]) -> Result<ContractModerationReason, String> {
         code,
         text,
         documents,
+        reason_document_id,
     })
 }
 
@@ -523,6 +576,7 @@ mod tests {
             code: Some(0x0102),
             text: "spam".to_string(),
             documents: vec![],
+            reason_document_id: None,
         };
         assert_eq!(encode_ban(&coded), [&[1u8, 1, 2][..], b"spam"].concat());
         assert_eq!(
@@ -533,6 +587,48 @@ mod tests {
         let empty = ContractModerationReason::default();
         assert_eq!(encode_ban(&empty), vec![0]);
         assert_eq!(decode_ban(&[0]).expect("decode").reason, empty);
+    }
+
+    #[test]
+    fn should_round_trip_the_reason_document_a_reason_names() {
+        let named = ContractModerationReason {
+            code: Some(0x0102),
+            text: "spam".to_string(),
+            documents: vec![ContractModerationDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from([7; 32]),
+            }],
+            reason_document_id: Some(Identifier::from([9; 32])),
+        };
+        let value = encode_ban(&named);
+        // tag with all three bits, the code, the reason document id, then the documents
+        assert_eq!(value[0], 7);
+        assert_eq!(&value[1..3], &[1, 2]);
+        assert_eq!(&value[3..35], &[9; 32]);
+        assert_eq!(value[35], 1);
+        assert_eq!(value.len(), reason_encoded_size(&named));
+        assert_eq!(decode_ban(&value).expect("decode").reason, named);
+
+        // Alone, right after the tag.
+        let alone = ContractModerationReason::from_text("spam")
+            .with_reason_document(Identifier::from([9; 32]));
+        let value = encode_ban(&alone);
+        assert_eq!(value[0], 4);
+        assert_eq!(&value[1..33], &[9; 32]);
+        assert_eq!(&value[33..], b"spam");
+        assert_eq!(decode_ban(&value).expect("decode").reason, alone);
+
+        // A reason written before bit 2 existed reads as naming none, and one cut short
+        // inside the id is refused.
+        assert_eq!(
+            decode_ban(&[&[0u8][..], b"spam"].concat())
+                .expect("decode")
+                .reason
+                .reason_document_id,
+            None
+        );
+        assert!(decode_ban(&[4u8, 9, 9]).is_err());
+        assert!(decode_ban(&[8u8]).is_err(), "an unknown tag bit is refused");
     }
 
     #[test]
@@ -550,6 +646,7 @@ mod tests {
                     document_id: Identifier::from([8; 32]),
                 },
             ],
+            reason_document_id: None,
         };
         let value = encode_ban(&cited);
         // tag with both bits, the code, the count, then each name (length, bytes) and id
@@ -610,6 +707,7 @@ mod tests {
             code: Some(9),
             text: "flooding, second time".to_string(),
             documents: vec![],
+            reason_document_id: None,
         };
         let value = encode_suspension(77, &reason);
         assert_eq!(&value[..8], &77u64.to_be_bytes());
@@ -631,6 +729,7 @@ mod tests {
                 code: Some(3),
                 text: String::new(),
                 documents: vec![],
+                reason_document_id: None,
             },
         };
         let value = encode_warnings(&[first.clone(), second.clone()]).expect("encode");
@@ -696,6 +795,7 @@ mod tests {
                 code: Some(3),
                 text: "spam".to_string(),
                 documents: vec![],
+                reason_document_id: None,
             },
             removed_at: 1_700_000_000_123,
             document_hash: [4; 32],

@@ -223,6 +223,7 @@ mod tests {
                 code: Some(seed as u16),
                 text: "spam".to_string(),
                 documents: vec![],
+                reason_document_id: None,
             },
             removed_at: 1_000 + seed as u64,
             document_hash: [seed + 0x20; 32],
@@ -294,6 +295,7 @@ mod tests {
                 code: Some(seed as u32),
                 text: "spam".to_string(),
                 documents: vec![],
+                reason_document_id: None,
             }),
             document_hash: removal.document_hash.to_vec(),
             restoration: removal
@@ -385,6 +387,7 @@ mod tests {
                 &proof.grovedb_proof,
                 contract.id(),
                 &query,
+                false,
                 version,
             )
             .expect("expected the proof to verify");

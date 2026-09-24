@@ -359,6 +359,7 @@ CF_EXTERN_C_BEGIN
 @class SpecificKeys;
 @class StateTransitionBroadcastError;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
+@class WaitForStateTransitionResultResponse_SuccessWithOwnerBalance;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -3005,12 +3006,13 @@ typedef GPB_ENUM(ContractModerationReason_FieldNumber) {
   ContractModerationReason_FieldNumber_Code = 1,
   ContractModerationReason_FieldNumber_Text = 2,
   ContractModerationReason_FieldNumber_DocumentsArray = 3,
+  ContractModerationReason_FieldNumber_ReasonDocumentId = 4,
 };
 
 /**
  * Why a moderator banned, suspended or warned an identity, or deleted a
  * document. Nothing checks what a moderator writes, and the documents cited
- * are not looked up.
+ * are not looked up, except the reason document a seated elected team names.
  **/
 GPB_FINAL @interface ContractModerationReason : GPBMessage
 
@@ -3025,6 +3027,11 @@ GPB_FINAL @interface ContractModerationReason : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractModerationDocument*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+/** The 32-byte id of the moderation charters contract's `reason` */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *reasonDocumentId;
+/** Test to see if @c reasonDocumentId has been set. */
+@property(nonatomic, readwrite) BOOL hasReasonDocumentId;
 
 @end
 
@@ -6770,6 +6777,7 @@ void WaitForStateTransitionResultRequest_ClearVersionOneOfCase(WaitForStateTrans
 typedef GPB_ENUM(WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber) {
   WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_StateTransitionHash = 1,
   WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_Prove = 2,
+  WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0_FieldNumber_RequestUserBalance = 3,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0 : GPBMessage
@@ -6779,6 +6787,16 @@ GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionR
 
 /** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
+
+/**
+ * Flag to request, without a proof, the credit balance of the identity
+ * that owns the transition after it executed. Ignored when a proof is
+ * requested: from protocol version 14 the proof of an owned, fee-paying
+ * transition (document and token batches, contract creates and updates,
+ * identity updates and key limit updates, contract moderation) carries
+ * the owner's balance itself.
+ **/
+@property(nonatomic, readwrite) BOOL requestUserBalance;
 
 @end
 
@@ -6806,18 +6824,39 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse : GPBMessage
  **/
 void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTransitionResultResponse *message);
 
+#pragma mark - WaitForStateTransitionResultResponse_SuccessWithOwnerBalance
+
+typedef GPB_ENUM(WaitForStateTransitionResultResponse_SuccessWithOwnerBalance_FieldNumber) {
+  WaitForStateTransitionResultResponse_SuccessWithOwnerBalance_FieldNumber_OwnerBalance = 1,
+};
+
+/**
+ * The result of a successful wait that asked for the owner's balance and for no proof
+ **/
+GPB_FINAL @interface WaitForStateTransitionResultResponse_SuccessWithOwnerBalance : GPBMessage
+
+/**
+ * The credit balance of the identity that owns the transition after it
+ * executed, read from a Drive state at or past the block that executed it
+ **/
+@property(nonatomic, readwrite) uint64_t ownerBalance;
+
+@end
+
 #pragma mark - WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber) {
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof = 2,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 3,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_SuccessWithOwnerBalance = 4,
 };
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase) {
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Proof = 2,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_SuccessWithOwnerBalance = 4,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 : GPBMessage
@@ -6829,6 +6868,12 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 
 /** Cryptographic proof for the state transition, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/**
+ * Success with the owner's balance, unproved, when the request asked
+ * for it and for no proof
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) WaitForStateTransitionResultResponse_SuccessWithOwnerBalance *successWithOwnerBalance;
 
 /** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;

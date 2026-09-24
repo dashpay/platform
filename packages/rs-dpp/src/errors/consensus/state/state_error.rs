@@ -12,7 +12,8 @@ use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
-    ContractModeratedDocumentTypeNotYetUsableError,
+    ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
+    ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
@@ -35,6 +36,7 @@ use crate::consensus::state::data_contract::data_contract_config_update_error::D
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use crate::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
 use crate::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use crate::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -69,9 +71,12 @@ use crate::consensus::state::document::referenced_document_type_deletable_error:
 use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use crate::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use crate::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use crate::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -587,6 +592,35 @@ pub enum StateError {
     // Requirements on a referenced contract (protocol version 14).
     #[error(transparent)]
     ReferencedContractRequirementNotMetError(ReferencedContractRequirementNotMetError),
+
+    // Requirements on a referenced identity key (protocol version 14).
+    #[error(transparent)]
+    ReferencedIdentityKeyRequirementNotMetError(ReferencedIdentityKeyRequirementNotMetError),
+
+    // Document references resolved through a unique index (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentLookupInvalidError(ReferencedDocumentLookupInvalidError),
+
+    // References to an element of a list of a referenced document (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentListInvalidError(ReferencedDocumentListInvalidError),
+
+    // Elected moderation teams moderating from their seated charter (protocol version 14).
+    #[error(transparent)]
+    ContractModerationAbilityNotGrantedError(ContractModerationAbilityNotGrantedError),
+
+    #[error(transparent)]
+    ModerationCharterAddedModeratorLimitReachedError(
+        ModerationCharterAddedModeratorLimitReachedError,
+    ),
+
+    #[error(transparent)]
+    DocumentActionFeeModeratorsShareMismatchError(DocumentActionFeeModeratorsShareMismatchError),
+
+    // A seated moderation team's action names a reason its proposal lists (protocol version
+    // 14).
+    #[error(transparent)]
+    ModerationReasonNotListedError(ModerationReasonNotListedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -600,18 +634,23 @@ mod tests {
     use super::*;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
-    use crate::data_contract::config::moderation::ContractModerationList;
+    use crate::data_contract::config::moderation::{ContractModerationList, ModerationAbility};
     use crate::data_contract::document_type::action_fees::agreement::{
         AgreedFeeMultiplier, DocumentActionFeeAgreement,
     };
     use crate::data_contract::document_type::action_fees::{
         ActionFeePricing, ContractFeePot, DocumentActionFee,
     };
+    use crate::data_contract::document_type::{
+        DocumentPropertyReferenceTarget, DocumentReferenceLookup, ListElementReference,
+        LookupKeySource,
+    };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use crate::voting::vote_polls::VotePoll;
     use platform_value::Identifier;
+    use std::collections::BTreeMap;
 
     /// `StateError` is encoded by variant position, so inserting a variant
     /// anywhere but the end silently reassigns the discriminant of every
@@ -619,12 +658,95 @@ mod tests {
     /// clients, which would then decode an existing error as a different one.
     /// These are the frozen discriminants of the first variant, of the variant
     /// that follows the document contest block (the one an insertion there
-    /// would shift first), and of the last four.
+    /// would shift first), and of the variants appended since, down to the
+    /// last one, which the test's final assertion pins.
     fn discriminant_of(error: StateError) -> u8 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
         // Discriminants below 251 are a single byte under bincode's varint.
         bytes[0]
+    }
+
+    /// A reference error for an id reference encodes exactly as it did before
+    /// lookup references existed: the lookup form is an appended variant of
+    /// `DocumentPropertyReferenceTarget` (`PermanentDocumentLookup`), not a
+    /// field of `PermanentDocument`, so a client decoding with an earlier dpp
+    /// still reads every error an id reference produces. The bytes are pinned;
+    /// `PermanentDocument` keeps variant 3 of the target, the lookup form
+    /// takes 6.
+    #[test]
+    fn should_keep_the_encoding_of_a_reference_error_for_an_id_reference() {
+        let id_reference = DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: BTreeMap::new(),
+        };
+        let error = StateError::ReferencedEntityNotFoundError(ReferencedEntityNotFoundError::new(
+            Identifier::from([1; 32]),
+            id_reference.clone(),
+            "noteId".to_string(),
+        ));
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("expected to encode the state error");
+        // StateError variant 93, the referenced id, target variant 3
+        // (PermanentDocument: no contract id, "note", no agreement), the path.
+        assert_eq!(
+            hex::encode(bytes),
+            concat!(
+                "5d",
+                "0101010101010101010101010101010101010101010101010101010101010101",
+                "03",
+                "00",
+                "046e6f7465",
+                "00",
+                "066e6f74654964",
+            )
+        );
+
+        let target_variant = |target: &DocumentPropertyReferenceTarget| {
+            bincode::encode_to_vec(target, bincode::config::standard())
+                .expect("expected to encode the target")[0]
+        };
+        assert_eq!(target_variant(&id_reference), 3);
+        assert_eq!(
+            target_variant(&DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: DocumentReferenceLookup {
+                    index: "byOwner".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            }),
+            6
+        );
+        // A list element reference is appended after the expressions (anyOf
+        // 7, allOf 8, pinned in `reference_expression.rs`)
+        assert_eq!(
+            target_variant(&DocumentPropertyReferenceTarget::ListElement(
+                ListElementReference {
+                    contract_id: None,
+                    document_type_name: "electedCharter".to_string(),
+                    property_agreement: [("electedCharterId".to_string(), "$id".to_string())]
+                        .into(),
+                    in_list: "members".to_string(),
+                }
+            )),
+            9
+        );
+        // A deletable document found through a lookup is appended after it
+        assert_eq!(
+            target_variant(&DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: DocumentReferenceLookup {
+                    index: "byOwner".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            }),
+            10
+        );
     }
 
     #[test]
@@ -1086,7 +1208,7 @@ mod tests {
             )),
             142
         );
-        // Requirements on a referenced contract (protocol version 14): the tail of the enum.
+        // Requirements on a referenced contract (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedContractRequirementNotMetError(
                 ReferencedContractRequirementNotMetError::new(
@@ -1097,6 +1219,83 @@ mod tests {
                 )
             )),
             143
+        );
+        // Requirements on a referenced identity key (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedIdentityKeyRequirementNotMetError(
+                ReferencedIdentityKeyRequirementNotMetError::new(
+                    "joinRequest".to_string(),
+                    "recipientId".to_string(),
+                    group_id,
+                    2,
+                    "purpose".to_string(),
+                    "decryption".to_string(),
+                    "encryption".to_string(),
+                )
+            )),
+            144
+        );
+        // Document references resolved through a unique index (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentLookupInvalidError(
+                ReferencedDocumentLookupInvalidError::new(
+                    "electedCharter.members".to_string(),
+                    "bySubmittedCharter".to_string(),
+                    "is not unique".to_string(),
+                )
+            )),
+            145
+        );
+        // References to an element of a list of a referenced document (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentListInvalidError(
+                ReferencedDocumentListInvalidError::new(
+                    "resignation.memberId".to_string(),
+                    "members".to_string(),
+                    "is not a typed array of identifiers".to_string(),
+                )
+            )),
+            146
+        );
+        // Elected moderation teams moderating from their seated charter (protocol version
+        // 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationAbilityNotGrantedError(
+                ContractModerationAbilityNotGrantedError::new(
+                    group_id,
+                    ModerationAbility::DeleteDocuments,
+                    Some("post".to_string()),
+                )
+            )),
+            147
+        );
+        assert_eq!(
+            discriminant_of(
+                StateError::ModerationCharterAddedModeratorLimitReachedError(
+                    ModerationCharterAddedModeratorLimitReachedError::new(group_id, identity_id, 2)
+                )
+            ),
+            148
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeModeratorsShareMismatchError(
+                DocumentActionFeeModeratorsShareMismatchError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    100,
+                    50,
+                    Some(60),
+                )
+            )),
+            149
+        );
+        // A seated moderation team's action names a reason its proposal lists (protocol
+        // version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ModerationReasonNotListedError(
+                ModerationReasonNotListedError::new(group_id, identity_id, None)
+            )),
+            150
         );
     }
 }

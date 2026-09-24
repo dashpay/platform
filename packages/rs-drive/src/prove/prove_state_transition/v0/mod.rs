@@ -76,6 +76,20 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
+        self.prove_state_transition_internal(state_transition, transaction, false, platform_version)
+    }
+
+    /// The proof of a state transition's execution, shared by every version of
+    /// `prove_state_transition`. With `carries_owner_balance` (from version 1) the
+    /// proof of an owned, fee-paying transition also carries the owner's credit
+    /// balance.
+    pub(in crate::prove::prove_state_transition) fn prove_state_transition_internal(
+        &self,
+        state_transition: &StateTransition,
+        transaction: TransactionArg,
+        carries_owner_balance: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
         let path_query = match state_transition {
             StateTransition::DataContractCreate(st) => {
                 if st.data_contract().config().keeps_history() {
@@ -145,7 +159,7 @@ impl Drive {
                         // entry its values produce under the proof index —
                         // the same single-entry path query the verifier
                         // rebuilds from the transition.
-                        {
+                        let document_path_query = {
                             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
                             use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
                             if document_type.index_only() {
@@ -208,7 +222,9 @@ impl Drive {
                                 path_query.query.limit = None;
                                 path_query
                             }
-                        }
+                        };
+
+                        document_path_query
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();
@@ -361,7 +377,8 @@ impl Drive {
                 }
             }
             // The pot the claim paid out with its last claim (epoch, time, claimant), and the balance
-            // of every identity a payout of that pot goes to.
+            // of every identity the contract names as a recipient of that pot, or the claimant's
+            // alone when the contract does not name it (a seated moderation team's member).
             StateTransition::ContractFeeClaim(st) => {
                 let contract_id = st.data_contract_id();
                 let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
@@ -376,9 +393,13 @@ impl Drive {
                         contract_id
                     ))));
                 };
+                // A claimant the contract does not name as a recipient is on a seated
+                // moderation team, which the contract does not name either: its balance alone
+                // is proved. Only a contract fee claim takes this arm, a transition protocol
+                // version 14 introduced, so no earlier proof changes.
                 let recipients: Vec<[u8; 32]> = st
                     .pot()
-                    .recipients(&contract_fetch_info.contract)
+                    .claim_proof_identities(&contract_fetch_info.contract, st.owner_id())
                     .into_iter()
                     .map(|recipient| recipient.to_buffer())
                     .collect();
@@ -699,6 +720,30 @@ impl Drive {
             }
         };
 
+        // From version 1 the proof of an owned, fee-paying transition carries
+        // the owner's credit balance next to its result, so a wallet learns
+        // what the write left it with without a second query. The verifier
+        // rebuilds a document batch's merged query and verifies it strictly,
+        // and reads the other kinds' result and balance as subsets of the
+        // merged proof.
+        let path_query =
+            if carries_owner_balance && Self::proof_merges_owner_balance_after(state_transition) {
+                let owner_id = state_transition.owner_id().ok_or(Error::Proof(
+                    ProofError::InvalidTransition(
+                        "an owned transition names its owner".to_string(),
+                    ),
+                ))?;
+                let mut path_query = path_query;
+                path_query.query.limit = None;
+                let owner_balance_query = Drive::identity_balance_query(&owner_id.to_buffer());
+                PathQuery::merge(
+                    vec![&path_query, &owner_balance_query],
+                    &platform_version.drive.grove_version,
+                )?
+            } else {
+                path_query
+            };
+
         let proof = self.grove_get_proved_path_query(
             &path_query,
             transaction,
@@ -707,5 +752,21 @@ impl Drive {
         )?;
 
         Ok(ProofCreationResult::new_with_data(proof))
+    }
+
+    /// The owned, fee-paying transitions whose version 1 proof gains the owner's
+    /// balance by a merge after their own path query is built: document and token
+    /// batches, contract creates and updates, identity updates and key limit
+    /// updates, and contract moderation.
+    fn proof_merges_owner_balance_after(state_transition: &StateTransition) -> bool {
+        matches!(
+            state_transition,
+            StateTransition::Batch(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityKeyLimitsUpdate(_)
+                | StateTransition::ContractUserModeration(_)
+        )
     }
 }

@@ -10,6 +10,10 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+use dapi_grpc::platform::v0::get_documents_request::{
+    GetDocumentsRequestV0, Version as GetDocumentsRequestVersion,
+};
+use dapi_grpc::platform::v0::GetDocumentsRequest;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::consensus::codes::ErrorWithCode;
@@ -24,6 +28,7 @@ use dpp::data_contract::document_type::random_document::{
 };
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
+use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
@@ -38,8 +43,7 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
+use dpp::state_transition::proof_result::{StateTransitionProofResult,
 };
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
@@ -291,6 +295,28 @@ impl Setup {
             .collect()
     }
 
+    /// Queries the contract's documents as a client's getDocuments request does: against
+    /// committed state, caching the contract it pulls
+    fn query_documents(&self) {
+        let state = self.platform.state.load();
+        let request = GetDocumentsRequest {
+            version: Some(GetDocumentsRequestVersion::V0(GetDocumentsRequestV0 {
+                data_contract_id: self.contract.id().to_vec(),
+                document_type: "niceDocument".to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: None,
+            })),
+        };
+        let result = self
+            .platform
+            .query_documents(request, &state, PlatformVersion::latest())
+            .expect("expected to query the documents");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
     fn pot(&self, pot: ContractFeePot, transaction: Option<&Transaction>) -> ContractFeePotState {
         self.platform
             .drive
@@ -355,16 +381,17 @@ fn claim_by(claimant: &Actor, epoch_index: EpochIndex) -> Option<ContractFeePotL
     })
 }
 
-fn gas(execution: &StateTransitionExecutionResult) -> Credits {
+/// What `execution` was billed, whether it succeeded or was a paid refusal
+fn fees(execution: &StateTransitionExecutionResult) -> &FeeResult {
     match execution {
-        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
-            fee_result.total_base_fee()
-        }
-        StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => {
-            actual_fees.total_base_fee()
-        }
+        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => fee_result,
+        StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => actual_fees,
         other => panic!("expected a paid result, got {other:?}"),
     }
+}
+
+fn gas(execution: &StateTransitionExecutionResult) -> Credits {
+    fees(execution).total_base_fee()
 }
 
 #[tokio::test]
@@ -632,11 +659,13 @@ async fn should_leave_the_moderators_pot_of_an_unmoderated_contract_to_nobody() 
 }
 
 #[tokio::test]
-async fn should_refuse_a_claim_on_an_unknown_contract_unpaid() {
+async fn should_refuse_a_claim_on_an_unknown_contract_and_charge_for_the_lookup() {
     let setup = Setup::new(Team::TwoModerators).await;
+    let unknown_contract_id = Identifier::from([0x55; 32]);
+    let nonce = setup.moderator_a.next_contract_nonce.get();
     let claim = claim_of(
         &setup.moderator_a,
-        Identifier::from([0x55; 32]),
+        unknown_contract_id,
         ContractFeePot::Moderators,
     )
     .await;
@@ -645,10 +674,98 @@ async fn should_refuse_a_claim_on_an_unknown_contract_unpaid() {
         vec![DATA_CONTRACT_NOT_PRESENT]
     );
     let transaction = setup.platform.drive.grove.start_transaction();
-    assert_unpaid_with_code(
-        &setup.process(&claim, 0, &transaction),
-        DATA_CONTRACT_NOT_PRESENT,
+    let credits_before = setup.credits(&setup.moderator_a, Some(&transaction));
+
+    let result = setup.process(&claim, 0, &transaction);
+
+    // Paid like every other refusal: the signer is authenticated and the lookup happened.
+    assert_paid_with_code(&result, DATA_CONTRACT_NOT_PRESENT);
+    let gas = gas(&result);
+    assert!(gas > 0, "the contract lookup is billed");
+    assert_eq!(
+        setup.credits(&setup.moderator_a, Some(&transaction)),
+        credits_before - gas
     );
+    // The refusal used up the claimant's nonce for that contract id.
+    assert_eq!(
+        setup
+            .platform
+            .drive
+            .fetch_identity_contract_nonce(
+                setup.moderator_a.id().to_buffer(),
+                unknown_contract_id.to_buffer(),
+                true,
+                Some(&transaction),
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch the nonce"),
+        Some(nonce)
+    );
+}
+
+#[tokio::test]
+async fn should_bill_a_claim_the_same_whether_its_contract_is_cached_or_not() {
+    let setup = Setup::new(Team::TwoModerators).await;
+    setup.fill(ContractFeePot::Moderators, 1_000);
+    let claim = setup
+        .claim(&setup.moderator_a, ContractFeePot::Moderators)
+        .await;
+    let contracts = &setup.platform.drive.cache.data_contracts;
+    let contract_id = setup.contract.id().to_buffer();
+    let claim_fees = || {
+        let transaction = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&claim, 1, &transaction);
+        assert_success(&result);
+        fees(&result).clone()
+    };
+
+    // A node that executed the contract create: the cache refresh after the write stored the
+    // contract without a fee.
+    let cached = contracts
+        .get(contract_id, true)
+        .expect("expected the create to cache the contract");
+    assert!(!cached.has_fee_for_tests());
+    let as_the_create_left_it = claim_fees();
+
+    // A node whose committed cache a getDocuments query filled, also without a fee, which
+    // anyone can make happen on the nodes of their choosing.
+    contracts.merge_and_clear_block_cache();
+    contracts.clear();
+    setup.query_documents();
+    let cached = contracts
+        .get(contract_id, true)
+        .expect("expected the query to cache the contract");
+    assert!(!cached.has_fee_for_tests());
+    let after_a_query = claim_fees();
+
+    // A node that cached the contract with the fee of its read, in an earlier epoch, as the
+    // validation of a contract update does.
+    contracts.clear();
+    setup
+        .platform
+        .drive
+        .get_contract_with_fetch_info_and_fee(
+            contract_id,
+            Some(&Epoch::new(0).expect("expected an epoch")),
+            true,
+            None,
+            PlatformVersion::latest(),
+        )
+        .expect("expected to read the contract");
+    let cached = contracts
+        .get(contract_id, true)
+        .expect("expected the read to cache the contract");
+    assert!(cached.has_fee_for_tests());
+    let with_a_fee = claim_fees();
+
+    // A node that restarted, evicted the contract or joined late.
+    contracts.clear();
+    assert!(contracts.get(contract_id, true).is_none());
+    let cold = claim_fees();
+
+    assert_eq!(as_the_create_left_it, cold);
+    assert_eq!(after_a_query, cold);
+    assert_eq!(with_a_fee, cold);
 }
 
 #[tokio::test]
@@ -682,17 +799,21 @@ async fn should_prove_the_pot_and_the_balances_of_everyone_it_paid() {
     )
     .expect("expected the proof to verify");
 
-    let StateTransitionProofOutcome::AffectedState(
-        StateTransitionProofResult::VerifiedContractFeeClaim(
-            contract_id,
-            pot,
-            last_claim,
-            remaining,
-            balances,
-        ),
-    ) = outcome
+    assert!(
+        !outcome.is_execution_proved(),
+        "expected AffectedState, got {:?}",
+        outcome
+    );
+
+    let StateTransitionProofResult::VerifiedContractFeeClaim(
+        contract_id,
+        pot,
+        last_claim,
+        remaining,
+        balances,
+    ) = outcome.into_result()
     else {
-        panic!("expected a contract fee claim result, got {outcome:?}");
+        panic!("expected a contract fee claim result");
     };
     assert_eq!(contract_id, setup.contract.id());
     assert_eq!(pot, ContractFeePot::Moderators);

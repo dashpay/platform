@@ -128,6 +128,30 @@ extension PersistentDocumentType {
         immutability.immutableAllowSetting
     }
 
+    /// Every typed array property the type declares (protocol version 14),
+    /// those nested in object properties included under their dotted path
+    /// (`"team.leads"`), sorted by path. Empty when it declares none.
+    ///
+    /// Derived from the persisted schema rather than stored, for the same
+    /// reason as `immutability`: `schemaJSON` holds the whole document type
+    /// dictionary as authored, element schemas included, and a new stored
+    /// property on this model or on `PersistentProperty` would move an entity
+    /// hash, which costs a schema version and a fixture store (see
+    /// `DashModelContainer.modelTypes` and `DashModelMigrationTests`).
+    /// `PersistentProperty` keeps a typed array as an ordinary `"array"` row
+    /// with `byteArray` false and its element counts in `minItems` /
+    /// `maxItems`.
+    public var typedArrays: [DocumentTypedArray] {
+        DocumentTypedArray.all(inDocumentTypeSchema: schema)
+    }
+
+    /// The typed array declared as the top-level property `name`, or `nil`
+    /// when that property is absent or is not a typed array (a byte array
+    /// among them). Read off the persisted schema; see `typedArrays`.
+    public func typedArray(named name: String) -> DocumentTypedArray? {
+        DocumentTypedArray.named(name, inDocumentTypeSchema: schema)
+    }
+
     public var documentCount: Int {
         documents?.count ?? 0
     }

@@ -9,7 +9,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // PROTOCOL_VERSION_14: bump `document_create_transition_structure_validation` to
 // 1, which cross-checks the index named by a document create transition's
 // prefunded voting balance against the contested index the document itself
-// resolves to. Also bump document create state validation to 2, adding
+// resolves to, and checks the ciphertext shape of every `encryptedFor`
+// property (replace structure validation 0 gained the same shape check in
+// place, inert before this version). Also bump document create state validation to 2, adding
 // `refersTo` document reference validation (referenced identities and
 // contracts must exist) and rejecting a non-contested create whose id is
 // already held by a live contested document. Document replace state
@@ -17,6 +19,18 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // the `document_reference_validation` feature version. Also bump
 // `delete_withdrawal_data_trigger` to 2 so owners can delete withdrawals in the
 // terminal FAILED status the withdrawals contract v2 admits.
+// Document create structure validation 1 also refuses a `distinctFrom`
+// identifier property whose value equals the named sibling property or the
+// writer's `$ownerId` (DocumentPropertyNotDistinctError, 10419). Document
+// replace, transfer and purchase structure validation stay at 0: their v0
+// gained the same judgement in place (replace on the transition's data,
+// transfer and purchase on the stored document and its new owner), which is
+// inert before this version, where no property carries the keyword.
+// Document create and replace structure validation also refuse a document that
+// breaks a rule of its type's `propertyConstraints`
+// (DocumentPropertyConstraintViolatedError, 10422): the check runs inside dpp's
+// `DataContract::validate_document_properties` 0, which both call, and is inert
+// before this version through its own dpp gate.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -219,14 +233,14 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
                 identity_minimum_balance_pre_check: 1,
-                document_create_transition_structure_validation: 1,
+                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index and refuses a `distinctFrom` identifier property equal to the value it must differ from
                 // Reject deletes on legacy keep-history types as paid consensus errors.
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
-                document_replace_transition_structure_validation: 0,
-                document_transfer_transition_structure_validation: 0,
-                document_purchase_transition_structure_validation: 0,
+                document_replace_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom` refusal in place, inert before this version
+                document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
+                document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_update_price_transition_structure_validation: 0,
                 document_base_transition_state_validation: 0,
                 document_create_transition_state_validation: 2,
@@ -266,7 +280,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: Some(0),
+                    advanced_structure: Some(1), // a key proof of possession failure is refused unpaid
                     identity_signatures: Some(0),
                     nonce: Some(0),
                     state: 1,
