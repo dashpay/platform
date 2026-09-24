@@ -244,7 +244,7 @@ The pots are not under the contract. The per-block total credits check (`calcula
 
 | Stage | Check | Error |
 |---|---|---|
-| Transform (state, paid) | the contract exists | `DataContractNotPresentError`, unpaid |
+| Transform (state, paid) | the contract exists | `DataContractNotPresentError` (10400) |
 | | the signer is a recipient of the pot: the owner for the owner pot, a member of the team for the moderators pot | 41113 |
 | | the pot was not paid out in this epoch yet | 41111 |
 | | every recipient gets at least a credit | 41112 |
