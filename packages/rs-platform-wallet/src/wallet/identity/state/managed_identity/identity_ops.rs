@@ -242,6 +242,35 @@ impl ManagedIdentity {
         }
     }
 
+    /// Merge fetched DPNS names into the list, skipping labels already
+    /// present, and persist the result as one snapshot. Returns how many
+    /// names were added; nothing is persisted when that is zero.
+    ///
+    /// Use this for a batch instead of calling [`Self::add_dpns_name`] per
+    /// name: every persisted snapshot is read downstream as the identity's
+    /// complete owned set, so a snapshot per name makes the first one look
+    /// like the others were lost. Add-only — DPNS queries are capped by a
+    /// limit, so a label missing from a fetch is not proof it left.
+    pub fn merge_dpns_names(
+        &mut self,
+        names: impl IntoIterator<Item = DpnsNameInfo>,
+        persister: &WalletPersister,
+    ) -> u32 {
+        let mut merged = self.dpns_names.clone();
+        let mut added = 0u32;
+        for name in names {
+            if merged.iter().any(|existing| existing.label == name.label) {
+                continue;
+            }
+            merged.push(name);
+            added += 1;
+        }
+        if added > 0 {
+            self.set_dpns_names(merged, persister);
+        }
+        added
+    }
+
     /// Replace the DPNS-name list wholesale.
     ///
     /// Use this when a sync round (or a confirmed sale/transfer) has the
@@ -622,6 +651,58 @@ mod tests {
             data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
             disabled_at: None,
         })
+    }
+
+    /// A batch of fetched names lands as one snapshot carrying every name,
+    /// skips labels already held, and persists nothing when all are known.
+    /// One snapshot per name made the first read as the complete owned set.
+    #[test]
+    fn merge_dpns_names_persists_one_complete_snapshot() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        let name = |label: &str| DpnsNameInfo {
+            label: label.to_string(),
+            acquired_at: None,
+        };
+
+        managed.add_dpns_name(name("alice"), &p);
+        let added = managed.merge_dpns_names([name("alice"), name("bob"), name("carol")], &p);
+
+        assert_eq!(added, 2);
+        let stores = persister.stores.lock().unwrap();
+        assert_eq!(
+            stores.len(),
+            2,
+            "one store for add_dpns_name, one for the merge"
+        );
+        let labels: Vec<_> = stores[1]
+            .identities
+            .as_ref()
+            .expect("identity snapshot")
+            .identities
+            .values()
+            .next()
+            .expect("one identity")
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(labels, ["alice", "bob", "carol"]);
+        drop(stores);
+
+        assert_eq!(managed.merge_dpns_names([name("bob")], &p), 0);
+        assert_eq!(
+            persister.stores.lock().unwrap().len(),
+            2,
+            "nothing new, nothing stored"
+        );
     }
 
     /// `add_keys` records each key's breadcrumb (or `None` for watch-only)

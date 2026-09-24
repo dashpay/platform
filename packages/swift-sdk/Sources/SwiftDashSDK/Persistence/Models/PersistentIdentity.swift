@@ -246,10 +246,9 @@ public final class PersistentIdentity {
         publicKeys.compactMap { $0.toIdentityPublicKey() }
     }
 
-    /// User-facing short name. Priority: `alias` → `mainDpnsName`
-    /// → `dpnsName` → truncated hex id. Mirrors the old
-    /// `IdentityModel.displayName` extension so views that read
-    /// this don't change behavior post-migration.
+    /// User-facing short name. Priority: `alias` → `ownedMainDpnsName`
+    /// (the user's pick while it is still owned) → `dpnsName` → truncated
+    /// hex id.
     public var displayName: String {
         if let alias = alias, !alias.isEmpty {
             return alias
@@ -263,11 +262,13 @@ public final class PersistentIdentity {
         return String(identityIdString.prefix(12)) + "..."
     }
 
-    /// The user's `mainDpnsName` pick while the identity still owns it.
-    /// The persister keeps the pick as written, so a name that was sold or
-    /// transferred away stays in the column; it is skipped here once its
-    /// label row is no longer owned. With no label rows yet (hydration),
-    /// the pick is trusted.
+    /// The user's `mainDpnsName` pick while the identity still owns it — the
+    /// value every display surface should use. `mainDpnsName` itself is the
+    /// stored selection, kept as written: a sold or transferred name stays
+    /// there, and is skipped here once its label row is no longer owned (the
+    /// persister keeps the picked name's row for exactly this check). With
+    /// no label rows at all, the identity has not been hydrated yet and the
+    /// pick is trusted.
     public var ownedMainDpnsName: String? {
         guard let mainDpnsName, !mainDpnsName.isEmpty else { return nil }
         let names = dpnsNames

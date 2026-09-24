@@ -291,15 +291,14 @@ impl IdentityWallet {
                     )
                 })?;
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
-                    for username in usernames {
-                        managed.add_dpns_name(
-                            DpnsNameInfo {
-                                label: username.label,
-                                acquired_at: None,
-                            },
-                            &self.persister,
-                        );
-                    }
+                    // One snapshot for the whole fetch — see `merge_dpns_names`.
+                    managed.merge_dpns_names(
+                        usernames.into_iter().map(|username| DpnsNameInfo {
+                            label: username.label,
+                            acquired_at: None,
+                        }),
+                        &self.persister,
+                    );
                 }
             }
             Err(e) => {
