@@ -110,7 +110,7 @@ impl Drive {
     /// Returns the contract with fetch info and operations with the given ID.
     ///
     /// `add_to_cache_if_pulled` is whether this call may write to the cache at all: storing a
-    /// contract it pulled from state.
+    /// contract it pulled from state, and storing the fee it calculated for a cached contract.
     /// Validation modes that run off the consensus thread (`check_tx`) pass `false`, so that
     /// only block execution ever writes the block cache.
     #[inline(always)]
@@ -160,20 +160,33 @@ impl Drive {
             Some(contract_fetch_info) => {
                 // we only need to pay if epoch is set
                 if let Some(epoch) = epoch {
-                    // The fee is calculated from the cost of the read under the active fee
-                    // schedule every time, never taken from the entry: a fee stored there was
-                    // calculated under the schedule active when the contract was cached, and
-                    // the cache outlives a protocol change, so billing it would make the fee
-                    // depend on when this node cached the contract.
-                    let op = vec![CalculatedCostOperation(contract_fetch_info.cost.clone())];
-                    let fee = Drive::calculate_fee(
-                        None,
-                        Some(op),
-                        epoch,
-                        self.config.epochs_per_era,
-                        platform_version,
-                        None,
-                    )?;
+                    let fee = if let Some(known_fee) = &contract_fetch_info.fee {
+                        known_fee.clone()
+                    } else {
+                        // we need to calculate new fee
+                        let op = vec![CalculatedCostOperation(contract_fetch_info.cost.clone())];
+                        let fee = Drive::calculate_fee(
+                            None,
+                            Some(op),
+                            epoch,
+                            self.config.epochs_per_era,
+                            platform_version,
+                            None,
+                        )?;
+
+                        if add_to_cache_if_pulled {
+                            let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {
+                                contract: contract_fetch_info.contract.clone(),
+                                storage_flags: contract_fetch_info.storage_flags.clone(),
+                                cost: contract_fetch_info.cost.clone(),
+                                fee: Some(fee.clone()),
+                            });
+                            // we override the cache for the contract as the fee is now calculated
+                            cache_contract(updated_contract_fetch_info);
+                        }
+
+                        fee
+                    };
                     drive_operations.push(PreCalculatedFeeResult(fee));
                 }
                 Ok(Some(contract_fetch_info))

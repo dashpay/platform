@@ -22,12 +22,13 @@ pub struct DataContractFetchInfo {
     /// The contract's potential storage flags
     pub storage_flags: Option<StorageFlags>,
     /// These are the operations that are used to fetch a contract
-    /// A read served from the cache is billed from this cost
+    /// This is only used on epoch change
     pub(crate) cost: OperationCost,
-    /// The fee of the read that built this entry, when it was built with an epoch. It is never
-    /// billed once the entry is cached: entries are cached with and without one, and the cache
-    /// outlives a change of fee schedule. A read is billed from the fee
-    /// `Drive::get_contract_with_fetch_info_and_fee` returns.
+    /// The fee of the read that built this entry, when it was built with an epoch, which a cache
+    /// hit bills again. A read's fee depends only on the fee schedule, and from protocol
+    /// version 14 the contract cache is cleared on the first block of every protocol change,
+    /// the only time the schedule can change. Entries are cached with and without a fee, so
+    /// callers bill the fee `Drive::get_contract_with_fetch_info_and_fee` returns, never this.
     pub(crate) fee: Option<FeeResult>,
 }
 
