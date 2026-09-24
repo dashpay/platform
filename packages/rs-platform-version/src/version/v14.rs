@@ -211,6 +211,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `$ownerId` declarations against the new owner.
 ///   v13 keeps the v9 table and therefore keeps accepting all of these, so
 ///   replay of pre-upgrade blocks is unchanged.
+/// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` also bumps the identity create from
+///   addresses `advanced_structure` 0 → 1: a key whose proof of possession fails
+///   is refused unpaid instead of charging the inputs a penalty, since the
+///   address witnesses do not sign those proofs. v13 keeps the paid refusal of v0.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
