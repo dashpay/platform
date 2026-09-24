@@ -39,12 +39,20 @@ pub const IDENTITY_BALANCE_PROOF: &str =
 pub const IDENTITY_CONTRACT_NONCE_PROOF: &str =
     include_str!("../../tests/vectors/identity-contract-nonce/proof.hex");
 pub const IDENTITY_KEYS_PROOF: &str = include_str!("../../tests/vectors/identity-keys/proof.hex");
+pub const DPNS_DOMAIN_EXACT_PROOF: &str =
+    include_str!("../../tests/vectors/dpns-domain-exact/proof.hex");
+pub const DPNS_DOMAIN_PREFIX_PROOF: &str =
+    include_str!("../../tests/vectors/dpns-domain-prefix/proof.hex");
 pub const CONTESTED_ACTIVE_PROOF: &str =
     include_str!("../../tests/vectors/contested-vote-state-active/proof.hex");
 pub const CONTESTED_FINISHED_PROOF: &str =
     include_str!("../../tests/vectors/contested-vote-state-finished/proof.hex");
 pub const CONTESTED_ABSENT_PROOF: &str =
     include_str!("../../tests/vectors/contested-vote-state-absent/proof.hex");
+
+/// The root hash every corpus proof commits to and the fixture quorum signed.
+pub const SIGNED_ROOT_HASH: &str =
+    "dad905d8fddd7a31089ed57521ff006ec5946b5648d48056bce493357675ab72";
 
 const SIGNATURE: &str = include_str!("../../tests/vectors/quorum-sig-valid/signature.hex");
 const QUORUM_PUBLIC_KEY: &str =
