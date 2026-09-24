@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/moderation-charters-contract",
-  "version": "4.2.0-beta.3",
+  "version": "4.2.0-beta.4",
   "description": "A system contract for the charters of elected moderation teams",
   "scripts": {
     "lint": "eslint .",
