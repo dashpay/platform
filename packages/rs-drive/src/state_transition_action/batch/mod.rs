@@ -1,5 +1,6 @@
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
+use crate::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -266,6 +267,28 @@ impl BatchTransitionAction {
             BatchTransitionAction::V0(v0) => &v0.lapsed_suspensions,
         }
     }
+
+    /// The settles of moderators pots the batch forces before it changes a seated team
+    pub fn moderators_pot_settlements(&self) -> &[ModeratorsPotSettlement] {
+        match self {
+            BatchTransitionAction::V0(v0) => &v0.moderators_pot_settlements,
+        }
+    }
+
+    /// Takes the settles of moderators pots out of the batch, for its conversion to operations
+    pub fn take_moderators_pot_settlements(&mut self) -> Vec<ModeratorsPotSettlement> {
+        match self {
+            BatchTransitionAction::V0(v0) => std::mem::take(&mut v0.moderators_pot_settlements),
+        }
+    }
+
+    /// Records the settles of moderators pots the batch forces before it changes a seated
+    /// team
+    pub fn set_moderators_pot_settlements(&mut self, settlements: Vec<ModeratorsPotSettlement>) {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.moderators_pot_settlements = settlements,
+        }
+    }
 }
 
 impl BatchTransitionAction {
@@ -283,9 +306,12 @@ impl BatchTransitionAction {
         }
     }
 
-    /// The fee each document transition of the batch declares for its action, with the
-    /// contract it goes to, that contract's owner, and how it is priced. A transition that
-    /// became a nonce bump declares nothing: only an action that executes is charged.
+    /// The fee each document transition of the batch owes for its action, before the fee
+    /// multiplier, with the contract it goes to, that contract's owner, and how it is priced:
+    /// what its document type declares, with the moderators part it agreed to when that is a
+    /// discount the contract's seated moderation charter gives (advanced structure validation
+    /// refuses any other). A transition that became a nonce bump declares nothing: only an
+    /// action that executes is charged.
     pub fn declared_action_fees(
         &self,
     ) -> Vec<(Identifier, Identifier, ActionFeePricing, DocumentActionFee)> {
@@ -296,13 +322,48 @@ impl BatchTransitionAction {
                 .filter_map(|transition| match transition {
                     BatchedTransitionAction::DocumentAction(document_action) => {
                         let base = document_action.base();
-                        let (pricing, fee) = base.declared_action_fee()?;
+                        let declared = base.declared_action_fee_with_agreement()?;
                         let contract = &base.data_contract_fetch_info_ref().contract;
-                        Some((contract.id(), contract.owner_id(), pricing, fee))
+                        Some((
+                            contract.id(),
+                            contract.owner_id(),
+                            declared.pricing,
+                            declared.agreed_fee(),
+                        ))
                     }
                     _ => None,
                 })
                 .collect(),
+        }
+    }
+
+    /// The elected contracts on whose moderated document types some document transition of the
+    /// batch agrees to a discounted moderators part (protocol version 14): the contracts whose
+    /// seated moderation charter the batch transformer reads the moderators share of.
+    pub fn contracts_with_moderators_discounts(&self) -> BTreeSet<Identifier> {
+        match self {
+            BatchTransitionAction::V0(v0) => v0
+                .transitions
+                .iter()
+                .filter_map(|transition| match transition {
+                    BatchedTransitionAction::DocumentAction(document_action) => {
+                        let base = document_action.base();
+                        base.agrees_to_a_moderators_discount()
+                            .then(|| base.data_contract_id())
+                    }
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
+
+    /// Records the moderators share of the seated moderation charter of `contract_id`, `None`
+    /// when no charter is seated on it
+    pub fn set_seated_moderators_share(&mut self, contract_id: Identifier, share: Option<u8>) {
+        match self {
+            BatchTransitionAction::V0(v0) => {
+                v0.seated_moderators_shares.insert(contract_id, share);
+            }
         }
     }
 
@@ -352,10 +413,13 @@ impl BatchTransitionAction {
     }
 
     /// Whether every document transition that owes an action fee agreed to it: the transition
-    /// names the amounts and the pricing its document type declares, and, for a fee priced by
-    /// the fee multiplier, accepts the multiplier of the epoch the batch executes in. The
-    /// inner error is the consensus error of the first transition that did not. Both sides
-    /// travel on the action, so this reads no state.
+    /// names the amounts and the pricing its document type declares, or, on a document type an
+    /// elected contract moderates, the declared owner part and pricing with the share of the
+    /// declared moderators part the contract's seated moderation charter takes; and, for a fee
+    /// priced by the fee multiplier, accepts the multiplier of the epoch the batch executes in.
+    /// The inner error is the consensus error of the first transition that did not. Everything
+    /// it is judged against travels on the action (the charter's share as the transformer read
+    /// it), so this reads no state.
     pub fn validate_action_fee_agreements(
         &self,
     ) -> Result<Result<(), ConsensusError>, ProtocolError> {

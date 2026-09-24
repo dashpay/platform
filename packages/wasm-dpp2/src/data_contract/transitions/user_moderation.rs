@@ -41,7 +41,8 @@ export interface ContractModerationDocument {
  * Why a moderator banned, suspended or warned an identity, or deleted a document. Every ban,
  * every suspension, every warning and every document deletion carries one, and it is stored
  * with the entry or the removal record. Nothing checks what a moderator writes, and the
- * documents a reason cites are not looked up.
+ * documents a reason cites are not looked up, except the reason document a seated elected
+ * team names, which its proposal must list.
  */
 export interface ContractModerationReason {
     /**
@@ -57,6 +58,13 @@ export interface ContractModerationReason {
      * none twice. A reason read back carries it only when there are any.
      */
     documents?: ContractModerationDocument[];
+    /**
+     * The `reason` document of the moderation charters contract the action is taken on, as a
+     * base58 string. A seated elected team's ban, suspension, warning or document deletion
+     * must name one its proposal lists; for every other moderator it is stored as written. A
+     * reason read back carries it only when there is one.
+     */
+    reasonDocumentId?: string;
 }
 
 /** One warning an identity carries on a contract's warning list. */
@@ -206,6 +214,13 @@ pub fn moderation_reason_to_js(reason: &ContractModerationReason) -> JsValue {
         }
         let _ = js_sys::Reflect::set(&object, &"documents".into(), &documents);
     }
+    if let Some(reason_document_id) = reason.reason_document_id {
+        let _ = js_sys::Reflect::set(
+            &object,
+            &"reasonDocumentId".into(),
+            &JsValue::from_str(&IdentifierWasm::from(reason_document_id).to_base58()),
+        );
+    }
     object.into()
 }
 
@@ -252,6 +267,8 @@ pub struct ContractModerationReasonInput {
     text: String,
     #[serde(default)]
     documents: Vec<ContractModerationDocumentInput>,
+    #[serde(default)]
+    reason_document_id: Option<IdentifierWasm>,
 }
 
 impl From<ContractModerationReasonInput> for ContractModerationReason {
@@ -267,6 +284,7 @@ impl From<ContractModerationReasonInput> for ContractModerationReason {
                     document_id: document.document_id.into(),
                 })
                 .collect(),
+            reason_document_id: input.reason_document_id.map(Into::into),
         }
     }
 }

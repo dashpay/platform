@@ -264,9 +264,12 @@ export class ContractsFacade {
 
   /**
    * Pays out a fee pot of a contract: the `owner` pot whole to the contract owner, who alone
-   * may claim it, and the `moderators` pot in equal shares to the contract's moderation team,
-   * any member of which may claim it for all of them. Signed with a CRITICAL authentication
-   * key. A pot is paid out at most once per epoch, and an empty pot refuses the claim.
+   * may claim it, and the `moderators` pot in equal shares to the contract's moderation team
+   * (by the proposal's reward split for an elected contract's seated team), any member of
+   * which may claim it for all of them. Signed with a CRITICAL authentication key. A pot is
+   * paid out at most once per epoch, and an empty pot refuses the claim. The result proves
+   * the balance of every recipient the contract names, or of the claimant alone for a seated
+   * elected team, which the contract does not name.
    */
   async claimFees(options: wasm.ContractClaimFeesOptions): Promise<wasm.ContractClaimFeesResult> {
     const w = await this.sdk.getWasmSdkConnected();

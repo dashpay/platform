@@ -1,5 +1,8 @@
 /// A module for validating asset locks
 pub mod asset_lock;
+/// The seated moderation charter of an elected contract, read from the moderation charters
+/// contract
+pub(crate) mod seated_moderation_charter;
 pub mod validate_identity_exists;
 pub mod validate_identity_public_key_contract_bounds;
 pub mod validate_identity_public_key_ids_dont_exist_in_state;

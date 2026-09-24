@@ -402,6 +402,7 @@ fn make_replace_v0() -> DocumentReplaceTransitionActionV0 {
         changed_data_fields: BTreeSet::from(["field".to_string()]),
         added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
+        stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
     }
 }
@@ -2977,6 +2978,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         changed_data_fields: BTreeSet::from(["field".to_string()]),
         added_data_fields: BTreeSet::new(),
         removed_identifier_fields: BTreeMap::new(),
+        stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
     })
 }
@@ -3051,6 +3053,60 @@ fn should_stamp_fetched_contract_version_on_replace_conversion() {
         Document::try_from_owned_replace_transition_action(action, owner_id, platform_version)
             .expect("owned replace conversion");
     assert_eq!(owned.contract_version(), Some(STAMP_TEST_CONTRACT_VERSION));
+}
+
+/// A create drops a transient value (the DPNS `domain`'s `preorderSalt`)
+/// before its document is stored. From protocol version 14 a replace drops it
+/// too; protocol version 13 stored whatever the replace carried.
+#[test]
+fn should_drop_transient_values_on_replace_conversion_from_protocol_version_14() {
+    let owner_id = Identifier::from([0xDD; 32]);
+    let data = BTreeMap::from([
+        ("label".to_string(), Value::Text("alice".to_string())),
+        ("preorderSalt".to_string(), Value::Bytes32([7; 32])),
+    ]);
+    let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+
+    for (platform_version, replace_keeps_salt) in [
+        (PlatformVersion::latest(), false),
+        (platform_version_13, true),
+    ] {
+        let mut replace = stamp_test_replace_action(platform_version.protocol_version);
+        let DocumentReplaceTransitionAction::V0(replace_v0) = &mut replace;
+        replace_v0.data = data.clone();
+        let mut create = stamp_test_create_action(platform_version.protocol_version);
+        let DocumentCreateTransitionAction::V0(create_v0) = &mut create;
+        create_v0.data = data.clone();
+
+        let replaced = [
+            Document::try_from_replace_transition_action(&replace, owner_id, platform_version)
+                .expect("borrowed replace conversion"),
+            Document::try_from_owned_replace_transition_action(replace, owner_id, platform_version)
+                .expect("owned replace conversion"),
+        ];
+        let created = [
+            Document::try_from_create_transition_action(&create, owner_id, platform_version)
+                .expect("borrowed create conversion"),
+            Document::try_from_owned_create_transition_action(create, owner_id, platform_version)
+                .expect("owned create conversion"),
+        ];
+        for (document, keeps_salt) in replaced
+            .iter()
+            .map(|document| (document, replace_keeps_salt))
+            .chain(created.iter().map(|document| (document, false)))
+        {
+            assert_eq!(
+                document.properties().contains_key("preorderSalt"),
+                keeps_salt,
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+            assert_eq!(
+                document.properties().get("label"),
+                Some(&Value::Text("alice".to_string()))
+            );
+        }
+    }
 }
 
 // ============================================================

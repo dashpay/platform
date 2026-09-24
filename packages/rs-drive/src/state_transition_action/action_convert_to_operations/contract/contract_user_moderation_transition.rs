@@ -46,6 +46,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         warning,
                         document_deletion,
                         document_restoration,
+                        moderation_action_count,
                         ..
                     },
                 ) = self;
@@ -251,6 +252,18 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                     }
                 }
 
+                // A member of an elected contract's seated team signed an action that counts
+                // toward its share of the moderators pot.
+                if let Some(count) = moderation_action_count {
+                    operations.push(ContractModerationOperation(
+                        ContractModerationOperationType::SetActionCount {
+                            contract_id,
+                            identity_id: moderator_id,
+                            count,
+                        },
+                    ));
+                }
+
                 Ok(operations)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
@@ -282,6 +295,7 @@ mod tests {
             warning: None,
             document_deletion: None,
             document_restoration: None,
+            moderation_action_count: None,
             user_fee_increase: 0,
         })
     }
@@ -405,6 +419,33 @@ mod tests {
         assert!(matches!(
             &ops[2],
             ContractModerationOperation(ContractModerationOperationType::AddBan { .. })
+        ));
+    }
+
+    #[test]
+    fn should_write_the_moderation_action_count_of_a_seated_team_member_last() {
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).expect("epoch");
+        let target = Identifier::from([0xCC; 32]);
+
+        let ops = action(
+            ContractUserModerationAction::Ban {
+                identity_id: target,
+                reason: ContractModerationReason::from_text("spam"),
+            },
+            false,
+        )
+        .with_moderation_action_count(3)
+        .into_high_level_drive_operations(&epoch, platform_version)
+        .expect("operations");
+        assert_eq!(ops.len(), 3);
+        assert!(matches!(
+            &ops[2],
+            ContractModerationOperation(ContractModerationOperationType::SetActionCount {
+                identity_id,
+                count: 3,
+                ..
+            }) if *identity_id == Identifier::from([0xAA; 32])
         ));
     }
 

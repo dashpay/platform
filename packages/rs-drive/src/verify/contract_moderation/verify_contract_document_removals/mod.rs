@@ -22,6 +22,7 @@ impl Drive {
         proof: &[u8],
         contract_id: Identifier,
         query: &ContractDocumentRemovalsQuery,
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<ContractDocumentRemovalEntry>), Error> {
         match platform_version
@@ -35,6 +36,7 @@ impl Drive {
                 proof,
                 contract_id,
                 query,
+                verify_subset_of_proof,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

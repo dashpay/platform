@@ -137,6 +137,24 @@ to prevent namespace squatting:
 
 Before protocol version 9, all registration fees were zero.
 
+### Contest Funds
+
+A document create that opens or joins a contest (a contested unique index)
+prefunds the masternode votes: the amount leaves the contender's balance for the
+contest's prefunded balance, each vote takes a fixed cost from it, and what is
+left when the contest ends is released as processing fees. The amounts are
+`VoteResolutionFundFees` in the fee version:
+
+| Component | Protocol versions 1 to 13 | Protocol version 14 |
+|---|---|---|
+| Contested document fund (DPNS and every other contest) | 0.2 Dash | 0.1 Dash |
+| Moderation election fund (an `electedCharter` application) | none exist | 0.5 Dash |
+| One vote | 0.0001 Dash | 0.00002 Dash |
+
+`required_vote_resolution_fund` in `rs-dpp` picks between the two funds; the
+schedules before 14 carry the contested document amount in the moderation
+field, so the choice changes nothing there.
+
 ## User Fee Increase
 
 Every state transition carries a `user_fee_increase` field (a `UserFeeIncrease`
@@ -323,6 +341,38 @@ of failing in the block that would have refused it. A client builds the
 agreement from the contract it showed its user with
 `DocumentActionFeeAgreement::for_document_type_action`, never from a contract
 fetched behind their back at signing time.
+
+**A seated team's discount.** On a document type an elected contract
+moderates, the `moderators` part of an agreement may name less than the
+declared amount: the share the contract's seated moderation charter takes
+(its proposal's `moderatorsShare`, a percentage; none declared is the full
+amount), applied to the declared amount and rounded down to the credit
+(`moderation_charter::moderators_share_of`). Everything else must still match:
+the `owner` part and the pricing. With a share of 60, the post above admits
+exactly 60000000 for the moderators:
+
+```json
+"$actionFeeAgreement": {
+  "$formatVersion": "0",
+  "owner": 10000000,
+  "moderators": 60000000,
+  "feeMultiplier": { "knownPermille": 1000, "increaseTolerancePercent": 20 }
+}
+```
+
+The action is then charged the agreed amount, which is what reaches the
+moderators pot (scaled by the multiplier for a `feeMultiplier` fee, like the
+declared amount). An agreement to the declared amount stays valid whatever the
+team charges and reads no charter; only one that names less has the batch
+transformer read the seated charter (the `byTargetContract` index of the
+moderation charters contract) and the proposal it runs on, billed to the
+batch. Any other amount below the declared one, including a discount on a
+contract with no seated charter yet, is refused like a mismatch, paid and
+without a fee (`DocumentActionFeeModeratorsShareMismatchError`, 40139). A
+lower amount anywhere else (a type the contract does not moderate, a contract
+that is not elected) is the plain mismatch (40133). The mempool judges it
+the same way on arrival and on every recheck, since the recheck transforms the
+batch anew.
 
 **The amounts do not change yet.** A contract update may not add, change or
 remove the `actionFees` of an existing document type, nor switch their pricing

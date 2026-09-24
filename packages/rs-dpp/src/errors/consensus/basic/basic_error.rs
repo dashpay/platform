@@ -54,13 +54,14 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
+    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::IdentityKeyLimitsUpdateEmptyError;
@@ -90,6 +91,9 @@ use crate::consensus::basic::identity::{
     WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use crate::consensus::basic::moderation_charter::{
+    ModerationCharterMalformedFieldError, ModerationCharterRewardSplitNotOneHundredError,
+};
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputOutputBalanceMismatchError,
@@ -805,6 +809,28 @@ pub enum BasicError {
     // Documents cited by a contract moderation reason (protocol version 14).
     #[error(transparent)]
     InvalidContractModerationReasonDocumentsError(InvalidContractModerationReasonDocumentsError),
+
+    #[error(transparent)]
+    DocumentPropertyNotDistinctError(DocumentPropertyNotDistinctError),
+
+    // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
+    #[error(transparent)]
+    InvalidEncryptedPropertyShapeError(InvalidEncryptedPropertyShapeError),
+
+    // Moderation charters (protocol version 14).
+    #[error(transparent)]
+    ModerationCharterMalformedFieldError(ModerationCharterMalformedFieldError),
+
+    #[error(transparent)]
+    ModerationCharterRewardSplitNotOneHundredError(ModerationCharterRewardSplitNotOneHundredError),
+
+    // A string over the `maxBytes` its property declares (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyMaxBytesExceededError(DocumentPropertyMaxBytesExceededError),
+
+    // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyConstraintViolatedError(DocumentPropertyConstraintViolatedError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -816,6 +842,7 @@ impl From<BasicError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use platform_value::Identifier;
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
@@ -882,13 +909,71 @@ mod tests {
             )),
             192
         );
-        // Documents cited by a contract moderation reason (protocol version 14): the tail of
-        // the enum.
+        // Documents cited by a contract moderation reason (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidContractModerationReasonDocumentsError(
                 InvalidContractModerationReasonDocumentsError::new("x".to_string())
             )),
             193
+        );
+        // A `distinctFrom` identifier property equal to what it must differ from (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyNotDistinctError(
+                DocumentPropertyNotDistinctError::new(
+                    "post".to_string(),
+                    "delegateId".to_string(),
+                    "$ownerId".to_string(),
+                )
+            )),
+            194
+        );
+        // The shape of an `encryptedFor` property's ciphertext (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidEncryptedPropertyShapeError(
+                InvalidEncryptedPropertyShapeError::new(
+                    "encryptedMessage".to_string(),
+                    "ecdh-secp256k1-aes256-cbc".to_string(),
+                    47,
+                    32,
+                    16
+                )
+            )),
+            195
+        );
+        // Moderation charters (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterMalformedFieldError(
+                ModerationCharterMalformedFieldError::new(
+                    "rewardSplit".to_string(),
+                    "reason".to_string()
+                )
+            )),
+            196
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ModerationCharterRewardSplitNotOneHundredError(
+                ModerationCharterRewardSplitNotOneHundredError::new(10, 40, 40)
+            )),
+            197
+        );
+        // A string over its property's `maxBytes` (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyMaxBytesExceededError(
+                DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4097, 4096)
+            )),
+            198
+        );
+        // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyConstraintViolatedError(
+                DocumentPropertyConstraintViolatedError::new(
+                    "order".to_string(),
+                    "depositCoversOrder".to_string(),
+                    PropertyConstraintViolation::NotMet,
+                )
+            )),
+            199
         );
     }
 }

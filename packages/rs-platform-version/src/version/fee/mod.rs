@@ -13,7 +13,9 @@ use crate::version::fee::state_transition_min_fees::{
 };
 use crate::version::fee::storage::FeeStorageVersion;
 use crate::version::fee::v1::FEE_VERSION1;
-use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
+use crate::version::fee::vote_resolution_fund_fees::{
+    VoteResolutionFundFees, VoteResolutionFundFeesFieldsBeforeVersion4,
+};
 use bincode::{Decode, Encode};
 
 pub mod data_contract_registration;
@@ -126,7 +128,7 @@ pub struct FeeVersionFieldsBeforeVersion4 {
     pub processing: FeeProcessingVersionFieldsBeforeVersion1Point4,
     pub data_contract: FeeDataContractValidationVersion,
     pub state_transition_min_fees: StateTransitionMinFeesBeforeProtocolVersion11,
-    pub vote_resolution_fund_fees: VoteResolutionFundFees,
+    pub vote_resolution_fund_fees: VoteResolutionFundFeesFieldsBeforeVersion4,
 }
 
 impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
@@ -143,7 +145,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             state_transition_min_fees: StateTransitionMinFees::from(
                 value.state_transition_min_fees,
             ),
-            vote_resolution_fund_fees: value.vote_resolution_fund_fees,
+            vote_resolution_fund_fees: value.vote_resolution_fund_fees.into(),
         }
     }
 }

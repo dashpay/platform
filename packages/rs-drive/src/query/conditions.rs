@@ -1302,16 +1302,22 @@ impl<'a> WhereClause {
                         | Value::U8(_)
                         | Value::I8(_)
                 ),
-                T::U8 | T::U16 | T::U32 | T::U64 | T::U128 => matches!(
-                    v,
-                    Value::U8(_) | Value::U16(_) | Value::U32(_) | Value::U64(_) | Value::U128(_)
-                ),
+                T::U8 | T::U16 | T::U32 | T::KeyIdWithReference(_) | T::U64 | T::U128 => {
+                    matches!(
+                        v,
+                        Value::U8(_)
+                            | Value::U16(_)
+                            | Value::U32(_)
+                            | Value::U64(_)
+                            | Value::U128(_)
+                    )
+                }
                 T::I8 | T::I16 | T::I32 | T::I64 | T::I128 => matches!(
                     v,
                     Value::I8(_) | Value::I16(_) | Value::I32(_) | Value::I64(_) | Value::I128(_)
                 ),
                 // No validation for object/array types as operators are disallowed
-                T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => false,
+                T::Object(_) | T::Array(_) | T::VariableTypeArray(_) | T::TypedArray(_) => false,
             }
         };
 
@@ -1324,6 +1330,7 @@ impl<'a> WhereClause {
                     T::U8
                     | T::U16
                     | T::U32
+                    | T::KeyIdWithReference(_)
                     | T::U64
                     | T::U128
                     | T::I8
@@ -1364,7 +1371,9 @@ impl<'a> WhereClause {
                     T::ByteArray(_) => matches!(self.value, Value::Bytes(_)),
                     T::Boolean => matches!(self.value, Value::Bool(_)),
                     // Not applicable for object/array/variable arrays
-                    T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => false,
+                    T::Object(_) | T::Array(_) | T::VariableTypeArray(_) | T::TypedArray(_) => {
+                        false
+                    }
                 };
                 if !ok {
                     return QuerySyntaxSimpleValidationResult::new_with_error(
@@ -1424,6 +1433,7 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
         | DocumentPropertyType::U16
         | DocumentPropertyType::I16
         | DocumentPropertyType::U32
+        | DocumentPropertyType::KeyIdWithReference(_)
         | DocumentPropertyType::I32
         | DocumentPropertyType::U64
         | DocumentPropertyType::I64
@@ -1462,7 +1472,8 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
         DocumentPropertyType::Boolean => &[Equal],
         DocumentPropertyType::Object(_)
         | DocumentPropertyType::Array(_)
-        | DocumentPropertyType::VariableTypeArray(_) => &[],
+        | DocumentPropertyType::VariableTypeArray(_)
+        | DocumentPropertyType::TypedArray(_) => &[],
     }
 }
 
@@ -1508,6 +1519,7 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
             dpp::data_contract::document_type::StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                max_bytes: None,
             },
         )),
         _ => None,
@@ -3516,6 +3528,7 @@ mod tests {
         let ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         let ops = allowed_ops_for_type(&ty);
         assert!(ops.contains(&super::StartsWith));
@@ -3585,6 +3598,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         assert!(WhereOperator::StartsWith.value_shape_ok(&Value::Text("abc".into()), &str_ty));
         assert!(!WhereOperator::StartsWith.value_shape_ok(&Value::I64(1), &str_ty));
@@ -3612,6 +3626,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
         assert!(WhereOperator::LessThan.value_shape_ok(&Value::Text("a".into()), &str_ty));
         assert!(!WhereOperator::LessThan.value_shape_ok(&Value::I64(1), &str_ty));
@@ -4193,6 +4208,7 @@ mod tests {
         let str_ty = DocumentPropertyType::String(StringPropertySizes {
             min_length: None,
             max_length: None,
+            max_bytes: None,
         });
 
         let good = Value::Array(vec![Value::Text("aaa".into()), Value::Text("zzz".into())]);

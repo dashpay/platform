@@ -1,16 +1,19 @@
 use crate::drive::contract::paths::{
     CONTRACT_BANLIST_KEY, CONTRACT_DOCUMENT_REMOVALS_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY,
-    CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
-    CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
+    CONTRACT_LAST_OWNER_FEE_CLAIM_KEY, CONTRACT_MODERATION_ACTION_COUNTS_KEY, CONTRACT_OTHER_KEY,
+    CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/contract/paths.rs";
-const CONTRACT_FLAGS: &str =
-    "The owner is the contract owner, and the epoch the one the contract was \
-     created in. System contracts created at genesis carry no flags.";
+/// The flags of the elements written with a contract, shared by every area that describes one
+pub(crate) const CONTRACT_FLAGS: &str =
+    "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 \
+     and 13 registered carry them (wallet utils, token history, keyword search and document \
+     history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state \
+     transitions and later upgrades write none.";
 const REMOVAL_FLAGS: &str =
     "The owner is the moderator who deleted the document. They pay for the record, \
      which nothing deletes or replaces.";
@@ -148,6 +151,44 @@ pub(crate) fn structure() -> StructureNode {
                         ),
                     ),
                     StructureNode::fixed(
+                        "moderation_action_counts",
+                        &[CONTRACT_MODERATION_ACTION_COUNTS_KEY],
+                        "ModerationActionCounts",
+                        "CONTRACT_MODERATION_ACTION_COUNTS_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                    .describe(
+                        "How many moderation actions each member of the contract's \
+                             seated moderation team signed since its moderators pot \
+                             was last settled. Created with a contract that declares \
+                             elected moderation. Read by the team's actions and by a \
+                             settle, never by a document transition, so it sorts \
+                             below the version item.",
+                    )
+                    .child(
+                        StructureNode::identifier(
+                            "member",
+                            "identity_id",
+                            "The member of the seated team",
+                        )
+                        .kind(ElementKind::Item)
+                        .flags(
+                            &[FlagsKind::None],
+                            "None: the member whose action writes the count pays \
+                                 for it, and the settle that deletes it refunds nobody.",
+                        )
+                        .value("u32 big endian")
+                        .describe(
+                            "The member's count of bans, suspensions, warnings and \
+                                 document deletions since the last settle. Rewritten \
+                                 one higher by each; every settle, a claim or a change \
+                                 of the team, pays the pot's action share by the counts \
+                                 and deletes them.",
+                        ),
+                    ),
+                    StructureNode::fixed(
                         "version",
                         &[CONTRACT_VERSION_KEY],
                         "ContractVersion",
@@ -223,9 +264,12 @@ pub(crate) fn structure() -> StructureNode {
                         .kind(ElementKind::Item)
                         .flags(&[FlagsKind::EpochOwned], MODERATOR_FLAGS)
                         .value(
-                            "the moderator's reason: a tag byte (0 no code, 1 a \
-                                 code), the code as a u16 big endian when tagged, \
-                                 then the text as UTF-8 to the end of the value",
+                            "the moderator's reason: a tag byte (bit 0 a code, bit \
+                                 1 documents, bit 2 a reason document), the code as a \
+                                 u16 big endian, the 32-byte reason document id and the \
+                                 documents cited (a count byte, then each type name as \
+                                 a length byte and the name, and the 32-byte id) when \
+                                 tagged, then the text as UTF-8 to the end of the value",
                         )
                         .describe("One ban and why, until an unban."),
                     ),

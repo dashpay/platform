@@ -23,6 +23,11 @@ app-connect-contract: &app-connect-contract
   - packages/app-connect-contract/schema/**
   - packages/app-connect-contract/Cargo.toml
 
+moderation-charters-contract: &moderation-charters-contract
+  - packages/moderation-charters-contract/src/**
+  - packages/moderation-charters-contract/schema/**
+  - packages/moderation-charters-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**
@@ -57,6 +62,7 @@ data-contracts: &data-contracts
   - *keyword-search-contract
   - *document-history-contract
   - *app-connect-contract
+  - *moderation-charters-contract
 
 dpp: &dpp
   - packages/rs-dpp/**

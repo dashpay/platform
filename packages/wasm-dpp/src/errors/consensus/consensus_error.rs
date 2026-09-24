@@ -67,7 +67,7 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
 };
 use wasm_bindgen::{JsError, JsValue};
 use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, DataContractInvalidRequiredFieldsUpdateError, ContestedUniqueIndexWithUniqueIndexError, DataContractTokenConfigurationUpdateError, DecimalsOverLimitError, DuplicateKeywordsError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError, InvalidDescriptionLengthError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidKeywordCharacterError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError, InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError, NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError, RedundantDocumentPaidForByTokenWithContractId, TokenPaymentByBurningOnlyAllowedOnInternalTokenError, TooManyKeywordsError, UnknownDocumentActionTokenEffectError, UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
-use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError, DocumentPropertyNotDistinctError, InvalidEncryptedPropertyShapeError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidKeyPurposeForContractBoundsError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
@@ -95,9 +95,14 @@ use dpp::consensus::basic::contract_moderation::{
     DocumentActionFeesWithoutModerationError,
     InvalidContractModerationConfigError,
 };
+use dpp::consensus::basic::moderation_charter::{
+    ModerationCharterMalformedFieldError, ModerationCharterRewardSplitNotOneHundredError,
+};
 use dpp::consensus::state::contract_moderation::{
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
     ContractFeesNothingToClaimError, ContractModeratedDocumentTypeNotYetUsableError,
+    ContractModerationAbilityNotGrantedError, ModerationCharterAddedModeratorLimitReachedError,
+    ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
@@ -148,6 +153,7 @@ use dpp::consensus::state::document::document_immutable_property_changed_error::
 use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use dpp::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
 use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -159,6 +165,9 @@ use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShield
 use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError, ShieldedInvalidDenominationError};
 use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use dpp::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
+use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -687,6 +696,27 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::ReferencedContractRequirementNotMetError(e) => {
             generic_consensus_error!(ReferencedContractRequirementNotMetError, e).into()
         }
+        StateError::ReferencedIdentityKeyRequirementNotMetError(e) => {
+            generic_consensus_error!(ReferencedIdentityKeyRequirementNotMetError, e).into()
+        }
+        StateError::ReferencedDocumentLookupInvalidError(e) => {
+            generic_consensus_error!(ReferencedDocumentLookupInvalidError, e).into()
+        }
+        StateError::ReferencedDocumentListInvalidError(e) => {
+            generic_consensus_error!(ReferencedDocumentListInvalidError, e).into()
+        }
+        StateError::ContractModerationAbilityNotGrantedError(e) => {
+            generic_consensus_error!(ContractModerationAbilityNotGrantedError, e).into()
+        }
+        StateError::ModerationCharterAddedModeratorLimitReachedError(e) => {
+            generic_consensus_error!(ModerationCharterAddedModeratorLimitReachedError, e).into()
+        }
+        StateError::ModerationReasonNotListedError(e) => {
+            generic_consensus_error!(ModerationReasonNotListedError, e).into()
+        }
+        StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
+            generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()
+        }
     }
 }
 
@@ -942,6 +972,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DocumentFieldMaxSizeExceededError(e) => {
             generic_consensus_error!(DocumentFieldMaxSizeExceededError, e).into()
+        }
+        BasicError::DocumentPropertyNotDistinctError(e) => {
+            generic_consensus_error!(DocumentPropertyNotDistinctError, e).into()
         }
         BasicError::ContestedUniqueIndexWithUniqueIndexError(e) => {
             generic_consensus_error!(ContestedUniqueIndexWithUniqueIndexError, e).into()
@@ -1261,8 +1294,23 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::ContractModerationReasonTooLongError(e) => {
             generic_consensus_error!(ContractModerationReasonTooLongError, e).into()
         }
+        BasicError::ModerationCharterMalformedFieldError(e) => {
+            generic_consensus_error!(ModerationCharterMalformedFieldError, e).into()
+        }
+        BasicError::ModerationCharterRewardSplitNotOneHundredError(e) => {
+            generic_consensus_error!(ModerationCharterRewardSplitNotOneHundredError, e).into()
+        }
         BasicError::InvalidContractModerationReasonDocumentsError(e) => {
             generic_consensus_error!(InvalidContractModerationReasonDocumentsError, e).into()
+        }
+        BasicError::InvalidEncryptedPropertyShapeError(e) => {
+            generic_consensus_error!(InvalidEncryptedPropertyShapeError, e).into()
+        }
+        BasicError::DocumentPropertyMaxBytesExceededError(e) => {
+            generic_consensus_error!(DocumentPropertyMaxBytesExceededError, e).into()
+        }
+        BasicError::DocumentPropertyConstraintViolatedError(e) => {
+            generic_consensus_error!(DocumentPropertyConstraintViolatedError, e).into()
         }
     }
 }

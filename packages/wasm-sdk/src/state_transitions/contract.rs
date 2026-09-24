@@ -782,9 +782,13 @@ export interface ContractClaimFeesResult {
   lastClaimTimeMs: bigint;
   /** The identity that signed the last claim of the pot: the claiming identity, unless it was claimed again since */
   lastClaimantId: Identifier;
-  /** The credits left in the pot: what an equal split left over, and any fee collected since */
+  /** The credits left in the pot: what the split left over, and any fee collected since */
   remainingCredits: bigint;
-  /** The balance, after the claim, of every identity the pot pays, keyed by base58 identity id */
+  /**
+   * The balance, after the claim, of every identity the contract names as a recipient of the
+   * pot, keyed by base58 identity id; for a claim by a member of an elected contract's seated
+   * team, which the contract does not name, the claimant's balance alone
+   */
   balances: Map<string, bigint>;
 }
 "#;
@@ -807,12 +811,14 @@ struct ContractClaimFeesOptionsInput {
 #[wasm_bindgen]
 impl WasmSdk {
     /// Pays out a fee pot of a data contract: the owner pot whole to the contract owner, the
-    /// moderators pot in equal shares to the contract's moderation team, whichever member
-    /// claims it. A pot is paid out at most once per epoch; `getContractFeePots` tells what a
-    /// claim would pay and when the pot was last paid out.
+    /// moderators pot in equal shares to the contract's moderation team, or for an elected
+    /// contract with a seated team by its proposal's reward split, whichever member claims it.
+    /// A pot is paid out at most once per epoch; `getContractFeePots` tells what a claim would
+    /// pay and when the pot was last paid out.
     ///
     /// @param options - The claiming identity, the contract, the `pot` and the signer
-    /// @returns The pot and the balances of the identities it paid, proved
+    /// @returns The pot and the balances it proved: of every recipient the contract names, or
+    /// of the claimant alone for a seated elected team
     #[wasm_bindgen(js_name = "contractClaimFees")]
     pub async fn contract_claim_fees(
         &self,

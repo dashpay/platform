@@ -5,10 +5,13 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::property::{
+    DocumentProperty, DocumentPropertyReferenceTarget,
+};
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostGettersV0;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -249,12 +252,28 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.immutable_fields
     }
 
+    fn distinct_from_fields(&self) -> &[String] {
+        &self.distinct_from_fields
+    }
+
     fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
         &self.immutable_fields_allow_setting
     }
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         self.action_fees.as_ref()
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        self.owner_reference.as_ref()
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        self.creator_reference.as_ref()
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.property_constraints
     }
 }
 

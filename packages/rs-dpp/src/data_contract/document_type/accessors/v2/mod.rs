@@ -1,5 +1,7 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use std::collections::BTreeSet;
+use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Trait providing getters for DocumentTypeV2-specific fields.
 pub trait DocumentTypeV2Getters {
@@ -59,6 +61,11 @@ pub trait DocumentTypeV2Getters {
     /// mutable, where every property is already immutable.
     fn immutable_fields(&self) -> &BTreeSet<String>;
 
+    /// The dotted paths of the properties that declare `distinctFrom`
+    /// (protocol version 14), in schema order. Empty on generations that
+    /// predate the keyword.
+    fn distinct_from_fields(&self) -> &[String];
+
     /// The subset of [`Self::immutable_fields`] a replace may still set while
     /// the stored document has no value for them (the
     /// `immutableAllowSetting` keyword, protocol version 14). Once present
@@ -71,6 +78,27 @@ pub trait DocumentTypeV2Getters {
     /// (the `actionFees` keyword, protocol version 14). `None` on document types that
     /// declare none and on those that predate the keyword.
     fn action_fees(&self) -> Option<&DocumentActionFees>;
+
+    /// The `refersTo` declaration whose value is the document's `$ownerId`, the
+    /// writer (the `ownerRefersTo` keyword, protocol version 14): consensus
+    /// checks it with the writer's id as the value when a document is created,
+    /// and on a replace under the rules of its target. `None` on document types
+    /// that declare none and on those that predate the keyword. Enumerated with
+    /// the property references by `DocumentTypeRef::reference_declarations`.
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget>;
+
+    /// The `refersTo` declaration whose value is the document's `$creatorId`,
+    /// its creator (the `creatorRefersTo` keyword, protocol version 14),
+    /// checked with the creator's id as the value when a document is created,
+    /// and on a replace under the rules of its target. `None` on document types
+    /// that declare none and on those that predate the keyword.
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget>;
+
+    /// The rules every created or replaced document must meet, by name, in the
+    /// order they are checked (the `propertyConstraints` keyword, protocol version
+    /// 14). Empty on document types that declare none and on those that predate
+    /// the keyword.
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

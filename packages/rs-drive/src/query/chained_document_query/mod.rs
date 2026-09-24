@@ -60,7 +60,8 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyType, DocumentReferenceDeclaration, DocumentTypeRef,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
@@ -222,12 +223,42 @@ impl<'a> DriveDocumentQuery<'a> {
                 self.document_type.name(),
             )));
         };
+        // A typed array of references is no join property: it is not
+        // indexable, and a join value is one identifier
         let document_reference = match &join_document_property.property_type {
             DocumentPropertyType::IdentifierWithReference(reference_target) => {
                 reference_target.as_document_reference()
             }
             _ => None,
         };
+        // A lookup reference is a document reference whose value is not the
+        // outer document's id, so `as_document_reference` leaves it out; it
+        // is named here so the refusal says why
+        if let DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+            | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
+        ) = &join_document_property.property_type
+        {
+            return Err(unsupported(format!(
+                "chained query join property \"{}\" refers to its document through the \
+                 unique index \"{}\", so its value is not the outer document's id: a join \
+                 needs a reference whose value is the referenced document's $id",
+                join_property, lookup.index,
+            )));
+        }
+        // A reference expression is no single document reference either: an
+        // `anyOf` value may be the id of any of its leaves, and an `allOf`
+        // names no one outer document type to join through
+        if let DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_),
+        ) = &join_document_property.property_type
+        {
+            return Err(unsupported(format!(
+                "chained query join property \"{}\" declares a refersTo anyOf or allOf \
+                 expression: a join needs a reference to one document type",
+                join_property,
+            )));
+        }
         match document_reference {
             Some(DocumentReferenceDeclaration {
                 contract_id,

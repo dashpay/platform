@@ -4,23 +4,28 @@ use crate::execution::types::execution_operation::{ValidationOperation, SHA256_B
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::seated_moderation_charter::{
+    fetch_seated_moderation_charter, SeatedModerationCharter,
+};
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::fetch_document_with_id;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::decode::DecodingError;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::contract_moderation::{
     ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
-    ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
-    ContractModerationTargetNotFoundError, ContractSuspensionNotInFutureError,
-    ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, ContractUserNotWarnedError,
+    ContractModerationAbilityNotGrantedError, ContractModerationNotEnabledError,
+    ContractModerationTargetNotAllowedError, ContractModerationTargetNotFoundError,
+    ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
+    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserWarningLimitReachedError, DocumentModerationWindowElapsedError,
     DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
+    ModerationReasonNotListedError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::state_error::StateError;
@@ -28,7 +33,7 @@ use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractDocumentRestoration, ContractModerationConfig,
-    ContractModerationList, ContractModerationStatus,
+    ContractModerationList, ContractModerationStatus, ElectedModerators, ModerationAbility,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -44,6 +49,7 @@ use dpp::state_transition::StateTransitionOwned;
 use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
+use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentDeletionContext, ContractDocumentRestorationContext,
@@ -73,11 +79,12 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
     /// A document deletion is checked by `transform_document_deletion_v0` and a document
     /// restore by `transform_document_restore_v0`. For the rest:
     /// reads the contract and the target's status and checks the moderation: the contract
-    /// keeps the list the action edits, the signer is its owner or one of its moderators, the
-    /// target is neither and exists, and the action fits the target's status (a warn fits
-    /// while the target carries fewer than `SystemLimits::max_contract_warnings_per_identity`
-    /// warnings). Every refusal, a contract that does not exist included, is paid for by
-    /// bumping the signer's contract nonce.
+    /// keeps the list the action edits, the signer moderates the contract (see [`Moderators`]:
+    /// on an elected contract with a seated charter, the charter's team, which must also hold
+    /// the ability the list needs), the target is not protected and exists, and the action
+    /// fits the target's status (a warn fits while the target carries fewer than
+    /// `SystemLimits::max_contract_warnings_per_identity` warnings). Every refusal, a contract
+    /// that does not exist included, is paid for by bumping the signer's contract nonce.
     ///
     /// The action carries what Drive needs of the target's status as read here (and for a
     /// warn the block time the warning is stamped with), so Drive edits the lists without
@@ -192,10 +199,47 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         }
 
         let owner_id = contract.owner_id();
-        if !moderation.may_moderate(&owner_id, &moderator_id) {
+        let epoch = &block_info.epoch;
+        let moderators = Moderators::read(
+            moderation,
+            contract_id,
+            platform.drive,
+            epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        if !moderators.may_moderate(
+            owner_id,
+            moderator_id,
+            platform.drive,
+            epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )? {
             return refuse(
                 IdentityNotContractModeratorError::new(contract_id, moderator_id).into(),
             );
+        }
+        // The lists are contract-wide: a seated team uses one when the declaration gives it
+        // the ability on some moderated document type.
+        let ability = ability_of(list);
+        if moderators.lacks(ability, None) {
+            return refuse(
+                ContractModerationAbilityNotGrantedError::new(contract_id, ability, None).into(),
+            );
+        }
+        if let Some(error) = moderators.unlisted_reason(
+            action,
+            contract_id,
+            platform.drive,
+            epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )? {
+            return refuse(error);
         }
         // Whoever the contract protects (the owner and the moderators, and the owner of an
         // elected contract whose declaration says so) cannot be put on a list. They can
@@ -208,7 +252,17 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                 | ContractUserModerationAction::Suspend { .. }
                 | ContractUserModerationAction::Warn { .. }
         );
-        if adds_an_entry && moderation.protects(&owner_id, &target_id) {
+        if adds_an_entry
+            && moderators.protects(
+                owner_id,
+                target_id,
+                platform.drive,
+                epoch,
+                execution_context,
+                tx,
+                platform_version,
+            )?
+        {
             return refuse(
                 ContractModerationTargetNotAllowedError::new(contract_id, target_id).into(),
             );
@@ -248,22 +302,31 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
             return refuse(error);
         }
 
-        Ok(ConsensusValidationResult::new_with_data(
+        let moderation_action =
             ContractUserModerationTransitionAction::from_borrowed_transition_with_status(
                 self,
                 &status,
                 block_info.time_ms,
-            )
-            .into(),
+            );
+        let moderation_action = moderators.count_for_signer(
+            moderation_action,
+            platform.drive,
+            epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        Ok(ConsensusValidationResult::new_with_data(
+            moderation_action.into(),
         ))
     }
 }
 
 /// A document deletion: the document type exists and says moderators may delete its
-/// documents, the signer is the contract's owner or one of its moderators, the document
-/// exists, it is not the owner's or a moderator's, and it was last modified within the window
-/// the document type gives its moderators, if it gives one. Every refusal is paid for by
-/// bumping the signer's contract nonce.
+/// documents, the signer moderates the contract (see [`Moderators`]: a seated team must also
+/// hold `deleteDocuments` on the type), the document exists, its owner is not protected, and it
+/// was last modified within the window the document type gives its moderators, if it gives one.
+/// Every refusal is paid for by bumping the signer's contract nonce.
 ///
 /// The action carries the contract and the document's owner, so Drive deletes the document
 /// and writes its record without reading again. Nothing the document type prices is charged, neither
@@ -318,8 +381,47 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     };
 
     let owner_id = contract.owner_id();
-    if !moderation.may_moderate(&owner_id, &moderator_id) {
+    let epoch = &block_info.epoch;
+    let moderators = Moderators::read(
+        moderation,
+        contract_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    if !moderators.may_moderate(
+        owner_id,
+        moderator_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
         return refuse(IdentityNotContractModeratorError::new(contract_id, moderator_id).into());
+    }
+    if moderators.lacks(ModerationAbility::DeleteDocuments, Some(document_type_name)) {
+        return refuse(
+            ContractModerationAbilityNotGrantedError::new(
+                contract_id,
+                ModerationAbility::DeleteDocuments,
+                Some(document_type_name.to_string()),
+            )
+            .into(),
+        );
+    }
+    if let Some(error) = moderators.unlisted_reason(
+        transition.action(),
+        contract_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(error);
     }
 
     let Some(document) = fetch_document_with_id(
@@ -339,9 +441,18 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     };
 
     // What protects the owner and the moderators from a ban protects their documents:
-    // the owner demotes a moderator by a contract update before deleting what it wrote.
+    // the owner demotes a moderator by a contract update before deleting what it wrote, and the
+    // leader of a seated team removes a member before anyone deletes what it wrote.
     let document_owner_id = document.owner_id();
-    if moderation.protects(&owner_id, &document_owner_id) {
+    if moderators.protects(
+        owner_id,
+        document_owner_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
         return refuse(
             ContractModerationTargetNotAllowedError::new(contract_id, document_owner_id).into(),
         );
@@ -410,7 +521,7 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         }
     };
 
-    Ok(ConsensusValidationResult::new_with_data(
+    let moderation_action =
         ContractUserModerationTransitionAction::from_borrowed_transition_with_document_deletion(
             transition,
             ContractDocumentDeletionContext {
@@ -420,13 +531,23 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
                 document_hash,
                 replaces_restored_record,
             },
-        )
-        .into(),
+        );
+    let moderation_action = moderators.count_for_signer(
+        moderation_action,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    Ok(ConsensusValidationResult::new_with_data(
+        moderation_action.into(),
     ))
 }
 
 /// A document restore: the document type exists and says moderators may delete its
-/// documents, the signer is the contract's owner or one of its moderators, the bytes decode
+/// documents, the signer moderates the contract (see [`Moderators`]: a seated team must also
+/// hold `deleteDocuments` on the type, which is what a restore undoes), the bytes decode
 /// under the type, the document has a removal record that is not yet restored, block time is
 /// within the restore window after the removal, the bytes hash to what the record holds, and
 /// no other document holds a value of one of the type's unique indexes. Every refusal is paid
@@ -489,8 +610,36 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
     };
 
     let owner_id = contract.owner_id();
-    if !moderation.may_moderate(&owner_id, &moderator_id) {
+    let epoch = &block_info.epoch;
+    let moderators = Moderators::read(
+        moderation,
+        contract_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )?;
+    if !moderators.may_moderate(
+        owner_id,
+        moderator_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
         return refuse(IdentityNotContractModeratorError::new(contract_id, moderator_id).into());
+    }
+    if moderators.lacks(ModerationAbility::DeleteDocuments, Some(document_type_name)) {
+        return refuse(
+            ContractModerationAbilityNotGrantedError::new(
+                contract_id,
+                ModerationAbility::DeleteDocuments,
+                Some(document_type_name.to_string()),
+            )
+            .into(),
+        );
     }
 
     // The bytes are the moderator's: whatever they fail to decode as is a refusal, never an
@@ -620,6 +769,232 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
         )
         .into(),
     ))
+}
+
+/// Who moderates a contract, as state has it now.
+///
+/// Until an elected contract has a seated charter, the moderators its declaration names do: the
+/// merged kinds, or the elected declaration's interim ([`ContractModerationConfig::may_moderate`]
+/// and [`ContractModerationConfig::protects`]). Once a contest for its seat was awarded, the
+/// team of the seated charter does, and only it (decentralized moderation teams): the
+/// leader and the active members moderate, with the abilities the declaration gives the team
+/// and no others, and they are protected, with the owner when the declaration says so. Interim
+/// moderators are then neither.
+enum Moderators<'a> {
+    /// The moderators the declaration names
+    Declared(&'a ContractModerationConfig),
+    /// The team of the charter seated on an elected contract
+    Seated {
+        elected: &'a ElectedModerators,
+        charter: SeatedModerationCharter,
+    },
+}
+
+impl<'a> Moderators<'a> {
+    /// Who moderates a contract declaring `moderation`: for an elected declaration, whether a
+    /// charter is seated is read (billed); nothing is read for the merged kinds.
+    #[allow(clippy::too_many_arguments)]
+    fn read(
+        moderation: &'a ContractModerationConfig,
+        contract_id: Identifier,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
+        let Some(elected) = moderation.moderators.elected() else {
+            return Ok(Moderators::Declared(moderation));
+        };
+        Ok(
+            match fetch_seated_moderation_charter(
+                drive,
+                contract_id,
+                epoch,
+                execution_context,
+                tx,
+                platform_version,
+            )? {
+                None => Moderators::Declared(moderation),
+                Some(charter) => Moderators::Seated { elected, charter },
+            },
+        )
+    }
+
+    /// Whether `identity_id` may moderate the contract owned by `owner_id`. For a seated team,
+    /// whether it is the leader or an active member, at most two point reads, billed.
+    #[allow(clippy::too_many_arguments)]
+    fn may_moderate(
+        &self,
+        owner_id: Identifier,
+        identity_id: Identifier,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        match self {
+            Moderators::Declared(moderation) => {
+                Ok(moderation.may_moderate(&owner_id, &identity_id))
+            }
+            Moderators::Seated { charter, .. } => charter.seats(
+                drive,
+                identity_id,
+                epoch,
+                execution_context,
+                tx,
+                platform_version,
+            ),
+        }
+    }
+
+    /// Whether `identity_id` is protected from moderation on the contract owned by `owner_id`:
+    /// it can not be put on a list, and its documents can not be deleted. For a seated team,
+    /// the owner when the declaration protects it, and the leader and the active members.
+    #[allow(clippy::too_many_arguments)]
+    fn protects(
+        &self,
+        owner_id: Identifier,
+        identity_id: Identifier,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        match self {
+            Moderators::Declared(moderation) => Ok(moderation.protects(&owner_id, &identity_id)),
+            Moderators::Seated { elected, charter } => {
+                if identity_id == owner_id && elected.owner_protected {
+                    return Ok(true);
+                }
+                charter.seats(
+                    drive,
+                    identity_id,
+                    epoch,
+                    execution_context,
+                    tx,
+                    platform_version,
+                )
+            }
+        }
+    }
+
+    /// The refusal of a seated team's ban, suspension, warning or document deletion whose
+    /// reason names no reason document its proposal lists (decentralized moderation teams): a
+    /// team acts only on the grounds it proposed, and a proposal that lists none can take no
+    /// such action. The proposal is read, billed, only when the reason names a document. A
+    /// reversal carries no reason and is not checked, and neither are the moderators a
+    /// declaration names, the interim among them, whose reason document is stored as written.
+    #[allow(clippy::too_many_arguments)]
+    fn unlisted_reason(
+        &self,
+        action: &ContractUserModerationAction,
+        contract_id: Identifier,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ConsensusError>, Error> {
+        let Moderators::Seated { charter, .. } = self else {
+            return Ok(None);
+        };
+        let reason = match action {
+            ContractUserModerationAction::Ban { reason, .. }
+            | ContractUserModerationAction::Suspend { reason, .. }
+            | ContractUserModerationAction::Warn { reason, .. }
+            | ContractUserModerationAction::DeleteDocument { reason, .. } => reason,
+            ContractUserModerationAction::Unban { .. }
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::RestoreDocument { .. } => return Ok(None),
+        };
+        let listed = match reason.reason_document_id {
+            None => false,
+            Some(reason_document_id) => charter
+                .fetch_proposal(drive, epoch, execution_context, tx, platform_version)?
+                .reasons
+                .contains(&reason_document_id),
+        };
+        Ok((!listed).then(|| {
+            ModerationReasonNotListedError::new(
+                contract_id,
+                charter.charter.submitted_charter_id,
+                reason.reason_document_id,
+            )
+            .into()
+        }))
+    }
+
+    /// `action`, counted for its signer when a member of a seated team signs a ban, a
+    /// suspension, a warning or a document deletion: the signer's moderation action count since
+    /// the moderators pot was last settled is read (one point read, billed) and the action
+    /// carries it one higher, for Drive to write. What a settle splits the pot's action share
+    /// by. A reversal (an unban, an unsuspension, a clearing, a restore) counts for nothing,
+    /// and neither does an action of the moderators a declaration names, who share the pot
+    /// equally.
+    #[allow(clippy::too_many_arguments)]
+    fn count_for_signer(
+        &self,
+        action: ContractUserModerationTransitionAction,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContractUserModerationTransitionAction, Error> {
+        let Moderators::Seated { .. } = self else {
+            return Ok(action);
+        };
+        let counts = matches!(
+            action.action(),
+            ContractUserModerationAction::Ban { .. }
+                | ContractUserModerationAction::Suspend { .. }
+                | ContractUserModerationAction::Warn { .. }
+                | ContractUserModerationAction::DeleteDocument { .. }
+        );
+        if !counts {
+            return Ok(action);
+        }
+        let (fee, count) = drive.fetch_contract_moderation_action_count_with_fee(
+            action.data_contract_id(),
+            action.moderator_id(),
+            epoch,
+            tx,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+        // A contract stored elected before the counts existed has nowhere to count: its team's
+        // actions go uncounted, and a settle splits the action share equally.
+        Ok(match count {
+            Some(count) => action.with_moderation_action_count(count.saturating_add(1)),
+            None => action,
+        })
+    }
+
+    /// Whether a seated team lacks `ability`: on `document_type_name` for a deletion or a
+    /// restore, on every moderated type for a list, which is contract-wide. The moderators a
+    /// declaration names hold every ability the contract backs.
+    fn lacks(&self, ability: ModerationAbility, document_type_name: Option<&str>) -> bool {
+        match self {
+            Moderators::Declared(_) => false,
+            Moderators::Seated { elected, .. } => match document_type_name {
+                Some(document_type_name) => !elected.allows(document_type_name, ability),
+                None => !elected.allows_on_any_type(ability),
+            },
+        }
+    }
+}
+
+/// The ability a seated team needs to edit `list`, putting an identity on it or taking one off.
+fn ability_of(list: ContractModerationList) -> ModerationAbility {
+    match list {
+        ContractModerationList::Banlist => ModerationAbility::Ban,
+        ContractModerationList::Suspensions => ModerationAbility::Suspend,
+        ContractModerationList::Warnings => ModerationAbility::Warn,
+    }
 }
 
 /// The list the action edits, `None` for a document deletion, which edits none.

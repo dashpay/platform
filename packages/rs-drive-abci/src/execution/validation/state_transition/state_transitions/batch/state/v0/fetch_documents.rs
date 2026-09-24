@@ -4,7 +4,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef};
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
@@ -22,6 +23,7 @@ use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use std::collections::BTreeMap;
 
 // ============================================================================
 // fetch_documents_for_transitions_knowing_contract_and_document_type
@@ -402,6 +404,103 @@ fn fetch_document_with_id_v1(
     } else {
         Ok(Some(documents.remove(0)))
     }
+}
+
+// ============================================================================
+// fetch_document_through_lookup
+// ============================================================================
+
+/// The document a `refersTo` lookup resolves to for one value: the one the
+/// declared unique index of `document_type` finds for the key assembled from
+/// `reference_value` (the property's value, or one array element's), the
+/// writer `owner_id` and the sources in `document_data`. `None` when no
+/// document matches, and when the key cannot be assembled or the index is
+/// missing or not unique. Contract registration and update refuse the last
+/// three (an optional source, a missing or non-unique index), and a referenced
+/// type's indexes cannot change on update, so for a validated contract they
+/// cannot happen; if one did, the write is refused rather than judged against
+/// a partial key.
+///
+/// The query is billed exactly as [`fetch_document_with_id`] v1 bills an id
+/// fetch: an equality query over the index's properties (the shape the unique
+/// index conflict check builds), limit 1, whose processing cost is added to
+/// `execution_context`. Only reached from the document reference validation,
+/// which exists from protocol version 14, so it carries no version of its own.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fetch_document_through_lookup(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    lookup: &DocumentReferenceLookup,
+    reference_value: Identifier,
+    document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
+    epoch: &Epoch,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Document>, Error> {
+    if !document_type
+        .indexes()
+        .get(&lookup.index)
+        .is_some_and(|index| index.unique)
+    {
+        return Ok(None);
+    }
+    let Some(key_values) = lookup.key_values(reference_value, document_data, owner_id) else {
+        return Ok(None);
+    };
+    let equal_clauses = key_values
+        .into_iter()
+        .map(|(field, value)| {
+            (
+                field.clone(),
+                WhereClause {
+                    field,
+                    operator: WhereOperator::Equal,
+                    value,
+                },
+            )
+        })
+        .collect();
+
+    let drive_query = DriveDocumentQuery {
+        contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: None,
+            in_clauses: Vec::new(),
+            range_clause: None,
+            equal_clauses,
+        },
+        offset: None,
+        // The index is unique and every one of its properties is fixed, so at
+        // most one document matches
+        limit: Some(1),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        Some(epoch),
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
+        storage_fee: 0,
+        processing_fee: documents_outcome.cost(),
+        fee_refunds: Default::default(),
+        removed_bytes_from_system: 0,
+    }));
+
+    Ok(documents_outcome.documents_owned().into_iter().next())
 }
 
 // ============================================================================

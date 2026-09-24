@@ -3,6 +3,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::seated_moderation_charter::fetch_seated_moderation_charter;
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::contract_moderation_gate::ContractModerationRefusal;
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionInternalTransformerV0;
 use dpp::block::block_info::BlockInfo;
@@ -64,8 +65,9 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
     /// An elected contract whose declaration names no interim moderators refuses, first,
     /// every transition of a document type it moderates until a team is seated
     /// (`ContractModeratedDocumentTypeNotYetUsableError`), deletions included: nothing of
-    /// those types was ever written. The lists are then read only for the transitions on the
-    /// other types, and not at all when nothing is left.
+    /// those types was ever written. Whether a charter is seated is read, billed, only when a
+    /// transition is on such a type; once one is, the block is over. The lists are then read
+    /// only for the transitions on the other types, and not at all when nothing is left.
     fn contract_moderation_gate_v0<'a>(
         drive: &Drive,
         block_info: &BlockInfo,
@@ -96,10 +98,25 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
             )
         };
 
-        // The interim block: the types an elected contract moderates wait for a team.
+        // The interim block: the types an elected contract moderates wait for a team, until
+        // a contest for its seat is awarded. Seating writes nothing under the contract, so the
+        // charter contract is asked whether one was, and only when the block would apply.
+        let interim_would_block = document_transitions
+            .keys()
+            .any(|document_type_name| moderation.interim_blocks_document_type(document_type_name));
+        let interim_blocks = interim_would_block
+            && fetch_seated_moderation_charter(
+                drive,
+                data_contract_id,
+                &block_info.epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            )?
+            .is_none();
         let mut unblocked: BTreeMap<&'a String, Vec<&'a DocumentTransition>> = BTreeMap::new();
         for (document_type_name, transitions) in document_transitions {
-            if moderation.interim_blocks_document_type(document_type_name) {
+            if interim_blocks && moderation.interim_blocks_document_type(document_type_name) {
                 for transition in transitions {
                     let refusal = failed(
                         transition,

@@ -13,8 +13,8 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
-/// Operations on a moderated contract's banlist, suspension list, warning list and document
-/// removal records.
+/// Operations on a moderated contract's banlist, suspension list, warning list, document
+/// removal records and, for an elected contract, its team's moderation action counts.
 #[derive(Clone, Debug)]
 pub enum ContractModerationOperationType {
     /// Puts an identity on the banlist.
@@ -106,6 +106,24 @@ pub enum ContractModerationOperationType {
     /// (`Drive::apply_drive_operations` generation 1). A moderator's document deletion carries
     /// it, so the deleted document's owner gets no storage refund.
     ForfeitStorageRefunds,
+    /// Writes a seated moderation team member's count of moderation actions on an elected
+    /// contract since the moderators pot was last settled.
+    SetActionCount {
+        /// The elected contract.
+        contract_id: Identifier,
+        /// The member that signed the action.
+        identity_id: Identifier,
+        /// The count to store, the action included.
+        count: u32,
+    },
+    /// Deletes moderation action counts of an elected contract: the reset of a settle of its
+    /// moderators pot. Each count must exist.
+    RemoveActionCounts {
+        /// The elected contract.
+        contract_id: Identifier,
+        /// The members whose counts go.
+        identity_ids: Vec<Identifier>,
+    },
 }
 
 impl DriveLowLevelOperationConverter for ContractModerationOperationType {
@@ -224,6 +242,27 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 platform_version,
             ),
             ContractModerationOperationType::ForfeitStorageRefunds => Ok(vec![]),
+            ContractModerationOperationType::SetActionCount {
+                contract_id,
+                identity_id,
+                count,
+            } => drive.set_contract_moderation_action_count_operations(
+                contract_id,
+                identity_id,
+                count,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            ),
+            ContractModerationOperationType::RemoveActionCounts {
+                contract_id,
+                identity_ids,
+            } => drive.remove_contract_moderation_action_counts_operations(
+                contract_id,
+                &identity_ids,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
         }
     }
 }

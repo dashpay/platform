@@ -291,6 +291,7 @@ mod tests {
                             code: Some(SUSPENSION_REASON_CODE),
                             text: SUSPENSION_REASON.to_string(),
                             documents: vec![],
+                            reason_document_id: None,
                         },
                     }),
                     warnings: vec![],
@@ -365,6 +366,7 @@ mod tests {
                 contract.id(),
                 identity_id,
                 &lists,
+                false,
                 version,
             )
             .expect("expected the proof to verify");
@@ -440,6 +442,7 @@ mod tests {
             contract.id(),
             warned,
             &lists,
+            false,
             version,
         )
         .expect("expected the proof to verify");

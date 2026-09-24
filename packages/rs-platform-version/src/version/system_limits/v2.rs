@@ -10,6 +10,12 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_field_value_size: 5120, //5 KiB
     // v12 is already active on live networks; the depth limit activates in v13 (see v3).
     max_document_value_depth: None,
+    max_typed_array_items: 1024,
+    max_references_per_document: 256,
+    max_reference_operands: 4,
+    max_reference_expression_depth: 4,
+    max_property_constraints: 16,
+    max_property_constraint_nodes: 32,
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
@@ -37,6 +43,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,        // 7 days
+    max_contract_moderation_added_moderators: 15,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

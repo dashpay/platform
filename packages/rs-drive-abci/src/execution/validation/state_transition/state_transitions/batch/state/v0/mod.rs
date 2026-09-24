@@ -34,16 +34,22 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
+use crate::execution::validation::state_transition::batch::state::v0::added_moderator_cap::AddedModeratorCap;
 use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
+use crate::execution::validation::state_transition::batch::state::v0::moderators_pot_settle::ModeratorsPotSettles;
+use crate::execution::validation::state_transition::batch::state::v0::seated_charter_reads::SeatedCharterReads;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
+mod added_moderator_cap;
 pub mod fetch_contender;
 pub mod fetch_documents;
 mod index_only_batch_entries;
+mod moderators_pot_settle;
+mod seated_charter_reads;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
@@ -94,6 +100,20 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         // one grove batch where a second insert at the same path and key
         // silently replaces the first — see `index_only_batch_entries`.
         let mut index_only_batch_entries = IndexOnlyBatchEntries::default();
+
+        // The additions to each seated moderation charter this batch was accepted for, which
+        // the charter's cap counts beside those in state. Only a create of the moderation
+        // charters contract's `addedModerator` is counted, and that contract is in state from
+        // protocol version 14 only, so no earlier batch takes this path.
+        let mut added_moderator_cap = AddedModeratorCap::default();
+
+        // The settles of moderators pots this batch forces: a change of a seated moderation
+        // team pays the target's pot out to the team as it was first. Only a create or a
+        // delete of the moderation charters contract's team changes takes this path, and that
+        // contract is in state from protocol version 14 only, so no earlier batch does.
+        let mut moderators_pot_settles = ModeratorsPotSettles::default();
+        // The seated charters those two read, each read once per batch.
+        let mut seated_charter_reads = SeatedCharterReads::default();
 
         // Next we need to validate the structure of all actions (this means with the data contract)
         for transition in state_transition_action.transitions_take() {
@@ -383,12 +403,49 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         ));
                     continue;
                 }
+
+                // A seated moderation team's leader adds at most the target's
+                // `maxAddedModerators` members: a count the schema can not express.
+                let cap_result = added_moderator_cap.validate_and_record_create(
+                    create_action,
+                    &mut seated_charter_reads,
+                    platform,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
+                if !cap_result.is_valid() {
+                    validation_result.add_errors(cap_result.errors);
+                    validated_transitions
+                        .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                                create_action.base(),
+                                owner_id,
+                                state_transition_action.user_fee_increase(),
+                            ),
+                        ));
+                    continue;
+                }
             }
+
+            // A change of a seated moderation team settles the team's moderators pot first.
+            moderators_pot_settles.settle_before_team_change(
+                &transition,
+                &mut seated_charter_reads,
+                platform,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            )?;
 
             validated_transitions.push(transition);
         }
 
         state_transition_action.set_transitions(validated_transitions);
+        state_transition_action
+            .set_moderators_pot_settlements(moderators_pot_settles.into_settlements());
 
         validation_result.set_data(state_transition_action.into());
 
