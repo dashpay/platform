@@ -68,32 +68,117 @@ mod tests {
 
     #[test]
     fn should_load_the_schema_at_the_latest_platform_version() {
+        use v1::document_types::{
+            added_moderator, elected_charter, join_request, reason, removed_moderator,
+            resignation_request, submitted_charter,
+        };
+
         let schema = load_documents_schemas(PlatformVersion::latest()).expect("schema loads");
-        let charter = schema
-            .get(v1::document_types::charter::NAME)
-            .expect("the charter document type is declared");
-        let properties = charter
-            .get("properties")
-            .and_then(Value::as_object)
-            .expect("the charter has properties");
-        for property in [
-            v1::document_types::charter::properties::TARGET_CONTRACT_ID,
-            v1::document_types::charter::properties::DESCRIPTION,
-            v1::document_types::charter::properties::ABILITIES,
-            v1::document_types::charter::properties::MEMBERS,
-            v1::document_types::charter::properties::REASON_CODES,
-            v1::document_types::charter::properties::MODERATORS_SHARE,
-            v1::document_types::charter::properties::SPLIT,
-        ] {
-            assert!(
-                properties.contains_key(property),
-                "the schema declares {property}"
-            );
-        }
-        assert_eq!(
-            charter["indices"][0]["name"],
-            v1::document_types::charter::indexes::BY_TARGET_CONTRACT
+        let declared = |name: &str, properties: &[&str], indexes: &[&str]| {
+            let document_type = schema
+                .get(name)
+                .unwrap_or_else(|| panic!("the {name} document type is declared"));
+            let declared_properties = document_type
+                .get("properties")
+                .and_then(Value::as_object)
+                .unwrap_or_else(|| panic!("{name} has properties"));
+            for property in properties {
+                assert!(
+                    declared_properties.contains_key(*property),
+                    "{name} declares {property}"
+                );
+            }
+            let declared_indexes: Vec<&str> = document_type
+                .get("indices")
+                .and_then(Value::as_array)
+                .unwrap_or_else(|| panic!("{name} has indexes"))
+                .iter()
+                .filter_map(|index| index.get("name").and_then(Value::as_str))
+                .collect();
+            assert_eq!(declared_indexes, indexes, "the indexes of {name}");
+        };
+
+        declared(
+            reason::NAME,
+            &[
+                reason::properties::CODE,
+                reason::properties::LABEL,
+                reason::properties::DESCRIPTION,
+            ],
+            &[reason::indexes::BY_OWNER_CODE],
         );
+        declared(
+            submitted_charter::NAME,
+            &[
+                submitted_charter::properties::TARGET_CONTRACT_ID,
+                submitted_charter::properties::DESCRIPTION,
+                submitted_charter::properties::REASONS,
+                submitted_charter::properties::MODERATORS_SHARE,
+                submitted_charter::properties::REWARD_SPLIT,
+            ],
+            &[
+                submitted_charter::indexes::BY_TARGET_CONTRACT,
+                submitted_charter::indexes::BY_OWNER,
+            ],
+        );
+        declared(
+            join_request::NAME,
+            &[
+                join_request::properties::SUBMITTED_CHARTER_ID,
+                join_request::properties::RECIPIENT_ID,
+                join_request::properties::RECIPIENT_KEY_ID,
+                join_request::properties::SENDER_KEY_ID,
+                join_request::properties::ENCRYPTED_MESSAGE,
+            ],
+            &[
+                join_request::indexes::BY_SUBMITTED_CHARTER,
+                join_request::indexes::BY_OWNER,
+            ],
+        );
+        declared(
+            elected_charter::NAME,
+            &[
+                elected_charter::properties::TARGET_CONTRACT_ID,
+                elected_charter::properties::SUBMITTED_CHARTER_ID,
+                elected_charter::properties::MEMBERS,
+            ],
+            &[
+                elected_charter::indexes::BY_TARGET_CONTRACT,
+                elected_charter::indexes::BY_SUBMITTED_CHARTER,
+            ],
+        );
+        declared(
+            added_moderator::NAME,
+            &[
+                added_moderator::properties::ELECTED_CHARTER_ID,
+                added_moderator::properties::SUBMITTED_CHARTER_ID,
+                added_moderator::properties::MEMBER_ID,
+            ],
+            &[added_moderator::indexes::BY_ELECTED_CHARTER_MEMBER],
+        );
+        declared(
+            removed_moderator::NAME,
+            &[
+                removed_moderator::properties::ELECTED_CHARTER_ID,
+                removed_moderator::properties::MEMBER_ID,
+            ],
+            &[removed_moderator::indexes::BY_ELECTED_CHARTER_MEMBER],
+        );
+        declared(
+            resignation_request::NAME,
+            &[
+                resignation_request::properties::ELECTED_CHARTER_ID,
+                resignation_request::properties::RECIPIENT_ID,
+                resignation_request::properties::RECIPIENT_KEY_ID,
+                resignation_request::properties::SENDER_KEY_ID,
+                resignation_request::properties::ENCRYPTED_MESSAGE,
+            ],
+            &[resignation_request::indexes::BY_ELECTED_CHARTER_OWNER],
+        );
+        // Seven types and no others.
+        assert_eq!(schema.as_object().map(|types| types.len()), Some(7));
+        // Only the elected charter is contested, on its target.
+        assert!(schema[elected_charter::NAME]["indices"][0]["contested"].is_object());
     }
 
     #[test]
