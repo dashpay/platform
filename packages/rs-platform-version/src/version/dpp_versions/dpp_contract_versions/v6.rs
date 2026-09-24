@@ -115,6 +115,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             deserialize_value_for_key: 0,
             validate_distinct_from: Some(0), // changed: `validate_distinct_from_properties` refuses a document whose `distinctFrom` property equals what it must differ from (DocumentPropertyNotDistinctError, 10419); None before this version, where no property can carry the keyword
             validate_encrypted_property_shapes: Some(0), // changed: refuses an `encryptedFor` property whose bytes are not the shape its scheme produces; None before this version returns an empty result
+            canonical_contested_index_values: Some(0), // new: identifier index values of a contest are written as identifiers
         },
     },
     token_versions: TokenVersions {

@@ -242,16 +242,19 @@ fn should_combine_the_elected_members_the_additions_and_the_removals() {
 }
 
 #[test]
-fn should_read_a_charter_election_target_only_from_a_32_byte_value() {
+fn should_read_a_charter_election_target_from_every_accepted_identifier_form() {
     let target = Identifier::new([0x7A; 32]);
     let target_of = |contract_id: &Identifier, document_type_name: &str, value: Value| {
         charter_election_target(contract_id, document_type_name, &[value])
     };
 
+    // Every form validation accepts for an identifier property
     for value in [
         Value::Identifier([0x7A; 32]),
         Value::Bytes32([0x7A; 32]),
         Value::Bytes(vec![0x7A; 32]),
+        Value::Array(vec![Value::U8(0x7A); 32]),
+        Value::Array(vec![Value::U64(0x7A); 32]),
     ] {
         assert_eq!(
             target_of(
@@ -263,8 +266,8 @@ fn should_read_a_charter_election_target_only_from_a_32_byte_value() {
         );
     }
 
-    // The same contract written as base58 text or as an array of integers, a short byte
-    // string, another type of the charter contract, and another contract
+    // The same contract written as base58 text, an array holding a value that is not a byte,
+    // a short byte string, another type of the charter contract, and another contract
     for (contract_id, document_type_name, value) in [
         (
             MODERATION_CHARTERS_CONTRACT_ID,
@@ -274,7 +277,11 @@ fn should_read_a_charter_election_target_only_from_a_32_byte_value() {
         (
             MODERATION_CHARTERS_CONTRACT_ID,
             ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
-            Value::Array(vec![Value::U8(0x7A); 32]),
+            Value::Array(
+                std::iter::once(Value::U64(256))
+                    .chain(std::iter::repeat_n(Value::U8(0x7A), 31))
+                    .collect(),
+            ),
         ),
         (
             MODERATION_CHARTERS_CONTRACT_ID,

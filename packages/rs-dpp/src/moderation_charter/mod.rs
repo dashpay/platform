@@ -29,6 +29,7 @@
 mod v0;
 
 use crate::consensus::basic::moderation_charter::ModerationCharterMalformedFieldError;
+use crate::data_contract::document_type::contested_index_identifier;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::ProtocolError;
 use platform_value::{Identifier, IdentifierBytes32, Value, ValueMap};
@@ -73,9 +74,10 @@ pub fn is_charter_election(contract_id: &Identifier, document_type_name: &str) -
 }
 
 /// The contract a moderation election contends for: the single value of the contested index's
-/// key, `targetContractId`, in one of the 32-byte forms a document's identifier takes. `None`
-/// for every other contest, and for index values that do not name one contract that way (a
-/// base58 string or an array of integers included), which an `electedCharter` never produces.
+/// key, `targetContractId`, in any form validation accepts for an identifier (from protocol
+/// version 14 a contest's index values are written as `Value::Identifier` anyway, see
+/// `Index::extract_contested_values`). `None` for every other contest, and for index values
+/// that do not name one contract, a base58 string included.
 pub fn charter_election_target(
     contract_id: &Identifier,
     document_type_name: &str,
@@ -85,8 +87,7 @@ pub fn charter_election_target(
         return None;
     }
     match index_values {
-        [Value::Identifier(bytes) | Value::Bytes32(bytes)] => Some(Identifier::new(*bytes)),
-        [Value::Bytes(bytes)] => Identifier::from_bytes(bytes).ok(),
+        [target] => contested_index_identifier(target).map(Identifier::new),
         _ => None,
     }
 }

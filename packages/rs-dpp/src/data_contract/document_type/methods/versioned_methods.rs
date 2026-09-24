@@ -362,14 +362,19 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// Figures out the prefunded voting balance (v0) for a document in a document type
-    fn contested_vote_poll_for_document_v0(&self, document: &Document) -> Option<VotePoll> {
-        self.contested_vote_poll_for_document_properties_v0(document.properties())
+    fn contested_vote_poll_for_document_v0(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        self.contested_vote_poll_for_document_properties_v0(document.properties(), platform_version)
     }
 
     fn contested_vote_poll_for_document_properties_v0(
         &self,
         document_properties: &BTreeMap<String, Value>,
-    ) -> Option<VotePoll> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
         self.indexes()
             .values()
             .find(|index| {
@@ -393,14 +398,24 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
-                let index_values = index.extract_values(document_properties);
-                VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
-                    contract_id: self.data_contract_id(),
-                    document_type_name: self.name().clone(),
-                    index_name: index.name.clone(),
-                    index_values,
-                })
+                // Identifier values are written one way from protocol version 14, so every
+                // contender of a contest names it with the same poll; before 14 they are taken
+                // as given, as they always were
+                let index_values = index.extract_contested_values(
+                    document_properties,
+                    self.flattened_properties(),
+                    platform_version,
+                )?;
+                Ok(VotePoll::ContestedDocumentResourceVotePoll(
+                    ContestedDocumentResourceVotePoll {
+                        contract_id: self.data_contract_id(),
+                        document_type_name: self.name().clone(),
+                        index_name: index.name.clone(),
+                        index_values,
+                    },
+                ))
             })
+            .transpose()
     }
 
     fn index_for_types_v0(

@@ -84,6 +84,11 @@ pub struct DocumentTypeMethodVersions {
     /// that predate the keyword: the method returns an empty result there, so the
     /// shipped create and replace structure validations that call it are inert.
     pub validate_encrypted_property_shapes: OptionalFeatureVersion,
+    /// `Index::extract_contested_values`: writes an identifier property given as bytes or as
+    /// an array of byte values as `Value::Identifier` in a contest's index values, so every
+    /// contender names one contest with one poll. `None` on versions that predate it, where
+    /// the values are taken as given.
+    pub canonical_contested_index_values: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

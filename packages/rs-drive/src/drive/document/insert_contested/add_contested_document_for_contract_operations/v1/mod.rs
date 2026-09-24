@@ -318,3 +318,111 @@ impl Drive {
         Ok(charter_election_windows.unwrap_or(generic_windows))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::object_size_info::DataContractOwnedResolvedInfo;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup_contract;
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::DataContract;
+    use dpp::moderation_charter::{
+        ELECTED_CHARTER_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
+    };
+    use dpp::platform_value::Value;
+    use grovedb::batch::key_info::KeyInfo;
+    use grovedb::GroveDb;
+
+    const CONTRACT_PATH: &str = "tests/supporting_files/contract/family/family-contract.json";
+
+    /// A contest on `document_type_name` of the contract `resolved_as` (only its id is read),
+    /// keyed by `target`.
+    fn contest(
+        resolved_as: &DataContract,
+        document_type_name: &str,
+        target: [u8; 32],
+    ) -> ContestedDocumentResourceVotePollWithContractInfo {
+        ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(resolved_as.clone()),
+            document_type_name: document_type_name.to_string(),
+            index_name: "byTargetContract".to_string(),
+            index_values: vec![Value::Identifier(target)],
+        }
+    }
+
+    /// An estimate reads nothing, so a moderation election's target read is estimated as the
+    /// read of a stored contract at `estimated_contract_max_serialized_size`, whether the target
+    /// exists or not; every other contest estimates no target read.
+    #[test]
+    fn should_estimate_the_target_read_of_a_moderation_election_whatever_the_state() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let stored = setup_contract(
+            &drive,
+            CONTRACT_PATH,
+            Some([0x7A; 32]),
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let mut charters = stored.clone();
+        charters.set_id(MODERATION_CHARTERS_CONTRACT_ID);
+        let generic = ContestWindows::generic(Network::Testnet, platform_version);
+        let block_info = BlockInfo::default();
+        let estimated_read = |target: [u8; 32]| {
+            GroveDb::average_case_for_get_raw(
+                &KeyInfoPath::from_known_path(contract_root_path(&target)),
+                &KeyInfo::KnownKey(vec![0]),
+                platform_version
+                    .system_limits
+                    .estimated_contract_max_serialized_size as u32,
+                TreeType::NormalTree,
+                &platform_version.drive.grove_version,
+            )
+            .expect("expected an average case cost")
+        };
+
+        for target in [stored.id().to_buffer(), [0x7B; 32]] {
+            let mut operations = vec![];
+            let windows = drive
+                .contest_windows_v1(
+                    &contest(&charters, ELECTED_CHARTER_DOCUMENT_TYPE_NAME, target),
+                    generic,
+                    true,
+                    &block_info,
+                    None,
+                    &mut operations,
+                    platform_version,
+                )
+                .expect("expected the windows");
+            assert_eq!(windows, generic, "an estimate keeps the generic windows");
+            assert_eq!(
+                operations,
+                vec![LowLevelDriveOperation::CalculatedCostOperation(
+                    estimated_read(target)
+                )]
+            );
+        }
+
+        let mut operations = vec![];
+        drive
+            .contest_windows_v1(
+                &contest(
+                    &stored,
+                    ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                    stored.id().to_buffer(),
+                ),
+                generic,
+                true,
+                &block_info,
+                None,
+                &mut operations,
+                platform_version,
+            )
+            .expect("expected the windows");
+        assert!(operations.is_empty(), "{operations:?}");
+    }
+}

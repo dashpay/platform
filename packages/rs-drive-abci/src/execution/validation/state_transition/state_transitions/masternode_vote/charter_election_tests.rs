@@ -365,15 +365,33 @@ async fn application(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Vec<u8> {
+    application_naming_the_target_as(
+        charters,
+        applicant,
+        Value::Identifier(target.to_buffer()),
+        proposal_id,
+        rng,
+        platform_version,
+    )
+    .await
+}
+
+/// [`application`] with the target written as `target`: an identifier property is accepted as
+/// an identifier, as bytes or as an array of byte values.
+async fn application_naming_the_target_as(
+    charters: &DataContract,
+    applicant: &mut Applicant,
+    target: Value,
+    proposal_id: Identifier,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> Vec<u8> {
     create_transition(
         charters,
         applicant,
         ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
         BTreeMap::from([
-            (
-                property_names::TARGET_CONTRACT_ID.to_string(),
-                Value::Identifier(target.to_buffer()),
-            ),
+            (property_names::TARGET_CONTRACT_ID.to_string(), target),
             (
                 property_names::SUBMITTED_CHARTER_ID.to_string(),
                 Value::Identifier(proposal_id.to_buffer()),
@@ -1144,4 +1162,129 @@ async fn should_keep_the_end_date_when_the_windows_changed_during_an_election() 
         "with no votes the earliest applicant wins"
     );
     assert!(end_dates(&platform, platform_version).is_empty());
+}
+
+/// An application may write the target contract as an array of byte values, which validation
+/// accepts for an identifier: the contest still names it as the identifier and runs on the
+/// target's own join window.
+#[tokio::test]
+async fn should_honor_the_target_windows_of_an_application_writing_the_target_as_an_array() {
+    let (mut platform, platform_version, charters, mut rng) = setup();
+    let target = elected_target(&platform, 0xA9, ONE_DAY, ONE_WEEK, platform_version);
+    let poll = charter_poll(target);
+    let mut alice = applicant(&mut platform, &mut rng);
+
+    let proposal_id = propose(
+        &platform,
+        &charters,
+        &mut alice,
+        target,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let as_array = application_naming_the_target_as(
+        &charters,
+        &mut alice,
+        Value::Array(target.to_buffer().into_iter().map(Value::U8).collect()),
+        proposal_id,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let start = 11_000;
+    process_valid(&platform, as_array, start, platform_version);
+
+    assert_eq!(
+        end_dates(&platform, platform_version),
+        vec![(
+            start + DAY_MS,
+            VotePoll::ContestedDocumentResourceVotePoll(poll.clone())
+        )],
+        "the contest names the target as an identifier and ends with its one-day join window"
+    );
+    assert_eq!(
+        prefunded_balance(&platform, &poll, platform_version),
+        platform_version
+            .fee_version
+            .vote_resolution_fund_fees
+            .moderation_vote_resolution_fund_required_amount
+    );
+
+    end_polls_at(&platform, start + DAY_MS, 10, platform_version);
+    assert_eq!(
+        status(&platform, &poll, platform_version),
+        ContestedDocumentVotePollStatus::Awarded(alice.id())
+    );
+}
+
+/// Two applicants may write the same target in two accepted forms: both name one contest with
+/// one poll, so the second one moves the end to the join and vote windows and both prefunds
+/// land in the one balance the clean-up releases.
+#[tokio::test]
+async fn should_move_the_end_when_applicants_write_the_target_in_different_forms() {
+    let (mut platform, platform_version, charters, mut rng) = setup();
+    let target = elected_target(&platform, 0xAA, ONE_DAY, ONE_WEEK, platform_version);
+    let poll = charter_poll(target);
+    let mut alice = applicant(&mut platform, &mut rng);
+    let mut bob = applicant(&mut platform, &mut rng);
+
+    let (start, _) = apply(
+        &platform,
+        &charters,
+        &mut alice,
+        target,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    let proposal_id = propose(
+        &platform,
+        &charters,
+        &mut bob,
+        target,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let as_bytes = application_naming_the_target_as(
+        &charters,
+        &mut bob,
+        Value::Bytes(target.to_buffer().to_vec()),
+        proposal_id,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    process_valid(&platform, as_bytes, start + 61_000, platform_version);
+
+    let vote_end = start + DAY_MS + u64::from(ONE_WEEK) * 1000;
+    assert_eq!(
+        end_dates(&platform, platform_version),
+        vec![(
+            vote_end,
+            VotePoll::ContestedDocumentResourceVotePoll(poll.clone())
+        )],
+        "the second applicant moves the end to the join and vote windows"
+    );
+    assert_eq!(
+        prefunded_balance(&platform, &poll, platform_version),
+        2 * platform_version
+            .fee_version
+            .vote_resolution_fund_fees
+            .moderation_vote_resolution_fund_required_amount,
+        "both applications prefund the one contest"
+    );
+
+    end_polls_at(&platform, vote_end, 10, platform_version);
+    assert_eq!(
+        status(&platform, &poll, platform_version),
+        ContestedDocumentVotePollStatus::Awarded(alice.id()),
+        "with no votes the earliest applicant wins"
+    );
+    assert_eq!(prefunded_balance(&platform, &poll, platform_version), 0);
 }

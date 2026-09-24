@@ -13,6 +13,13 @@ document's owner may not be joined by the same identity twice.
 
 The index's `contested.resolution` says how the contest is decided.
 
+From protocol version 14, an identifier property among the index values is written as an
+identifier in the poll (`Index::extract_contested_values`), whether the document gave it as an
+identifier, as 32 bytes or as an array of byte values. The index keys store all of these alike,
+but a poll is hashed from its values, and that hash keys the contest's prefunded balance and end
+date: two contenders writing the same identifier two ways would otherwise split one contest into
+two polls. Before 14 the values are taken as given.
+
 ## Resolution 0: masternode vote
 
 The DPNS rule. The choices are a contender, abstain, or **lock**, which gives the value to nobody.
