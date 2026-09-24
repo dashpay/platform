@@ -117,6 +117,7 @@ impl Drive {
                         negative_credit_balance_modified: Some(
                             *desired_removed_balance - previous_balance,
                         ),
+                        repaid_debt: 0,
                     }
                     .into()
                 } else {
@@ -124,6 +125,7 @@ impl Drive {
                     AddToPreviousBalanceOutcomeV0 {
                         balance_modified: Some(previous_balance - desired_removed_balance),
                         negative_credit_balance_modified: None,
+                        repaid_debt: 0,
                     }
                     .into()
                 }

@@ -43,6 +43,15 @@ impl Drive {
     /// for them gets nothing back, and the credits stay in the storage pools they were
     /// distributed to. An estimate carries no refund to begin with, so `check_tx` sees the
     /// same fee with or without the forfeiture.
+    ///
+    /// Credits the batch adds to an identity that repay its debt
+    /// ([`LowLevelDriveOperation::RepaidIdentityDebt`], from `add_to_identity_balance_operations`
+    /// 1) go to the processing fee pool of the block's epoch once the batch applied: the debt
+    /// stood for processing fees that never reached a pool, and otherwise the credits would
+    /// reach no balance the credit sum counts. The pool write reads the state the batch left,
+    /// so it adds to a pool write the batch made itself (the fee distribution at the end of a
+    /// block) instead of racing it, and it is not billed. An estimate reads no debt and repays
+    /// none.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -101,6 +110,9 @@ impl Drive {
             );
         }
 
+        let repaid_identity_debt =
+            LowLevelDriveOperation::take_repaid_identity_debt(&mut low_level_operations)?;
+
         let mut cost_operations = vec![];
 
         self.apply_batch_low_level_drive_operations(
@@ -110,6 +122,21 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+        if repaid_identity_debt > 0 {
+            let pool_operation = self.add_epoch_processing_credits_for_distribution_operation(
+                &block_info.epoch,
+                repaid_identity_debt,
+                transaction,
+                platform_version,
+            )?;
+            self.apply_batch_low_level_drive_operations(
+                None,
+                transaction,
+                vec![pool_operation],
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+        }
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }

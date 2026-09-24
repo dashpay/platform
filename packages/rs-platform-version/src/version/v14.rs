@@ -1112,6 +1112,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     but the four
 ///     new Drive method slots, `0` at every version.
 ///
+/// 42. **Repaid identity debt reaches the processing fee pool**: an identity
+///     whose fee the balance could not fully cover keeps the unpaid processing
+///     part as a debt (its negative credit balance), and credits it receives
+///     while its balance is empty still repay that debt first. The repaid part
+///     now goes to the processing fee pool of the epoch it is repaid in, where
+///     the unpaid fee would have gone; before, it reached no balance the credit
+///     sum counts. `add_to_identity_balance` 1 marks it with a
+///     `LowLevelDriveOperation::RepaidIdentityDebt`, and every apply routes it:
+///     `apply_drive_operations` 1 writes it to the pool after the batch (so it
+///     adds to the end of block fee distribution the same batch may write,
+///     unbilled), `apply_balance_change_from_fee_to_identity` 1, which now takes
+///     the block info, writes it in its own batch (the fee paid is unchanged),
+///     and `add_epoch_pool_to_proposers_payout_operations` 1 hands the epoch
+///     payouts to the block's `apply_drive_operations` instead of converting
+///     them to a plain grove batch. An apply that meets one it does not route
+///     fails (`CorruptedCodeExecution`) instead of dropping it.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

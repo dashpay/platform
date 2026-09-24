@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpochV0Methods};
 use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
-use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::pool_credits::StorageAndProcessingPoolCredits;
 use dpp::document::DocumentV0Getters;
@@ -26,7 +25,15 @@ impl<C> Platform<C> {
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
     /// Returns the number of proposers to be paid out.
-    pub(super) fn add_epoch_pool_to_proposers_payout_operations_v0(
+    ///
+    /// Generation 1 (protocol version 14) is generation 0, and the payouts join the batch as
+    /// the identity credits they are instead of grove operations converted here: the block's
+    /// `apply_drive_operations` converts them against the same state and routes the credits
+    /// that repay a recipient's debt to the processing fee pool of the block's epoch, after the
+    /// batch's own fee distribution. A plain grove batch cannot carry them, and generation 0,
+    /// which converted with `convert_drive_operations_to_grove_operations`, left them in no
+    /// balance the credit sum counts.
+    pub(super) fn add_epoch_pool_to_proposers_payout_operations_v1(
         &self,
         unpaid_epoch: &UnpaidEpoch,
         core_block_rewards: Credits,
@@ -157,14 +164,7 @@ impl<C> Platform<C> {
             }));
         }
 
-        let operations = self.drive.convert_drive_operations_to_grove_operations(
-            drive_operations,
-            &BlockInfo::default(),
-            Some(transaction),
-            platform_version,
-        )?;
-
-        batch.push(DriveOperation::GroveDBOpBatch(operations));
+        batch.extend(drive_operations);
 
         Ok((storage_and_processing_fees, proposers.into_iter().collect()))
     }
@@ -194,9 +194,8 @@ mod tests {
         use rust_decimal_macros::dec;
 
         #[test]
-        fn test_payout_to_proposers() {
+        fn should_pay_proposers_and_shares_and_credit_a_repaid_debt_to_the_block_epochs_pool() {
             let platform = TestPlatformBuilder::new()
-                .with_initial_protocol_version(13)
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
@@ -279,6 +278,28 @@ mod tests {
                     platform_version,
                 );
 
+            // The first share recipient owes 7 credits, the unpaid part of an earlier fee
+            let indebted_share_identity = share_identities_and_documents[0].0.id().to_buffer();
+            let owed = 7;
+            let debt_operation = platform
+                .drive
+                .update_identity_negative_credit_operation(
+                    indebted_share_identity,
+                    owed,
+                    platform_version,
+                )
+                .expect("expected a debt operation");
+            platform
+                .drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    Some(&transaction),
+                    vec![debt_operation],
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to store the debt");
+
             let mut batch = vec![];
 
             let unpaid_epoch = UnpaidEpochV0 {
@@ -294,7 +315,7 @@ mod tests {
             };
 
             let proposers_paid_count = platform
-                .add_epoch_pool_to_proposers_payout_operations_v0(
+                .add_epoch_pool_to_proposers_payout_operations_v1(
                     &unpaid_epoch.into(),
                     0,
                     &transaction,
@@ -304,12 +325,13 @@ mod tests {
                 .expect("should distribute fees")
                 .1;
 
+            // The payout is applied in a block of the next epoch
             platform
                 .drive
                 .apply_drive_operations(
                     batch,
                     true,
-                    &BlockInfo::default(),
+                    &BlockInfo::default_with_epoch(next_epoch_tree),
                     Some(&transaction),
                     platform_version,
                     None,
@@ -354,9 +376,24 @@ mod tests {
                 .fetch_identities_balances(&share_identities, Some(&transaction), platform_version)
                 .expect("expected to get identities");
 
-            for (_, balance) in refetched_share_identities_balances {
-                assert_eq!(balance, payout_credits);
+            for (identity_id, balance) in refetched_share_identities_balances {
+                if identity_id == indebted_share_identity {
+                    assert_eq!(balance, payout_credits - owed);
+                } else {
+                    assert_eq!(balance, payout_credits);
+                }
             }
+
+            // The repaid part reached the processing fee pool of the block's epoch
+            let next_epoch_processing_fees = platform
+                .drive
+                .get_epoch_processing_credits_for_distribution(
+                    &next_epoch_tree,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the next epoch's processing fees");
+            assert_eq!(next_epoch_processing_fees, owed);
         }
     }
 }

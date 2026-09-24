@@ -28,6 +28,9 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
+    ///   A batch still holding a [`LowLevelDriveOperation::RepaidIdentityDebt`] is refused
+    ///   with `CorruptedCodeExecution`: its credits are owed to a fee pool by whoever built
+    ///   the batch, and applying the rest would drop them.
     ///
     pub fn apply_batch_low_level_drive_operations(
         &self,
@@ -39,6 +42,14 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
+        // Only `add_to_identity_balance_operations` 1 (protocol version 14) produces one, so no
+        // batch of an earlier version meets this
+        if LowLevelDriveOperation::holds_repaid_identity_debt(&batch_operations) {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a repaid identity debt must be routed to the processing fee pool before its \
+                 batch is applied",
+            )));
+        }
         match drive_version
             .methods
             .operations

@@ -21,7 +21,7 @@ use crate::error::Error;
 use crate::fees::get_overflow_error;
 use crate::fees::op::LowLevelDriveOperation::{
     CalculatedCostOperation, CalculatedEphemeralCostOperation, EphemeralGroveOperation,
-    FunctionOperation, GroveOperation, PreCalculatedFeeResult,
+    FunctionOperation, GroveOperation, PreCalculatedFeeResult, RepaidIdentityDebt,
 };
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::storage_flags::StorageFlags;
@@ -227,6 +227,14 @@ pub enum LowLevelDriveOperation {
     CalculatedEphemeralCostOperation(OperationCost),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
+    /// Credits an identity's incoming balance repaid of its debt (its negative credit balance).
+    /// Not a GroveDB operation and no cost: the debt stood for processing fees the identity
+    /// could not pay, which never reached a fee pool, so whoever applies the batch owes these
+    /// credits to the current epoch's processing fee pool. Leaving them out would take them out
+    /// of every balance the credit sum counts. Produced from protocol version 14 only, by
+    /// `add_to_identity_balance_operations` 1; an apply that meets one it does not route fails
+    /// instead of dropping it.
+    RepaidIdentityDebt(Credits),
 }
 
 /// Shared rejection message for the three `Element` wrappers
@@ -383,7 +391,41 @@ impl LowLevelDriveOperation {
             FunctionOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "function operations should not be requested by operation costs",
             ))),
+            RepaidIdentityDebt(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a repaid identity debt must be routed to the processing fee pool, not priced",
+            ))),
         }
+    }
+
+    /// Removes every [`RepaidIdentityDebt`] from `operations` and returns their total: the
+    /// credits the caller owes the current epoch's processing fee pool for the batch.
+    pub fn take_repaid_identity_debt(
+        operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<Credits, Error> {
+        let mut repaid: Credits = 0;
+        let mut overflowed = false;
+        operations.retain(|operation| match operation {
+            RepaidIdentityDebt(credits) => {
+                match repaid.checked_add(*credits) {
+                    Some(total) => repaid = total,
+                    None => overflowed = true,
+                }
+                false
+            }
+            _ => true,
+        });
+        if overflowed {
+            return Err(get_overflow_error("repaid identity debt overflow"));
+        }
+        Ok(repaid)
+    }
+
+    /// Whether `operations` holds a [`RepaidIdentityDebt`], which an apply must route before
+    /// it applies the rest.
+    pub fn holds_repaid_identity_debt(operations: &[LowLevelDriveOperation]) -> bool {
+        operations
+            .iter()
+            .any(|operation| matches!(operation, RepaidIdentityDebt(_)))
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.

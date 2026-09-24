@@ -32,6 +32,11 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 /// * `update.update_identity_key_limits` and `keys.budget.add_to_identity_key_budget`
 ///   `None -> Some(0)`: the identity key limits update transition rewrites a key with a raised
 ///   total budget or a later expiry and raises its remaining budget by the same amount.
+/// * `update.add_to_identity_balance` 0 -> 1 and
+///   `update.apply_balance_change_from_fee_to_identity` 0 -> 1: credits an identity receives
+///   while it carries a debt (a negative credit balance) still repay the debt first, and the
+///   repaid part now reaches the processing fee pool of the block's epoch. Both v0s left it in
+///   no balance the credit sum counts.
 /// * `update.disable_identity_keys` 0 -> 1: fee estimation reads the stored keys so a
 ///   bound key's reference refreshes are priced; v0 estimated with an unbounded
 ///   stand-in key.
@@ -159,9 +164,9 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             add_new_keys_to_identity: 0,
             insert_identity_balance: 0,
             initialize_negative_identity_balance: 0,
-            add_to_identity_balance: 0,
+            add_to_identity_balance: 1, // changed: credits that repay an identity's debt are owed to the processing fee pool
             add_to_previous_balance: 0,
-            apply_balance_change_from_fee_to_identity: 0,
+            apply_balance_change_from_fee_to_identity: 1, // changed: routes the debt a balance change repaid to the processing fee pool
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
             update_identity_key_limits: Some(0),
