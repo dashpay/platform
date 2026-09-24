@@ -736,13 +736,19 @@ impl<C> Platform<C> {
         // App-connect contract: the wallet's encrypted login response gets one system
         // contract id on every network from this version. Fresh
         // chains register it at genesis (`create_genesis_state` v2).
+        //
+        // Both contracts registered here are stored without storage flags, as genesis stores
+        // system contracts: nobody owns their storage, and nothing ever refunds it.
+        // `insert_contract`, which the upgrades to 6, 9 and 13 used, would give them and every
+        // tree created with them the contract's flags, owned by the all-zero system owner.
         let app_connect_contract =
             load_system_data_contract(SystemDataContract::AppConnect, platform_version)?;
 
-        self.drive.insert_contract(
+        self.drive.apply_contract(
             &app_connect_contract,
             *block_info,
             true,
+            None,
             Some(transaction),
             platform_version,
         )?;
@@ -754,10 +760,11 @@ impl<C> Platform<C> {
         let moderation_charters_contract =
             load_system_data_contract(SystemDataContract::ModerationCharters, platform_version)?;
 
-        self.drive.insert_contract(
+        self.drive.apply_contract(
             &moderation_charters_contract,
             *block_info,
             true,
+            None,
             Some(transaction),
             platform_version,
         )?;
@@ -2121,6 +2128,87 @@ mod tests {
              upgraded to it:\n{}",
             diffs.join("\n"),
         );
+    }
+
+    /// The system contracts the upgrade to 14 registers are stored without storage flags, as a
+    /// chain born at 14 stores them at genesis. The contract elements, every tree created with
+    /// them and, for the moderation charters contract's contested index, its trees under the
+    /// active polls are byte-identical on the two chains.
+    #[test]
+    fn should_store_the_version_14_system_contracts_as_a_chain_born_at_14_does() {
+        use drive::drive::votes::paths::vote_contested_resource_active_polls_tree_path_vec;
+        use drive::util::grove_operations::DirectQueryType;
+
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        let element = |platform: &crate::platform_types::platform::Platform<MockCoreRPCLike>,
+                       transaction: Option<&Transaction>,
+                       path: &[Vec<u8>],
+                       key: &[u8]| {
+            platform
+                .drive
+                .grove_get_raw(
+                    path.into(),
+                    key,
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to read the element")
+                .expect("expected the element to exist")
+        };
+
+        let contracts = vec![vec![RootTree::DataContractDocuments as u8]];
+        let active_polls = vote_contested_resource_active_polls_tree_path_vec();
+        for (parent, contract) in [
+            (&contracts, SystemDataContract::AppConnect),
+            (&contracts, SystemDataContract::ModerationCharters),
+            (&active_polls, SystemDataContract::ModerationCharters),
+        ] {
+            let id = contract.id().to_buffer();
+            let upgraded_element = element(&upgraded, Some(&transaction), parent, &id);
+            assert_eq!(
+                upgraded_element.get_flags(),
+                &None,
+                "{contract:?} is stored without storage flags under {parent:?}"
+            );
+            assert_eq!(
+                element(&born_at_14, None, parent, &id),
+                upgraded_element,
+                "{contract:?} under {parent:?} differs between a chain born at version 14 and \
+                 one upgraded to it"
+            );
+
+            let mut root_path = parent.clone();
+            root_path.push(id.to_vec());
+            let diffs = collect_subtree_diffs(&born_at_14, &upgraded, &transaction, root_path);
+            assert!(
+                diffs.is_empty(),
+                "the trees of {contract:?} under {parent:?} differ between a chain born at \
+                 version 14 and one upgraded to it:\n{}",
+                diffs.join("\n"),
+            );
+        }
     }
 
     #[test]
