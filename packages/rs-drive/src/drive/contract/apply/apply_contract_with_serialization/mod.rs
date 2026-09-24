@@ -14,6 +14,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 mod v0;
+mod v1;
 
 /// Drive contract application methods.
 impl Drive {
@@ -71,9 +72,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.apply_contract_with_serialization_v1(
+                contract,
+                contract_serialization,
+                block_info,
+                apply,
+                storage_flags,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -127,7 +137,9 @@ impl Drive {
             .apply
             .apply_contract_with_serialization
         {
-            0 => self.apply_contract_with_serialization_operations_v0(
+            // Generation 1 of the wrapper changes only when its owned transaction commits;
+            // the operation builder is generation 0's.
+            0 | 1 => self.apply_contract_with_serialization_operations_v0(
                 contract,
                 contract_serialization,
                 block_info,
@@ -138,7 +150,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -2,7 +2,7 @@ use crate::version::drive_versions::drive_address_funds_method_versions::v2::DRI
 use crate::version::drive_versions::drive_contract_group_method_versions::v1::DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DOCUMENT_METHOD_VERSIONS_V4;
+use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_group_method_versions::v2::DRIVE_GROUP_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMethodVersions;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
@@ -41,12 +41,15 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   and report the amount whose owner has no balance element.
 /// * **Price before commit** — `batch_operations.apply_drive_operations`
 ///   1 -> 2, `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
-///   0 -> 1) and `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (the four moderation
-///   writers that can free flagged bytes, 0 -> 1). Every fee-returning
-///   entry point that owns its transaction when the caller passes none
-///   now prices the batch before committing, so the missing-history error
-///   above never leaves a write persisted without its fee result. With a
-///   caller transaction nothing changes.
+///   0 -> 1), `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (`update_contract` 2 -> 3,
+///   `apply_contract_with_serialization` 0 -> 1, the four moderation
+///   writers that can free flagged bytes 0 -> 1) and
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (the six fee-returning document
+///   wrappers 0 -> 1). Every fee-returning entry point that owns its
+///   transaction when the caller passes none now prices the batch before
+///   committing, so the missing-history error above never leaves a write
+///   persisted without its fee result. With a caller transaction nothing
+///   changes.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -77,9 +80,9 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             remove_from_system_credits_operations: 0,
             calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: the six fee-returning document wrappers price before committing an owned transaction
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: the moderation removal wrappers price before committing an owned transaction
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: update_contract v3, apply_contract_with_serialization v1 and the moderation writers price before committing an owned transaction
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
         estimated_costs: DriveEstimatedCostsMethodVersions {
             add_estimation_costs_for_levels_up_to_contract: 0,
