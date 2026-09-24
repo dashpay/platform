@@ -66,7 +66,7 @@ A ground for a moderation action.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `code` | string, three uppercase letters, required | Unique among the owner's reasons (`byOwnerCode`, unique on `$ownerId` and `code`); what an action shows |
+| `code` | string, three uppercase letters, required | Unique among the owner's reasons (`byOwnerCode`, unique on `$ownerId` and `code`); what an action shows. An action names the reason by its document id, in its reason's `reasonDocumentId` |
 | `label` | string, 1 to 64 characters, required | The reason's name, such as Spam |
 | `description` | string, 1 to 1024 characters | What the reason covers and how the team applies it |
 
@@ -85,7 +85,7 @@ bound to it, the key join requests are encrypted to.
 | `description` | string, 1 to 4096 characters and at most 4096 bytes (`maxBytes`), required | What the team would moderate and how, for joiners and voters. Informational |
 | `reasons` | typed array of at most 64 unique identifiers, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; empty is allowed, a team that can take no action; a missing reason refuses the create, naming the element (`reasons[2]`) |
 | `moderatorsShare` | integer 0 to 100 | The percentage of each moderated document type's declared moderators fee the team takes, rounded down to the credit. Absent is the full amount; a lower number is a discount an action may agree to once the team is seated; 0 is a team that will not moderate and takes no rewards |
-| `rewardSplit` | object, required | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members, and the share split by each member's action count. The sum is the type's `propertyConstraints` rule `rewardSplitIsWhole`, checked on every create (`DocumentPropertyConstraintViolatedError`, 10422) |
+| `rewardSplit` | object, required | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members (the leader's when it has none), and the share split between the whole team, the leader included, by each one's action count since the last settle (equally when nobody acted). The sum is the type's `propertyConstraints` rule `rewardSplitIsWhole`, checked on every create (`DocumentPropertyConstraintViolatedError`, 10422) |
 
 Indexes: `byTargetContract` (`targetContractId`, `$createdAt`) lists the
 proposals for a contract in filing order; `byOwner` (`$ownerId`) lists a
@@ -226,9 +226,28 @@ replaced). The moderation paths of the target read it:
   at the cost of the charter lookup and the proposal fetch
   (`DocumentActionFeeModeratorsShareMismatchError`, 40139, for any other
   amount, and for a discount with no seated charter).
+- **Reasons.** Every ban, suspension, warning and document deletion of the
+  team names, in its reason's `reasonDocumentId`, a `reason` document the
+  seated proposal lists; any other is refused, paid, in a block and in the
+  mempool (`ModerationReasonNotListedError`, 41203), a reason naming none
+  included, so a proposal listing no reason can take no such action. The
+  proposal is read, billed, only when a reason document is named. Lifting and
+  restoring carry no reason and are not checked, and the interim is not bound.
 - **The pot.** The interim team's claim of the moderators pot is refused once
-  a charter is seated (41113); the pot waits for the seated team, whose claim
-  comes in a later pull request.
+  a charter is seated (41113); the pot carries over to the seated team. The
+  leader or an active member claims it for the team, at most once per epoch,
+  and it is paid out by the proposal's `rewardSplit`: the leader share to the
+  leader, the equal share in equal parts to the other active members (to the
+  leader when there are none), and the action share between the whole team
+  by the bans, suspensions, warnings and document deletions each one signed
+  since the last settle, equally when nobody acted. Every share and every
+  part rounds down to the credit; what is left stays in the pot. The counts
+  live under the target contract (key `48` of its other tree) and every
+  settle deletes them.
+- **Settles before team changes.** Creating or deleting an `addedModerator`
+  or a `removedModerator` first pays the pot out to the team as it was, the
+  same way, and resets the counts, whatever the epoch's claim: the settle
+  writes no last claim, and the team may still claim in the same epoch.
 - **Resignations.** A `resignationRequest` changes nothing by itself: the
   leader acts on it by deleting the member's `addedModerator`, or with a
   `removedModerator` for an elected member.
@@ -241,7 +260,8 @@ written, the description's 4096-byte cap and the reward split's sum included:
 `DocumentPropertyMaxBytesExceededError` (10421), and the `propertyConstraints`
 rule `rewardSplitIsWhole` refuses a split that does not add up to 100 with
 `DocumentPropertyConstraintViolatedError` (10422). The cap on additions is the
-exception (see above). `validate_submitted_charter` in `rs-dpp`
+exception (see above), and the settle a team change forces is an effect of the
+change, not a rule on it (see [Seating](#seating)). `validate_submitted_charter` in `rs-dpp`
 (`packages/rs-dpp/src/moderation_charter/`) only reads a proposal, without
 reading state:
 

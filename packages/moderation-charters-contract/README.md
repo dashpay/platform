@@ -31,7 +31,7 @@ A ground for a moderation action. Anyone may file one.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `code` | string, 3 uppercase letters, required | Unique among the owner's reasons (`byOwnerCode`); what an action shows |
+| `code` | string, 3 uppercase letters, required | Unique among the owner's reasons (`byOwnerCode`); what an action shows. An action names a reason by document id (`reasonDocumentId`), and a seated team only one its proposal lists (41203) |
 | `label` | string, 1 to 64 characters, required | The reason's name |
 | `description` | string, 1 to 1024 characters | What the reason covers and how the team applies it |
 
@@ -48,7 +48,7 @@ decryption key bound to this type so join requests can be encrypted to it.
 | `description` | string, 1 to 4096 characters and at most 4096 bytes, required | What the team would moderate and how. Informational |
 | `reasons` | array of at most 64 unique reason ids, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; a team with none can take no action |
 | `moderatorsShare` | integer 0 to 100 | The percentage of each moderated type's declared moderators fee the team takes; absent is the full amount, 0 a team that will not moderate and takes no rewards |
-| `rewardSplit` | object, required | `leader`, `equal` and `actions` percentages summing to 100 (the `rewardSplitIsWhole` rule of `propertyConstraints`) |
+| `rewardSplit` | object, required | `leader`, `equal` and `actions` percentages summing to 100 (the `rewardSplitIsWhole` rule of `propertyConstraints`): how every settle of the target's moderators pot is paid out, a claim or a team change |
 
 Indexes: `byTargetContract` (target, `$createdAt`) lists the proposals for a
 contract in filing order; `byOwner` lists a leader's proposals.
