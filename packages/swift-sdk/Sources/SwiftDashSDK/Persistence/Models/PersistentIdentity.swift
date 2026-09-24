@@ -254,13 +254,26 @@ public final class PersistentIdentity {
         if let alias = alias, !alias.isEmpty {
             return alias
         }
-        if let mainDpnsName = mainDpnsName, !mainDpnsName.isEmpty {
+        if let mainDpnsName = ownedMainDpnsName {
             return mainDpnsName
         }
         if let dpnsName = dpnsName, !dpnsName.isEmpty {
             return dpnsName
         }
         return String(identityIdString.prefix(12)) + "..."
+    }
+
+    /// The user's `mainDpnsName` pick while the identity still owns it.
+    /// The persister keeps the pick as written, so a name that was sold or
+    /// transferred away stays in the column; it is skipped here once its
+    /// label row is no longer owned. With no label rows yet (hydration),
+    /// the pick is trusted.
+    public var ownedMainDpnsName: String? {
+        guard let mainDpnsName, !mainDpnsName.isEmpty else { return nil }
+        let names = dpnsNames
+        guard !names.isEmpty else { return mainDpnsName }
+        let normalized = PersistentDPNSName.normalize(mainDpnsName)
+        return names.contains { $0.isOwned && $0.normalizedLabel == normalized } ? mainDpnsName : nil
     }
 
     public var identityTypeEnum: IdentityType {

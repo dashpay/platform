@@ -3769,11 +3769,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         }
 
+        // `mainDpnsName` is the user's pick and is never rewritten here: a
+        // snapshot can be momentarily incomplete (a cold start adds names
+        // before the in-memory list is whole), and resetting the pick on
+        // one lost it for good. Readers skip a pick that is no longer owned
+        // — see `PersistentIdentity.displayName`.
         let fallbackLabel = names.first?.label
-        if let selected = identityRow.mainDpnsName,
-           !canonicalLabels.contains(PersistentDPNSName.normalize(selected)) {
-            identityRow.mainDpnsName = fallbackLabel
-        }
         if let displayed = identityRow.dpnsName,
            !canonicalLabels.contains(PersistentDPNSName.normalize(displayed)) {
             identityRow.dpnsName = fallbackLabel
