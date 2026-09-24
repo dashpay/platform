@@ -1,3 +1,4 @@
+use crate::drive::contract::structure::CONTRACT_FLAGS;
 use crate::drive::votes::paths::{
     ACTIVE_POLLS_TREE_KEY, CONTESTED_DOCUMENT_INDEXES_TREE_KEY,
     CONTESTED_DOCUMENT_STORAGE_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY, END_DATE_QUERIES_TREE_KEY,
@@ -13,10 +14,6 @@ const CONTENDER_FLAGS: &str =
     "The owner is the contender whose document created the level, who is \
      refunded when the poll is cleaned up. Written without storage flags, it carries none.";
 const POLL_FLAGS: &str = "The owner is the identity whose contested document started the poll.";
-const CONTRACT_FLAGS: &str =
-    "The contract's flags, written with it. The owner is the contract owner, and the \
-     epoch the one a protocol upgrade registered the system contract in. System \
-     contracts created at genesis, and contracts a state transition creates, carry none.";
 const OWNED: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const CONTESTED_DOCUMENT: &str =
     "votes.contested_resource.active_polls.contract.document_type.storage.document";

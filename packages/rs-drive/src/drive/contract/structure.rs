@@ -8,9 +8,12 @@ use crate::drive::RootTree;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/contract/paths.rs";
-const CONTRACT_FLAGS: &str =
-    "The owner is the contract owner, and the epoch the one the contract was \
-     created in. System contracts created at genesis carry no flags.";
+/// The flags of the elements written with a contract, shared by every area that describes one
+pub(crate) const CONTRACT_FLAGS: &str =
+    "The contract's flags. A protocol upgrade registering a system contract that can be \
+     deleted or is not read only writes them: the owner is the contract owner, and the \
+     epoch the one the contract was registered in. Genesis, and the state transitions \
+     that create and update contracts, write none.";
 const REMOVAL_FLAGS: &str =
     "The owner is the moderator who deleted the document. They pay for the record, \
      which nothing deletes or replaces.";
@@ -56,6 +59,7 @@ pub(crate) fn structure() -> StructureNode {
                     .children(vec![
                         StructureNode::fixed("latest", &[0], "Latest", "")
                             .kind(ElementKind::Reference)
+                            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                             .reference("contracts.contract.contract.revision")
                             .describe("A sibling reference to the newest revision."),
                         StructureNode::dynamic(
@@ -67,6 +71,7 @@ pub(crate) fn structure() -> StructureNode {
                              u64 big endian with the sign bit flipped",
                         )
                         .kind(ElementKind::Item)
+                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                         .value("serialized DataContract")
                         .describe("The contract as it was at that time."),
                     ]),

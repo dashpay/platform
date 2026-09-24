@@ -349,7 +349,6 @@ mod fixtures {
     use dpp::platform_value::BinaryData;
     use dpp::platform_value::Value;
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
-    use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -384,6 +383,10 @@ mod fixtures {
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.lock.votes.voter",
         "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.votes.voter",
     ];
+
+    /// A DPNS-shaped contract with a contested unique index
+    const CONTESTED_CONTRACT: &str =
+        "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json";
 
     /// Nodes nothing reaches, so their description has not been checked
     /// against a real GroveDB. Empty, and meant to stay empty: whoever
@@ -657,6 +660,19 @@ mod fixtures {
                 None,
                 Some(platform_version),
             );
+            // The same contract stored with its flags, as `insert_contract` stores the system
+            // contracts a protocol upgrade registers; `setup_contract` stores it with none
+            let mut with_flags = contract.clone();
+            with_flags.set_id([index as u8 + 0x81; 32].into());
+            drive
+                .insert_contract(
+                    &with_flags,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to insert the contract");
             for document_type in contract.document_types().values() {
                 for seed in 1..4 {
                     let document = document_type
@@ -666,7 +682,18 @@ mod fixtures {
                 }
             }
         }
-        conformance_of(&drive, "contracts_with_documents", run);
+        let flags = conformance_of(&drive, "contracts_with_documents", run);
+        for node in [
+            "contracts.contract.contract.latest",
+            "contracts.contract.contract.revision",
+        ] {
+            assert_eq!(
+                flags.get(node),
+                Some(&BTreeSet::from([FlagsKind::None, FlagsKind::EpochOwned])),
+                "expected `{node}` without flags on the contract stored without, and with the \
+                 contract's flags on the one stored with them",
+            );
+        }
     }
 
     /// A contract whose moderators only delete documents: no list, one document type they can
@@ -1138,7 +1165,7 @@ mod fixtures {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
             &drive,
-            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            CONTESTED_CONTRACT,
             None,
             None,
             None::<fn(&mut DataContract)>,
@@ -1198,27 +1225,17 @@ mod fixtures {
                 )
                 .expect("expected to add the contested document");
         }
-        conformance_of(&drive, "contested_documents", run);
-    }
 
-    /// A contract with a contested index stored with the contract's flags, the way
-    /// `insert_contract` stores the system contracts a protocol upgrade registers (the
-    /// moderation charters contract at 14). The trees created with it below the active
-    /// polls carry those flags; genesis and state transitions write none.
-    fn contested_index_contract_with_flags(run: &mut FixtureRun) {
-        let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = json_document_to_contract_with_ids(
-            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
-            None,
-            None,
-            false,
-            platform_version,
-        )
-        .expect("expected the contract");
+        // The same contract stored with its flags, as `insert_contract` stores the system
+        // contracts a protocol upgrade registers (the moderation charters contract at 14). The
+        // trees created with it below the active polls carry them; `setup_contract` writes none,
+        // as genesis and state transitions do. Its id sorts after the first contract's, so the
+        // layers recorded for the structure stay the first contract's fuller ones.
+        let mut with_flags = contract.clone();
+        with_flags.set_id([0xee; 32].into());
         drive
             .insert_contract(
-                &contract,
+                &with_flags,
                 BlockInfo::default(),
                 true,
                 None,
@@ -1226,7 +1243,7 @@ mod fixtures {
             )
             .expect("expected to insert the contract");
 
-        let flags = conformance_of(&drive, "contested_index_contract_with_flags", run);
+        let flags = conformance_of(&drive, "contested_documents", run);
         for node in [
             "votes.contested_resource.active_polls.contract",
             "votes.contested_resource.active_polls.contract.document_type",
@@ -1235,8 +1252,9 @@ mod fixtures {
         ] {
             assert_eq!(
                 flags.get(node),
-                Some(&BTreeSet::from([FlagsKind::EpochOwned])),
-                "expected `{node}` to carry the contract's flags",
+                Some(&BTreeSet::from([FlagsKind::None, FlagsKind::EpochOwned])),
+                "expected `{node}` without flags on the contract stored without, and with the \
+                 contract's flags on the one stored with them",
             );
         }
     }
@@ -1560,7 +1578,6 @@ mod fixtures {
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
-        contested_index_contract_with_flags(&mut run);
         run
     }
 
