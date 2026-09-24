@@ -39,6 +39,12 @@ impl Drive {
         // same. Each note takes its `rho` from its action's dummy nullifier, so the same bundle
         // entering this pool again would land notes with the same commitments and nullifiers;
         // the record is what lets validation refuse it.
+        //
+        // This writer does not check the bundle for a nullifier repeated across its own actions;
+        // validation does, before the action is applied, and this write relies on it. Two such
+        // actions would produce byte-identical insert operations in one batch, which a node
+        // running the shipped batching default folds in silence while a node verifying batch
+        // consistency refuses the batch — a disagreement on one block that neither side can see.
         let dummy_nullifiers: Vec<[u8; 32]> = notes.iter().map(|note| note.nullifier).collect();
         drive_operations.extend(self.token_shielded_pool_update_operations(
             token_id,
