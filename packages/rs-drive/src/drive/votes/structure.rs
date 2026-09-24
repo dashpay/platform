@@ -1,4 +1,3 @@
-use crate::drive::contract::structure::CONTRACT_FLAGS;
 use crate::drive::votes::paths::{
     ACTIVE_POLLS_TREE_KEY, CONTESTED_DOCUMENT_INDEXES_TREE_KEY,
     CONTESTED_DOCUMENT_STORAGE_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY, END_DATE_QUERIES_TREE_KEY,
@@ -191,7 +190,6 @@ fn active_polls() -> StructureNode {
     .child(
         StructureNode::identifier("contract", "contract_id", "The data contract id")
             .kind(ElementKind::Tree)
-            .flags(&OWNED, CONTRACT_FLAGS)
             .describe(
                 "Created with a contract that has a contested \
                  index.",
@@ -205,7 +203,6 @@ fn active_polls() -> StructureNode {
                     "The document type name",
                 )
                 .kind(ElementKind::Tree)
-                .flags(&OWNED, CONTRACT_FLAGS)
                 .describe("A document type with a contested index.")
                 .children(vec![
                     StructureNode::fixed(
@@ -215,7 +212,6 @@ fn active_polls() -> StructureNode {
                         "CONTESTED_DOCUMENT_STORAGE_TREE_KEY",
                     )
                     .kind(ElementKind::Tree)
-                    .flags(&OWNED, CONTRACT_FLAGS)
                     .describe(
                         "The documents competing, held here until a poll \
                          awards one of them.",
@@ -234,7 +230,6 @@ fn active_polls() -> StructureNode {
                         "CONTESTED_DOCUMENT_INDEXES_TREE_KEY",
                     )
                     .kind(ElementKind::Tree)
-                    .flags(&OWNED, CONTRACT_FLAGS)
                     .describe(
                         "The contested index. Only the values make levels \
                          here; property names are left out on purpose.",

@@ -2537,7 +2537,7 @@
               "EpochOwned",
               "None"
             ],
-            "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+            "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
             "since": 1,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2560,7 +2560,7 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                 "value": "serialized DataContract",
                 "since": 1,
                 "presence": "always",
@@ -2578,11 +2578,6 @@
                     "kinds": [
                       "Reference"
                     ],
-                    "flags": [
-                      "EpochOwned",
-                      "None"
-                    ],
-                    "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
                     "reference": "contracts.contract.contract.revision",
                     "since": 1,
                     "presence": "always",
@@ -2605,11 +2600,6 @@
                     "kinds": [
                       "Item"
                     ],
-                    "flags": [
-                      "EpochOwned",
-                      "None"
-                    ],
-                    "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
                     "value": "serialized DataContract",
                     "since": 1,
                     "presence": "always",
@@ -2634,7 +2624,7 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2659,7 +2649,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                     "since": 1,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/document/paths.rs",
@@ -2688,7 +2678,7 @@
                           "EpochOwned",
                           "None"
                         ],
-                        "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                         "since": 1,
                         "presence": "lazy",
                         "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
@@ -2957,7 +2947,7 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                 "since": 14,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2979,7 +2969,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                     "since": 14,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -3003,7 +2993,7 @@
                           "EpochOwned",
                           "None"
                         ],
-                        "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                         "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -3072,7 +3062,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
                     "value": "u32 big endian",
                     "since": 14,
                     "presence": "always",
@@ -4072,11 +4062,6 @@
                     "kinds": [
                       "Tree"
                     ],
-                    "flags": [
-                      "EpochOwned",
-                      "None"
-                    ],
-                    "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
                     "since": 1,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4096,11 +4081,6 @@
                         "kinds": [
                           "Tree"
                         ],
-                        "flags": [
-                          "EpochOwned",
-                          "None"
-                        ],
-                        "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
                         "since": 1,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4117,11 +4097,6 @@
                             "kinds": [
                               "Tree"
                             ],
-                            "flags": [
-                              "EpochOwned",
-                              "None"
-                            ],
-                            "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4167,11 +4142,6 @@
                             "kinds": [
                               "Tree"
                             ],
-                            "flags": [
-                              "EpochOwned",
-                              "None"
-                            ],
-                            "flags_note": "The contract's flags. A protocol upgrade registering a system contract that can be deleted or is not read only writes them: the owner is the contract owner, and the epoch the one the contract was registered in. Genesis, and the state transitions that create and update contracts, write none.",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/votes/paths.rs",

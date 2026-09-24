@@ -10,10 +10,10 @@ use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, Structur
 const SOURCE: &str = "packages/rs-drive/src/drive/contract/paths.rs";
 /// The flags of the elements written with a contract, shared by every area that describes one
 pub(crate) const CONTRACT_FLAGS: &str =
-    "The contract's flags. A protocol upgrade registering a system contract that can be \
-     deleted or is not read only writes them: the owner is the contract owner, and the \
-     epoch the one the contract was registered in. Genesis, and the state transitions \
-     that create and update contracts, write none.";
+    "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 \
+     and 13 registered carry them (wallet utils, token history, keyword search and document \
+     history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state \
+     transitions and later upgrades write none.";
 const REMOVAL_FLAGS: &str =
     "The owner is the moderator who deleted the document. They pay for the record, \
      which nothing deletes or replaces.";
@@ -59,7 +59,6 @@ pub(crate) fn structure() -> StructureNode {
                     .children(vec![
                         StructureNode::fixed("latest", &[0], "Latest", "")
                             .kind(ElementKind::Reference)
-                            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                             .reference("contracts.contract.contract.revision")
                             .describe("A sibling reference to the newest revision."),
                         StructureNode::dynamic(
@@ -71,7 +70,6 @@ pub(crate) fn structure() -> StructureNode {
                              u64 big endian with the sign bit flipped",
                         )
                         .kind(ElementKind::Item)
-                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                         .value("serialized DataContract")
                         .describe("The contract as it was at that time."),
                     ]),
