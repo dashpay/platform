@@ -163,6 +163,20 @@
       "reasons",
       "rewardSplit"
     ],
+    "propertyConstraints": {
+      "rewardSplitIsWhole": {
+        "equal": [
+          {
+            "add": [
+              "rewardSplit.leader",
+              "rewardSplit.equal",
+              "rewardSplit.actions"
+            ]
+          },
+          100
+        ]
+      }
+    },
     "additionalProperties": false,
     "description": "A proposal to moderate a contract"
   },

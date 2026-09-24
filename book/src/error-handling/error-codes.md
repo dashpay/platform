@@ -53,7 +53,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10200-10277 | Data Contract | `DataContractMaxDepthExceedError` (10200), `DuplicateIndexError` (10201), `InvalidDataContractIdError` (10204), `DataContractInvalidRequiredFieldsUpdateError` (10276), `PreProgrammedDistributionAmountOverLimitError` (10277) |
 | 10350-10359 | Groups | `GroupPositionDoesNotExistError` (10350), `GroupExceedsMaxMembersError` (10354) |
 | 10360-10367 | Contract Groups | `ContractGroupMembershipsOverLimitError` (10360), `InvalidContractGroupAdminsError` (10364), `InvalidContractGroupDescriptionLengthError` (10367); 10365 unassigned |
-| 10400-10421 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401), `DocumentPropertyNotDistinctError` (10419), `InvalidEncryptedPropertyShapeError` (10420), `DocumentPropertyMaxBytesExceededError` (10421) |
+| 10400-10422 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401), `DocumentPropertyNotDistinctError` (10419), `InvalidEncryptedPropertyShapeError` (10420), `DocumentPropertyMaxBytesExceededError` (10421), `DocumentPropertyConstraintViolatedError` (10422) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |
 | 10500-10535 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
 | 10600-10603 | State Transition | `InvalidStateTransitionTypeError` (10600), `StateTransitionMaxSizeExceededError` (10602) |

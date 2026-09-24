@@ -12,9 +12,9 @@ everything a charter points at, and the charter itself, is a fixed text.
 The schema carries almost every rule through its keywords: typed arrays with
 a reference per element, a reference resolved through a unique index
 (`lookup`), `distinctFrom`, key requirements on key references, the
-`encryptedFor` envelope and `maxBytes` for the description's 4096-byte cap.
-What it cannot say, the reward split summing to 100, is checked by
-`SubmittedCharter` in `rs-dpp` when a team is seated.
+`encryptedFor` envelope, `maxBytes` for the description's 4096-byte cap and a
+`propertyConstraints` rule holding the reward split to 100, so
+`SubmittedCharter` in `rs-dpp` only reads a proposal when a team is seated.
 
 ## `reason`
 
@@ -39,7 +39,7 @@ decryption key bound to this type so join requests can be encrypted to it.
 | `description` | string, 1 to 4096 characters and at most 4096 bytes, required | What the team would moderate and how. Informational |
 | `reasons` | array of at most 64 unique reason ids, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; a team with none can take no action |
 | `moderatorsShare` | integer 0 to 100 | The percentage of each moderated type's declared moderators fee the team takes; absent is the full amount, 0 a team that will not moderate and takes no rewards |
-| `rewardSplit` | object, required | `leader`, `equal` and `actions` percentages summing to 100 |
+| `rewardSplit` | object, required | `leader`, `equal` and `actions` percentages summing to 100 (the `rewardSplitIsWhole` rule of `propertyConstraints`) |
 
 Indexes: `byTargetContract` (target, `$createdAt`) lists the proposals for a
 contract in filing order; `byOwner` lists a leader's proposals.

@@ -18,6 +18,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Document references (`refersTo`)](#document-references-refersto)
 - [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
+- [Property constraints (`propertyConstraints`)](#property-constraints-propertyconstraints)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
@@ -392,6 +393,40 @@ try {
 } catch (e) {
   if (e.code === DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged) {
     // the replace touched a property the document type freezes (code 40128)
+  }
+}
+```
+
+## Property constraints (`propertyConstraints`)
+
+From protocol version 14 a document type can declare rules its documents' integer properties must meet, each a comparison of two integer expressions built from property paths and integer values:
+
+```json
+"propertyConstraints": {
+  "depositCoversOrder": {
+    "lessThanOrEqual": [
+      { "multiply": [{ "add": ["price", "fee"] }, "quantity"] },
+      "deposit"
+    ]
+  },
+  "minimumOrder": {
+    "greaterThanOrEqual": [{ "multiply": ["price", { "ifAbsent": ["quantity", 1] }] }, 100]
+  }
+}
+```
+
+The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
+
+Consensus checks every rule on each create and replace, and rejects a document that breaks one, or whose rule overflows, divides by zero or raises to a negative power. The code reaches JS as `error.code`, and the message names the rule:
+
+```ts
+import { DocumentPropertyConstraintErrorCode } from '@dashevo/evo-sdk';
+
+try {
+  await sdk.documents.create({ document, identityKey, signer });
+} catch (e) {
+  if (e.code === DocumentPropertyConstraintErrorCode.DocumentPropertyConstraintViolated) {
+    // the document breaks one of its type's rules (code 10422)
   }
 }
 ```

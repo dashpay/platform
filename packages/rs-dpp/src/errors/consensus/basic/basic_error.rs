@@ -54,11 +54,11 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
-    DocumentPropertyMaxBytesExceededError, DocumentPropertyNotDistinctError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
+    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -827,6 +827,10 @@ pub enum BasicError {
     // A string over the `maxBytes` its property declares (protocol version 14).
     #[error(transparent)]
     DocumentPropertyMaxBytesExceededError(DocumentPropertyMaxBytesExceededError),
+
+    // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyConstraintViolatedError(DocumentPropertyConstraintViolatedError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -838,6 +842,7 @@ impl From<BasicError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use platform_value::Identifier;
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
@@ -952,12 +957,23 @@ mod tests {
             )),
             197
         );
-        // A string over its property's `maxBytes` (protocol version 14): the tail of the enum.
+        // A string over its property's `maxBytes` (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::DocumentPropertyMaxBytesExceededError(
                 DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4097, 4096)
             )),
             198
+        );
+        // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyConstraintViolatedError(
+                DocumentPropertyConstraintViolatedError::new(
+                    "order".to_string(),
+                    "depositCoversOrder".to_string(),
+                    PropertyConstraintViolation::NotMet,
+                )
+            )),
+            199
         );
     }
 }

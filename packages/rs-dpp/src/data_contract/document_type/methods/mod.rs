@@ -678,6 +678,43 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         }
     }
 
+    /// Judges a document's properties, `data` (a map), against every rule of the document
+    /// type's `propertyConstraints`, in name order: the first rule it breaks fails with
+    /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the
+    /// comparison does not hold, or evaluating it overflowed, divided by zero, raised to a
+    /// negative power or read a value that is not an integer). A property the document
+    /// leaves out counts as 0, or as its `ifAbsent` value. Reads the properties alone:
+    /// `DataContract::validate_document_properties` runs it after the schema validation,
+    /// so document create and replace, and every client validating a document, apply it.
+    ///
+    /// `None` in the version table (protocol versions before 14) selects the behavior of
+    /// the versions that predate the keyword: nothing is checked, as no parsed document
+    /// type carries a rule there.
+    fn validate_property_constraints(
+        &self,
+        data: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_property_constraints
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_property_constraints_v0(data)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_property_constraints".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     fn sanitize_document_properties(&self, properties: &mut BTreeMap<String, Value>) {
         // Iterate through each property in the document
         for (field_name, field_value) in properties.iter_mut() {

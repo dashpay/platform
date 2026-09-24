@@ -49,6 +49,7 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
             apply_encrypted_for: None,
             apply_max_bytes: None,
             parse_typed_array: None,
+            parse_property_constraints: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -69,6 +70,7 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
             validate_distinct_from: None,
             validate_encrypted_property_shapes: None,
             validate_max_bytes: None,
+            validate_property_constraints: None,
         },
     },
     token_versions: TokenVersions {

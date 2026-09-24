@@ -12,6 +12,7 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, Docu
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
@@ -948,6 +949,9 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
 /// getter hands out a reference.
 static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
 static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
+/// What `property_constraints` returns for the generations that predate the
+/// keyword, for the same reason.
+static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
 
 impl DocumentTypeV2Getters for DocumentType {
     fn documents_countable(&self) -> bool {
@@ -1060,6 +1064,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(_) => None,
             DocumentType::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V2(v2) => v2.property_constraints(),
         }
     }
 }
@@ -1211,6 +1223,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => v2.creator_reference(),
         }
     }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V2(v2) => v2.property_constraints(),
+        }
+    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
@@ -1324,6 +1344,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V2(v2) => v2.property_constraints(),
         }
     }
 }

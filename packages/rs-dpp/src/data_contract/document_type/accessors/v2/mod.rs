@@ -1,6 +1,7 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
-use std::collections::BTreeSet;
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Trait providing getters for DocumentTypeV2-specific fields.
 pub trait DocumentTypeV2Getters {
@@ -92,6 +93,12 @@ pub trait DocumentTypeV2Getters {
     /// and on a replace under the rules of its target. `None` on document types
     /// that declare none and on those that predate the keyword.
     fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget>;
+
+    /// The rules every created or replaced document must meet, by name, in the
+    /// order they are checked (the `propertyConstraints` keyword, protocol version
+    /// 14). Empty on document types that declare none and on those that predate
+    /// the keyword.
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

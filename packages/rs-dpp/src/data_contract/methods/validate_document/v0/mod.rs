@@ -1,6 +1,8 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use crate::data_contract::document_type::DocumentType;
 
 use crate::consensus::basic::document::{
@@ -99,6 +101,17 @@ impl DataContract {
         let max_bytes_result =
             document_type.validate_max_bytes_properties(&value, platform_version)?;
 
+        // Added in place at protocol version 14, inert for every earlier version that
+        // selects this generation: `validate_property_constraints` is `None` in all of their
+        // tables, so the call returns an empty result without reading `value`. (Only parser
+        // generation 3 reads `propertyConstraints` at all; meta-schema v0, protocol versions
+        // 1 to 11, leaves the document type level open, so the version gate is the proof,
+        // not the meta-schemas.) Computed and reported like `maxBytes`, after it, so a
+        // schema error keeps precedence and every value a rule reads is known to be an
+        // integer.
+        let property_constraints_result =
+            document_type.validate_property_constraints(&value, platform_version)?;
+
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
@@ -131,8 +144,11 @@ impl DataContract {
         if !schema_result.is_valid() {
             return Ok(schema_result);
         }
+        if !max_bytes_result.is_valid() {
+            return Ok(max_bytes_result);
+        }
 
-        Ok(max_bytes_result)
+        Ok(property_constraints_result)
     }
 
     #[inline(always)]
