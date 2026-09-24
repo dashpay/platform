@@ -1,6 +1,7 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
+use crate::data_contract::document_type::property_constraints::parse_property_constraints;
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
@@ -1830,6 +1831,123 @@ pub(super) fn validate_encrypted_for_declarations(
             }
         }
     }
+    Ok(())
+}
+
+/// Reads the `propertyConstraints` keyword onto the document type and checks
+/// every property its rules read: an integer property of the type (a nested
+/// one named by its dotted path, as the flattened map names it) that is
+/// neither transient nor inside a transient object. A transient value is never
+/// stored, so a stored document could not be held to a rule reading one. The
+/// declaration's shape ([`parse_property_constraints`]) and these reads are
+/// checked on every parse; under full validation, the limits too: at most
+/// `SystemLimits::max_property_constraints` rules, each of at most
+/// `max_property_constraint_nodes` nodes.
+///
+/// Only parser generation 3 calls it, once the core parse has run the
+/// meta-schema, so under full validation a malformed declaration is the
+/// meta-schema's to report. Versioned on `parse_property_constraints` in the
+/// platform version's document type schema versions: `None` selects the
+/// behavior of the versions that predate the keyword, which ignore it
+/// entirely.
+pub(super) fn apply_property_constraints(
+    document_type: &mut DocumentTypeV2,
+    document_type_name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_property_constraints
+    {
+        None => Ok(()),
+        Some(0) => apply_property_constraints_v0(
+            document_type,
+            document_type_name,
+            full_validation,
+            platform_version,
+        ),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "parse_property_constraints version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_property_constraints_v0(
+    document_type: &mut DocumentTypeV2,
+    document_type_name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), DataContractError> {
+    let constraints = parse_property_constraints(&document_type.schema, document_type_name)?;
+    let structure_error = |message: String| {
+        DataContractError::InvalidContractStructure(format!(
+            "document type \"{document_type_name}\" propertyConstraints {message}"
+        ))
+    };
+
+    for (name, constraint) in &constraints {
+        for path in constraint.property_paths() {
+            match document_type
+                .flattened_properties
+                .get(path)
+                .map(|property| &property.property_type)
+            {
+                // `is_integer` leaves out the 128-bit types, which the arithmetic holds too
+                Some(property_type)
+                    if property_type.is_integer()
+                        || matches!(
+                            property_type,
+                            DocumentPropertyType::U128 | DocumentPropertyType::I128
+                        ) => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "rule \"{name}\" reads \"{path}\", which has type {}, not integer",
+                        other.name()
+                    )));
+                }
+                // An object is not in the flattened map either: only its members hold values
+                None => {
+                    return Err(structure_error(format!(
+                        "rule \"{name}\" reads \"{path}\", which is not an integer property of \
+                         the document type (a nested one is named by its dotted path)"
+                    )));
+                }
+            }
+            if is_transient(DocumentTypeRef::V2(document_type), path) {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" reads \"{path}\", which is transient or inside a transient \
+                     object: a transient value is never stored, so a stored document could not \
+                     be held to the rule"
+                )));
+            }
+        }
+    }
+
+    if full_validation {
+        let limits = &platform_version.system_limits;
+        let max_constraints = limits.max_property_constraints;
+        if constraints.len() > usize::from(max_constraints) {
+            return Err(structure_error(format!(
+                "declares {} rules, above the maximum of {max_constraints}",
+                constraints.len()
+            )));
+        }
+        let max_nodes = limits.max_property_constraint_nodes;
+        for (name, constraint) in &constraints {
+            let nodes = constraint.node_count();
+            if nodes > usize::from(max_nodes) {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" has {nodes} nodes, above the maximum of {max_nodes}"
+                )));
+            }
+        }
+    }
+
+    document_type.property_constraints = constraints;
     Ok(())
 }
 

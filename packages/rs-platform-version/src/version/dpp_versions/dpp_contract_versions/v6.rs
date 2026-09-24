@@ -86,6 +86,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             apply_encrypted_for: Some(0), // changed: the meta-schema v3 `encryptedFor` keyword (recipient, key ids and scheme of a byte array property's ciphertext) is parsed onto the property and its named properties are checked at registration; None before this version means the keyword is ignored, as it was before it existed
             apply_max_bytes: Some(0), // changed: the meta-schema v3 `maxBytes` keyword (the most UTF-8 bytes a string property, or each string element of a typed array, may hold) is folded into the string's `StringPropertySizes`; None before this version means the keyword is ignored, as it was before it existed
             parse_typed_array: Some(0), // changed: a meta-schema v3 typed array (`type: "array"` with an `items` element schema) parses to `DocumentPropertyType::TypedArray`; None before this version leaves it to the scalar parser, which refuses an array that is not a byte array
+            parse_property_constraints: Some(0), // changed: the meta-schema v3 `propertyConstraints` doctype keyword (named comparisons between integer expressions over the document's properties) is parsed onto the document type and the properties it reads are checked; None before this version means the keyword is ignored, as it was before it existed
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -117,6 +118,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             validate_distinct_from: Some(0), // changed: `validate_distinct_from_properties` refuses a document whose `distinctFrom` property equals what it must differ from (DocumentPropertyNotDistinctError, 10419); None before this version, where no property can carry the keyword
             validate_encrypted_property_shapes: Some(0), // changed: refuses an `encryptedFor` property whose bytes are not the shape its scheme produces; None before this version returns an empty result
             validate_max_bytes: Some(0), // changed: refuses a string longer in UTF-8 bytes than its property's `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421); None before this version returns an empty result
+            validate_property_constraints: Some(0), // changed: `validate_property_constraints` refuses a created or replaced document that breaks one of its type's `propertyConstraints` (DocumentPropertyConstraintViolatedError, 10422); None before this version returns an empty result
         },
     },
     token_versions: TokenVersions {

@@ -7,6 +7,7 @@ mod index;
 pub mod methods;
 pub use index::*;
 mod index_level;
+pub mod property_constraints;
 pub use index_level::IndexLevel;
 pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
@@ -115,6 +116,11 @@ pub(crate) mod property_names {
     /// transferable or tradeable one). Meta-schema v3+ (protocol version 14).
     /// See `parse_doctype_reference` in `try_from_schema`.
     pub const CREATOR_REFERS_TO: &str = "creatorRefersTo";
+    /// Doctype-level object of named rules, each a comparison of two integer
+    /// expressions over the document's integer properties that every created or
+    /// replaced document must meet. Meta-schema v3+ (protocol version 14). See
+    /// `parse_property_constraints` in `property_constraints`.
+    pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";
     pub const DISTINCT_FROM: &str = "distinctFrom";
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";

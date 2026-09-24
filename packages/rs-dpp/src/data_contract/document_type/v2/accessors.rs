@@ -11,6 +11,7 @@ use crate::data_contract::document_type::property::{
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostGettersV0;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -269,6 +270,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
         self.creator_reference.as_ref()
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.property_constraints
     }
 }
 
