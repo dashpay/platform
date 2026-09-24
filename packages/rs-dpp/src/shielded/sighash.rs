@@ -55,12 +55,16 @@ pub const TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG: u8 = 0x83;
 /// valid Orchard bundle.
 ///
 /// It also binds a bundle that has no transparent fields to the one context it was proved
-/// for, which an outputs-only bundle cannot do on its own: carrying no anchor, it verifies
-/// against every pool that shares the empty-tree anchor.
+/// for, which an outputs-only bundle cannot do on its own: having no spends, its anchor is
+/// never checked against a pool — the client builds it against the empty tree — so it verifies
+/// against every pool.
 ///
 /// The same computation must be used on both the signing (client) and verification (platform)
-/// sides. `extra_data` is empty only for the credit pool's own `Shield` and `ShieldedTransfer`;
-/// each other transition has a builder in this module that spells out its layout.
+/// sides. `extra_data` is empty for the credit pool's `Shield`, `ShieldFromIdentity`,
+/// `ShieldFromAssetLock` and `ShieldedTransfer`; every other transition spells out a layout.
+/// Of those four only `ShieldedTransfer` spends, so it carries an anchor and nullifiers that
+/// pin it to one pool and one set of notes. The three credit shields are outputs-only and so
+/// are pinned by nothing.
 pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(SIGHASH_DOMAIN);
@@ -638,11 +642,14 @@ pub fn token_shielded_transfer_extra_sighash_data_v0(
 /// Extra sighash data of an outputs-only token pool bundle — `TokenShield`, `TokenMintToPool`,
 /// `TokenClaimToPool` and `TokenDirectPurchaseToPool`: the bundle's domain tag and the token id.
 ///
-/// These bundles have no spends, so they carry no anchor pinning them to a pool: every token
-/// pool starts from the same empty-tree anchor, and the proof and binding signature verify
-/// against any of them. Without this data the authorized bundle bytes are a free-standing,
+/// These bundles have no spends, so nothing pins them to a pool: their anchor is never checked
+/// against one — the client builds it against the empty tree — and the proof and binding
+/// signature verify against any pool. Without this data the authorized bundle bytes are a free-standing,
 /// self-verifying object that anybody can lift out of the mempool into a transition of their
-/// own, funded by their own tokens, against a different pool or a different transition kind.
+/// own, against a different pool or a different transition kind. The copier supplies whatever
+/// that kind demands of them — their own tokens, credits or a distribution entitlement — except
+/// for a mint, which demands the token's mint authority and creates new supply rather than
+/// moving any.
 ///
 /// What that copy costs depends on where it lands, because nullifiers are namespaced per pool:
 ///
@@ -651,12 +658,11 @@ pub fn token_shielded_transfer_extra_sighash_data_v0(
 ///   one of the two can ever be spent. That is Faerie Gold. A wallet that merges notes by
 ///   nullifier is safe, but any wallet or indexer counting by commitment sees two payments
 ///   where one is real. Bundles of different kinds are otherwise indistinguishable to the
-///   proof — same flags, same empty-tree anchor, same value balance — so only the tag tells
-///   them apart.
+///   proof — same flags, same empty-tree anchor, and the same value balance whenever the
+///   amounts match — so only the tag tells them apart.
 /// - **Another pool.** That pool has its own nullifier tree, so both notes stay spendable and
 ///   nothing is Faerie Gold. The harm is that the recipient now holds notes derived from one
-///   `rho` in two pools, which links their spends across pools, and the copier burns their own
-///   tokens doing it.
+///   `rho` in two pools, which links their spends across pools.
 ///
 /// Not covered: a copy into the same pool *and* the same kind, submitted by someone else. That
 /// is the larger Faerie Gold vector and this preimage does not reach it, because it binds no
@@ -683,9 +689,10 @@ pub fn token_pool_output_only_extra_sighash_data(
 /// The v0 domain tag of an outputs-only token pool bundle. Frozen: the mapping is part of the
 /// sighash preimage, so a kind keeps its byte forever and a new kind takes a new one.
 ///
-/// The bytes are written out here rather than derived from the variant's position, because
-/// `TokenTransitionActionType` is append-only for the sake of clients and nothing about it
-/// promises a stable ordering to consensus.
+/// The bytes are written out here rather than derived from the variant's position, so the
+/// preimage does not depend on the enum's layout at all. `TokenTransitionActionType` is marked
+/// append-only, but that marker is a convention for clients; resting a consensus preimage on it
+/// would turn an accidental reordering into a silent wire change.
 ///
 /// Every other kind is named rather than swept up by a catch-all: a kind added to the enum must
 /// fail to compile here, so that whoever adds it decides whether it carries a bundle. A
@@ -1200,7 +1207,9 @@ mod tests {
     #[test]
     fn outputs_only_token_pool_tags_cannot_collide_with_state_transition_types() {
         // The tags share a preimage slot with the `StateTransitionType` byte the identity-less
-        // token bundles commit to, at the same 1 + 32 length. Asking the enum itself — rather
+        // token bundles commit to, and one of them — `TokenShieldedTransferWithShieldedFee` —
+        // writes it at the same 1 + 32 length, so a colliding tag would leave the two preimages
+        // indistinguishable. Asking the enum itself — rather
         // than comparing against the three types that exist today — is what makes this break
         // on the day someone assigns a transition type inside the tag range.
         for tag in [

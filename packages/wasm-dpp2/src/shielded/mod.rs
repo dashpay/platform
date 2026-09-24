@@ -38,7 +38,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 /// it and compares, so a byte out of place rejects an otherwise valid bundle. Integers are
 /// little endian.
 ///
-/// - Credit pool `Shield` and `ShieldedTransfer`: empty.
+/// - Credit pool `Shield`, `ShieldFromIdentity`, `ShieldFromAssetLock` and `ShieldedTransfer`:
+///   empty.
 /// - `Unshield`: `outputAddress || amount (u64)`.
 /// - Shielded withdrawal: `outputScript || amount (u64) || coreFeePerByte (u32) ||
 ///   pooling (1 byte)`.

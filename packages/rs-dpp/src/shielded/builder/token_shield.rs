@@ -20,7 +20,7 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// a batch transition signed by `owner_id`, the identity whose token balance funds the shield.
 ///
 /// The identity pays the fee in credits; `amount` tokens leave its balance for the pool at
-/// execution. The bundle has no spends, so it carries no anchor pinning it to a pool, and the
+/// execution. The bundle has no spends, so its anchor is never checked against a pool, and the
 /// identity signature over the batch only binds it inside *this* batch — the authorized bundle
 /// bytes on their own would verify in any pool. The extra sighash data pins them to this token
 /// and to the shield kind. `sender_ovk` lets the sending wallet recover the note it created

@@ -757,7 +757,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     proposer of a group action), plus the recipient and amount where tokens
 ///     leave the pool; an outputs-only bundle (`TokenShield`,
 ///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
-///     which has no anchor of its own, binds a per-kind tag and the token id.
+///     whose anchor is never checked against a pool, binds a per-kind tag and
+///     the token id.
 ///     The pool balances are a term of the token conservation check
 ///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
 ///     `record_token_shielded_pool_anchors`
