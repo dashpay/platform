@@ -26,12 +26,42 @@ use dpp::state_transition::identity_create_from_addresses_transition::IdentityCr
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::platform_types::platform_state::PlatformStateV0Methods;
+use dpp::fee::fee_result::FeeResult;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
+use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use drive::state_transition_action::StateTransitionAction;
 use crate::execution::validation::state_transition::identity_create_from_addresses::advanced_structure::v0::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0;
+
+/// The action of an identity create from addresses that failed after its inputs were checked:
+/// the transition only bumps its input nonces, its inputs keep their whole balances, and the
+/// penalty is charged as part of its fee, which takes it from those balances and books it to the
+/// fee pools.
+///
+/// Changed in place in the shipped `advanced_structure` v0 and `state` v0, which set the inputs
+/// to the amounts the transition asked to spend (or to the balances left after that spend) minus
+/// a penalty that was not booked. No committed block holds a transition that took those paths,
+/// so every committed block keeps its results.
+fn bump_input_nonces_with_penalty(
+    transition: &IdentityCreateFromAddressesTransition,
+    action: &IdentityCreateFromAddressesTransitionAction,
+    penalty: Credits,
+    execution_context: &mut StateTransitionExecutionContext,
+) -> StateTransitionAction {
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
+        processing_fee: penalty,
+        ..Default::default()
+    }));
+    BumpAddressInputNoncesAction::from_failed_identity_create_from_addresses_transition(
+        transition, action,
+    )
+    .into()
+}
 
 /// A trait for transforming into an action for the identity create from addresses transition
 pub trait StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0 {
@@ -107,6 +137,7 @@ pub trait StateTransitionStructureKnownInStateValidationForIdentityCreateFromAdd
     /// Validation of the advanced structure
     fn validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
         &self,
+        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -118,6 +149,7 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
 {
     fn validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
         &self,
+        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -130,6 +162,7 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
             .advanced_structure
         {
             Some(0) => self.validate_advanced_structure_v0(
+                action,
                 signable_bytes,
                 execution_context,
                 platform_version,
