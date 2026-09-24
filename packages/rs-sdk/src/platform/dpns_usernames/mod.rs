@@ -8,9 +8,8 @@ pub use dash_platform_queries::dpns_usernames::{
 pub use queries::DpnsUsername;
 
 use crate::platform::transition::put_document::PutDocument;
-use crate::platform::{Document, Fetch, FetchMany};
+use crate::platform::{Document, FetchMany};
 use crate::{Error, Sdk};
-use dash_context_provider::ContextProvider;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -108,22 +107,9 @@ impl Sdk {
     /// Helper method to fetch the DPNS contract, checking context provider first
     async fn fetch_dpns_contract(&self) -> Result<Arc<dpp::data_contract::DataContract>, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
-
-        // First check if the contract is available in the context provider
-        let context_provider = self
-            .context_provider()
-            .ok_or_else(|| Error::Generic("Context provider not set".to_string()))?;
-
-        match context_provider.get_data_contract(&dpns_contract_id, self.version())? {
-            Some(contract) => Ok(contract),
-            None => {
-                // If not in context, fetch from platform
-                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-                    .await?
-                    .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))?;
-                Ok(Arc::new(contract))
-            }
-        }
+        self.fetch_system_data_contract(dpns_contract_id)
+            .await?
+            .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))
     }
 
     /// Register a DPNS username in a single operation

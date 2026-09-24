@@ -236,3 +236,29 @@ proposal is judged before it can ever be seated, and a refusal is paid.
 `ElectedCharter` reads an elected charter's properties, and
 `moderation_charter::moderators_share_of` applies a proposal's share to a
 declared moderators fee.
+
+## Reading and writing from a client
+
+Every read is an ordinary proved document query on the system contract, through
+the indexes above; no endpoint is specific to charters. The Rust SDK
+(`dash_sdk::platform::moderation_charters`) and the JavaScript SDK
+(`sdk.moderationCharters` in `@dashevo/evo-sdk`) offer them by name:
+
+| Read | Query | Rust | JavaScript |
+| --- | --- | --- | --- |
+| A contract's seated charter | `electedCharter.byTargetContract`, at most one | `Sdk::fetch_seated_charter` | `seatedCharter` |
+| A proposal | `submittedCharter` by id | `Sdk::fetch_submitted_charter` | `submittedCharter` |
+| The team | the seated charter, then `addedModerator` and `removedModerator` by `byElectedCharterMember`, combined as `ElectedCharter::active_members` does | `Sdk::fetch_moderation_team` | `team` |
+| The proposals for a contract | `submittedCharter.byTargetContract`, in filing order, paged | `Sdk::fetch_submitted_charters` | `submittedCharters` |
+| The join requests for a proposal | `joinRequest.bySubmittedCharter`, paged | `Sdk::fetch_join_requests` | `joinRequests` |
+| A charter's pending resignation requests | `resignationRequest.byElectedCharterOwner`, less the writers the charter has a `removedModerator` for | `Sdk::fetch_pending_resignation_requests` | `pendingResignationRequests` |
+
+`Sdk::build_join_request` and `Sdk::build_resignation_request`
+(`buildJoinRequest` and `buildResignationRequest` in JavaScript) build the two
+documents whose message only the leader reads. They pick the keys the schema's
+`keyRequirements` demand, the leader's decryption key bound to
+`submittedCharter` and the writer's encryption key bound to `joinRequest`,
+encrypt the message and set `recipientId`, `recipientKeyId` and `senderKeyId`.
+The encryption is the generic `encryptedFor` helper
+(`dash_sdk::platform::encrypted_for`, `sdk.encryptedFor`), which reads the
+declaration from any contract; the leader decrypts with it too.
