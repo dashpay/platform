@@ -3079,6 +3079,9 @@ mod tests {
             .expect("register after send");
         assert_eq!(synced_height(&manager, wallet_id).await, 100);
 
+        // Complete the sent sweep so reconcile cannot defer: only the
+        // registration guard may keep it from rewinding.
+        mark_sent_sweep_completed(&manager, wallet_id, owner).await;
         set_synced_height(&manager, wallet_id, 500).await;
         assert_eq!(
             iw.dashpay()
@@ -3208,6 +3211,9 @@ mod tests {
             .await
             .expect("replay persisted established contact");
 
+        // Complete the sent sweep so reconcile cannot defer: only the
+        // registration guard may keep it from rewinding.
+        mark_sent_sweep_completed(&manager, wallet_id, owner).await;
         set_synced_height(&manager, wallet_id, 500).await;
         assert_eq!(
             wallet
@@ -3289,6 +3295,9 @@ mod tests {
                 .expect("apply contact rotation");
             assert!(rekeyed, "established contact must be re-keyed");
         }
+        // Complete the sent sweep so reconcile cannot defer: only the guard may
+        // keep the contact's rotation from forcing a rewind.
+        mark_sent_sweep_completed(&manager, wallet_id, owner).await;
         assert_eq!(
             iw.dashpay()
                 .reconcile_dashpay_rescan()
