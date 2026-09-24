@@ -93,7 +93,8 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         try context.save()
 
         // Alice leaves the canonical owned set. Keep its marketplace history,
-        // while Bob becomes the fallback display/main name.
+        // while Bob becomes the fallback display name. The main-name pick
+        // stays as the user wrote it; readers skip it once it is not owned.
         handler.beginChangeset(walletId: walletId)
         handler.persistIdentities(
             walletId: walletId,
@@ -130,11 +131,13 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         )
         XCTAssertEqual(owned.map(\.label), ["Bob"])
         var identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
-        XCTAssertEqual(identity.mainDpnsName, "Bob")
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertNil(identity.ownedMainDpnsName)
         XCTAssertEqual(identity.dpnsName, "Bob")
+        XCTAssertEqual(identity.displayName, "Bob")
 
         // An empty canonical snapshot removes Bob (cache-only), keeps Alice's
-        // sold history, and clears stale scalar selections.
+        // sold history, and clears the stale display scalar.
         applyIdentitySnapshot(id: ownerId, names: [])
         readContext = ModelContext(container)
         owned = try readContext.fetch(
@@ -152,8 +155,27 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertEqual(allRows.first?.documentUpdatedAtMs, 12)
         XCTAssertEqual(allRows.first?.documentTransferredAtMs, 13)
         identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
-        XCTAssertNil(identity.mainDpnsName)
+        XCTAssertNil(identity.ownedMainDpnsName)
         XCTAssertNil(identity.dpnsName)
+    }
+
+    /// A snapshot that momentarily lacks the picked name (a cold start adds
+    /// names before the in-memory list is whole) must not replace the pick.
+    func testMainNamePickSurvivesAnIncompleteSnapshot() throws {
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10), ("Bob", 20)])
+        let context = ModelContext(container)
+        XCTAssertTrue(PersistentIdentity.updateMainDpnsName(
+            in: context, identityId: ownerId, mainDpnsName: "Bob"))
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 30)])
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 30), ("Bob", 30)])
+
+        let readContext = ModelContext(container)
+        let identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Bob")
+        XCTAssertEqual(identity.ownedMainDpnsName, "Bob")
+        XCTAssertEqual(identity.displayName, "Bob")
     }
 
     func testMarketplaceCallbackCannotRestoreOwnershipRemovedByCanonicalSnapshot() throws {
