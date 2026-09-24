@@ -932,6 +932,7 @@ fn validate_batch_token_shielded_proofs(
                 let extra_sighash_data = token_pool_output_only_extra_sighash_data(
                     TokenTransitionActionType::Shield,
                     &t.base().token_id().to_buffer(),
+                    &owner_id,
                     platform_version,
                 )?;
                 reconstruct_and_verify_bundle(
@@ -979,9 +980,24 @@ fn validate_batch_token_shielded_proofs(
                 )
             }
             BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
+                if t.base()
+                    .using_group_info()
+                    .is_some_and(|info| !info.action_is_proposer)
+                {
+                    // A confirmer reuses the proposer's bundle, whose sighash binds the
+                    // proposer. The proposer is only in the stored group action, which this
+                    // stateless check cannot see, so binding this batch's owner here would refuse
+                    // every honest confirmer. Whether a signer is the proposer, though,
+                    // is the submitter's own field, so anyone can set it false and reach this skip
+                    // with any bundle. That costs nothing here because state validation verifies
+                    // this bundle against the stored proposer regardless of what admission did, and
+                    // refuses a batch whose owner is not a member of the group.
+                    continue;
+                }
                 let extra_sighash_data = token_pool_output_only_extra_sighash_data(
                     TokenTransitionActionType::MintToPool,
                     &t.base().token_id().to_buffer(),
+                    &owner_id,
                     platform_version,
                 )?;
                 reconstruct_and_verify_bundle(
@@ -1026,6 +1042,7 @@ fn validate_batch_token_shielded_proofs(
                 let extra_sighash_data = token_pool_output_only_extra_sighash_data(
                     TokenTransitionActionType::DirectPurchaseToPool,
                     &t.base().token_id().to_buffer(),
+                    &owner_id,
                     platform_version,
                 )?;
                 reconstruct_and_verify_bundle(

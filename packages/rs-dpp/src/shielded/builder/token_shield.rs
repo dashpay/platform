@@ -22,9 +22,9 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// The identity pays the fee in credits; `amount` tokens leave its balance for the pool at
 /// execution. The bundle has no spends, so its anchor is never checked against a pool, and the
 /// identity signature over the batch only binds it inside *this* batch — the authorized bundle
-/// bytes on their own would verify in any pool. The extra sighash data pins them to this token
-/// and to the shield kind. `sender_ovk` lets the sending wallet recover the note it created
-/// (recipient, value, memo) from chain data.
+/// bytes on their own would verify in any pool. The extra sighash data pins them to this token,
+/// to the shield kind and to `owner_id`. `sender_ovk` lets the sending wallet recover the note
+/// it created (recipient, value, memo) from chain data.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_token_shield_transition<S: Signer<IdentityPublicKey>, P: OrchardProver>(
     token_id: Identifier,
@@ -58,6 +58,7 @@ pub async fn build_token_shield_transition<S: Signer<IdentityPublicKey>, P: Orch
     let extra_sighash_data = token_pool_output_only_extra_sighash_data(
         TokenTransitionActionType::Shield,
         token_id.as_bytes(),
+        owner_id.as_bytes(),
         platform_version,
     )?;
     let bundle = build_output_only_bundle(

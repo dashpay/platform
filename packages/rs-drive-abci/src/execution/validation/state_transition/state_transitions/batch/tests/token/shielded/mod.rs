@@ -80,15 +80,16 @@ mod token_shielded_pool_tests {
         )
     }
 
-    /// An outputs-only bundle paying `amount` to the test wallet.
-    /// Builds the outputs-only bundle of a token pool transition that only creates notes.
-    /// `action_type` and `token_id` are what the bundle's sighash commits to, so a bundle built
-    /// for one pool or one transition kind will not verify as another.
+    /// Builds the outputs-only bundle of a token pool transition that only creates notes,
+    /// paying `amount` to the test wallet. `action_type`, `token_id` and `owner_id` are what the
+    /// bundle's sighash commits to, so a bundle built for one pool, one transition kind or one
+    /// owner will not verify as another.
     pub(super) fn build_shield_bundle(
         amount: u64,
         seed: u64,
         action_type: TokenTransitionActionType,
         token_id: Identifier,
+        owner_id: Identifier,
     ) -> OrchardBundleParams {
         let mut rng = StdRng::seed_from_u64(seed);
         let (fvk, _, address) = spend_keys();
@@ -112,6 +113,7 @@ mod token_shielded_pool_tests {
         let extra_sighash_data = token_pool_output_only_extra_sighash_data(
             action_type,
             &token_id.to_buffer(),
+            &owner_id.to_buffer(),
             PlatformVersion::latest(),
         )
         .expect("outputs-only token pool sighash data");
@@ -354,11 +356,13 @@ mod token_shielded_pool_tests {
         );
     }
 
-    /// The counterpart of [`assert_check_tx_accepts`] for an identity that cannot pay.
+    /// The counterpart of [`assert_check_tx_accepts`]: CheckTx must refuse the transition, and
+    /// the errors it refuses it with are returned.
     ///
-    /// The shielded compute fee is charged when the action is built, which happens inside
-    /// CheckTx, so an identity that cannot cover it is refused at admission rather than after
-    /// the node has already run the Halo 2 verification the batch asks for.
+    /// One case is an identity that cannot pay. The shielded compute fee is charged when the
+    /// action is built, which happens inside CheckTx, so an identity that cannot cover it is
+    /// refused at admission rather than after the node has already run the Halo 2 verification
+    /// the batch asks for.
     pub(super) fn assert_check_tx_rejects(
         platform: &TempPlatform<MockCoreRPCLike>,
         transition: &StateTransition,
@@ -382,7 +386,7 @@ mod token_shielded_pool_tests {
             .expect("check tx");
         assert!(
             !result.is_valid(),
-            "CheckTx admitted a transition the identity cannot pay for"
+            "CheckTx admitted a transition it must refuse"
         );
         result.errors
     }
@@ -426,6 +430,7 @@ mod token_shielded_pool_tests {
             11,
             TokenTransitionActionType::Shield,
             token_id,
+            identity.id(),
         );
         let shield = BatchTransition::new_token_shield_transition(
             token_id,
@@ -772,6 +777,7 @@ mod token_shielded_pool_tests {
             13,
             TokenTransitionActionType::Shield,
             token_id,
+            identity.id(),
         );
         assert_eq!(
             bundle.actions.len(),
@@ -1075,11 +1081,11 @@ mod token_shielded_pool_tests {
     /// An outputs-only bundle carries no anchor, so nothing in the proved bytes themselves says
     /// which pool they were built for: the proof and the binding signature verify against every
     /// token pool, all of which start from the same empty-tree anchor. Only the sighash tells
-    /// them apart. Without it anyone could lift a shield bundle out of the mempool into a shield
-    /// of their own, funded by their own tokens, and land a copy of the note in a pool it was
-    /// never meant for. Nullifiers are per pool, so both copies stay spendable and this is not
-    /// Faerie Gold; the harm is that one `rho` now yields notes in two pools, which links the
-    /// recipient's spends across them.
+    /// them apart. Without the token id in it, whoever the bundle names as its owner could submit
+    /// it again as a shield of another token, funded by that token, and land a copy of the note
+    /// in a pool it was never meant for. Nullifiers are per pool, so both copies stay spendable
+    /// and this is not Faerie Gold; the harm is that one `rho` now yields notes in two pools,
+    /// which links the recipient's spends across them.
     #[tokio::test]
     async fn test_token_shield_rejects_a_bundle_proved_for_another_tokens_pool() {
         let platform_version = PlatformVersion::latest();
@@ -1112,12 +1118,14 @@ mod token_shielded_pool_tests {
         assert_ne!(token_a, token_b, "the two tokens must own separate pools");
 
         // Proved for the victim's pool, then replayed into the attacker's own, paid for with
-        // the attacker's own tokens.
+        // the attacker's own tokens. The bundle names the attacker as its owner, so the pool is
+        // the only thing about it that does not match the replay.
         let stolen_bundle = build_shield_bundle(
             SHIELD_AMOUNT,
             31,
             TokenTransitionActionType::Shield,
             token_a,
+            attacker.id(),
         );
         let replay = BatchTransition::new_token_shield_transition(
             token_b,
@@ -1196,6 +1204,7 @@ mod token_shielded_pool_tests {
                 23,
                 TokenTransitionActionType::Shield,
                 token_a,
+                identity.id(),
             ),
             &key,
             2,
@@ -1664,8 +1673,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
         let supply_before = total_supply(&platform, token_id);
 
         // Same pool, same amount, same flags — only the transition kind differs.
-        let shield_bundle =
-            build_shield_bundle(1_337, 21, TokenTransitionActionType::Shield, token_id);
+        let shield_bundle = build_shield_bundle(
+            1_337,
+            21,
+            TokenTransitionActionType::Shield,
+            token_id,
+            identity.id(),
+        );
         let mint = BatchTransition::new_token_mint_to_pool_transition(
             token_id,
             identity.id(),
@@ -1720,8 +1734,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
             platform_version,
         );
 
-        let bundle =
-            build_shield_bundle(1_337, 21, TokenTransitionActionType::MintToPool, token_id);
+        let bundle = build_shield_bundle(
+            1_337,
+            21,
+            TokenTransitionActionType::MintToPool,
+            token_id,
+            identity.id(),
+        );
         let mint = BatchTransition::new_token_mint_to_pool_transition(
             token_id,
             identity.id(),
@@ -1800,7 +1819,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
             contract.id(),
             0,
             1_337,
-            build_shield_bundle(1_337, 27, TokenTransitionActionType::MintToPool, token_id),
+            build_shield_bundle(
+                1_337,
+                27,
+                TokenTransitionActionType::MintToPool,
+                token_id,
+                identity.id(),
+            ),
             None,
             None,
             &key,
@@ -1948,8 +1973,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
         let token = token_id.to_buffer();
 
         // Fund the pool first.
-        let shield_bundle =
-            build_shield_bundle(10_000, 22, TokenTransitionActionType::Shield, token_id);
+        let shield_bundle = build_shield_bundle(
+            10_000,
+            22,
+            TokenTransitionActionType::Shield,
+            token_id,
+            identity.id(),
+        );
         let shield = BatchTransition::new_token_shield_transition(
             token_id,
             identity.id(),
@@ -2102,7 +2132,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
             contract.id(),
             0,
             10_000,
-            build_shield_bundle(10_000, 24, TokenTransitionActionType::Shield, token_id),
+            build_shield_bundle(
+                10_000,
+                24,
+                TokenTransitionActionType::Shield,
+                token_id,
+                proposer.id(),
+            ),
             &proposer_key,
             2,
             0,
@@ -2382,6 +2418,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
                 27,
                 TokenTransitionActionType::ClaimToPool,
                 token_id,
+                owner.id(),
             ),
             None,
             &key,
@@ -2427,6 +2464,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             28,
             TokenTransitionActionType::ClaimToPool,
             token_id,
+            owner.id(),
         );
         let pinned = BatchTransition::new_token_claim_to_pool_transition(
             token_id,
@@ -2545,7 +2583,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
             0,
             distribution_type,
             None,
-            build_shield_bundle(444, 24, TokenTransitionActionType::ClaimToPool, token_id),
+            build_shield_bundle(
+                444,
+                24,
+                TokenTransitionActionType::ClaimToPool,
+                token_id,
+                claimant_id,
+            ),
             None,
             &key,
             2,
@@ -2583,8 +2627,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
             .unwrap()
             .expect("commit");
 
-        let claim_bundle =
-            build_shield_bundle(445, 25, TokenTransitionActionType::ClaimToPool, token_id);
+        let claim_bundle = build_shield_bundle(
+            445,
+            25,
+            TokenTransitionActionType::ClaimToPool,
+            token_id,
+            claimant_id,
+        );
         let claim = BatchTransition::new_token_claim_to_pool_transition(
             token_id,
             claimant_id,
@@ -2650,7 +2699,13 @@ mod token_pool_mint_burn_claim_purchase_tests {
             0,
             distribution_type,
             None,
-            build_shield_bundle(445, 26, TokenTransitionActionType::ClaimToPool, token_id),
+            build_shield_bundle(
+                445,
+                26,
+                TokenTransitionActionType::ClaimToPool,
+                token_id,
+                claimant_id,
+            ),
             None,
             &key,
             4,
@@ -2764,6 +2819,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
             27,
             TokenTransitionActionType::DirectPurchaseToPool,
             token_id,
+            buyer.id(),
         );
         let purchase = BatchTransition::new_token_direct_purchase_to_pool_transition(
             token_id,
@@ -2826,6 +2882,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
                 28,
                 TokenTransitionActionType::DirectPurchaseToPool,
                 token_id,
+                buyer.id(),
             ),
             &key,
             3,
@@ -2865,6 +2922,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
                 29,
                 TokenTransitionActionType::DirectPurchaseToPool,
                 token_id,
+                poor_buyer.id(),
             ),
             &poor_key,
             1,
@@ -3048,7 +3106,13 @@ mod document_shielded_token_payment_tests {
             contract.id(),
             0,
             SHIELDED,
-            build_shield_bundle(SHIELDED, seed, TokenTransitionActionType::Shield, token_id),
+            build_shield_bundle(
+                SHIELDED,
+                seed,
+                TokenTransitionActionType::Shield,
+                token_id,
+                buyer.id(),
+            ),
             key,
             1,
             0,
@@ -3546,7 +3610,13 @@ mod token_pool_paid_transitions_tests {
             contract.id(),
             0,
             SHIELDED,
-            build_shield_bundle(SHIELDED, seed, TokenTransitionActionType::Shield, token_id),
+            build_shield_bundle(
+                SHIELDED,
+                seed,
+                TokenTransitionActionType::Shield,
+                token_id,
+                holder.id(),
+            ),
             key,
             2,
             0,
@@ -4184,6 +4254,7 @@ mod token_pool_paid_transitions_tests {
             let expected = token_pool_output_only_extra_sighash_data(
                 action_type,
                 &token_id.to_buffer(),
+                &owner.id().to_buffer(),
                 platform_version,
             )
             .expect("outputs-only kind");
@@ -4204,25 +4275,32 @@ mod token_pool_paid_transitions_tests {
     }
 }
 
-/// An outputs-only bundle copied into the same pool, as the same kind, by somebody else.
+/// An outputs-only bundle offered to the same pool, as the same kind, a second time.
 ///
-/// The sighash of such a bundle binds its kind and its token but not who submits it, so the
-/// copy verifies. It would land a second note with the same commitment and the same `rho`,
-/// hence the same nullifier, and only one of the two could ever be spent: a wallet counting by
-/// commitment would see a payment that does not exist. The pool records each bundle's dummy
-/// nullifiers when it enters and refuses a bundle whose dummy nullifier is already there.
+/// The sighash of such a bundle binds its pool, its kind and its owner, but nothing that makes
+/// it single-use, so its owner can submit the same bundle again in a new transition. The repeat
+/// would land a second note with the same commitment and the same `rho`, hence the same
+/// nullifier, and only one of the two could ever be spent: a wallet counting by commitment
+/// would see a payment that does not exist. The pool records each bundle's dummy nullifiers
+/// when it enters and refuses a bundle whose dummy nullifier is already there.
+///
+/// Somebody else's copy is refused by the sighash instead, before it can land; those tests are
+/// the front-running ones below. Where the pool's record is read first, the record refuses a
+/// copy too: block validation checks the dummy nullifiers before it verifies the bundle, and
+/// CheckTx cannot verify a claim's bundle at all, so another claimant's copy of a claim that
+/// has already landed is refused on its nullifier.
 ///
 /// Every test first builds the original through the public builder and shows it admitted by
-/// CheckTx and executed in a block. Without that, a refused copy would prove nothing: a bundle
-/// the verifier never accepted anywhere is refused for any reason at all. The copy must then
-/// fail on the original's first dummy nullifier, and nothing it carries may move.
+/// CheckTx and executed in a block. Without that, a refused repeat would prove nothing: a
+/// bundle the verifier never accepted anywhere is refused for any reason at all. The repeat
+/// must then fail on the original's first dummy nullifier, and nothing it carries may move.
 mod token_pool_outputs_only_copy_tests {
     use super::token_pool_paid_transitions_tests::{
         credit_pool_balance, fund_credit_pool, spendable, wallet_address, Prover, CREDIT_NOTE,
     };
     use super::token_shielded_pool_tests::{
         assert_check_tx_accepts, assert_check_tx_rejects, assert_tokens_conserved,
-        build_spend_bundle,
+        build_shield_bundle, build_spend_bundle,
         enable_shielded_pool, identity_token_balance, nullifier_is_spent,
         platform_with_latest_version, pool_balance, pool_notes_count, process, spend_keys,
         OWNER_INITIAL_BALANCE,
@@ -4252,7 +4330,10 @@ mod token_pool_outputs_only_copy_tests {
         OrchardBundleParams, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
     };
     use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-    use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+    use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+        TokenTransition, TokenTransitionV0Methods,
+    };
+    use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
     use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
     use dpp::state_transition::batch_transition::token_claim_to_pool_transition::v0::v0_methods::TokenClaimToPoolTransitionV0Methods;
     use dpp::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
@@ -4325,25 +4406,49 @@ mod token_pool_outputs_only_copy_tests {
             .expect("identity exists")
     }
 
-    /// Submits a batch copy and returns what the copier was charged for it.
-    ///
-    /// CheckTx admits the copy: it verifies a batch's token bundles statelessly and does not
-    /// read the pool, so the admission itself shows the copied bundle is valid as the copier's
-    /// transition. Block execution must then refuse it on the original's first dummy nullifier,
-    /// as a paid failure: the copier's nonce advances and its fee is charged, nothing else moves.
-    fn assert_copy_refused_in_block(
+    /// The identity contract nonce `identity_id` has used last on `contract_id`.
+    fn contract_nonce(
         platform: &TempPlatform<MockCoreRPCLike>,
-        copy: &StateTransition,
-        copier_id: Identifier,
+        identity_id: Identifier,
         contract_id: Identifier,
+    ) -> u64 {
+        platform
+            .drive
+            .fetch_identity_contract_nonce(
+                identity_id.to_buffer(),
+                contract_id.to_buffer(),
+                true,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("identity contract nonce")
+            .expect("the identity has used the contract")
+            & IDENTITY_NONCE_VALUE_FILTER
+    }
+
+    /// Submits a bundle again after it has landed and returns what the submitter was charged for
+    /// it.
+    ///
+    /// CheckTx admits it: it does not read the pool. Where CheckTx verifies the kind's bundle and
+    /// the submitter is the bundle's owner, that admission also shows the bundle is valid as the
+    /// submitter's transition; a claim's bundle CheckTx does not verify at all. Block execution
+    /// must then refuse it on the original's first dummy nullifier, which it checks before the
+    /// proof, as a paid failure: the submitter's nonce advances to `nonce` and its fee is
+    /// charged, nothing else moves.
+    fn assert_repeat_refused_in_block(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        repeat: &StateTransition,
+        submitter_id: Identifier,
+        contract_id: Identifier,
+        nonce: u64,
         original: &OrchardBundleParams,
         block_info: Option<&BlockInfo>,
     ) -> Credits {
-        assert_check_tx_accepts(platform, copy);
-        let credits_before = credits(platform, copier_id);
+        assert_check_tx_accepts(platform, repeat);
+        let credits_before = credits(platform, submitter_id);
         let result = match block_info {
-            Some(block_info) => process_at(platform, copy, block_info),
-            None => process(platform, copy),
+            Some(block_info) => process_at(platform, repeat, block_info),
+            None => process(platform, repeat),
         };
         let first = original.actions[0].nullifier;
         assert_matches!(
@@ -4353,21 +4458,100 @@ mod token_pool_outputs_only_copy_tests {
                 ..
             }] if error.nullifier() == first
         );
-        let nonce = platform
-            .drive
-            .fetch_identity_contract_nonce(
-                copier_id.to_buffer(),
-                contract_id.to_buffer(),
-                true,
-                None,
-                PlatformVersion::latest(),
-            )
-            .expect("identity contract nonce")
-            .expect("the refused copy bumps the copier's nonce");
-        assert_eq!(nonce & IDENTITY_NONCE_VALUE_FILTER, 1);
+        assert_eq!(
+            contract_nonce(platform, submitter_id, contract_id),
+            nonce,
+            "the refused repeat bumps the submitter's nonce"
+        );
+        let charged = credits_before - credits(platform, submitter_id);
+        assert!(charged > 0, "a refused repeat is a paid failure");
+        charged
+    }
+
+    /// Submits another identity's bundle, taken from the mempool before the original landed,
+    /// and returns what the copier was charged for it.
+    ///
+    /// The bundle's sighash names its author, so the copy is invalid as the copier's transition
+    /// wherever the bundle is verified: CheckTx refuses it when `verified_at_check_tx`, and
+    /// block execution refuses it as a paid failure — the copier's nonce advances to `nonce` and
+    /// its fee is charged.
+    ///
+    /// The two nullifier assertions do different jobs, and neither pins the order of checks:
+    ///
+    /// - Before the copy, none of the bundle's dummy nullifiers is in the pool. This is what
+    ///   anchors the negative: at the moment of refusal the pool's record holds nothing to
+    ///   refuse with, so the refusal can only be the preimage.
+    /// - After the copy, still none is. A refused transition never reaches the pool write, so
+    ///   this does not catch a binding check moved after the nullifier check. It guards a
+    ///   different regression: recording the nullifiers during validation, ahead of the write,
+    ///   which would let a copier burn the author's nullifiers and block the author for good.
+    ///
+    /// What shows nothing of the copy persisted is the caller's next step: the original then
+    /// executes successfully.
+    fn assert_front_run_refused(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        copy: &StateTransition,
+        copier_id: Identifier,
+        contract_id: Identifier,
+        nonce: u64,
+        bundle: &OrchardBundleParams,
+        verified_at_check_tx: bool,
+        block_info: Option<&BlockInfo>,
+    ) -> Credits {
+        let token_id = copied_token_id(copy);
+        assert!(
+            bundle.actions.iter().all(|action| !nullifier_is_spent(
+                platform,
+                token_id,
+                &action.nullifier
+            )),
+            "a front-run lands before the original, so none of its dummy nullifiers is recorded"
+        );
+        if verified_at_check_tx {
+            assert_matches!(
+                assert_check_tx_rejects(platform, copy).as_slice(),
+                [ConsensusError::StateError(
+                    StateError::InvalidShieldedProofError(_)
+                )]
+            );
+        } else {
+            assert_check_tx_accepts(platform, copy);
+        }
+        let credits_before = credits(platform, copier_id);
+        let result = match block_info {
+            Some(block_info) => process_at(platform, copy, block_info),
+            None => process(platform, copy),
+        };
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
+        );
+        assert_eq!(contract_nonce(platform, copier_id, contract_id), nonce);
         let charged = credits_before - credits(platform, copier_id);
         assert!(charged > 0, "a refused copy is a paid failure");
+        assert!(
+            bundle.actions.iter().all(|action| !nullifier_is_spent(
+                platform,
+                token_id,
+                &action.nullifier
+            )),
+            "a refused copy must not record the bundle's dummy nullifiers"
+        );
         charged
+    }
+
+    /// The token an outputs-only batch token transition pays into.
+    fn copied_token_id(transition: &StateTransition) -> Identifier {
+        let StateTransition::Batch(batch) = transition else {
+            panic!("expected a batch transition");
+        };
+        match batch.transitions_iter().next().expect("one transition") {
+            BatchedTransitionRef::Token(token_transition) => token_transition.token_id(),
+            other => panic!("not a token transition: {other:?}"),
+        }
     }
 
     /// Processes one transition at `block_info`, for a claim whose release has to be due.
@@ -4414,16 +4598,18 @@ mod token_pool_outputs_only_copy_tests {
         result
     }
 
+    /// The owner submits its own landed bundle again with a fresh nonce, as a wallet retrying a
+    /// submission it believes lost would. The owner binding cannot tell the two apart, so the
+    /// pool's record refuses the repeat, and it is a paid failure: the retry is charged its fee,
+    /// though nothing else moves.
     #[tokio::test]
-    async fn test_a_shield_bundle_copied_into_the_same_pool_by_another_holder_is_refused() {
+    async fn test_a_shield_bundle_resubmitted_by_its_owner_is_refused() {
         let platform_version = PlatformVersion::latest();
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9501);
         let amount = 4_200;
 
         let (owner, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
-        let (copier, copier_signer, copier_key) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
             owner.id(),
@@ -4432,32 +4618,6 @@ mod token_pool_outputs_only_copy_tests {
             None,
             None,
             platform_version,
-        );
-
-        // The copier holds as many tokens as the copy shields, so a refusal cannot be its
-        // balance.
-        let transfer = BatchTransition::new_token_transfer_transition(
-            token_id,
-            owner.id(),
-            contract.id(),
-            0,
-            amount,
-            copier.id(),
-            None,
-            None,
-            None,
-            &key,
-            2,
-            0,
-            &signer,
-            platform_version,
-            None,
-        )
-        .await
-        .expect("token transfer transition");
-        assert_matches!(
-            process(&platform, &transfer).execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let shield = build_token_shield_transition(
@@ -4470,7 +4630,7 @@ mod token_pool_outputs_only_copy_tests {
             [0u8; 36],
             None,
             &key,
-            3,
+            2,
             0,
             &signer,
             &Prover,
@@ -4485,52 +4645,62 @@ mod token_pool_outputs_only_copy_tests {
         );
         assert_eq!(
             identity_token_balance(&platform, token_id, owner.id()),
-            Some(OWNER_INITIAL_BALANCE - 2 * amount)
+            Some(OWNER_INITIAL_BALANCE - amount)
         );
         let bundle = proven_bundle(&shield);
         assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
         let notes_after_original = pool_notes_count(&platform, token_id);
 
-        let copy = BatchTransition::new_token_shield_transition(
+        // The owner still holds far more than the repeat shields, so a refusal cannot be its
+        // balance.
+        let repeat = BatchTransition::new_token_shield_transition(
             token_id,
-            copier.id(),
+            owner.id(),
             contract.id(),
             0,
             amount,
             bundle.clone(),
-            &copier_key,
-            1,
+            &key,
+            3,
             0,
-            &copier_signer,
+            &signer,
             platform_version,
             None,
         )
         .await
         .expect("token shield transition");
-        assert_copy_refused_in_block(&platform, &copy, copier.id(), contract.id(), &bundle, None);
+        assert_repeat_refused_in_block(
+            &platform,
+            &repeat,
+            owner.id(),
+            contract.id(),
+            3,
+            &bundle,
+            None,
+        );
 
         assert_eq!(pool_balance(&platform, token_id), amount);
         assert_eq!(pool_notes_count(&platform, token_id), notes_after_original);
         assert_eq!(
-            identity_token_balance(&platform, token_id, copier.id()),
-            Some(amount)
+            identity_token_balance(&platform, token_id, owner.id()),
+            Some(OWNER_INITIAL_BALANCE - amount)
         );
 
-        // A pool that already holds recorded dummy nullifiers still takes a bundle of its own:
-        // what is refused is the repeat, not every bundle after the first.
+        // A pool that already holds recorded dummy nullifiers still takes a new bundle from the
+        // same owner: what is refused is the repeat, not every bundle after the first.
         let own_shield = build_token_shield_transition(
             token_id,
-            copier.id(),
+            owner.id(),
             contract.id(),
             0,
             &wallet_address(),
             amount,
             [0u8; 36],
             None,
-            &copier_key,
-            2,
+            &key,
+            4,
             0,
-            &copier_signer,
+            &signer,
             &Prover,
             platform_version,
         )
@@ -4548,19 +4718,17 @@ mod token_pool_outputs_only_copy_tests {
         assert_tokens_conserved(&platform);
     }
 
-    /// A copy lifted from the mempool reaches the same block as its original. CheckTx admits
-    /// both, since neither has entered the pool yet, so what refuses the copy is the check
-    /// reading the original's write in the block's own transaction.
+    /// A repeat submitted before its original has landed reaches the same block. CheckTx admits
+    /// both, since neither has entered the pool yet, so what refuses the second is the check
+    /// reading the first one's write in the block's own transaction.
     #[tokio::test]
-    async fn test_a_shield_bundle_and_its_copy_in_one_block_land_only_once() {
+    async fn test_a_shield_bundle_and_its_repeat_in_one_block_land_only_once() {
         let platform_version = PlatformVersion::latest();
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9508);
         let amount = 3_100;
 
         let (owner, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
-        let (copier, copier_signer, copier_key) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
             owner.id(),
@@ -4569,32 +4737,6 @@ mod token_pool_outputs_only_copy_tests {
             None,
             None,
             platform_version,
-        );
-
-        // The copier holds as many tokens as the copy shields, so a refusal cannot be its
-        // balance.
-        let transfer = BatchTransition::new_token_transfer_transition(
-            token_id,
-            owner.id(),
-            contract.id(),
-            0,
-            amount,
-            copier.id(),
-            None,
-            None,
-            None,
-            &key,
-            2,
-            0,
-            &signer,
-            platform_version,
-            None,
-        )
-        .await
-        .expect("token transfer transition");
-        assert_matches!(
-            process(&platform, &transfer).execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let shield = build_token_shield_transition(
@@ -4607,7 +4749,7 @@ mod token_pool_outputs_only_copy_tests {
             [0u8; 36],
             None,
             &key,
-            3,
+            2,
             0,
             &signer,
             &Prover,
@@ -4616,28 +4758,28 @@ mod token_pool_outputs_only_copy_tests {
         .await
         .expect("client-built token shield");
         let bundle = proven_bundle(&shield);
-        let copy = BatchTransition::new_token_shield_transition(
+        let repeat = BatchTransition::new_token_shield_transition(
             token_id,
-            copier.id(),
+            owner.id(),
             contract.id(),
             0,
             amount,
             bundle.clone(),
-            &copier_key,
-            1,
+            &key,
+            3,
             0,
-            &copier_signer,
+            &signer,
             platform_version,
             None,
         )
         .await
         .expect("token shield transition");
         assert_check_tx_accepts(&platform, &shield);
-        assert_check_tx_accepts(&platform, &copy);
+        assert_check_tx_accepts(&platform, &repeat);
 
         let first = bundle.actions[0].nullifier;
         assert_matches!(
-            process_in_one_block(&platform, &[&shield, &copy], &BlockInfo::default())
+            process_in_one_block(&platform, &[&shield, &repeat], &BlockInfo::default())
                 .execution_results()
                 .as_slice(),
             [
@@ -4657,27 +4799,21 @@ mod token_pool_outputs_only_copy_tests {
         );
         assert_eq!(
             identity_token_balance(&platform, token_id, owner.id()),
-            Some(OWNER_INITIAL_BALANCE - 2 * amount)
-        );
-        assert_eq!(
-            identity_token_balance(&platform, token_id, copier.id()),
-            Some(amount)
+            Some(OWNER_INITIAL_BALANCE - amount)
         );
         assert_tokens_conserved(&platform);
     }
 
     #[tokio::test]
-    async fn test_a_mint_to_pool_bundle_copied_by_another_minter_is_refused() {
+    async fn test_a_mint_to_pool_bundle_resubmitted_by_its_minter_is_refused() {
         let platform_version = PlatformVersion::latest();
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9502);
         let amount = 1_337;
 
         let (minter, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
-        let (copier, copier_signer, copier_key) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
-        // Either member of the group mints alone, so the copier is as entitled to mint as the
-        // minter and only the bundle can be why its copy is refused.
+        // A group the minter alone can close, so each proposal mints at once and the repeat is
+        // a complete mint of its own.
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
             minter.id(),
@@ -4698,7 +4834,7 @@ mod token_pool_outputs_only_copy_tests {
                 [(
                     0,
                     Group::V0(GroupV0 {
-                        members: [(minter.id(), 1), (copier.id(), 1)].into(),
+                        members: [(minter.id(), 1)].into(),
                         required_power: 1,
                     }),
                 )]
@@ -4738,6 +4874,121 @@ mod token_pool_outputs_only_copy_tests {
         assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
         let notes_after_original = pool_notes_count(&platform, token_id);
 
+        let repeat = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            minter.id(),
+            contract.id(),
+            0,
+            amount,
+            bundle.clone(),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key,
+            3,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool transition");
+        assert_repeat_refused_in_block(
+            &platform,
+            &repeat,
+            minter.id(),
+            contract.id(),
+            3,
+            &bundle,
+            None,
+        );
+
+        assert_eq!(pool_balance(&platform, token_id), amount);
+        assert_eq!(pool_notes_count(&platform, token_id), notes_after_original);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            OWNER_INITIAL_BALANCE + amount,
+            "a refused repeat must not print supply"
+        );
+        assert_tokens_conserved(&platform);
+    }
+
+    /// Another member of the group takes a proposal's bundle and proposes it as its own. That
+    /// member is as entitled to mint as the proposer, and the proposal it copied has not closed,
+    /// so no dummy nullifier is on record to refuse it: only the minter the bundle's sighash
+    /// names can. Were it accepted, the group could close either proposal, and whichever closed
+    /// second would be refused as a repeat.
+    #[tokio::test]
+    async fn test_a_mint_to_pool_bundle_proposed_again_by_another_member_is_refused() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9512);
+        let amount = 1_111;
+
+        let (proposer, proposer_signer, proposer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (copier, copier_signer, copier_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (confirmer, confirmer_signer, confirmer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            proposer.id(),
+            Some(|configuration: &mut TokenConfiguration| {
+                enable_shielded_pool(configuration);
+                configuration.set_manual_minting_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(proposer.id(), 1), (copier.id(), 1), (confirmer.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+        let supply_before = total_supply(&platform, token_id);
+
+        let proposer_nonce = 2;
+        let proposal = build_token_mint_to_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            &wallet_address(),
+            amount,
+            [0u8; 36],
+            None,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &proposer_key,
+            proposer_nonce,
+            0,
+            &proposer_signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("client-built token mint to pool proposal");
+        assert_check_tx_accepts(&platform, &proposal);
+        assert_matches!(
+            process(&platform, &proposal).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        let bundle = proven_bundle(&proposal);
+
         let copy = BatchTransition::new_token_mint_to_pool_transition(
             token_id,
             copier.id(),
@@ -4755,16 +5006,63 @@ mod token_pool_outputs_only_copy_tests {
             None,
         )
         .await
-        .expect("token mint to pool transition");
-        assert_copy_refused_in_block(&platform, &copy, copier.id(), contract.id(), &bundle, None);
-
-        assert_eq!(pool_balance(&platform, token_id), amount);
-        assert_eq!(pool_notes_count(&platform, token_id), notes_after_original);
-        assert_eq!(
-            total_supply(&platform, token_id),
-            OWNER_INITIAL_BALANCE + amount,
-            "a refused copy must not print supply"
+        .expect("token mint to pool proposal");
+        assert_front_run_refused(
+            &platform,
+            &copy,
+            copier.id(),
+            contract.id(),
+            1,
+            &bundle,
+            true,
+            None,
         );
+        // One signature of two could not mint either way, so the pool and the supply cannot tell
+        // a refused proposal from an accepted one; the error asserted above is what does.
+
+        // The proposal the copier took from still closes with its own bundle.
+        let confirmation = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            amount,
+            bundle.clone(),
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id: TokenMintToPoolTransition::calculate_action_id_with_fields(
+                            token_id.as_bytes(),
+                            proposer.id().as_bytes(),
+                            proposer_nonce,
+                            amount,
+                            &serialized_actions_digest(&bundle.actions),
+                        ),
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &confirmer_key,
+            1,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool confirmation");
+        assert_check_tx_accepts(&platform, &confirmation);
+        assert_matches!(
+            process(&platform, &confirmation)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), amount);
+        assert_eq!(total_supply(&platform, token_id), supply_before + amount);
+        assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
         assert_tokens_conserved(&platform);
     }
 
@@ -4773,6 +5071,11 @@ mod token_pool_outputs_only_copy_tests {
     /// signer. Only the signature that closes the action mints, and only it may record them;
     /// were they recorded earlier, the closing signature would be refused as a copy and no
     /// group mint into a pool could ever complete.
+    ///
+    /// The bundle's sighash names the proposer, not the confirmer whose batch carries it here.
+    /// Admission must therefore leave a confirmer's bundle to state validation, which reads the
+    /// proposer from the stored group action; were either of the two to bind the batch owner
+    /// instead, this confirmation would be refused and no group mint could ever close.
     #[tokio::test]
     async fn test_a_group_mint_to_pool_closes_with_the_proposers_bundle_resubmitted() {
         let platform_version = PlatformVersion::latest();
@@ -4898,11 +5201,430 @@ mod token_pool_outputs_only_copy_tests {
         assert_tokens_conserved(&platform);
     }
 
-    /// Two group actions can carry the same bundle: each member may propose, and the group
-    /// action pins only the bundle's digest. Once one of them closes and mints, the signature
-    /// that would close the other is a copy like any other and must be refused, or the group
-    /// would mint the amount twice into notes of which only one of each pair could be spent.
-    /// Confirmers go through the check as proposers do.
+    /// The group action pins only the digest of the bundle's actions, not its proof or binding
+    /// signature, and the stateless proof check skips a confirmer's bundle because it cannot
+    /// see the proposer the bundle is bound to. State validation is therefore the only place a
+    /// confirmer's bundle is verified: a confirmer that keeps the proposer's actions but swaps
+    /// the proof must be refused there, or the group would mint against a bundle nobody proved.
+    #[tokio::test]
+    async fn test_a_group_mint_to_pool_confirmation_with_a_tampered_proof_is_refused() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9515);
+        let amount = 3_003;
+
+        let (proposer, proposer_signer, proposer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (tamperer, tamperer_signer, tamperer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (confirmer, confirmer_signer, confirmer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            proposer.id(),
+            Some(|configuration: &mut TokenConfiguration| {
+                enable_shielded_pool(configuration);
+                configuration.set_manual_minting_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(proposer.id(), 1), (tamperer.id(), 1), (confirmer.id(), 1)]
+                            .into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+        let supply_before = total_supply(&platform, token_id);
+
+        let proposer_nonce = 2;
+        let proposal = build_token_mint_to_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            &wallet_address(),
+            amount,
+            [0u8; 36],
+            None,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &proposer_key,
+            proposer_nonce,
+            0,
+            &proposer_signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("client-built token mint to pool proposal");
+        assert_check_tx_accepts(&platform, &proposal);
+        assert_matches!(
+            process(&platform, &proposal).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        let bundle = proven_bundle(&proposal);
+        let closing_signature = || {
+            GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                GroupStateTransitionInfo {
+                    group_contract_position: 0,
+                    action_id: TokenMintToPoolTransition::calculate_action_id_with_fields(
+                        token_id.as_bytes(),
+                        proposer.id().as_bytes(),
+                        proposer_nonce,
+                        amount,
+                        &serialized_actions_digest(&bundle.actions),
+                    ),
+                    action_is_proposer: false,
+                },
+            )
+        };
+
+        // Same actions, so the group action's digest still matches; only the proof differs.
+        let mut tampered = bundle.clone();
+        tampered.proof[0] ^= 0x01;
+        let tampered_confirmation = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            tamperer.id(),
+            contract.id(),
+            0,
+            amount,
+            tampered,
+            None,
+            Some(closing_signature()),
+            &tamperer_key,
+            1,
+            0,
+            &tamperer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool confirmation");
+        // CheckTx cannot tell whose sighash a confirmer's bundle is bound to, so it does not
+        // verify it at all: a bundle that no verifier would accept is admitted to the mempool,
+        // and the block is where it is refused and charged.
+        assert_check_tx_accepts(&platform, &tampered_confirmation);
+        assert_matches!(
+            process(&platform, &tampered_confirmation)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            supply_before,
+            "a refused confirmation would otherwise have closed the action and minted"
+        );
+        assert!(!nullifier_is_spent(
+            &platform,
+            token_id,
+            &bundle.actions[0].nullifier
+        ));
+
+        // The untampered bundle still closes the same action.
+        let confirmation = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            amount,
+            bundle.clone(),
+            None,
+            Some(closing_signature()),
+            &confirmer_key,
+            1,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool confirmation");
+        assert_check_tx_accepts(&platform, &confirmation);
+        assert_matches!(
+            process(&platform, &confirmation)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), amount);
+        assert_eq!(total_supply(&platform, token_id), supply_before + amount);
+        assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
+        assert_tokens_conserved(&platform);
+    }
+
+    /// A signer other than the proposer proves the proposer's notes again, from the same
+    /// randomness, but bound to itself. It cannot then match the group action: every action of
+    /// an outputs-only bundle carries a spend authorization signature over the sighash, and the
+    /// group action's digest covers those signatures, so a bundle bound to another owner has
+    /// other actions. Keeping the proposer's actions verbatim and swapping in the rest of its own
+    /// bundle matches the digest instead, but then the actions' signatures only verify against
+    /// the proposer's sighash and the binding signature only against its own. Either way the
+    /// only bundle a signer other than the proposer can close the action with is the
+    /// proposer's own.
+    #[tokio::test]
+    async fn test_a_group_mint_to_pool_confirmation_with_a_bundle_proved_for_the_confirmer_is_refused(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9518);
+        let amount = 2_718;
+        let bundle_seed = 77;
+
+        let (proposer, proposer_signer, proposer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (rebinder, rebinder_signer, rebinder_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (confirmer, confirmer_signer, confirmer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            proposer.id(),
+            Some(|configuration: &mut TokenConfiguration| {
+                enable_shielded_pool(configuration);
+                configuration.set_manual_minting_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(proposer.id(), 1), (rebinder.id(), 1), (confirmer.id(), 1)]
+                            .into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+        let supply_before = total_supply(&platform, token_id);
+
+        // Seeded, so the same notes can be proven a second time; the public builder draws fresh
+        // randomness and could not reproduce them.
+        let bundle = build_shield_bundle(
+            amount,
+            bundle_seed,
+            TokenTransitionActionType::MintToPool,
+            token_id,
+            proposer.id(),
+        );
+        let proposer_nonce = 2;
+        let proposal = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            amount,
+            bundle.clone(),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &proposer_key,
+            proposer_nonce,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool proposal");
+        assert_check_tx_accepts(&platform, &proposal);
+        assert_matches!(
+            process(&platform, &proposal).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let rebound = build_shield_bundle(
+            amount,
+            bundle_seed,
+            TokenTransitionActionType::MintToPool,
+            token_id,
+            rebinder.id(),
+        );
+        assert_eq!(rebound.actions.len(), bundle.actions.len());
+        for (own, proposers) in rebound.actions.iter().zip(&bundle.actions) {
+            assert_eq!(
+                (
+                    own.nullifier,
+                    own.rk,
+                    own.cmx,
+                    &own.encrypted_note,
+                    own.cv_net
+                ),
+                (
+                    proposers.nullifier,
+                    proposers.rk,
+                    proposers.cmx,
+                    &proposers.encrypted_note,
+                    proposers.cv_net
+                ),
+                "the same randomness proves the same notes"
+            );
+            assert_ne!(
+                own.spend_auth_sig, proposers.spend_auth_sig,
+                "each action signs the sighash, which names the owner"
+            );
+        }
+        assert_ne!(
+            serialized_actions_digest(&rebound.actions),
+            serialized_actions_digest(&bundle.actions)
+        );
+
+        let closing_signature = || {
+            GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                GroupStateTransitionInfo {
+                    group_contract_position: 0,
+                    action_id: TokenMintToPoolTransition::calculate_action_id_with_fields(
+                        token_id.as_bytes(),
+                        proposer.id().as_bytes(),
+                        proposer_nonce,
+                        amount,
+                        &serialized_actions_digest(&bundle.actions),
+                    ),
+                    action_is_proposer: false,
+                },
+            )
+        };
+        let confirm_with = |bundle: OrchardBundleParams, nonce| {
+            BatchTransition::new_token_mint_to_pool_transition(
+                token_id,
+                rebinder.id(),
+                contract.id(),
+                0,
+                amount,
+                bundle,
+                None,
+                Some(closing_signature()),
+                &rebinder_key,
+                nonce,
+                0,
+                &rebinder_signer,
+                platform_version,
+                None,
+            )
+        };
+
+        // Its own bundle, whole: the group action refuses other actions.
+        let own_bundle = confirm_with(rebound.clone(), 1)
+            .await
+            .expect("token mint to pool confirmation");
+        assert_check_tx_accepts(&platform, &own_bundle);
+        assert_matches!(
+            process(&platform, &own_bundle)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ModificationOfGroupActionMainParametersNotPermittedError(_)
+                ),
+                ..
+            }]
+        );
+
+        // The proposer's actions with its own proof and binding signature: the digest matches,
+        // and the bundle verifies against neither owner.
+        let spliced = OrchardBundleParams {
+            actions: bundle.actions.clone(),
+            anchor: rebound.anchor,
+            proof: rebound.proof.clone(),
+            binding_signature: rebound.binding_signature,
+        };
+        let spliced_confirmation = confirm_with(spliced, 2)
+            .await
+            .expect("token mint to pool confirmation");
+        assert_check_tx_accepts(&platform, &spliced_confirmation);
+        assert_matches!(
+            process(&platform, &spliced_confirmation)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
+        );
+
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            supply_before,
+            "either confirmation would otherwise have closed the action and minted"
+        );
+        assert!(!nullifier_is_spent(
+            &platform,
+            token_id,
+            &bundle.actions[0].nullifier
+        ));
+
+        // The proposer's bundle, unchanged, still closes the action.
+        let confirmation = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            amount,
+            bundle.clone(),
+            None,
+            Some(closing_signature()),
+            &confirmer_key,
+            1,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool confirmation");
+        assert_check_tx_accepts(&platform, &confirmation);
+        assert_matches!(
+            process(&platform, &confirmation)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), amount);
+        assert_eq!(total_supply(&platform, token_id), supply_before + amount);
+        assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
+        assert_tokens_conserved(&platform);
+    }
+
+    /// Two group actions can carry the same bundle: its proposer may propose it twice, and the
+    /// group action pins only the bundle's digest. Once one of them closes and mints, the
+    /// signature that would close the other is a repeat like any other and must be refused, or
+    /// the group would mint the amount twice into notes of which only one of each pair could be
+    /// spent. Confirmers go through the check as proposers do.
+    ///
+    /// Both proposals come from the same member on purpose: another member proposing the same
+    /// bundle is refused on the owner the bundle's sighash names before it could reach the
+    /// nullifier check, and that case lives in
+    /// `test_a_mint_to_pool_bundle_proposed_again_by_another_member_is_refused`.
     #[tokio::test]
     async fn test_a_second_group_mint_to_pool_carrying_a_minted_bundle_cannot_close() {
         let platform_version = PlatformVersion::latest();
@@ -4976,21 +5698,21 @@ mod token_pool_outputs_only_copy_tests {
         let bundle = proven_bundle(&first_proposal);
         let digest = serialized_actions_digest(&bundle.actions);
 
-        // A second proposal of the same amount and the same bundle, by another member.
-        let second_nonce = 1;
+        // A second proposal of the same amount and the same bundle, by the same member.
+        let second_nonce = 3;
         let second_proposal = BatchTransition::new_token_mint_to_pool_transition(
             token_id,
-            second.id(),
+            first.id(),
             contract.id(),
             0,
             amount,
             bundle.clone(),
             None,
             Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
-            &second_key,
+            &first_key,
             second_nonce,
             0,
-            &second_signer,
+            &first_signer,
             platform_version,
             None,
         )
@@ -5029,7 +5751,7 @@ mod token_pool_outputs_only_copy_tests {
             amount,
             bundle.clone(),
             None,
-            Some(confirmation(second.id(), second_nonce)),
+            Some(confirmation(first.id(), second_nonce)),
             &third_key,
             1,
             0,
@@ -5060,7 +5782,7 @@ mod token_pool_outputs_only_copy_tests {
             None,
             Some(confirmation(first.id(), first_nonce)),
             &second_key,
-            2,
+            1,
             0,
             &second_signer,
             platform_version,
@@ -5090,8 +5812,11 @@ mod token_pool_outputs_only_copy_tests {
         assert_tokens_conserved(&platform);
     }
 
+    /// CheckTx cannot verify a claim's bundle, whose amount is only known against state, so it
+    /// admits another claimant's copy; in the block, the original's recorded dummy nullifier
+    /// refuses the copy before its proof is looked at.
     #[tokio::test]
-    async fn test_a_claim_to_pool_bundle_copied_by_another_claimant_is_refused() {
+    async fn test_a_claim_to_pool_bundle_copied_by_another_claimant_after_it_landed_is_refused() {
         let platform_version = PlatformVersion::latest();
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9503);
@@ -5187,11 +5912,12 @@ mod token_pool_outputs_only_copy_tests {
         )
         .await
         .expect("token claim to pool transition");
-        assert_copy_refused_in_block(
+        assert_repeat_refused_in_block(
             &platform,
             &copy,
             copier_id,
             contract.id(),
+            1,
             &bundle,
             Some(&block_info),
         );
@@ -5241,7 +5967,7 @@ mod token_pool_outputs_only_copy_tests {
     }
 
     #[tokio::test]
-    async fn test_a_direct_purchase_to_pool_bundle_copied_by_another_buyer_is_refused() {
+    async fn test_a_direct_purchase_to_pool_bundle_resubmitted_by_its_buyer_is_refused() {
         let platform_version = PlatformVersion::latest();
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9504);
@@ -5250,8 +5976,6 @@ mod token_pool_outputs_only_copy_tests {
         let (seller, seller_signer, seller_key) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
         let (buyer, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
-        let (copier, copier_signer, copier_key) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
             seller.id(),
@@ -5330,6 +6054,409 @@ mod token_pool_outputs_only_copy_tests {
         let seller_credits_after_original = credits(&platform, seller.id());
         assert_eq!(seller_credits_after_original, seller_credits_before + price);
 
+        // The buyer can still afford the price, so a refusal cannot be its credits.
+        let repeat = BatchTransition::new_token_direct_purchase_to_pool_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            token_count,
+            price,
+            bundle.clone(),
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token direct purchase to pool transition");
+        let charged = assert_repeat_refused_in_block(
+            &platform,
+            &repeat,
+            buyer.id(),
+            contract.id(),
+            2,
+            &bundle,
+            None,
+        );
+        assert!(
+            charged < price,
+            "a refused repeat costs its fee, never the price"
+        );
+
+        assert_eq!(pool_balance(&platform, token_id), token_count);
+        assert_eq!(pool_notes_count(&platform, token_id), notes_after_original);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            OWNER_INITIAL_BALANCE + token_count
+        );
+        assert_eq!(
+            credits(&platform, seller.id()),
+            seller_credits_after_original,
+            "a refused repeat must not pay the seller"
+        );
+        assert_tokens_conserved(&platform);
+    }
+
+    /// A shield taken from the mempool and submitted by another holder ahead of its author.
+    ///
+    /// Before the author's shield lands its dummy nullifiers are on record nowhere, so the
+    /// pool's record cannot refuse the copy; only the owner in the sighash can. Had the copy
+    /// landed, it would have paid the author's recipient out of the copier's tokens and left the
+    /// author's own shield to be refused as a repeat, charged its fee. The author's shield is
+    /// admitted by CheckTx before the copy and executes after it, which is what shows the bundle
+    /// was valid all along and the copy was refused for its owner alone.
+    #[tokio::test]
+    async fn test_a_shield_bundle_front_run_by_another_holder_is_refused_and_the_original_lands() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9511);
+        let amount = 4_200;
+
+        let (owner, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (copier, copier_signer, copier_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // The copier holds as many tokens as the copy shields, so a refusal cannot be its
+        // balance.
+        let transfer = BatchTransition::new_token_transfer_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            amount,
+            copier.id(),
+            None,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token transfer transition");
+        assert_matches!(
+            process(&platform, &transfer).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let shield = build_token_shield_transition(
+            token_id,
+            owner.id(),
+            contract.id(),
+            0,
+            &wallet_address(),
+            amount,
+            [0u8; 36],
+            None,
+            &key,
+            3,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("client-built token shield");
+        assert_check_tx_accepts(&platform, &shield);
+        let bundle = proven_bundle(&shield);
+
+        let copy = BatchTransition::new_token_shield_transition(
+            token_id,
+            copier.id(),
+            contract.id(),
+            0,
+            amount,
+            bundle.clone(),
+            &copier_key,
+            1,
+            0,
+            &copier_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        assert_front_run_refused(
+            &platform,
+            &copy,
+            copier.id(),
+            contract.id(),
+            1,
+            &bundle,
+            true,
+            None,
+        );
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(pool_notes_count(&platform, token_id), 0);
+        assert_eq!(
+            identity_token_balance(&platform, token_id, copier.id()),
+            Some(amount),
+            "a refused copy must not take the copier's tokens"
+        );
+
+        assert_matches!(
+            process(&platform, &shield).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), amount);
+        assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
+        assert_eq!(
+            identity_token_balance(&platform, token_id, owner.id()),
+            Some(OWNER_INITIAL_BALANCE - 2 * amount)
+        );
+
+        // The bundle that just executed, offered again under the copier: CheckTx, which never
+        // reads the pool's record, still refuses it on the owner.
+        let late_copy = BatchTransition::new_token_shield_transition(
+            token_id,
+            copier.id(),
+            contract.id(),
+            0,
+            amount,
+            bundle,
+            &copier_key,
+            2,
+            0,
+            &copier_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        assert_matches!(
+            assert_check_tx_rejects(&platform, &late_copy).as_slice(),
+            [ConsensusError::StateError(
+                StateError::InvalidShieldedProofError(_)
+            )]
+        );
+        assert_tokens_conserved(&platform);
+    }
+
+    /// A claim into the pool taken from the mempool and submitted by another identity due the
+    /// same release, ahead of its author. CheckTx cannot verify a claim's bundle, so it admits
+    /// the copy; block validation refuses it on the owner the bundle names, before the author's
+    /// claim has recorded anything the pool could refuse it with.
+    #[tokio::test]
+    async fn test_a_claim_to_pool_bundle_front_run_by_another_claimant_is_refused_and_the_original_lands(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9513);
+        let release = 445;
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (claimant, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (copier, copier_signer, copier_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (claimant_id, copier_id) = (claimant.id(), copier.id());
+        // Both are due the same release, so the copier's claim resolves to exactly the amount
+        // the copied bundle carries and only the bundle's owner can be why it is refused.
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(move |configuration: &mut TokenConfiguration| {
+                configuration.set_has_shielded_pool(true);
+                configuration
+                    .distribution_rules_mut()
+                    .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                        TokenPreProgrammedDistributionV0 {
+                            distributions: [(
+                                100,
+                                [(claimant_id, release), (copier_id, release)].into(),
+                            )]
+                            .into(),
+                        },
+                    )));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        fast_forward_to_block(&platform, 100, 40, 42, 1, false);
+        let block_info = BlockInfo {
+            time_ms: 200,
+            height: 41,
+            core_height: 42,
+            epoch: Epoch::new(1).unwrap(),
+        };
+        let supply_before = total_supply(&platform, token_id);
+
+        let claim = build_token_claim_to_pool_transition(
+            token_id,
+            claimant_id,
+            contract.id(),
+            0,
+            &wallet_address(),
+            release,
+            TokenDistributionType::PreProgrammed,
+            None,
+            [0u8; 36],
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("client-built token claim to pool");
+        assert_check_tx_accepts(&platform, &claim);
+        let bundle = proven_bundle(&claim);
+
+        let copy = BatchTransition::new_token_claim_to_pool_transition(
+            token_id,
+            copier_id,
+            contract.id(),
+            0,
+            TokenDistributionType::PreProgrammed,
+            None,
+            bundle.clone(),
+            None,
+            &copier_key,
+            1,
+            0,
+            &copier_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token claim to pool transition");
+        assert_front_run_refused(
+            &platform,
+            &copy,
+            copier_id,
+            contract.id(),
+            1,
+            &bundle,
+            false,
+            Some(&block_info),
+        );
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            supply_before,
+            "a refused copy must not release anything"
+        );
+
+        assert_matches!(
+            process_at(&platform, &claim, &block_info)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), release);
+        assert_eq!(total_supply(&platform, token_id), supply_before + release);
+        assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
+        assert_tokens_conserved(&platform);
+    }
+
+    /// A purchase into the pool taken from the mempool and submitted by another buyer ahead of
+    /// its author. Had it landed, the copier would have paid the price for tokens minted to the
+    /// author's recipient and the author's own purchase would have been refused as a repeat.
+    #[tokio::test]
+    async fn test_a_direct_purchase_to_pool_bundle_front_run_by_another_buyer_is_refused_and_the_original_lands(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9514);
+        let (token_count, price) = (3, dash_to_credits!(0.03));
+
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (buyer, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+        let (copier, copier_signer, copier_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            seller.id(),
+            Some(|configuration: &mut TokenConfiguration| {
+                configuration.set_has_shielded_pool(true);
+                configuration
+                    .distribution_rules_mut()
+                    .set_change_direct_purchase_pricing_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        let set_price = BatchTransition::new_token_change_direct_purchase_price_transition(
+            token_id,
+            seller.id(),
+            contract.id(),
+            0,
+            Some(TokenPricingSchedule::SinglePrice(dash_to_credits!(0.01))),
+            None,
+            None,
+            &seller_key,
+            2,
+            0,
+            &seller_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("set price transition");
+        assert_matches!(
+            process(&platform, &set_price)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        let supply_before = total_supply(&platform, token_id);
+        let seller_credits_before = credits(&platform, seller.id());
+
+        let purchase = build_token_direct_purchase_to_pool_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            &wallet_address(),
+            token_count,
+            price,
+            [0u8; 36],
+            None,
+            &key,
+            1,
+            0,
+            &signer,
+            &Prover,
+            platform_version,
+        )
+        .await
+        .expect("client-built token direct purchase to pool");
+        assert_check_tx_accepts(&platform, &purchase);
+        let bundle = proven_bundle(&purchase);
+
+        // The copier can afford the price, so a refusal cannot be its credits.
         let copy = BatchTransition::new_token_direct_purchase_to_pool_transition(
             token_id,
             copier.id(),
@@ -5347,30 +6474,42 @@ mod token_pool_outputs_only_copy_tests {
         )
         .await
         .expect("token direct purchase to pool transition");
-        let charged = assert_copy_refused_in_block(
+        let charged = assert_front_run_refused(
             &platform,
             &copy,
             copier.id(),
             contract.id(),
+            1,
             &bundle,
+            true,
             None,
         );
         assert!(
             charged < price,
             "a refused copy costs its fee, never the price"
         );
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(total_supply(&platform, token_id), supply_before);
+        assert_eq!(
+            credits(&platform, seller.id()),
+            seller_credits_before,
+            "a refused copy must not pay the seller"
+        );
 
+        assert_matches!(
+            process(&platform, &purchase).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
         assert_eq!(pool_balance(&platform, token_id), token_count);
-        assert_eq!(pool_notes_count(&platform, token_id), notes_after_original);
         assert_eq!(
             total_supply(&platform, token_id),
-            OWNER_INITIAL_BALANCE + token_count
+            supply_before + token_count
         );
         assert_eq!(
             credits(&platform, seller.id()),
-            seller_credits_after_original,
-            "a refused copy must not pay the seller"
+            seller_credits_before + price
         );
+        assert_dummy_nullifiers_recorded(&platform, token_id, &bundle);
         assert_tokens_conserved(&platform);
     }
 
@@ -5671,6 +6810,82 @@ mod token_pool_outputs_only_copy_tests {
                 .has_nullifier(&copy_fee_nullifier, None, &mut vec![], platform_version)
                 .expect("credit pool nullifier lookup"),
             "a refused copy must leave the payer's credit note unspent"
+        );
+        assert_eq!(
+            credits(&platform, seller_id),
+            seller_credits_before + price,
+            "the seller is paid once"
+        );
+        assert_tokens_conserved(&platform);
+    }
+
+    /// The same two type 28 transitions in the other order: the copy is sequenced ahead of the
+    /// original, which the block proposer can do with anything it lifted from the mempool.
+    /// Nothing in the token bundle's sighash names who pays, so the copy lands and pays for the
+    /// original's notes. What matters is who bears the refusal that follows: the original is
+    /// refused on the dummy nullifier the copy recorded, and that refusal must be unpaid — the
+    /// honest payer's credit note stays unspent — or a stranger could make the honest payer pay
+    /// for a purchase it never got to make.
+    #[tokio::test]
+    async fn test_a_purchase_from_shielded_pool_copy_sequenced_first_does_not_charge_the_original_payer(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let price_per_token = dash_to_credits!(0.01);
+        let (seller_id, contract_id, token_id) =
+            token_for_sale(&mut platform, 9516, price_per_token).await;
+        let token_count = 3;
+        let price = price_per_token * token_count;
+
+        let (purchase, fee) =
+            build_purchase(&platform, token_id, contract_id, token_count, price, 15);
+        let original = purchase_v0(&purchase);
+        let original_fee_nullifier = original.fee_actions[0].nullifier;
+        let (copy, copy_fee_nullifier) =
+            purchase_copy_with_another_fee_bundle(&platform, original, price, fee, 16, 9517);
+        // Both payers' notes are in the credit pool and its total covers both purchases, so
+        // only the token bundle can tell the two apart.
+        set_pool_total_balance(&platform, 2 * CREDIT_NOTE);
+        assert_check_tx_accepts(&platform, &purchase);
+        assert_check_tx_accepts(&platform, &copy);
+
+        let seller_credits_before = credits(&platform, seller_id);
+        let first = original.token_actions[0].nullifier;
+        assert_matches!(
+            process_in_one_block(&platform, &[&copy, &purchase], &BlockInfo::default())
+                .execution_results()
+                .as_slice(),
+            [
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+                    StateError::NullifierAlreadySpentError(error)
+                )),
+            ] if error.nullifier() == first
+        );
+
+        assert!(
+            !platform
+                .drive
+                .has_nullifier(&original_fee_nullifier, None, &mut vec![], platform_version)
+                .expect("credit pool nullifier lookup"),
+            "the refused original must leave its payer's credit note unspent"
+        );
+        assert!(
+            platform
+                .drive
+                .has_nullifier(&copy_fee_nullifier, None, &mut vec![], platform_version)
+                .expect("credit pool nullifier lookup"),
+            "the copy that landed is paid from the copier's own credit note"
+        );
+        assert_eq!(
+            credit_pool_balance(&platform),
+            2 * CREDIT_NOTE - price - fee,
+            "one purchase is paid for, once"
+        );
+        assert_eq!(pool_balance(&platform, token_id), token_count);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            OWNER_INITIAL_BALANCE + token_count
         );
         assert_eq!(
             credits(&platform, seller_id),

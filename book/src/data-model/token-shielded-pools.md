@@ -78,13 +78,13 @@ fees, so unlike the credit pool nothing is carved from the bundle's value balanc
 
 | Transition | Flags | Value balance | Extra sighash data | Effect |
 |---|---|---|---|---|
-| `TokenShield` | outputs only | `-amount` | `tag(0x80), token_id` | `amount` leaves the owner's balance and enters the pool as new notes. |
+| `TokenShield` | outputs only | `-amount` | `tag(0x80), token_id, owner_id` | `amount` leaves the owner's balance and enters the pool as new notes. |
 | `TokenUnshield` | spends and outputs | `+amount` | `token_id, owner_id, recipient_id, amount` | Notes are spent; `amount` is credited to `recipient_id`; change comes back as new notes. |
 | `TokenShieldedTransfer` | spends and outputs | `0` | `token_id, owner_id` | Notes are spent and recreated; the pool balance is unchanged. |
-| `TokenMintToPool` | outputs only | `-amount` | `tag(0x81), token_id` | An authorized minter (manual minting rules, group actions supported) mints `amount` into new notes; the supply and the pool balance grow. Allowed only where `mintingAllowChoosingDestination` is set, since the notes' recipients are the minter's choice. |
+| `TokenMintToPool` | outputs only | `-amount` | `tag(0x81), token_id, minter_id` | An authorized minter (manual minting rules, group actions supported) mints `amount` into new notes; the supply and the pool balance grow. Allowed only where `mintingAllowChoosingDestination` is set, since the notes' recipients are the minter's choice. |
 | `TokenBurnFromPool` | spends and outputs | `+amount` | `token_id, burner_id, amount` | An authorized burner (manual burning rules, group actions supported) spends notes and destroys `amount`; the supply and the pool balance shrink. `burner_id` is the batch owner, or the proposer of a group action. |
-| `TokenClaimToPool` | outputs only | `-amount` | `tag(0x82), token_id` | A distribution claim released into new notes instead of the claimant's balance; a perpetual claim names the cycle-aligned moment it claims up to so the amount is predictable. |
-| `TokenDirectPurchaseToPool` | outputs only | `-token_count` | `tag(0x83), token_id` | The buyer pays credits at the direct purchase price and the tokens are minted into new notes. |
+| `TokenClaimToPool` | outputs only | `-amount` | `tag(0x82), token_id, owner_id` | A distribution claim released into new notes instead of the claimant's balance; a perpetual claim names the cycle-aligned moment it claims up to so the amount is predictable. |
+| `TokenDirectPurchaseToPool` | outputs only | `-token_count` | `tag(0x83), token_id, owner_id` | The buyer pays credits at the direct purchase price and the tokens are minted into new notes. |
 
 Each transition carries the Orchard bundle (`actions`, `anchor`, `proof`, `binding_signature`)
 next to the token base transition (`token_id`, contract id, contract position, identity
@@ -92,7 +92,7 @@ contract nonce). The extra sighash data is bound into the Orchard sighash by the
 recomputed by consensus from the transition's own fields, so a bundle cannot be replayed
 against whatever its layout names. The layouts differ: the ones that spend bind the token, the
 owner and, where tokens leave the pool, the recipient and amount; the four that only create
-notes bind their kind and the token, and nothing about who submits them. The layouts are in
+notes bind their kind, the token and the owner. The layouts are in
 `dpp::shielded::sighash` (`token_unshield_extra_sighash_data`,
 `token_shielded_transfer_extra_sighash_data`, `token_burn_from_pool_extra_sighash_data` and
 `token_pool_output_only_extra_sighash_data`).
@@ -101,24 +101,30 @@ Outputs-only bundles (shield, mint, claim, purchase) have no spends, so their an
 checked against the pool; the client builds them against the empty tree. Spending bundles must
 name an anchor the pool has recorded.
 
-Because the preimage of an outputs-only bundle binds no owner, anybody can lift one out of the
-mempool and submit it again as the same kind into the same pool. The copy would land a second
-note with the same commitment and the same `rho`, hence the same nullifier, and only one of the
-two could ever be spent. The pool refuses it on the state side: each action's dummy nullifier,
-from which its note takes its `rho`, is recorded in the pool's nullifier tree when the bundle
-enters, and a bundle whose dummy nullifier is already there is rejected with
-`NullifierAlreadySpentError`. `TokenPurchaseFromShieldedPool` carries an outputs-only token
-bundle too and is checked the same way.
+The preimage of an outputs-only bundle binds its owner — the batch owner, or for a group action
+mint its proposer, whose bundle every other signer submits unchanged — so nobody else's
+transition can land a bundle lifted out of the mempool ahead of its author. What the preimage
+cannot stop is its owner submitting the same bundle again in a new transition. That repeat
+would land a second note with the same commitment and the same `rho`, hence the same nullifier,
+and only one of the two could ever be spent. The pool refuses it on the state side: each
+action's dummy nullifier, from which its note takes its `rho`, is recorded in the pool's
+nullifier tree when the bundle enters, and a bundle whose dummy nullifier is already there is
+rejected with `NullifierAlreadySpentError`. `TokenPurchaseFromShieldedPool` carries an
+outputs-only token bundle too and is checked the same way.
 
-A mint or burn into the pool that goes through a group action stores
-`TokenEvent::MintToPool` / `TokenEvent::BurnFromPool` with a digest of the serialized actions
-(`serialized_actions_digest`), so every signer commits to exactly the same notes. A burn's
-bundle is therefore proven once, by the proposer: the digest covers the spend authorization
-signatures, so the sighash cannot depend on which signer's batch carries the bundle. It binds
-the group action's proposer as `burner_id` (the batch owner for a direct burn) and every other
-signer submits the proposer's bundle unchanged. No token history document is written for pool
-operations, so the ledger records no actor for them. The operations still leave public traces:
-spent nullifiers, the pool's note count and its anchors are all in state.
+A mint or burn into the pool that goes through a group action stores `TokenEvent::MintToPool` /
+`TokenEvent::BurnFromPool` with a digest of the serialized actions
+(`serialized_actions_digest`), so every signer commits to exactly the same notes. Either bundle
+is therefore proven once, by the proposer: the digest fixes the bundle's actions and only the
+bundle's builder can sign it, so every other signer submits the proposer's bundle as it is and
+the sighash cannot depend on which signer's batch carries it. It binds the group action's
+proposer — as `burner_id` for a burn, as `minter_id` for a mint, and the batch owner when there
+is no group action. CheckTx verifies a batch's token bundles statelessly, seeing only the
+transition and not the stored group action, so it skips the bundle of a signer other than the
+proposer; state validation in the block verifies it against the proposer. No token history
+document is written for pool operations, so the ledger records no actor for them. The
+operations still leave public traces: spent nullifiers, the pool's note count and its anchors
+are all in state.
 
 ## Documents paid from the pool
 

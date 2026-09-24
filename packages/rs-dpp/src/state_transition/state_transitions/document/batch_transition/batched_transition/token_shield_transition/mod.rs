@@ -14,8 +14,8 @@ pub use v0::TokenShieldTransitionV0;
 /// The Orchard bundle is outputs-only (spends disabled) with a value balance of `-amount`: the
 /// new notes are created for whoever the owner addressed them to, and nothing is spent from the
 /// pool. The identity signature binds the bundle inside this batch only, and an outputs-only
-/// bundle has no anchor pinning it to a pool, so the bundle's own sighash binds the shield tag
-/// and the token id — see `token_pool_output_only_extra_sighash_data`.
+/// bundle has no anchor pinning it to a pool, so the bundle's own sighash binds the shield tag,
+/// the token id and the batch owner — see `token_pool_output_only_extra_sighash_data`.
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",

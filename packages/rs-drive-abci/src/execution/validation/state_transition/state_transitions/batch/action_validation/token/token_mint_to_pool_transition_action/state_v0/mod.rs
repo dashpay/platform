@@ -212,10 +212,18 @@ impl TokenMintToPoolTransitionActionStateValidationV0 for TokenMintToPoolTransit
         }
 
         // An outputs-only bundle has no anchor of its own, so the sighash is what pins it to
-        // this pool and this kind — see `token_pool_output_only_extra_sighash_data`.
+        // this pool, this kind and its minter — see `token_pool_output_only_extra_sighash_data`.
+        // A group action's bundle is proven once by the proposer and submitted unchanged by every
+        // other signer (the digest check above pins it), so the sighash binds the proposer rather
+        // than the batch owner. A direct mint binds the batch owner.
+        let minter_id = match self.base().original_group_action() {
+            Some(original_group_action) => original_group_action.proposer_id(),
+            None => owner_id,
+        };
         let extra_sighash_data = token_pool_output_only_extra_sighash_data(
             TokenTransitionActionType::MintToPool,
             token_id.as_bytes(),
+            minter_id.as_bytes(),
             platform_version,
         )?;
         verify_token_pool_bundle(

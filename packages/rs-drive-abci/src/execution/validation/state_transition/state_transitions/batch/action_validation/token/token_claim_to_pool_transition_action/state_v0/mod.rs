@@ -136,10 +136,11 @@ impl TokenClaimToPoolTransitionActionStateValidationV0 for TokenClaimToPoolTrans
         }
 
         // An outputs-only bundle has no anchor of its own, so the sighash is what pins it to
-        // this pool and this kind — see `token_pool_output_only_extra_sighash_data`.
+        // this pool, this kind and this owner — see `token_pool_output_only_extra_sighash_data`.
         let extra_sighash_data = token_pool_output_only_extra_sighash_data(
             TokenTransitionActionType::ClaimToPool,
             token_id.as_bytes(),
+            owner_id.as_bytes(),
             platform_version,
         )?;
         verify_token_pool_bundle(

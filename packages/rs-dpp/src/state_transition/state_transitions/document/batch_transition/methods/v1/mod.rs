@@ -153,8 +153,8 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ///
     /// `bundle` is the outputs-only Orchard bundle (value balance `-amount`) the client proved
     /// for the token pool. Having no spends it carries no anchor, so its sighash must bind the
-    /// shield tag and the token id — see `token_pool_output_only_extra_sighash_data`; a bundle
-    /// proved without them is rejected.
+    /// shield tag, the token id and `owner_id` — see `token_pool_output_only_extra_sighash_data`;
+    /// a bundle proved without them is rejected.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     async fn new_token_shield_transition<S: Signer<IdentityPublicKey>>(
@@ -175,6 +175,11 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// Creates a `StateTransition` minting `amount` of a token straight into the token's shielded
     /// pool as the notes in `bundle`. `owner_id` must be authorized to mint; it signs and pays the
     /// credits fee. A group action is set up exactly like a transparent mint.
+    ///
+    /// The bundle's sighash must bind the mint tag, the token id and the minter — see
+    /// `token_pool_output_only_extra_sighash_data`. The minter is `owner_id` for a direct mint
+    /// and the proposer for a group action, so every other signer passes the proposer's bundle
+    /// unchanged.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     async fn new_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>>(

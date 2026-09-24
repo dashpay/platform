@@ -44,10 +44,12 @@ use wasm_bindgen::prelude::wasm_bindgen;
 /// - Shielded withdrawal: `outputScript || amount (u64) || coreFeePerByte (u32) ||
 ///   pooling (1 byte)`.
 /// - Token pool transitions that only create notes — token shield, and mint, claim or direct
-///   purchase into the pool: `kind tag (1 byte) || tokenId (32 bytes)`, with the tag `0x80`,
-///   `0x81`, `0x82` and `0x83` in that order. Empty is rejected: such a bundle carries no
-///   anchor, every token pool shares the empty-tree anchor it proves against, and nothing
-///   else in the bundle says which pool or which kind it was built for.
+///   purchase into the pool: `kind tag (1 byte) || tokenId (32 bytes) || ownerId (32 bytes)`,
+///   with the tag `0x80`, `0x81`, `0x82` and `0x83` in that order. `ownerId` is the batch
+///   owner; for a group action mint it is the proposer, and every other signer submits the
+///   proposer's bundle unchanged. Empty is rejected: such a bundle carries no anchor, every
+///   token pool shares the empty-tree anchor it proves against, and nothing else in the bundle
+///   says which pool, which kind or which owner it was built for.
 /// - Other token pool transitions bind their own fields; see the `extra_sighash_data`
 ///   builders in `dpp::shielded`.
 #[wasm_bindgen(js_name = computePlatformSighash)]

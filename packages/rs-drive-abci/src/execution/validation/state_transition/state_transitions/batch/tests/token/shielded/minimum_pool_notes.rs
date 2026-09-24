@@ -169,6 +169,7 @@ async fn shield(
             seed,
             TokenTransitionActionType::Shield,
             token_id,
+            owner.id(),
         ),
         key,
         nonce,

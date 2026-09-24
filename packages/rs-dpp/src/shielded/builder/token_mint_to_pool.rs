@@ -20,6 +20,11 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// `amount` of the token as a note for `recipient` inside the token's shielded pool, then wraps
 /// it in a batch transition signed by `owner_id`, who must be authorized to mint and pays the
 /// fee in credits. `using_group_info` sets up a group action exactly like a transparent mint.
+///
+/// The bundle's sighash binds `owner_id` as the minter, which is right for a direct mint and for
+/// the proposal of a group action. Every other signer of a group action must submit the
+/// proposer's bundle unchanged, through `new_token_mint_to_pool_transition`, rather than prove
+/// a bundle of its own here.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>, P: OrchardProver>(
     token_id: Identifier,
@@ -55,6 +60,7 @@ pub async fn build_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>, P
     let extra_sighash_data = token_pool_output_only_extra_sighash_data(
         TokenTransitionActionType::MintToPool,
         token_id.as_bytes(),
+        owner_id.as_bytes(),
         platform_version,
     )?;
     let bundle = build_output_only_bundle(

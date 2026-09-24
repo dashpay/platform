@@ -169,13 +169,13 @@ pub(crate) fn validate_token_pool_nullifiers(
 /// An outputs-only bundle's dummy nullifiers must not repeat within the bundle or already be
 /// recorded in the token pool. The reads are charged to the batch owner.
 ///
-/// Such a bundle binds no owner and no anchor, so the same authorized bytes can be submitted
-/// again, by anybody, as the same kind into the same pool. Each of its notes takes its `rho`
-/// from its action's dummy nullifier, so the copy would land a second note with the same
-/// commitment and the same nullifier, of which only one could ever be spent. Every token pool
-/// write that takes an outputs-only bundle records these nullifiers; this is the check that
-/// makes the record refuse anything, since the insert itself does not look for an existing
-/// entry.
+/// Such a bundle has no anchor, and its sighash binds the pool, the kind and the owner but not
+/// a single use, so its owner can submit the same authorized bytes again in a new transition.
+/// Each of its notes takes its `rho` from its action's dummy nullifier, so the repeat would
+/// land a second note with the same commitment and the same nullifier, of which only one could
+/// ever be spent. Every token pool write that takes an outputs-only bundle records these
+/// nullifiers; this is the check that makes the record refuse anything, since the insert itself
+/// does not look for an existing entry.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn validate_token_pool_output_nullifiers(
     platform: &PlatformStateRef,
@@ -257,6 +257,11 @@ pub(crate) fn verify_token_pool_bundle(
 ) -> Result<SimpleConsensusValidationResult, Error> {
     // The verification fee was charged when the action was built (see the token pool action
     // transformers), so CheckTx admission and block execution price it once and identically.
+    // Block execution verifies every bundle, with no memory of what admission decided. That is
+    // load-bearing, not redundant: the stateless admission check skips the bundle of a group
+    // action's non-proposing signer entirely and still reports the batch valid, so a cache of
+    // "admission accepted this" would mark an unverified bundle verified. Pinned by
+    // `test_a_group_mint_to_pool_confirmation_with_a_tampered_proof_is_refused`.
     if !matches!(validation_mode, ValidationMode::Validator) {
         return Ok(SimpleConsensusValidationResult::new());
     }

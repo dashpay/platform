@@ -68,6 +68,7 @@ pub async fn build_token_claim_to_pool_transition<
     let extra_sighash_data = token_pool_output_only_extra_sighash_data(
         TokenTransitionActionType::ClaimToPool,
         token_id.as_bytes(),
+        owner_id.as_bytes(),
         platform_version,
     )?;
     let bundle = build_output_only_bundle(
