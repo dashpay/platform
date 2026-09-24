@@ -241,9 +241,9 @@ written, the description's 4096-byte cap and the reward split's sum included:
 `DocumentPropertyMaxBytesExceededError` (10421), and the `propertyConstraints`
 rule `rewardSplitIsWhole` refuses a split that does not add up to 100 with
 `DocumentPropertyConstraintViolatedError` (10422). The cap on additions is the
-exception (see above). `validate_submitted_charter` in `rs-dpp`
-(`packages/rs-dpp/src/moderation_charter/`) only reads a proposal, without
-reading state:
+exception (see above). `SubmittedCharter::from_document_properties` in
+`rs-dpp` (`packages/rs-dpp/src/moderation_charter/`) only reads a proposal,
+without reading state:
 
 | Rule | Error | Code |
 | --- | --- | --- |
