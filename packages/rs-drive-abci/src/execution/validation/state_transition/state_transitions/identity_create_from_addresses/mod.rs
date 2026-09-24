@@ -26,12 +26,8 @@ use dpp::state_transition::identity_create_from_addresses_transition::IdentityCr
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
-use dpp::fee::fee_result::FeeResult;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
@@ -40,8 +36,8 @@ use crate::execution::validation::state_transition::identity_create_from_address
 
 /// The action of an identity create from addresses that failed after its inputs were checked:
 /// the transition only bumps its input nonces, its inputs keep their whole balances, and the
-/// penalty is charged as part of its fee, which takes it from those balances and books it to the
-/// fee pools.
+/// penalty is charged with its fee, which takes it from those balances and books it to the fee
+/// pools. The penalty is flat: the user fee increase does not scale it.
 ///
 /// Changed in place in the shipped `advanced_structure` v0 and `state` v0, which set the inputs
 /// to the amounts the transition asked to spend (or to the balances left after that spend) minus
@@ -51,16 +47,13 @@ fn bump_input_nonces_with_penalty(
     transition: &IdentityCreateFromAddressesTransition,
     action: &IdentityCreateFromAddressesTransitionAction,
     penalty: Credits,
-    execution_context: &mut StateTransitionExecutionContext,
-) -> StateTransitionAction {
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
-        processing_fee: penalty,
-        ..Default::default()
-    }));
-    BumpAddressInputNoncesAction::from_failed_identity_create_from_addresses_transition(
-        transition, action,
+) -> Result<StateTransitionAction, Error> {
+    Ok(
+        BumpAddressInputNoncesAction::from_failed_identity_create_from_addresses_transition(
+            transition, action, penalty,
+        )?
+        .into(),
     )
-    .into()
 }
 
 /// A trait for transforming into an action for the identity create from addresses transition

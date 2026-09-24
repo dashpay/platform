@@ -47,7 +47,7 @@ impl IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0
                 .validation_of_added_keys_structure_failure;
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_input_nonces_with_penalty(self, action, penalty, execution_context),
+                bump_input_nonces_with_penalty(self, action, penalty)?,
                 validation_result.errors,
             ));
         }
@@ -67,7 +67,7 @@ impl IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0
                 .validation_of_added_keys_proof_of_possession_failure;
 
             Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_input_nonces_with_penalty(self, action, penalty, execution_context),
+                bump_input_nonces_with_penalty(self, action, penalty)?,
                 validation_result.errors,
             ))
         } else {

@@ -100,7 +100,7 @@ impl IdentityCreateFromAddressesStateTransitionStateValidationV1
                 .unique_key_already_present;
 
             Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_input_nonces_with_penalty(self, &action, penalty, execution_context),
+                bump_input_nonces_with_penalty(self, &action, penalty)?,
                 key_state_validation_result.errors,
             ))
         }
