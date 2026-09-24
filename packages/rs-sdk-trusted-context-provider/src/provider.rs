@@ -19,14 +19,17 @@ use dpp::data_contract::TokenConfiguration;
     feature = "keywords-contract",
     feature = "document-history-contract",
     feature = "app-connect-contract",
+    feature = "moderation-charters-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-use dpp::version::feature_initial_protocol_versions::{
-    APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION,
-    MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION,
-};
+use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
+#[cfg(any(
+    feature = "moderation-charters-contract",
+    feature = "all-system-contracts"
+))]
+use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use lru::LruCache;
@@ -788,6 +791,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "keywords-contract",
             feature = "document-history-contract",
             feature = "app-connect-contract",
+            feature = "moderation-charters-contract",
             feature = "all-system-contracts"
         ))]
         {
