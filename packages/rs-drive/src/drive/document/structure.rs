@@ -1,9 +1,7 @@
+use crate::drive::contract::structure::CONTRACT_FLAGS;
 use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/document/paths.rs";
-const CONTRACT_FLAGS: &str =
-    "The owner is the contract owner. System contracts created at genesis carry \
-     no flags.";
 const DOCUMENT_FLAGS: &str =
     "The owner is the owner of the document, who is refunded when it is deleted. \
      Documents the system writes carry no flags.";

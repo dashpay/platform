@@ -30,10 +30,10 @@
 //! `maxAddedModerators`.
 //!
 //! The schema carries almost every rule through its keywords (references, lookups, key
-//! requirements, `distinctFrom`, and `maxBytes` for the description's byte cap). What it
-//! cannot say is here: [`SubmittedCharter`] and [`ElectedCharter`] read the documents'
-//! properties, and [`validate_submitted_charter`] adds the proposal's one pure-data rule.
-//! Nothing here reads state.
+//! requirements, `distinctFrom`, `maxBytes` for the description's byte cap, and the
+//! `propertyConstraints` rule holding the reward split to 100). What it cannot say is here:
+//! [`SubmittedCharter`] and [`ElectedCharter`] read the documents' properties, and
+//! [`validate_submitted_charter`] reads a proposal. Nothing here reads state.
 
 mod v0;
 
@@ -113,13 +113,6 @@ pub struct ModerationCharterRewardSplit {
     /// The share split between the members by the moderation actions each signed since the
     /// last claim.
     pub actions: u8,
-}
-
-impl ModerationCharterRewardSplit {
-    /// The three shares summed, as declared.
-    pub fn total(&self) -> u16 {
-        self.leader as u16 + self.equal as u16 + self.actions as u16
-    }
 }
 
 /// A proposal to moderate a contract, as read out of a `submittedCharter` document. Its owner
@@ -302,9 +295,10 @@ impl SubmittedCharter {
         properties
     }
 
-    /// Checks the proposal's own rule, the one the schema cannot express: the reward split
-    /// sums to 100. The description's 4096-byte cap is the schema's `maxBytes`, checked
-    /// wherever the document is validated.
+    /// Checks the proposal's own rules. None is left: the reward split's sum is the
+    /// contract's `propertyConstraints` rule `rewardSplitIsWhole` and the description's
+    /// 4096-byte cap its `maxBytes`, both checked wherever the document is validated. The
+    /// versioned step stays for the path that seats a team.
     pub fn validate(
         &self,
         platform_version: &PlatformVersion,

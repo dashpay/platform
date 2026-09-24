@@ -7,6 +7,11 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
+/// A proposal's reward split does not sum to 100 (11001). No longer produced: the
+/// moderation charters contract holds the split to 100 with its `propertyConstraints` rule
+/// `rewardSplitIsWhole`, refused as `DocumentPropertyConstraintViolatedError` (10422) on
+/// every create, so `validate_submitted_charter` no longer checks it. The variant keeps its
+/// place in `BasicError`, whose encoding is positional.
 #[derive(
     Error,
     Debug,

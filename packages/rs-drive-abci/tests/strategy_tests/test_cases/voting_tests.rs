@@ -1748,6 +1748,38 @@ mod tests {
     #[stack_size(STACK_SIZE)]
     #[test]
     async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution() {
+        // A vote costs 2_000_000 from protocol version 14.
+        // We did 5 votes in this epoch, and from protocol version 14 each contested document
+        // contributes 0.1 DASH (10_000_000_000) to the vote resolution fund instead of 0.2
+        // DASH, so the two contenders funded 20_000_000_000, of which 19 votes cost 38_000_000
+        // and 19_962_000_000 was left over when the vote finished.
+        // So we basically have 19_962_000_000 + 10_000_000
+        run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            19_972_000_000,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: a vote costs 10_000_000 and each contested document contributes
+    /// 0.2 DASH, so the two contenders funded 40_000_000_000, of which 19 votes cost
+    /// 190_000_000 and 39_810_000_000 was left over; with the 5 votes of the epoch that is
+    /// 39_810_000_000 + 50_000_000.
+    #[stack_size(STACK_SIZE)]
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_protocol_version_13(
+    ) {
+        run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_at_protocol_version(
+            13,
+            39_860_000_000,
+        )
+        .await;
+    }
+
+    async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fees: u64,
+    ) {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1765,9 +1797,21 @@ mod tests {
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc();
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
+        // An older protocol version is held by the proposers the first run sets up, whose
+        // versions the continued run carries on; the latest needs no holding
+        let upgrading_info =
+            (protocol_version != PlatformVersion::latest().protocol_version).then(|| {
+                UpgradingInfo {
+                    current_protocol_version: protocol_version,
+                    proposed_protocol_versions_with_weight: vec![(protocol_version, 1)],
+                    upgrade_three_quarters_life: 0.2,
+                }
+            });
 
         let mut rng = StdRng::seed_from_u64(567);
 
@@ -1890,7 +1934,7 @@ mod tests {
             extra_normal_mns: 0,
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
-            upgrading_info: None,
+            upgrading_info,
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2145,14 +2189,7 @@ mod tests {
             )
             .expect("expected to get processing fees made in epoch");
 
-        // A vote costs 10_000_000
-        // We did 5 votes in this epoch,
-        // From protocol version 14 each contested document contributes 0.1 DASH
-        // (10_000_000_000) to the vote resolution fund instead of 0.2 DASH, so the two
-        // contenders funded 20_000_000_000, of which 19 votes cost 190_000_000 and
-        // 19_810_000_000 was left over when the vote finished.
-        // So we basically have 19_810_000_000 + 50_000_000
-        assert_eq!(processing_fees, 19_860_000_000);
+        assert_eq!(processing_fees, expected_processing_fees);
     }
 
     #[stack_size(STACK_SIZE)]

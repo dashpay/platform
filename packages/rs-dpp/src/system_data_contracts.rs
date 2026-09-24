@@ -309,6 +309,7 @@ mod app_connect_tests {
 #[cfg(all(test, feature = "moderation-charters-contract", feature = "validation"))]
 mod moderation_charters_tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -708,6 +709,51 @@ mod moderation_charters_tests {
             .into_data()
             .expect("the proposal is valid");
         assert_eq!(read, proposal);
+    }
+
+    /// A proposal's reward split is held to 100 by a `propertyConstraints` rule, which
+    /// the contract's document validation applies, so consensus checks it on every create
+    /// and a client validating the document sees the same answer.
+    #[test]
+    fn should_hold_a_proposal_reward_split_to_one_hundred() {
+        let contract = contract();
+        let submitted_charter = document_type(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME);
+        assert_eq!(
+            submitted_charter
+                .property_constraints()
+                .keys()
+                .collect::<Vec<_>>(),
+            ["rewardSplitIsWhole"]
+        );
+        let judge = |leader: u8, equal: u8, actions: u8| {
+            let mut proposal = proposal();
+            proposal.reward_split = ModerationCharterRewardSplit {
+                leader,
+                equal,
+                actions,
+            };
+            let document = document_with(
+                &contract,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                proposal.to_document_properties(),
+            );
+            schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document)
+        };
+        assert_eq!(judge(10, 40, 50), vec![]);
+        assert_eq!(judge(100, 0, 0), vec![]);
+        for (leader, equal, actions) in [(10, 40, 40), (40, 40, 40), (0, 0, 0)] {
+            let errors = judge(leader, equal, actions);
+            assert!(
+                matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::DocumentPropertyConstraintViolatedError(e)
+                    )] if e.constraint() == "rewardSplitIsWhole"
+                        && e.violation() == PropertyConstraintViolation::NotMet
+                ),
+                "{leader} + {equal} + {actions}: {errors:?}"
+            );
+        }
     }
 
     #[test]

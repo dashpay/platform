@@ -34,9 +34,12 @@
 //! 14) get the frozen rule of the property `refersTo`, so any change to them
 //! is an incompatible schema change. So does the top-level `transient` list,
 //! which generation 0 fails on as an unsupported keyword, compared as the set
-//! of names the parse reads: sorted and deduplicated before the diff.
+//! of names the parse reads: sorted and deduplicated before the diff. And so
+//! does the top-level `propertyConstraints` object (protocol version 14):
+//! every stored document was judged against the rules it names, so none may be
+//! added, removed or changed.
 
-use crate::data_contract::document_type::property_names::TRANSIENT;
+use crate::data_contract::document_type::property_names::{PROPERTY_CONSTRAINTS, TRANSIENT};
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::JsonValue;
@@ -79,10 +82,18 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     // internal error instead of an incompatible schema change. The parse reads
     // the list as a set, so it is sorted and deduplicated before the diff
     // ([`prepared_for_diff`]): only a changed set of names is a change.
+    // The top-level `propertyConstraints` gets it too: a rule added later
+    // would judge replaces of documents stored without it, and a rule changed
+    // or removed would leave stored documents judged by one no longer there.
     let refers_to_rule = KEYWORD_COMPATIBILITY_RULES.get("refersTo");
-    let frozen_doctype_rules = ["ownerRefersTo", "creatorRefersTo", TRANSIENT]
-        .into_iter()
-        .filter_map(|keyword| refers_to_rule.map(|rule| (keyword, rule.clone())));
+    let frozen_doctype_rules = [
+        "ownerRefersTo",
+        "creatorRefersTo",
+        TRANSIENT,
+        PROPERTY_CONSTRAINTS,
+    ]
+    .into_iter()
+    .filter_map(|keyword| refers_to_rule.map(|rule| (keyword, rule.clone())));
 
     Options {
         override_rules: CompatibilityRulesCollection::from_iter(
@@ -457,6 +468,75 @@ mod tests {
             ProtocolError::DataContractError(DataContractError::JsonSchema(
                 JsonSchemaError::SchemaCompatibilityValidationError(message)
             )) if message == "schema keyword 'transient' at path '/transient/1' is not supported"
+        );
+    }
+
+    fn with_property_constraints(rules: Option<serde_json::Value>) -> serde_json::Value {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer", "position": 0},
+                "b": {"type": "integer", "position": 1},
+            },
+            "additionalProperties": false,
+        });
+        if let Some(rules) = rules {
+            schema["propertyConstraints"] = rules;
+        }
+        schema
+    }
+
+    /// Every stored document was judged against the rules, so adding, removing or
+    /// changing any part of one is incompatible, the operator and comparison keys
+    /// inside a rule included: they are the declaration's data, not JSON Schema
+    /// keywords.
+    #[test]
+    fn should_report_every_property_constraints_change_as_incompatible() {
+        let platform_version = PlatformVersion::latest();
+        let rule = json!({ "sum": { "lessThanOrEqual": [{ "add": ["a", "b"] }, 100] } });
+        for (original, new, change_name, change_path) in [
+            (None, Some(rule.clone()), "add", "/propertyConstraints"),
+            (Some(rule.clone()), None, "remove", "/propertyConstraints"),
+            (
+                Some(rule.clone()),
+                Some(json!({
+                    "sum": { "lessThanOrEqual": [{ "add": ["a", "b"] }, 100] },
+                    "order": { "lessThan": ["a", "b"] }
+                })),
+                "add",
+                "/propertyConstraints/order",
+            ),
+            (
+                Some(rule.clone()),
+                Some(json!({ "sum": { "lessThanOrEqual": [{ "add": ["a", "b"] }, 99] } })),
+                "replace",
+                "/propertyConstraints/sum/lessThanOrEqual/1",
+            ),
+            (
+                Some(rule.clone()),
+                Some(json!({ "sum": { "lessThanOrEqual": [{ "add": ["a", "b", 1] }, 100] } })),
+                "add",
+                "/propertyConstraints/sum/lessThanOrEqual/0/add/2",
+            ),
+        ] {
+            let result = validate_schema_compatibility(
+                &with_property_constraints(original.clone()),
+                &with_property_constraints(new.clone()),
+                platform_version,
+            )
+            .expect("a propertyConstraints change is judged, not an unsupported keyword");
+            assert_matches!(
+                result.errors.as_slice(),
+                [change] if change.name == change_name && change.path == change_path,
+                "{original:?} -> {new:?}"
+            );
+        }
+
+        let unchanged = with_property_constraints(Some(rule));
+        assert!(
+            validate_schema_compatibility(&unchanged, &unchanged, platform_version)
+                .expect("an unchanged schema is judged")
+                .is_valid()
         );
     }
 }

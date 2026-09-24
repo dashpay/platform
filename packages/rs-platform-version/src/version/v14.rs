@@ -522,7 +522,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     accumulates for the team to come, and with the types not yet usable
 ///     `contract_moderation_gate` v0 refuses, paid, every document transition
 ///     of a moderated type (`ContractModeratedDocumentTypeNotYetUsableError`,
-///     41200) until a charter is seated (item 39).
+///     41200) until a charter is seated (item 40).
 ///
 /// 23. **Contested indexes without a Lock choice, and ties to the earliest
 ///     contender**: a contested unique index may declare `"resolution": 1`,
@@ -962,21 +962,22 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     35) and which carries a message encrypted to the leader; the leader acts
 ///     on it with a removal. The cap on
 ///     additions, the target's `maxAddedModerators`, is a consensus rule of
-///     item 39.
+///     item 40.
 ///     Its `byTargetContract` index is a contested unique index
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
 ///     (`moderation_charters: 1`), and
 ///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
-///     on the pure-data rule of a proposal: its reward split sums to 100
-///     (basic errors 11000 and 11001). Its description fits 4096 bytes through
-///     the schema's own `maxBytes` (item 38), which every document validation
-///     checks. Genesis registers it on chains born at this
-///     version (`create_genesis_state` v1, behind the app-connect branch),
-///     `transition_to_version_14` inserts it on upgrade, and the Drive system
-///     contract cache serves it from this version
-///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Item 39 seats
+///     on reading a proposal (basic error 11000), which holds no rule of its
+///     own: the reward split sums to 100 through the contract's
+///     `propertyConstraints` rule (item 39), so 11001 is no longer produced,
+///     and the description fits 4096 bytes through the schema's own `maxBytes`
+///     (item 38); every document validation checks both. Genesis registers it
+///     on chains born at this version (`create_genesis_state` v1, behind the
+///     app-connect branch), `transition_to_version_14` inserts it on upgrade,
+///     and the Drive system contract cache serves it from this version
+///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Item 40 seats
 ///     the winning team.
 ///
 /// 38. **`maxBytes` on strings**: a property keyword for the bound plain JSON
@@ -999,7 +1000,36 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the charter-specific description check, its error 11002 and
 ///     `SystemLimits::max_moderation_charter_description_length`.
 ///
-/// 39. **Elected moderation teams moderate from their stored charter**: seating
+/// 39. **Property constraints**: the doctype-level `propertyConstraints`
+///     keyword (meta-schema v3, `parse_property_constraints` 0) names rules a
+///     document's integer properties must meet, each a comparison (`equal`,
+///     `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
+///     `greaterThanOrEqual`) of two integer expressions built from integer
+///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
+///     `modulo` and `power`. A property the document leaves out counts as 0,
+///     or as the value of an `ifAbsent` operand naming it. Arithmetic is exact
+///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
+///     negative), and an overflow, a zero divisor, a negative exponent or a
+///     value that is not an integer refuses the document rather than wrapping.
+///     The parser checks that every path names an integer property that is
+///     neither transient nor inside a transient object, and that no operand
+///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
+///     parse, and under full validation the limits
+///     `SystemLimits::max_property_constraints` (16 rules) and
+///     `max_property_constraint_nodes` (32 per rule).
+///     `DataContract::validate_document_properties` 0 (extended in place, inert
+///     before this version) calls `validate_property_constraints`
+///     (`validate_property_constraints` 0) after the schema validation, so
+///     document create and replace, and any client validating a document,
+///     refuse a broken rule with `DocumentPropertyConstraintViolatedError`
+///     (10422), naming the rule and why. The rules read no state and change
+///     nothing stored. They are fixed when the document type is created: a
+///     changed `propertyConstraints` is an incompatible schema change on
+///     update. The moderation charters contract declares its first one: a
+///     `submittedCharter`'s `rewardSplit` members add up to 100, which
+///     `validate_submitted_charter` therefore no longer checks (11001).
+///
+/// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
 ///     `electedCharter`, the only one ever stored for its target, so the
 ///     charter seated on an elected contract is the one the charter contract's
@@ -1125,7 +1155,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -1149,12 +1179,24 @@ mod tests {
                 20_000_000_000,
                 "protocol {protocol_version} must preserve the 0.2 DASH contribution"
             );
+            assert_eq!(
+                version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_single_vote_cost,
+                10_000_000,
+                "protocol {protocol_version} must preserve the 0.0001 DASH vote"
+            );
         }
 
         let mut expected_fees = PLATFORM_V13.fee_version.clone();
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        // A masternode vote costs a fifth of what it did: 0.00002 DASH from the contest's fund
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_single_vote_cost = 2_000_000;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(

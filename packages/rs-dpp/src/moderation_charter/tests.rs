@@ -88,30 +88,6 @@ fn should_accept_a_valid_proposal() {
 }
 
 #[test]
-fn should_refuse_a_reward_split_that_does_not_sum_to_one_hundred() {
-    for (leader, equal, actions) in [(10, 40, 40), (50, 50, 1), (0, 0, 0)] {
-        let proposal = SubmittedCharter {
-            reward_split: ModerationCharterRewardSplit {
-                leader,
-                equal,
-                actions,
-            },
-            ..proposal()
-        };
-        let result = validate_submitted_charter(
-            &proposal.to_document_properties(),
-            PlatformVersion::latest(),
-        )
-        .expect("validation executes");
-        assert!(matches!(
-            first_basic_error(&result),
-            BasicError::ModerationCharterRewardSplitNotOneHundredError(e)
-                if (e.leader(), e.equal(), e.actions()) == (leader, equal, actions)
-        ));
-    }
-}
-
-#[test]
 fn should_refuse_a_missing_or_mistyped_property() {
     for field in [
         property_names::TARGET_CONTRACT_ID,

@@ -89,6 +89,11 @@ pub struct DocumentTypeMethodVersions {
     /// predate the keyword: the method returns an empty result there, so the shipped
     /// document validation that calls it is inert.
     pub validate_max_bytes: OptionalFeatureVersion,
+    /// `validate_property_constraints`: refuses a document that breaks one of
+    /// its type's `propertyConstraints`. `None` on versions that predate the
+    /// keyword: the method returns an empty result there, so the shipped
+    /// `DataContract::validate_document_properties` 0 that calls it is inert.
+    pub validate_property_constraints: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -129,6 +134,12 @@ pub struct DocumentTypeSchemaVersions {
     /// parser, which refuses an array that is not a byte array, exactly as
     /// they parsed before typed arrays existed.
     pub parse_typed_array: OptionalFeatureVersion,
+    /// Parses the doctype-level `propertyConstraints` keyword (named
+    /// comparisons between integer expressions over the document's
+    /// properties) onto the document type, and checks the properties they
+    /// read. `None` on versions that predate the keyword: they ignore it
+    /// entirely, exactly as they parsed before it existed.
+    pub parse_property_constraints: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

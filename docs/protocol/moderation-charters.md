@@ -78,7 +78,7 @@ bound to it, the key join requests are encrypted to.
 | `description` | string, 1 to 4096 characters and at most 4096 bytes (`maxBytes`), required | What the team would moderate and how, for joiners and voters. Informational |
 | `reasons` | typed array of at most 64 unique identifiers, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; empty is allowed, a team that can take no action; a missing reason refuses the create, naming the element (`reasons[2]`) |
 | `moderatorsShare` | integer 0 to 100 | The percentage of each moderated document type's declared moderators fee the team takes, rounded down to the credit. Absent is the full amount; a lower number is a discount an action may agree to once the team is seated; 0 is a team that will not moderate and takes no rewards |
-| `rewardSplit` | object, required | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members, and the share split by each member's action count |
+| `rewardSplit` | object, required | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members, and the share split by each member's action count. The sum is the type's `propertyConstraints` rule `rewardSplitIsWhole`, checked on every create (`DocumentPropertyConstraintViolatedError`, 10422) |
 
 Indexes: `byTargetContract` (`targetContractId`, `$createdAt`) lists the
 proposals for a contract in filing order; `byOwner` (`$ownerId`) lists a
@@ -220,16 +220,18 @@ replaced). The moderation paths of the target read it:
 ## Validation beyond the schema
 
 Every rule above is enforced by the schema's keywords when a document is
-written, the description's 4096-byte cap included: `maxBytes` refuses a longer
-description with `DocumentPropertyMaxBytesExceededError` (10421). The cap on
-additions is the exception (see above). One rule of a proposal is not
-expressible there, and `validate_submitted_charter` in `rs-dpp`
-(`packages/rs-dpp/src/moderation_charter/`) checks it without reading state:
+written, the description's 4096-byte cap and the reward split's sum included:
+`maxBytes` refuses a longer description with
+`DocumentPropertyMaxBytesExceededError` (10421), and the `propertyConstraints`
+rule `rewardSplitIsWhole` refuses a split that does not add up to 100 with
+`DocumentPropertyConstraintViolatedError` (10422). The cap on additions is the
+exception (see above). `validate_submitted_charter` in `rs-dpp`
+(`packages/rs-dpp/src/moderation_charter/`) only reads a proposal, without
+reading state:
 
 | Rule | Error | Code |
 | --- | --- | --- |
 | A property is missing or of the wrong type | `ModerationCharterMalformedFieldError` | 11000 |
-| The three shares of `rewardSplit` do not sum to 100 | `ModerationCharterRewardSplitNotOneHundredError` | 11001 |
 
 `ElectedCharter` reads an elected charter's properties, and
 `moderation_charter::moderators_share_of` applies a proposal's share to a
