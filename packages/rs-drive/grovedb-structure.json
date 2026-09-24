@@ -4062,6 +4062,11 @@
                     "kinds": [
                       "Tree"
                     ],
+                    "flags": [
+                      "EpochOwned",
+                      "None"
+                    ],
+                    "flags_note": "The contract's flags, written with it. The owner is the contract owner, and the epoch the one a protocol upgrade registered the system contract in. System contracts created at genesis, and contracts a state transition creates, carry none.",
                     "since": 1,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4081,6 +4086,11 @@
                         "kinds": [
                           "Tree"
                         ],
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The contract's flags, written with it. The owner is the contract owner, and the epoch the one a protocol upgrade registered the system contract in. System contracts created at genesis, and contracts a state transition creates, carry none.",
                         "since": 1,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4097,6 +4107,11 @@
                             "kinds": [
                               "Tree"
                             ],
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The contract's flags, written with it. The owner is the contract owner, and the epoch the one a protocol upgrade registered the system contract in. System contracts created at genesis, and contracts a state transition creates, carry none.",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4142,6 +4157,11 @@
                             "kinds": [
                               "Tree"
                             ],
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The contract's flags, written with it. The owner is the contract owner, and the epoch the one a protocol upgrade registered the system contract in. System contracts created at genesis, and contracts a state transition creates, carry none.",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/votes/paths.rs",

@@ -13,6 +13,10 @@ const CONTENDER_FLAGS: &str =
     "The owner is the contender whose document created the level, who is \
      refunded when the poll is cleaned up. Written without storage flags, it carries none.";
 const POLL_FLAGS: &str = "The owner is the identity whose contested document started the poll.";
+const CONTRACT_FLAGS: &str =
+    "The contract's flags, written with it. The owner is the contract owner, and the \
+     epoch the one a protocol upgrade registered the system contract in. System \
+     contracts created at genesis, and contracts a state transition creates, carry none.";
 const OWNED: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const CONTESTED_DOCUMENT: &str =
     "votes.contested_resource.active_polls.contract.document_type.storage.document";
@@ -190,6 +194,7 @@ fn active_polls() -> StructureNode {
     .child(
         StructureNode::identifier("contract", "contract_id", "The data contract id")
             .kind(ElementKind::Tree)
+            .flags(&OWNED, CONTRACT_FLAGS)
             .describe(
                 "Created with a contract that has a contested \
                  index.",
@@ -203,6 +208,7 @@ fn active_polls() -> StructureNode {
                     "The document type name",
                 )
                 .kind(ElementKind::Tree)
+                .flags(&OWNED, CONTRACT_FLAGS)
                 .describe("A document type with a contested index.")
                 .children(vec![
                     StructureNode::fixed(
@@ -212,6 +218,7 @@ fn active_polls() -> StructureNode {
                         "CONTESTED_DOCUMENT_STORAGE_TREE_KEY",
                     )
                     .kind(ElementKind::Tree)
+                    .flags(&OWNED, CONTRACT_FLAGS)
                     .describe(
                         "The documents competing, held here until a poll \
                          awards one of them.",
@@ -230,6 +237,7 @@ fn active_polls() -> StructureNode {
                         "CONTESTED_DOCUMENT_INDEXES_TREE_KEY",
                     )
                     .kind(ElementKind::Tree)
+                    .flags(&OWNED, CONTRACT_FLAGS)
                     .describe(
                         "The contested index. Only the values make levels \
                          here; property names are left out on purpose.",

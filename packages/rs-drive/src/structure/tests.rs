@@ -349,6 +349,7 @@ mod fixtures {
     use dpp::platform_value::BinaryData;
     use dpp::platform_value::Value;
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
+    use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -516,8 +517,13 @@ mod fixtures {
     }
 
     /// Checks the state against the description, and records the shape of
-    /// every layer below a template that is fuller here than seen so far
-    fn conformance_of(drive: &Drive, fixture: &str, run: &mut FixtureRun) {
+    /// every layer below a template that is fuller here than seen so far.
+    /// Returns the kinds of flags found on the elements of each node.
+    fn conformance_of(
+        drive: &Drive,
+        fixture: &str,
+        run: &mut FixtureRun,
+    ) -> BTreeMap<NodeId, BTreeSet<FlagsKind>> {
         let platform_version = PlatformVersion::latest();
         let structure = drive_structure();
         let report = check_conformance(drive, &structure, None, platform_version)
@@ -555,6 +561,7 @@ mod fixtures {
             );
         }
         run.visited.extend(report.visited);
+        report.flags
     }
 
     fn identities(run: &mut FixtureRun) {
@@ -1194,6 +1201,46 @@ mod fixtures {
         conformance_of(&drive, "contested_documents", run);
     }
 
+    /// A contract with a contested index stored with the contract's flags, the way
+    /// `insert_contract` stores the system contracts a protocol upgrade registers (the
+    /// moderation charters contract at 14). The trees created with it below the active
+    /// polls carry those flags; genesis and state transitions write none.
+    fn contested_index_contract_with_flags(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected the contract");
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert the contract");
+
+        let flags = conformance_of(&drive, "contested_index_contract_with_flags", run);
+        for node in [
+            "votes.contested_resource.active_polls.contract",
+            "votes.contested_resource.active_polls.contract.document_type",
+            "votes.contested_resource.active_polls.contract.document_type.storage",
+            "votes.contested_resource.active_polls.contract.document_type.indexes",
+        ] {
+            assert_eq!(
+                flags.get(node),
+                Some(&BTreeSet::from([FlagsKind::EpochOwned])),
+                "expected `{node}` to carry the contract's flags",
+            );
+        }
+    }
+
     fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
         drive
             .apply_batch_low_level_drive_operations(
@@ -1513,6 +1560,7 @@ mod fixtures {
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
+        contested_index_contract_with_flags(&mut run);
         run
     }
 
