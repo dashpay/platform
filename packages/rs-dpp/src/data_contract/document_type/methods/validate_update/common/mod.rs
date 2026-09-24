@@ -2909,6 +2909,118 @@ mod tests {
         }
     }
 
+    mod max_bytes {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::data_contract::config::DataContractConfig;
+        use std::collections::BTreeMap;
+
+        /// A string `note` with `maxBytes` as `note_bound`, and a typed string array
+        /// `tags` whose `items` carry `maxBytes` as `tags_bound`.
+        fn document_type(
+            note_bound: Option<u64>,
+            tags_bound: Option<u64>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut note = platform_value!({ "type": "string", "maxLength": 64, "position": 0 });
+            if let Some(max_bytes) = note_bound {
+                note.insert("maxBytes".to_string(), max_bytes.into())
+                    .expect("should insert maxBytes");
+            }
+            let mut items = platform_value!({ "type": "string", "maxLength": 16 });
+            if let Some(max_bytes) = tags_bound {
+                items
+                    .insert("maxBytes".to_string(), max_bytes.into())
+                    .expect("should insert maxBytes");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "note": note,
+                    "tags": { "type": "array", "maxItems": 4, "items": items, "position": 1 }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn compatibility(
+            old: (Option<u64>, Option<u64>),
+            new: (Option<u64>, Option<u64>),
+        ) -> SimpleConsensusValidationResult {
+            let platform_version = PlatformVersion::latest();
+            let old_document_type = document_type(old.0, old.1, platform_version);
+            let new_document_type = document_type(new.0, new.1, platform_version);
+            old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility")
+        }
+
+        /// `maxBytes` moves like `maxLength`: every stored string still fits a
+        /// raised or dropped bound, on a property and on typed array elements.
+        #[test]
+        fn should_return_valid_result_when_max_bytes_is_raised_or_removed() {
+            for (old_bound, new_bound) in [(Some(8), Some(16)), (Some(8), None), (Some(8), Some(8))]
+            {
+                for (old, new) in [
+                    ((old_bound, None), (new_bound, None)),
+                    ((None, old_bound), (None, new_bound)),
+                ] {
+                    let result = compatibility(old, new);
+                    assert!(result.is_valid(), "{old:?} -> {new:?}: {:?}", result.errors);
+                }
+            }
+        }
+
+        /// A stored string may be longer than a new or lowered bound.
+        #[test]
+        fn should_return_invalid_result_when_max_bytes_is_added_or_lowered() {
+            for (old_bound, new_bound) in [(None, Some(8)), (Some(16), Some(8))] {
+                for (old, new, changed_path) in [
+                    (
+                        (old_bound, None),
+                        (new_bound, None),
+                        "/properties/note/maxBytes",
+                    ),
+                    (
+                        (None, old_bound),
+                        (None, new_bound),
+                        "/properties/tags/items/maxBytes",
+                    ),
+                ] {
+                    let result = compatibility(old, new);
+                    assert_matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        )] if e.property_path() == changed_path,
+                        "{old:?} -> {new:?}"
+                    );
+                }
+            }
+        }
+    }
+
     mod validate_byte_array_encoding {
         use super::*;
         use std::collections::BTreeMap;

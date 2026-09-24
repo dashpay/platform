@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "referenceOperands": {
@@ -545,6 +545,12 @@
           "minLength": 1,
           "maxLength": 256
         },
+        "maxBytes": {
+          "description": "Only on string properties, and on the items of a typed array of strings, where it bounds every element: the most bytes the value may take in UTF-8. maxLength counts characters, which are up to four bytes each, so it cannot bound the stored size on its own. An integer from 1 to 65535, no lower than minLength (checked at contract registration). Checked wherever a document's properties are validated, every create and replace included, after the JSON schema; a longer value is refused (DocumentPropertyMaxBytesExceededError, 10421), naming the element (tags[2]) for an item. Available from protocol version 14.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
         "requiredSince": {
           "type": "integer",
           "minimum": 1,
@@ -640,6 +646,17 @@
             "contentMediaType",
             "minItems",
             "maxItems"
+          ]
+        },
+        "maxBytes": {
+          "description": "maxBytes is only allowed on string properties; on a typed array it goes on the items",
+          "properties": {
+            "type": {
+              "const": "string"
+            }
+          },
+          "required": [
+            "type"
           ]
         },
         "refersTo": {
@@ -895,6 +912,12 @@
           "minLength": 1,
           "maxLength": 256
         },
+        "maxBytes": {
+          "description": "Only on string elements: the most bytes every element may take in UTF-8, exactly as maxBytes on a string property. The declaration belongs on the items, not on the array. Available from protocol version 14.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
         "refersTo": {
           "description": "Only on identifier elements: what every element refers to, the refersTo declaration of an identifier property with the same keys and the same checks (a reference expression included, which each element must meet on its own), except that identityPublicKey is refused: its keyIdProperty names one sibling key id, which cannot pair with many elements. When a document is created or replaced each element is checked as a single reference is, and the first one that fails refuses the write, its error naming the element by its list path (reasons[2] for the third). A propertyAgreement's referring side is still a property of the referring document or its $ownerId, the same for every element, and its referenced side a property of that element's referenced document. The declaration belongs on the items, not on the array. Available from protocol version 14.",
           "$ref": "#/$defs/documentSchema/properties/refersTo",
@@ -964,6 +987,17 @@
             "contentMediaType",
             "minItems",
             "maxItems"
+          ]
+        },
+        "maxBytes": {
+          "description": "maxBytes is only allowed on string elements",
+          "properties": {
+            "type": {
+              "const": "string"
+            }
+          },
+          "required": [
+            "type"
           ]
         },
         "byteArray": {

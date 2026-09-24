@@ -158,6 +158,11 @@ pub(crate) mod property_names {
     pub const SENDER_KEY: &str = "senderKey";
     /// `encryptedFor`: the scheme name, one of `EncryptionScheme::ALL`.
     pub const SCHEME: &str = "scheme";
+    /// Property-level integer on a string property, or on the `items` of a
+    /// typed array of strings: the most UTF-8 bytes a value may hold.
+    /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
+    /// `try_from_schema`.
+    pub const MAX_BYTES: &str = "maxBytes";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";

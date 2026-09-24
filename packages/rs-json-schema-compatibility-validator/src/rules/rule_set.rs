@@ -1512,6 +1512,42 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                 ],
             },
         ),
+        // `maxBytes` (the most UTF-8 bytes a string may take) moves like
+        // `maxLength`: raising or dropping the bound keeps every stored document
+        // valid, adding or lowering it would not.
+        (
+            "maxBytes",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: true,
+                allow_replacement_callback: U64_BIGGER_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "maxBytes": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/maxBytes".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "maxBytes": 1 }), json!({}), None).into(),
+                    (json!({ "maxBytes": 1 }), json!({ "maxBytes": 2 }), None).into(),
+                    (
+                        json!({ "maxBytes": 2 }),
+                        json!({ "maxBytes": 1 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/maxBytes".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
         (
             "$defs",
             CompatibilityRules {

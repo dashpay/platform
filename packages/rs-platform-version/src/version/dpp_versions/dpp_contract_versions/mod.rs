@@ -84,6 +84,11 @@ pub struct DocumentTypeMethodVersions {
     /// that predate the keyword: the method returns an empty result there, so the
     /// shipped create and replace structure validations that call it are inert.
     pub validate_encrypted_property_shapes: OptionalFeatureVersion,
+    /// `validate_max_bytes_properties`: refuses a document supplying a string longer in
+    /// UTF-8 bytes than the `maxBytes` its property declares. `None` on versions that
+    /// predate the keyword: the method returns an empty result there, so the shipped
+    /// document validation that calls it is inert.
+    pub validate_max_bytes: OptionalFeatureVersion,
     /// `Index::extract_contested_values`: writes an identifier property given as bytes or as
     /// an array of byte values as `Value::Identifier` in a contest's index values, so every
     /// contender names one contest with one poll. `None` on versions that predate it, where
@@ -118,6 +123,11 @@ pub struct DocumentTypeSchemaVersions {
     /// `None` on versions that predate the keyword: they ignore it entirely,
     /// exactly as they parsed before it existed.
     pub apply_encrypted_for: OptionalFeatureVersion,
+    /// Folds the `maxBytes` keyword (the most UTF-8 bytes a string property, or
+    /// each string element of a typed array, may hold) into the string's
+    /// `StringPropertySizes`. `None` on versions that predate the keyword: they
+    /// ignore it entirely, exactly as they parsed before it existed.
+    pub apply_max_bytes: OptionalFeatureVersion,
     /// Parses a typed array property (`type: "array"` with an `items`
     /// element schema instead of `byteArray`). `None` on versions that
     /// predate typed arrays: they leave such a property to the scalar

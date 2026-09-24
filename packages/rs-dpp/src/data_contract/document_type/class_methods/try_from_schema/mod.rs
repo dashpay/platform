@@ -206,6 +206,8 @@ fn insert_values(
             property_type => {
                 let property_type =
                     apply_property_reference(&inner_properties, property_type, platform_version)?;
+                let property_type =
+                    apply_max_bytes(&inner_properties, property_type, platform_version)?;
                 let distinct_from =
                     apply_distinct_from(&inner_properties, &property_type, platform_version)?;
                 let encrypted_for =
@@ -340,6 +342,7 @@ fn insert_values_nested(
 
     let property_type =
         apply_property_reference(&inner_properties, property_type, platform_version)?;
+    let property_type = apply_max_bytes(&inner_properties, property_type, platform_version)?;
     let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
     let encrypted_for = apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
 
@@ -397,18 +400,12 @@ fn apply_distinct_from_v0(
     // A typed array carries the declaration on its `items`: every element must
     // differ from the named value, so the elements must be identifiers
     if let DocumentPropertyType::TypedArray(typed_array) = property_type {
-        if inner_properties.contains_key(property_names::DISTINCT_FROM) {
-            return Err(DataContractError::InvalidContractStructure(
-                "distinctFrom on a typed array belongs on its items, where it applies to every \
-                 element"
-                    .to_string(),
-            ));
-        }
-        let items_map = match inner_properties.get(property_names::ITEMS) {
-            Some(items) => items.to_btree_ref_string_map()?,
-            None => return Ok(None),
-        };
-        let Some(distinct_from_value) = items_map.get(property_names::DISTINCT_FROM) else {
+        let Some(distinct_from_value) = typed_array_items_keyword(
+            inner_properties,
+            property_names::DISTINCT_FROM,
+            "applies to every element",
+        )?
+        else {
             return Ok(None);
         };
         if !matches!(
@@ -530,6 +527,116 @@ fn validate_distinct_from_targets_v0(
         }
     }
     Ok(())
+}
+
+/// The value of an element keyword on the `items` of a typed array property,
+/// refused on the array itself: the keyword binds every element, so it belongs
+/// on the items. `binds` finishes the refusal ("applies to every element").
+fn typed_array_items_keyword<'a>(
+    inner_properties: &BTreeMap<String, &'a Value>,
+    keyword: &str,
+    binds: &str,
+) -> Result<Option<&'a Value>, DataContractError> {
+    if inner_properties.contains_key(keyword) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword} on a typed array belongs on its items, where it {binds}"
+        )));
+    }
+    let Some(items) = inner_properties.get(property_names::ITEMS) else {
+        return Ok(None);
+    };
+    Ok(items.to_btree_ref_string_map()?.get(keyword).copied())
+}
+
+/// Folds a `maxBytes` declaration into a string property's sizes, or, declared
+/// on the `items` of a typed array of strings, into the element type's sizes:
+/// the most UTF-8 bytes the value (every element) may take. `maxLength` counts
+/// characters, which are up to four bytes each, so it cannot bound the stored
+/// size on its own.
+///
+/// Versioned on `apply_max_bytes` in the platform version's document type
+/// schema versions. `None` selects the behavior of the versions that predate
+/// the keyword: it is ignored entirely, so their parses stay byte-for-byte
+/// identical to what they always produced.
+fn apply_max_bytes(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentPropertyType, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_max_bytes
+    {
+        None => Ok(property_type),
+        Some(0) => apply_max_bytes_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_max_bytes version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_max_bytes_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    mut property_type: DocumentPropertyType,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let declared = if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
+        typed_array_items_keyword(
+            inner_properties,
+            property_names::MAX_BYTES,
+            "bounds every element",
+        )?
+    } else {
+        inner_properties.get(property_names::MAX_BYTES).copied()
+    };
+    let Some(max_bytes_value) = declared else {
+        return Ok(property_type);
+    };
+    let sizes = match &mut property_type {
+        DocumentPropertyType::String(sizes) => sizes,
+        DocumentPropertyType::TypedArray(typed_array) => match typed_array.item_type.as_mut() {
+            DocumentPropertyType::String(sizes) => sizes,
+            _ => {
+                return Err(DataContractError::InvalidContractStructure(
+                    "maxBytes is only allowed on string elements of a typed array".to_string(),
+                ))
+            }
+        },
+        _ => {
+            return Err(DataContractError::InvalidContractStructure(
+                "maxBytes is only allowed on string properties".to_string(),
+            ))
+        }
+    };
+    sizes.max_bytes = Some(parse_max_bytes(max_bytes_value, sizes.min_length)?);
+    Ok(property_type)
+}
+
+/// A `maxBytes` bound: 1 to 65535, and no lower than `minLength`, since a
+/// string of `minLength` characters is at least that many bytes and a bound
+/// below it would refuse every value.
+fn parse_max_bytes(value: &Value, min_length: Option<u16>) -> Result<u16, DataContractError> {
+    let max_bytes = value
+        .to_integer::<u16>()
+        .ok()
+        .filter(|max_bytes| *max_bytes > 0)
+        .ok_or_else(|| {
+            DataContractError::InvalidContractStructure(
+                "maxBytes must be an integer from 1 to 65535".to_string(),
+            )
+        })?;
+    if let Some(min_length) = min_length {
+        if max_bytes < min_length {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "maxBytes {max_bytes} is below minLength {min_length}: a string of \
+                 {min_length} characters is at least {min_length} bytes, so no value could \
+                 be valid"
+            )));
+        }
+    }
+    Ok(max_bytes)
 }
 
 /// Folds a `refersTo` declaration into the property type: an identifier property
