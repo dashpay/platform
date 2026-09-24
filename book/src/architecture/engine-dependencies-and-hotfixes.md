@@ -72,18 +72,20 @@ runtime work, not by this list.
 | `cranelift-codegen` | Code generation and lowering | Runtime crate (transitively) | RustSec (`cranelift-codegen`, one advisory from 2021) and upstream Wasmtime advisories |
 | `cranelift-frontend` | IR construction | Runtime crate (transitively) | Upstream Wasmtime advisories |
 | `cranelift-native` | Host feature detection feeding the target CPU policy | Runtime crate (transitively) | Upstream Wasmtime advisories |
-| `wasmparser` | Binary format parsing and validation of submitted modules | Validation crate (`=` pin on the line the engine ships with) | No RustSec entries to date; upstream `wasm-tools` release notes |
-| `wasm-encoder` | Emission of prepared (instrumented) modules | Validation crate (`=` pin) | No RustSec entries to date; upstream `wasm-tools` release notes |
+| `wasmparser` | Binary format parsing and validation of submitted modules | Validation crate (to be pinned with `=` to the line the engine ships with) | No RustSec entries to date; upstream `wasm-tools` release notes |
+| `wasm-encoder` | Emission of prepared (instrumented) modules | Validation crate (same `=` pin) | No RustSec entries to date; upstream `wasm-tools` release notes |
 
 Facts as of September 2026, for a reader judging the lifetime of the line:
 Wasmtime 36 is the long-term-support line released in August 2025 and
 supported until August 2027, with patch releases roughly monthly; Wasmtime 48
 is the next long-term-support line, released in August 2026. Security fixes
 are backported to every supported line. The exact release pin is an open
-allocation owned by the runtime crate work and is not decided here; the
-validation crate already pins the `wasm-tools` line that Wasmtime 36 ships
-with, so parser and engine agree on the binary format down to the patch
-level.
+allocation owned by the runtime crate work and is not decided here. The
+validation and runtime crates are required to pin the `wasm-tools` line the
+pinned Wasmtime release ships with, exactly, so that parser and engine agree
+on the binary format down to the patch level; until those crates land, the
+only `wasm-tools` versions in the lockfile are transitive dependencies of
+unrelated crates, and the audit covers them as such.
 
 Crates that are not in the set on purpose: `wat` and `wasmprinter` are test
 and tooling dependencies, never on a consensus path, and stay under the
