@@ -159,6 +159,32 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertNil(identity.dpnsName)
     }
 
+    /// A pick with no marketplace history that leaves the owned set keeps its
+    /// row (not owned), so an identity left with no other names does not read
+    /// as unhydrated and resurface the departed pick.
+    func testDepartedCacheOnlyPickIsNotDisplayed() throws {
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10)])
+        let context = ModelContext(container)
+        XCTAssertTrue(PersistentIdentity.updateMainDpnsName(
+            in: context, identityId: ownerId, mainDpnsName: "Alice"))
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [])
+
+        let readContext = ModelContext(container)
+        let identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertEqual(identity.dpnsNames.map(\.label), ["Alice"])
+        XCTAssertEqual(identity.dpnsNames.first?.isOwned, false)
+        XCTAssertNil(identity.ownedMainDpnsName)
+        XCTAssertNotEqual(identity.displayName, "Alice")
+
+        // Owning it again brings the pick back.
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10)])
+        let reread = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(reread.ownedMainDpnsName, "Alice")
+    }
+
     /// A snapshot that momentarily lacks the picked name (a cold start adds
     /// names before the in-memory list is whole) must not replace the pick.
     func testMainNamePickSurvivesAnIncompleteSnapshot() throws {

@@ -348,7 +348,7 @@ impl IdentityWallet {
             .map(|d| d.as_millis() as u64)
             .ok();
 
-        let mut added = 0u32;
+        let added;
         {
             let mut wm = self.wallet_manager.write().await;
             let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
@@ -357,30 +357,14 @@ impl IdentityWallet {
             let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
                 return Ok(0);
             };
-            // Merge into the existing list and persist it once. Adding the
-            // names one at a time persisted one snapshot per name, and every
-            // snapshot is read downstream as the identity's complete owned
-            // set — so on a cold start (empty in-memory list) the first
-            // snapshot carried a single name and the Swift persister treated
-            // the others as gone. Still add-only: the query is capped by
-            // `limit`, so a name missing from it is not proof of departure.
-            let mut names = managed.dpns_names.clone();
-            for username in usernames {
-                if names
-                    .iter()
-                    .any(|existing| existing.label == username.label)
-                {
-                    continue;
-                }
-                names.push(DpnsNameInfo {
+            // One snapshot for the whole fetch — see `merge_dpns_names`.
+            added = managed.merge_dpns_names(
+                usernames.into_iter().map(|username| DpnsNameInfo {
                     label: username.label,
                     acquired_at,
-                });
-                added += 1;
-            }
-            if added > 0 {
-                managed.set_dpns_names(names, &self.persister);
-            }
+                }),
+                &self.persister,
+            );
         }
         Ok(added)
     }
