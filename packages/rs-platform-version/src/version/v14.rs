@@ -982,12 +982,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
-///     (`moderation_charters: 1`), and
-///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
-///     on reading a proposal (basic error 11000), which holds no rule of its
-///     own: the reward split sums to 100 through the contract's
-///     `propertyConstraints` rule (item 39), so 11001 is no longer produced,
-///     and the description fits 4096 bytes through the schema's own `maxBytes`
+///     (`moderation_charters: 1`). A proposal holds no rule beyond its schema:
+///     the reward split sums to 100 through the contract's
+///     `propertyConstraints` rule (item 39), so 11001 is never produced, and
+///     the description fits 4096 bytes through the schema's own `maxBytes`
 ///     (item 38); every document validation checks both. Genesis registers it
 ///     on chains born at this version (`create_genesis_state` v1, behind the
 ///     app-connect branch), `transition_to_version_14` inserts it on upgrade,
@@ -1041,8 +1039,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     nothing stored. They are fixed when the document type is created: a
 ///     changed `propertyConstraints` is an incompatible schema change on
 ///     update. The moderation charters contract declares its first one: a
-///     `submittedCharter`'s `rewardSplit` members add up to 100, which
-///     `validate_submitted_charter` therefore no longer checks (11001).
+///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
+///     charter-specific check, whose error 11001 keeps its place in
+///     `BasicError` but is never produced.
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning

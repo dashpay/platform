@@ -45,9 +45,6 @@ pub struct DataContractValidationVersions {
     /// version 14: version 1 distribution rules and once-per-identity claims are rejected as
     /// unsupported, matching older software that can not decode them.
     pub validate_once_per_identity_distribution: OptionalFeatureVersion,
-    /// `ModerationCharter::validate`, the pure-data rules of a moderation charter. `None` below
-    /// protocol version 14, where the moderation charters system contract does not exist.
-    pub validate_moderation_charter: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
