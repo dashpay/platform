@@ -1196,8 +1196,9 @@ impl SdkBuilder {
     /// the same on two Platform chains, e.g. before and after a testnet reset. A response
     /// with another chain id fails with [`StaleNodeError::ChainIdMismatch`] before it can
     /// advance the height high-water mark or the protocol version. The Sdk then tries
-    /// other servers without banning the one that answered, since the configured chain
-    /// id may be the outdated one.
+    /// other servers, excluding the one that answered for a short flat 2 s rather than
+    /// putting it on the exponential health-ban ladder, since the configured chain id
+    /// may be the outdated one.
     ///
     /// If not set, the chain id is not checked. An empty chain id is rejected by
     /// [SdkBuilder::build].

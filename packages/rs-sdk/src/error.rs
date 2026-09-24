@@ -359,7 +359,8 @@ impl CanRetry for Error {
     fn can_retry(&self) -> bool {
         match self {
             // Not a node failure: the Sdk's own chain id may be the outdated one.
-            // `sync::retry` still fails over to another node, without a ban.
+            // `sync::retry` still fails over to another node, with a short flat exclusion
+            // instead of a health ban.
             Error::StaleNode(StaleNodeError::ChainIdMismatch { .. }) => false,
             Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_) => true,
             _ => false,
@@ -406,8 +407,8 @@ pub enum StaleNodeError {
     /// proved state of another Platform chain, e.g. one from before a network reset.
     ///
     /// Unlike the other variants, this error is not retryable: the Sdk fails over to
-    /// other servers without banning them, and returns this error if none of them
-    /// serves the expected chain.
+    /// other servers with a short flat exclusion instead of the exponential health
+    /// ban, and returns this error if none of them serves the expected chain.
     ///
     /// See [`SdkBuilder::with_expected_chain_id`](crate::SdkBuilder::with_expected_chain_id).
     #[error("received chain id is different: expected {expected}, received {received}; try another server")]

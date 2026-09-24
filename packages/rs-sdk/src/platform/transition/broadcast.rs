@@ -534,8 +534,9 @@ impl WaitForOutcome for StateTransition {
                 .inner;
 
             // `metadata` is quorum-authenticated only after the verification above, so the
-            // protocol-version ratchet must run here, never before. A `StaleNode` error is
-            // retryable and prompts another server.
+            // protocol-version ratchet must run here, never before. A `StaleNode` error
+            // prompts another server: most variants are retryable, and `sync::retry` fails
+            // over on `ChainIdMismatch` too.
             let _: () = sdk
                 .verify_response_metadata("wait_for_state_transition_result", &metadata)
                 .wrap_to_execution_result(&response)?
